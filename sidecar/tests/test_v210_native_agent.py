@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 
-from app.agent_runtime import import_tools, session_agent
+from app.agent_runtime import import_tools
 from tests.test_v111_native_turns import _add_model_provider, _task
 
 
@@ -35,7 +35,7 @@ def _fake_import_service(monkeypatch, *, files=3, size=4096, warnings=()):
         calls["confirm"].append(approved_by)
         return {}
 
-    def run(conn, import_id, task_id=None):
+    def run(conn, import_id, task_id=None, **_kw):
         calls["run"].append(import_id)
         return {"downloaded_file_count": files, "downloaded_total_bytes": size,
                 "analysis_run_id": "run-a"}
@@ -128,25 +128,30 @@ def _executions(client, task_id):
     return client.get(f"/agent-tasks/{task_id}/executions").json()["executions"]
 
 
-def test_recovery_continues_interrupted_work_once(client, monkeypatch):
+def test_recovery_continues_interrupted_work_once(client):
+    # v2.2 — on the streamed path production runs (fake endpoint), not the
+    # blocking SESSION_LOOP seam.
     from app.task_runtime import recovery
-    _add_model_provider(client)
-    monkeypatch.setattr(session_agent, "SESSION_LOOP", lambda spec: {
-        "answer": "Continued.", "skills_used": [], "skills_offered": [], "evidence_used": [],
-        "evidence_gaps": [], "tool_activity": []})
-    task, execution = _interrupted(client)
-    assert recovery.resume_interrupted([execution["id"]]) == 1
-    rows = _executions(client, task["id"])
-    cont = rows[-1]
-    assert cont["kind"] == "resume" and cont["resumed_from"] == execution["id"]
-    assert "[resume]" in cont["direction"] and "long survey" in cont["direction"]
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        row = client.get(f"/agent-tasks/{task['id']}/executions/{cont['id']}").json()
-        if row["status"] not in ("queued", "running"):
-            break
-        time.sleep(0.05)
+    from tests.fake_model import FakeModel, text_turn
+    with FakeModel([text_turn("Continued.")]) as model:
+        client.post("/model-providers", json={
+            "name": "fake", "provider_type": "openai-compatible", "base_url": model.base_url,
+            "model": "fake-model", "api_key": "not-a-real-key"})
+        task, execution = _interrupted(client)
+        assert recovery.resume_interrupted([execution["id"]]) == 1
+        rows = _executions(client, task["id"])
+        cont = rows[-1]
+        assert cont["kind"] == "resume" and cont["resumed_from"] == execution["id"]
+        # v2.2: the stored Direction stays the user's words; the note is the model's.
+        assert cont["direction"] == "long survey"
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            row = client.get(f"/agent-tasks/{task['id']}/executions/{cont['id']}").json()
+            if row["status"] not in ("queued", "running"):
+                break
+            time.sleep(0.05)
     assert row["status"] == "completed"
+    assert "[resume]" in str(model.requests[0]["messages"])
     assert client.get(f"/agent-tasks/{task['id']}/state").json()["status"] == "ready"
 
 

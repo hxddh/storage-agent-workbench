@@ -240,7 +240,7 @@ export function AgentTask({
       ref={workspaceRef}
       data-testid="agent-workspace"
       aria-label="Agent task workspace"
-      className="relative flex h-full min-w-0 flex-1 overflow-hidden bg-canvas"
+      className="agent-workspace relative flex h-full min-w-0 flex-1 bg-canvas"
     >
     <main aria-label={taskCopy.workspace} className="flex h-full min-w-0 flex-1 flex-col bg-canvas">
       {loadError ? (

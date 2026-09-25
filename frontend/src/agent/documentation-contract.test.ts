@@ -37,7 +37,7 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v2.1 documentation contract", () => {
+describe("v2.2 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
@@ -50,13 +50,15 @@ describe("v2.1 documentation contract", () => {
     expect(readRepo("docs/README.md")).toContain("v1.19.0");
     expect(readRepo("docs/README.md")).toContain("v2.0.0");
     expect(readRepo("docs/README.md")).toContain("v2.1.0");
+    expect(readRepo("docs/README.md")).toContain("v2.2.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.16.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.19.0");
     expect(readRepo("CLAUDE.md")).toContain("v2.0.0");
-    expect(readRepo("CLAUDE.md")).toContain("Implementation contract for Storage Agent v2.1.0");
+    expect(readRepo("CLAUDE.md")).toContain("v2.1.0");
+    expect(readRepo("CLAUDE.md")).toContain("Implementation contract for Storage Agent v2.2.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
-    expect(readRepo("docs/product.md")).toContain("v2.1.0");
-    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v2\.1\.0/);
+    expect(readRepo("docs/product.md")).toContain("v2.2.0");
+    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v2\.2\.0/);
     expect(readRepo("docs/architecture.md")).toContain("Migration head **031**");
     expect(readRepo("docs/architecture.md")).not.toMatch(/Current architecture baseline: Storage Agent v1\.10\.0/);
     expect(readRepo("docs/architecture.md")).not.toMatch(/Migration head \*\*028\*\*/);
@@ -167,8 +169,13 @@ describe("v2.1 documentation contract", () => {
     expect(readRepo("docs/roadmap.md")).toContain("v2.0.0");
     expect(readRepo("docs/roadmap.md")).toContain("Result-first");
     expect(readRepo("docs/roadmap.md")).toContain("v2.1.0");
+    expect(readRepo("docs/roadmap.md")).toContain("v2.2.0");
+    expect(readRepo("docs/roadmap.md")).toContain("Native agent depth");
     expect(readRepo("docs/releases/2.0.0.md")).toContain("Result-first");
     expect(readRepo("docs/releases/2.1.0.md")).toContain("Native agent");
+    expect(readRepo("docs/releases/2.2.0.md")).toContain("Native agent depth");
+    expect(readRepo("docs/tools.md")).toContain("tool.progress");
+    expect(readRepo("docs/api.md")).toContain("direction.recorded");
     expect(readRepo("docs/releases/1.13.0.md")).toContain("Honesty and completeness");
     expect(readRepo("docs/releases/1.14.0.md")).toContain("Interaction truth and content craft");
     expect(readRepo("docs/releases/1.15.0.md")).toContain("True Native Agent");

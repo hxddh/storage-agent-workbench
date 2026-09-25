@@ -107,16 +107,16 @@ def _investigation_md(messages: list[dict[str, Any]] | None,
             pending = None
 
     if not turns:
-        return "_No conversational turns recorded._"
+        return "_No Directions recorded._"
 
     shown = turns[-MAX_TURNS:]
     out: list[str] = []
     if len(turns) > len(shown):
-        out.append(f"_Showing the most recent {len(shown)} of {len(turns)} turns._")
+        out.append(f"_Showing the most recent {len(shown)} of {len(turns)} Directions._")
         out.append("")
 
     for i, (q, a) in enumerate(shown, start=len(turns) - len(shown) + 1):
-        out.append(f"### Turn {i}")
+        out.append(f"### Direction {i}")
         out.append("")
         out.append(f"**Asked:** {_excerpt(q.get('content'), 300)}")
         out.append("")
@@ -154,7 +154,7 @@ def _tools_md(activity: list[dict[str, Any]] | None) -> str:
     """Which read-only tools the investigation actually ran, and how they fared."""
     rows = activity or []
     if not rows:
-        return "_No tool calls recorded for this session._"
+        return "_No tool calls recorded for this Task._"
     agg: dict[str, dict[str, Any]] = {}
     for r in rows:
         name = r.get("tool_name") or "?"
@@ -198,7 +198,7 @@ def _audit_md(events: list[dict[str, Any]] | None) -> str:
     """Rule 17's trail for this session, summarised then listed."""
     rows = events or []
     if not rows:
-        return "_No audit events recorded for this session._"
+        return "_No audit events recorded for this Task._"
     counts: dict[str, int] = {}
     for e in rows:
         # Normalize on the way IN: the summary line joins these keys, so a raw
@@ -252,7 +252,7 @@ def _bullets(items: list[str]) -> str:
 
 def _timeline_md(runs: list[dict[str, Any]]) -> str:
     if not runs:
-        return "- No runs linked yet."
+        return "- No analyses yet."
     # Only terminal runs carry a result worth reporting; an in-flight run would
     # render as "(running) — —". Count the in-progress ones instead of listing
     # empty lines for them.
@@ -265,8 +265,8 @@ def _timeline_md(runs: list[dict[str, Any]]) -> str:
         for r in done
     ]
     if in_flight:
-        lines.append(f"- {in_flight} run(s) still in progress (not included in this report).")
-    return "\n".join(lines) if lines else "- No completed runs yet."
+        lines.append(f"- {in_flight} analysis(es) still in progress (not included in this report).")
+    return "\n".join(lines) if lines else "- No completed analyses yet."
 
 
 def _triage_md(cases: list[dict[str, Any]]) -> str:
@@ -388,15 +388,15 @@ def render_session_report(
     # The summary now counts the work that actually happened. Before v0.48.0 it
     # counted only linked runs, which for an agent-driven session is always zero.
     exec_summary = (
-        f"This session pursued the goal: \"{_oneline(session.get('goal')) or '—'}\". "
-        f"{turn_count} conversational turn(s) ran {tool_count} read-only tool call(s); "
-        f"{len(runs)} run(s) were linked; {len(findings)} finding(s) and "
+        f"This Task pursued the goal: \"{_oneline(session.get('goal')) or '—'}\". "
+        f"{turn_count} Direction(s) ran {tool_count} read-only tool call(s); "
+        f"{len(runs)} deterministic analysis(es) ran; {len(findings)} finding(s) and "
         f"{len(facts)} fact(s) were collected."
     )
 
-    content = f"""# Session Report: {_oneline(session.get('title'), 200)}
+    content = f"""# Task report: {_oneline(session.get('title'), 200)}
 
-## Session goal
+## Goal
 
 {_oneline(session.get('goal')) or '—'}
 
@@ -413,7 +413,7 @@ answer. Answers are excerpted; nothing here is model reasoning._
 
 ## Tools run
 
-_Read-only tool calls made during this session, as recorded in the audit trail._
+_Read-only tool calls made during this Task, as recorded in the audit trail._
 
 {_tools_md(activity)}
 
@@ -425,7 +425,7 @@ _Read-only tool calls made during this session, as recorded in the audit trail._
 
 {_facts_md(facts)}
 
-## Timeline of runs
+## Analyses
 
 {_timeline_md(runs)}
 
@@ -480,19 +480,15 @@ Limitations:
 
 ## Recommended next actions
 
-_Deterministic, rule-derived suggestions from the linked runs — not the agent's
-own proposals (those appear in the conversation). Each is a suggestion only._
+_Deterministic, rule-derived suggestions from the analyses — not the Agent's
+own next steps (those appear in the Result). Each is a suggestion only._
 
 {_actions_md(actions)}
-
-## Appendix: linked runs
-
-{_timeline_md(runs)}
 
 ## Safety
 
 - This report is built from deterministic, sanitized run summaries, findings, and
-  the session's own recorded conversation, tool trace and audit trail.
+  the Task's own recorded Directions, Work Results, tool trace and audit trail.
 - It contains no raw logs, no raw inventory rows, no evidence file content, no
   credentials, and no model reasoning. Next actions are proposals only.
 - Every section is bounded and states when it has truncated.

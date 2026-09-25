@@ -17,6 +17,7 @@ import {
   applyDelta,
   applySteer,
   applyTool,
+  applyToolProgress,
   completeMessage,
   EMPTY_TURN,
   type LiveTurn,
@@ -63,6 +64,7 @@ function reducerHandlers(update: (fn: (turn: LiveTurn) => LiveTurn) => void, met
     onTool: (record) => update((turn) => applyTool(turn, record)),
     onMessageCompleted: (payload) => update((turn) => completeMessage(turn, payload)),
     onSteerApplied: (payload) => update((turn) => applySteer(turn, payload.text)),
+    onToolProgress: (payload) => update((turn) => applyToolProgress(turn, payload.id, payload.progress)),
     onContextCompacted: (payload) => update((turn) => applyCompacted(turn, payload)),
     onStatus: (payload) => {
       if (TERMINAL.has(payload.status)) meta.onTerminal(payload.status, payload as Record<string, any>);
@@ -168,7 +170,6 @@ function ExecutionDocument({
     fallbackTitle: t("exec.fallbackTitle"),
     direction: t("exec.direction"),
     findings: t("exec.findings"),
-    noFindings: t("exec.noFindings"),
     noTools: t("exec.noTools"),
     result: t("exec.result"),
     noResult: t("exec.noResult"),
@@ -314,7 +315,9 @@ function ExecutionDocument({
               : <span className="native-state-dot" data-state={status === "failed" || status === "interrupted" ? "attention" : status} aria-hidden />}
             {copy.statuses[status] ?? status}
           </span>
-          {execution?.kind ? <span data-testid="execution-kind">{copy.kinds[execution.kind] ?? execution.kind}</span> : null}
+          {/* v2.2 — an ordinary Direction is the default and says nothing;
+              only a Verify, revisit, resume or retry names its kind. */}
+          {execution?.kind && execution.kind !== "direction" ? <span data-testid="execution-kind">{copy.kinds[execution.kind] ?? execution.kind}</span> : null}
           {execution?.started_at ? (
             <span title={execution.started_at}>{timeAgo(execution.started_at, t)}</span>
           ) : null}
@@ -349,34 +352,31 @@ function ExecutionDocument({
         )}
       </section>
 
-      <section className="native-execution-doc-block" data-testid="execution-findings">
-        <h2>{copy.findings}</h2>
-        {findings.length === 0 && gaps.length === 0 && skills.length === 0 ? (
-          <p className="agent-empty-line">{copy.noFindings}</p>
-        ) : (
-          <>
-            {findings.length > 0 ? (
-              <ul className="native-execution-doc-findings">
-                {findings.map((finding) => (
-                  <li key={finding.id} data-severity={(finding.severity || "").toLowerCase()}>
-                    <span className="native-execution-doc-severity">{severityLabel(finding.severity)}</span>
-                    <span>
-                      <strong>{finding.title}</strong>
-                      {finding.interpretation ? <span className="text-gray-500"> — {finding.interpretation}</span> : null}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {gaps.length > 0 ? (
-              <p className="agent-empty-line" data-testid="execution-gaps"><strong>{copy.gaps}:</strong> {gaps.join("; ")}</p>
-            ) : null}
-            {skills.length > 0 ? (
-              <p className="agent-empty-line" data-testid="execution-skills"><strong>{copy.skills}:</strong> {skills.join(", ")}</p>
-            ) : null}
-          </>
-        )}
-      </section>
+      {/* v2.2 — a section exists only when something is behind it. */}
+      {findings.length === 0 && gaps.length === 0 && skills.length === 0 ? null : (
+        <section className="native-execution-doc-block" data-testid="execution-findings">
+          <h2>{copy.findings}</h2>
+          {findings.length > 0 ? (
+            <ul className="native-execution-doc-findings">
+              {findings.map((finding) => (
+                <li key={finding.id} data-severity={(finding.severity || "").toLowerCase()}>
+                  <span className="native-execution-doc-severity">{severityLabel(finding.severity)}</span>
+                  <span>
+                    <strong>{finding.title}</strong>
+                    {finding.interpretation ? <span className="text-gray-500"> — {finding.interpretation}</span> : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {gaps.length > 0 ? (
+            <p className="agent-empty-line" data-testid="execution-gaps"><strong>{copy.gaps}:</strong> {gaps.join("; ")}</p>
+          ) : null}
+          {skills.length > 0 ? (
+            <p className="agent-empty-line" data-testid="execution-skills"><strong>{copy.skills}:</strong> {skills.join(", ")}</p>
+          ) : null}
+        </section>
+      )}
 
       <section className="native-execution-doc-block" data-testid="execution-result">
         <h2>{copy.result}</h2>

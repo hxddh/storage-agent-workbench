@@ -19,6 +19,7 @@ import { ConclusionView, TaskResult } from "./TaskResult";
 import { asConclusion } from "../lib/conclusion";
 import { useTaskCopy } from "./taskCopy";
 import { useI18n } from "../i18n";
+import { useTaskDetails } from "../agent/taskDetails";
 
 const PENDING_DIRECTION_ID = "task-pending-direction";
 
@@ -55,12 +56,25 @@ export function useTaskItems(detail: TaskRecord | null, triage: TriageCase[], ea
   }, [detail, triage, earlier]);
 }
 
-/** The latest Work Result, when nothing the user said came after it. */
+/** The latest Work Result. v2.2 — a Direction is durable from the moment
+ * its execution starts, so a newer Direction still at work (or one that
+ * failed before answering) does not unseat the latest Result. */
 export function lastWorkResult(items: TaskItem[]): Extract<TaskItem, { kind: "message" }> | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     if (item.kind === "message" && item.role === "assistant") return item;
-    if (item.kind === "message" && item.role === "user") break;
+  }
+  return undefined;
+}
+
+/** v2.2 — the trailing persisted Direction the live execution is answering:
+ * it heads the work in progress and is not yet a Work log entry. */
+export function liveDirectionRow(items: TaskItem[], pending: string | null | undefined): TaskItem | undefined {
+  if (!pending) return undefined;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.kind !== "message") continue;
+    return item.role === "user" && (item.content ?? "") === pending ? item : undefined;
   }
   return undefined;
 }
@@ -74,7 +88,7 @@ export function lastWorkResult(items: TaskItem[]): Extract<TaskItem, { kind: "me
  */
 export function TaskDocument({
   taskId,
-  items,
+  items: allItems,
   turnItems,
   run,
   hideLiveDirection,
@@ -126,6 +140,10 @@ export function TaskDocument({
   const hasFigures = Boolean(
     provenance?.analysis.cost || provenance?.analysis.inventory || provenance?.analysis.drift || provenance?.analysis.access_log,
   );
+  // v2.2 — while its execution runs, the persisted Direction heads the work
+  // in progress; the Work log gains it when its answer lands.
+  const liveRow = useMemo(() => (busy || run.stopped ? liveDirectionRow(allItems, pending) : undefined), [allItems, pending, busy, run.stopped]);
+  const items = useMemo(() => (liveRow ? allItems.filter((item) => item !== liveRow) : allItems), [allItems, liveRow]);
   const lastResult = useMemo(() => lastWorkResult(items), [items]);
   const figuresFor = (item: Extract<TaskItem, { kind: "message" }>) =>
     item.id === lastResult?.id && (hasFigures || provenance?.findings.length) ? (
@@ -273,7 +291,16 @@ export function TaskDocument({
     () => items.filter((item) => item.kind === "message" && item.role === "user").length,
     [items],
   );
-  const showLive = Boolean(pending) && !(hideLiveDirection && hideLiveWorkResult);
+  // v2.2 — a Task with one Direction reads as its Result: the Work log would
+  // only repeat that turn under "Result shown above". The turn — its
+  // Direction, commentary and the collapsed "Worked for …" line — sits with
+  // the detail rows instead; Find (⌘F) renders the ordinary log.
+  const { projection } = useTaskDetails();
+  const singleTurn = Boolean(lastResult) && directionCount === 1 && hiddenCount === 0
+    && projection.executions.length > 0
+    && items.every((item) => item.kind === "message" || item.kind === "run");
+  const showLog = (items.length > 0 || hiddenCount > 0) && (!singleTurn || findOpen);
+  const showLive = Boolean(pending) && (Boolean(liveRow) || !(hideLiveDirection && hideLiveWorkResult));
   const liveConclusion = run.conclusion && !hideLiveWorkResult
     ? <ConclusionView conclusion={run.conclusion} onNextStep={onNextStep} />
     : null;
@@ -305,7 +332,7 @@ export function TaskDocument({
             {showLive ? (
               <section className="task-live" data-testid="task-live">
                 <span className="task-section-kicker">{t("live.kicker")}</span>
-                {!hideLiveDirection ? (
+                {!hideLiveDirection || liveRow ? (
                   <div id={PENDING_DIRECTION_ID} className="task-item" data-direction={pending ?? ""}>
                     <UserTurn content={pending} />
                   </div>
@@ -344,12 +371,33 @@ export function TaskDocument({
                 message={lastResult.message}
                 direction={resultDirection}
                 figures={figuresFor(lastResult)}
-                details={<TaskDetails hasResult />}
+                details={
+                  singleTurn && !findOpen ? (
+                    <>
+                      <div className="task-result-work" data-testid="task-result-work">
+                        {/* The user's words stay on the page: the Direction
+                            heads its own work, as a log section would. */}
+                        <div className="task-item" data-direction={resultDirection ?? ""}>
+                          <UserTurn content={resultDirection} />
+                        </div>
+                        {(turnItems.get(lastResult.id)?.length ?? 0) > 0 ? (
+                          <AgentTurn
+                            items={turnItems.get(lastResult.id) ?? []}
+                            answer={lastResult.content}
+                            taskId={taskId}
+                            answerMode="none"
+                          />
+                        ) : null}
+                      </div>
+                      <TaskDetails hasResult />
+                    </>
+                  ) : <TaskDetails hasResult />
+                }
                 onNextStep={onNextStep}
               />
             ) : null}
 
-            {items.length > 0 || hiddenCount > 0 ? (
+            {showLog ? (
               <section className="task-log" data-testid="task-log" data-under-result={lastResult ? "true" : "false"}>
                 {lastResult ? (
                   <h2 className="task-log-head">

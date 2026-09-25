@@ -354,6 +354,28 @@ def seed_unlocked_groups(conn: Any, session_id: str | None,
     return seeded
 
 
+# v2.2 — the gate is a small-window measure, not the default. A model with a
+# context window above this carries every schema (~8.7k tokens, cached with the
+# stable prompt prefix) and never pays an unlock round-trip; at or below it the
+# schema block would crowd out the investigation itself, so the grouped
+# ``load_tools`` disclosure stays. The runtime decides from the resolved window;
+# the model never has to.
+_GATED_WINDOW_MAX = 16_384
+
+
+def tools_gated(model: str | None, explicit_window: int | None = None) -> bool:
+    """True when this model's context window is too small to carry every tool."""
+    from . import model_budget
+    try:
+        return model_budget.context_window(model, explicit_window) <= _GATED_WINDOW_MAX
+    except Exception:  # noqa: BLE001 — never cost the agent its tools on a lookup error
+        return False
+
+
+def all_tool_groups() -> set[str]:
+    return set(_TOOL_GROUPS)
+
+
 def tool_group_catalog() -> str:
     """The one-line-per-group menu the model needs to know what it can unlock.
 

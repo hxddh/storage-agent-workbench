@@ -9,12 +9,10 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
 import { waitForDurableAnswer } from "./work-result";
 
 /**
- * The agent's HEAVY path: unlock a tool group, survey a whole account, read the
- * verdict back.
+ * The agent's HEAVY path: survey a whole account, read the verdict back.
  *
  * Of the app's 43 agent tools, four had ever been driven end to end. The
- * untested ones are the stateful ones — `load_tools` (progressive disclosure),
- * `survey_account` (which spawns a real run), `read_run_result` (which picks
+ * untested ones are the stateful ones — `survey_account` (which spawns a real run), `read_run_result` (which picks
  * that run up in a LATER turn), and the cheap persisted-profile readers. They
  * are also where the product makes its most consequential claim: whether any
  * bucket is publicly exposed.
@@ -77,10 +75,8 @@ async function survey(
     providerId = ((await created.json()) as { id: string }).id;
 
     model = await startFakeModel([
-      // The group must be unlocked first — `survey_account` is not in the core
-      // set. This is the app's progressive-disclosure contract, and it had never
-      // been exercised from a browser either.
-      toolTurn("load_tools", { group: "account_wide" }),
+      // v2.2 — every tool is callable from the first step (a small-window
+      // model keeps the grouped disclosure; the Sidecar suite pins that).
       toolTurn("survey_account", { provider_id: providerId }),
       ...extraTurns(providerId),
       textTurn("I have surveyed the account; the details are above."),
@@ -168,6 +164,30 @@ test.describe("surveying an account", () => {
       const v = verdict(h.requests);
       expect(v).toContain("PUBLIC EXPOSURE");
       expect(v).toContain("acme-public");
+    } finally {
+      await h.cleanup();
+    }
+  });
+
+  test("the survey reports its real progress as durable events (v2.2)", async ({ page }) => {
+    // A survey probes up to 500 buckets inside one tool call; since v2.2 the
+    // engine reports each finished bucket, and the runtime records it as a
+    // throttled, durable `tool.progress` event a reconnect can replay.
+    const h = await survey(page, "progress", { subresources: "full" });
+    try {
+      const tasks = (await (await fetch(`${SIDECAR}/agent-tasks`)).json()) as Array<{ id: string }>;
+      const progress: Array<Record<string, unknown>> = [];
+      for (const t of tasks) {
+        const page_ = (await (await fetch(`${SIDECAR}/agent-tasks/${t.id}/events?limit=500`)).json()) as {
+          events: Array<{ event_type: string; payload: Record<string, unknown> }>;
+        };
+        for (const e of page_.events) if (e.event_type === "tool.progress" && e.payload.tool === "survey_account") progress.push(e.payload);
+      }
+      expect(progress.length).toBeGreaterThan(0);
+      const last = progress[progress.length - 1];
+      expect(last.unit).toBe("buckets");
+      expect(last.done).toBe(last.total);
+      expect(Number(last.total)).toBeGreaterThan(0);
     } finally {
       await h.cleanup();
     }

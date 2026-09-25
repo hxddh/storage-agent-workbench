@@ -119,6 +119,20 @@ test.describe("Execution detail from the durable log", () => {
       await expect(body.getByTestId("execution-result")).toContainText("policy is the problem");
       await expect(page.getByTestId("execution-error")).toHaveCount(0);
       expect(runs).toEqual([]);
+      // v2.2 — opening the row scrolls the Task scroller only: the window
+      // columns never move, so the Composer stays docked at the bottom.
+      await page.waitForTimeout(600); // let the smooth reveal settle
+      const layout = await page.evaluate(() => {
+        const scroller = document.querySelector("[data-testid='task-scroll']");
+        const shifted: string[] = [];
+        for (let node = scroller?.parentElement ?? null; node; node = node.parentElement) {
+          if (node.scrollTop !== 0) shifted.push(`${node.tagName}.${node.className}`.slice(0, 80));
+        }
+        const dock = document.querySelector(".native-dock")?.getBoundingClientRect();
+        return { shifted, dockBottom: dock?.bottom ?? 0, viewport: window.innerHeight };
+      });
+      expect(layout.shifted).toEqual([]);
+      expect(Math.abs(layout.viewport - layout.dockBottom)).toBeLessThanOrEqual(4);
     } finally {
       await dropModelProvider(providerId);
       await model.close();

@@ -103,12 +103,14 @@ test.describe("a real agent turn", () => {
       await expect(group).toContainText(/Worked/);
       await group.getByTestId("execution-head").click();
       await expect(group.getByTestId("worked-row").first()).toHaveAttribute("data-tool", "read_skill");
-      // v2.0 — the answer leads the Task as its Result; the turn in the Work
-      // log keeps its process in order and points up to it.
+      // v2.0 — the answer leads the Task as its Result. v2.2 — with one
+      // Direction there is no Work log to repeat it: the turn's work sits under
+      // the answer, just above the detail rows.
+      await expect(page.getByTestId("task-log")).toHaveCount(0);
       const order = await task(page).evaluate((el) =>
-        [...el.querySelectorAll("[data-testid='task-result'] [data-testid='turn-answer'],[data-testid='task-log'] [data-testid='worked-group'],[data-testid='task-log'] [data-testid='log-result-above']")]
+        [...el.querySelectorAll("[data-testid='task-result'] :is([data-testid='turn-answer'],[data-testid='worked-group'],[data-testid='task-details'],[data-testid='log-result-above'])")]
           .map((node) => node.getAttribute("data-testid")));
-      expect(order).toEqual(["turn-answer", "worked-group", "log-result-above"]);
+      expect(order).toEqual(["turn-answer", "worked-group", "task-details"]);
     } finally {
       await cleanup();
     }
@@ -121,9 +123,9 @@ test.describe("a real agent turn", () => {
       await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
       await expect(page.getByTestId("turn-commentary").first()).toContainText(/read the IAM policy skill/);
       const order = await task(page).evaluate((el) =>
-        [...el.querySelectorAll("[data-testid='task-log'] :is([data-testid='turn-commentary'],[data-testid='worked-group'],[data-testid='log-result-above'])")]
+        [...el.querySelectorAll("[data-testid='task-result-work'] :is([data-testid='turn-commentary'],[data-testid='worked-group'],[data-testid='log-result-above'])")]
           .map((node) => node.getAttribute("data-testid")));
-      expect(order).toEqual(["turn-commentary", "worked-group", "log-result-above"]);
+      expect(order).toEqual(["turn-commentary", "worked-group"]);
       // The commentary is NOT repeated inside the answer.
       await expect(page.getByTestId("turn-answer").last()).not.toContainText(/read the IAM policy skill/);
     } finally {

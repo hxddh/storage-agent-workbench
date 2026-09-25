@@ -164,10 +164,13 @@ def test_the_group_catalog_names_every_group():
     assert len(catalog) < 1200, len(catalog)
 
 
-def test_the_instructions_teach_the_unlock():
-    assert "load_tools" in sa.INSTRUCTIONS
+def test_the_small_window_instructions_teach_the_unlock():
+    # v2.2: only a small-window model sees the gate, so only its instructions
+    # teach load_tools; the default instructions say every tool is callable.
+    assert "load_tools" in sa.INSTRUCTIONS_GATED
     for group in sa._TOOL_GROUPS:
-        assert group in sa.INSTRUCTIONS
+        assert group in sa.INSTRUCTIONS_GATED
+    assert "load_tools" not in sa.INSTRUCTIONS
 
 
 # --- what the gate is worth --------------------------------------------------

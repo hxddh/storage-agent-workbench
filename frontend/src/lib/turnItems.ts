@@ -7,7 +7,7 @@
  * `content` reproduce the same list. Both feed ONE renderer. (v2.1: nothing
  * pauses a turn for approval, and the model keeps no plan.)
  */
-import type { TaskMessage, ToolActivity, TurnItemRef } from "../types";
+import type { TaskMessage, ToolActivity, ToolProgress, TurnItemRef } from "../types";
 
 /** The runtime compacted the replayed context at this point (v1.12). */
 export type CompactedItem = { kind: "compacted"; before_tokens: number | null; after_tokens: number | null };
@@ -103,6 +103,18 @@ export function applyTool(turn: LiveTurn, rec: ToolActivity): LiveTurn {
     return { ...turn, items };
   }
   return { ...turn, items: [...turn.items, { kind: "tool", record: rec }] };
+}
+
+/** `tool.progress` (v2.2): the running row with this call id carries the
+ * latest counts; a row already resolved (or unknown) is left alone. */
+export function applyToolProgress(turn: LiveTurn, id: string, progress: ToolProgress): LiveTurn {
+  let changed = false;
+  const items = turn.items.map((item) => {
+    if (item.kind !== "tool" || item.record.id !== id || item.record.status !== "started") return item;
+    changed = true;
+    return { kind: "tool" as const, record: { ...item.record, progress } };
+  });
+  return changed ? { ...turn, items } : turn;
 }
 
 /** `context.compacted` (v1.12): one quiet marker at the current position —

@@ -6,6 +6,24 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-25
+
+_Native agent depth — every tool from the first step, Directions durable from the start, continuations that pick up where they stopped, real progress on long work. No migration (head stays **031**)._ See `docs/releases/2.2.0.md`.
+
+### Changed
+
+- **Every tool is callable from the first step** — `load_tools` and the group catalog apply only when the resolved context window is ≤ 16k tokens (`limits.tools_gated`, `prompt.INSTRUCTIONS_GATED`), decided by the runtime.
+- **The Direction is durable from the start** — its row is written when the execution starts (`direction.recorded`); the latest Result stays in place while a newer Direction runs.
+- **Continuations pick up where they stopped** — `kind=resume` / `kind=retry` store the user's Direction unchanged; the note and a bounded, redacted digest of the calls that already completed reach only the model (`task_runtime/continuation.py`); a continuation answers under its original Direction row when it is still the latest message.
+- **Real progress** — the survey (per bucket) and the evidence import (per file) emit durable, throttled `tool.progress` events (`app/progress.py`; ≤ 1/s per call + the final one, ≤ 120 per call, counts only); running rows read *120 of 500 buckets* with a hairline meter. Stop ends an import between files.
+- **Window** — `revealInScroller` replaces `scrollIntoView` and the window columns `overflow: clip` (the Composer no longer floats when a row is revealed); a one-Direction Task has no Work log (its turn sits under the Result); Execution detail paints no empty sections or default kind; the Resume banner is a quiet note beside *Open Settings*; the Task report reads *Task report / Goal / Analyses*.
+
+### Tests
+
+- `sidecar/tests/test_v220_streamed_agent.py` on the streamed path (real SDK run, fake OpenAI-compatible endpoint); the v2.0 conclusion, v2.1 recovery, compaction and prose-is-not-a-Decision contracts moved off the `SESSION_LOOP` seam; `fake_model.tool_turn` mints a unique call id per call.
+- `frontend/src/components/v220.test.tsx`; E2E asserts durable survey progress and a docked Composer after opening Execution detail.
+
+
 ## [2.1.0] - 2026-09-25
 
 _Native agent — nothing waits for approval, the model keeps no plan, and interrupted work continues on its own. No migration (head stays **031**)._ See `docs/releases/2.1.0.md`.

@@ -10,6 +10,7 @@ import { S3ErrorArtifact } from "./S3ErrorArtifact";
 import { TranscriptItems } from "./TranscriptItems";
 import { WorkingRow } from "./WorkedGroup";
 import { Icon } from "./icons";
+import { revealInScroller } from "../lib/scroll";
 
 function CopyAction({ text, testId }: { text: string; testId: string }) {
   const { t } = useI18n();
@@ -61,9 +62,10 @@ export function answerGist(text: string, limit = 160): string {
 }
 
 /** How a turn shows its answer: whole (live, or a Task without a Result
- * section), folded to one line (older turns in the Work log), or as a pointer
- * to the Result at the top of the Task (the latest turn). */
-export type AnswerMode = "full" | "folded" | "above";
+ * section), folded to one line (older turns in the Work log), as a pointer
+ * to the Result at the top of the Task (the latest turn), or not at all — the
+ * turn's work under its own Result, in a one-Direction Task (v2.2). */
+export type AnswerMode = "full" | "folded" | "above" | "none";
 
 /**
  * One Agent turn: items (commentary · worked group · steer) then the
@@ -167,7 +169,7 @@ export const AgentTurn = memo(function AgentTurn({
           type="button"
           className="turn-result-above"
           data-testid="log-result-above"
-          onClick={() => document.getElementById("task-result")?.scrollIntoView({ block: "start", behavior: "smooth" })}
+          onClick={() => revealInScroller(document.getElementById("task-result"), "start")}
         >
           <Icon name="arrowUp" size={11} />
           {t("log.resultAbove")}

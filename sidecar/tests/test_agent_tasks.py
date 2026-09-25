@@ -77,24 +77,22 @@ def test_restart_recovery_withdraws_pending_decisions(client):
     assert "v2.1" in row["resolution_note"]
 
 
-def test_model_prose_never_becomes_a_decision(client, monkeypatch):
-    """A next step the model WRITES is just prose — nothing becomes a Decision."""
-    from app.agent_runtime import session_agent
+def test_model_prose_never_becomes_a_decision(client):
+    """A next step the model WRITES is just prose — nothing becomes a Decision.
+    v2.2 — on the streamed path (fake endpoint)."""
+    from tests.fake_model import FakeModel, text_turn
     task = _task(client, "Read-only follow-up suggestion")
-    client.post("/model-providers", json={
-        "name": "openai", "provider_type": "openai", "base_url": "https://api.openai.com/v1",
-        "model": "gpt-4o-mini", "api_key": "sk-TESTKEY-DONOTLEAK-0001"})
-    monkeypatch.setattr(session_agent, "SESSION_LOOP", lambda spec: {
-        "answer": "You should import the access logs next so I can confirm this.",
-        "skills_used": [], "skills_offered": [], "evidence_used": [], "evidence_gaps": [],
-        "tool_activity": []})
-    execution = client.post(f"/agent-tasks/{task['id']}/executions",
-                            json={"direction": "why 403?"}).json()["execution"]
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        row = client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}").json()
-        if row["status"] not in ("queued", "running"):
-            break
-        time.sleep(0.05)
+    with FakeModel([text_turn("You should import the access logs next so I can confirm this.")]) as model:
+        client.post("/model-providers", json={
+            "name": "fake", "provider_type": "openai-compatible", "base_url": model.base_url,
+            "model": "fake-model", "api_key": "not-a-real-key"})
+        execution = client.post(f"/agent-tasks/{task['id']}/executions",
+                                json={"direction": "why 403?"}).json()["execution"]
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            row = client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}").json()
+            if row["status"] not in ("queued", "running"):
+                break
+            time.sleep(0.05)
     assert row["status"] == "completed"
     assert client.get(f"/agent-tasks/{task['id']}/decisions").json()["decisions"] == []

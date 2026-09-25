@@ -77,7 +77,7 @@ def test_a_conversational_investigation_is_no_longer_an_empty_report():
     assert "head_bucket returned 200" in md
     assert "IAM identity policy not readable" in md
     # And the summary counts the work that happened, not just linked runs.
-    assert "3 conversational turn(s)" in md
+    assert "3 Direction(s)" in md
 
 
 def test_the_tool_breakdown_reports_failures():
@@ -177,10 +177,10 @@ def test_the_empty_session_renders_without_pretending():
     conn = _db()
     conn.commit()
     md = _render(conn)
-    assert "No conversational turns recorded" in md
+    assert "No Directions recorded" in md
     assert "No tool calls recorded" in md
     # Rendering must not raise on a session that has done nothing yet.
-    assert md.startswith("# Session Report:")
+    assert md.startswith("# Task report:")
 
 
 @pytest.mark.parametrize("section", [
@@ -201,5 +201,5 @@ def test_the_old_positional_signature_still_renders():
     md = session_report.render_session_report(
         dict(conn.execute("SELECT * FROM sessions WHERE id='s1'").fetchone()),
         repo.get_summary(conn, "s1") or {}, repo.list_runs(conn, "s1"), [], [])
-    assert md.startswith("# Session Report:")
-    assert "No conversational turns recorded" in md
+    assert md.startswith("# Task report:")
+    assert "No Directions recorded" in md

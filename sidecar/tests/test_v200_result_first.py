@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import time
 
-from app.agent_runtime import session_agent
+
+from .fake_model import FakeModel, text_turn, tool_turn
 
 MODEL_KEY = "sk-TESTKEY-DONOTLEAK-0200"
+FAKE_KEY = "sk-FAKEKEY-DONOTLEAK-0220"
 
 
 def _task(client, title="Why does acme-logs deny list"):
@@ -113,32 +115,34 @@ def test_migration_031_adds_the_conclusion_columns(client):
         conn.close()
 
 
-def test_a_recorded_conclusion_lands_on_the_message_the_work_result_and_the_log(client, monkeypatch):
+def _fake_provider(client, model):
+    client.post("/model-providers", json={
+        "name": "fake", "provider_type": "openai-compatible", "base_url": model.base_url,
+        "model": "fake-model", "api_key": FAKE_KEY})
+
+
+def test_a_recorded_conclusion_lands_on_the_message_the_work_result_and_the_log(client):
+    # v2.2 — driven on the streamed path production runs (fake endpoint), not
+    # the blocking SESSION_LOOP seam: the SDK really dispatches the tool call.
     task = _task(client)
-    _add_model_provider(client)
     conclusion = {"answer": "acme-logs denies list because the policy omits s3:ListBucket.",
                   "findings": [{"title": "Policy omits s3:ListBucket", "severity": "high",
                                 "detail": "Every ListObjectsV2 returns 403."}],
                   "next_steps": ["Draft a remediation plan"]}
-
-    def fake_loop(spec):
-        spec["activity"].append({"id": "c1", "tool": "head_bucket", "target": "acme-logs",
-                                 "result": "200", "ok": True, "status": "completed"})
-        return {"answer": "## Why\nThe policy omits ListBucket.", "skills_used": [],
-                "skills_offered": [], "evidence_used": [], "evidence_gaps": [],
-                "tool_activity": list(spec["activity"]), "plan_updates": [],
-                "conclusion": conclusion,
-                "turn_items": [{"kind": "tool", "id": "c1", "tool": "head_bucket"}]}
-
-    monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
-    ex = client.post(f"/agent-tasks/{task['id']}/executions",
-                     json={"direction": "why does acme-logs deny list?"}).json()["execution"]
-    assert _wait_settled(client, task["id"], ex["id"])["status"] == "completed"
+    with FakeModel([tool_turn("read_skill", {"name": "storageops-security-iam-policy"}),
+                    tool_turn("record_conclusion", conclusion),
+                    text_turn("## Why\nThe policy omits ListBucket.")]) as model:
+        _fake_provider(client, model)
+        ex = client.post(f"/agent-tasks/{task['id']}/executions",
+                         json={"direction": "why does acme-logs deny list?"}).json()["execution"]
+        row = _wait_settled(client, task["id"], ex["id"])
+        assert row["status"] == "completed", row.get("error")
 
     msg = [m for m in client.get(f"/sessions/{task['id']}").json()["messages"]
            if m["role"] == "assistant"][-1]
     assert msg["conclusion"] == conclusion
-    assert [a["tool"] for a in msg["tool_activity"]] == ["head_bucket"]
+    # The conclusion is runtime structure, never a tool row.
+    assert [a["tool"] for a in msg["tool_activity"]] == ["read_skill"]
 
     wrs = client.get(f"/agent-tasks/{task['id']}/work-results").json()["work_results"]
     assert wrs[-1]["conclusion"] == conclusion
@@ -146,22 +150,16 @@ def test_a_recorded_conclusion_lands_on_the_message_the_work_result_and_the_log(
     events = client.get(f"/agent-tasks/{task['id']}/events?after=0&limit=1000").json()["events"]
     recorded = [e["payload"] for e in events if e["event_type"] == "conclusion.recorded"]
     assert recorded == [conclusion]
-    assert MODEL_KEY not in str(msg) and MODEL_KEY not in str(events)
+    assert FAKE_KEY not in str(msg) and FAKE_KEY not in str(events)
 
 
-def test_no_conclusion_means_none_never_a_guessed_head(client, monkeypatch):
+def test_no_conclusion_means_none_never_a_guessed_head(client):
     task = _task(client, "Say hello")
-    _add_model_provider(client)
-
-    def fake_loop(spec):
-        return {"answer": "Hello. What should I check?", "skills_used": [], "skills_offered": [],
-                "evidence_used": [], "evidence_gaps": [], "tool_activity": [],
-                "plan_updates": [], "turn_items": []}
-
-    monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
-    ex = client.post(f"/agent-tasks/{task['id']}/executions",
-                     json={"direction": "hi"}).json()["execution"]
-    assert _wait_settled(client, task["id"], ex["id"])["status"] == "completed"
+    with FakeModel([text_turn("Hello. What should I check?")]) as model:
+        _fake_provider(client, model)
+        ex = client.post(f"/agent-tasks/{task['id']}/executions",
+                         json={"direction": "hi"}).json()["execution"]
+        assert _wait_settled(client, task["id"], ex["id"])["status"] == "completed"
     msg = [m for m in client.get(f"/sessions/{task['id']}").json()["messages"]
            if m["role"] == "assistant"][-1]
     assert msg["conclusion"] is None

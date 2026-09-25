@@ -53,6 +53,22 @@ SESSION_SAFETY_RULES = [
     "the cost of an enumeration the user asked for.",
 ]
 
+# v2.2: every tool is callable from the first step — the agent picks what the
+# Direction needs, with no unlock round-trip. Only a model whose context window
+# is too small to carry every schema (``limits.tools_gated``) keeps the grouped
+# ``load_tools`` disclosure, and the runtime — not the model — decides that.
+_TOOLS_PARAGRAPH = (
+    "Every tool is callable from your first step: orientation, probes, bucket "
+    "configuration, object forensics, account survey, evidence import, local "
+    "file analysis, skills and memory. Call only what the Direction needs.\n")
+_TOOLS_PARAGRAPH_GATED = (
+    "Your visible tools are the CORE set — orientation, the two probes every "
+    "investigation starts from, skills and memory. Specialist tools live in "
+    "groups you unlock with load_tools(group) when the Direction needs them; "
+    "they become callable on your very next step. Unlock only what you will "
+    "actually use. Groups:\n"
+    + tool_group_catalog() + "\n")
+
 INSTRUCTIONS = (
     "You are Storage Agent, an expert object-storage diagnostician. Investigate "
     "the user's Direction LIVE with your read-only tools — act autonomously, "
@@ -66,12 +82,7 @@ INSTRUCTIONS = (
     "any attached_files the user uploaded this turn, "
     "and a CATALOG of StorageOps expert skills — when one fits the problem, "
     "load its full method with read_skill(name) and apply it.\n"
-    "Your visible tools are the CORE set — orientation, the two probes every "
-    "investigation starts from, skills and memory. Specialist tools live in "
-    "groups you unlock with load_tools(group) when the Direction needs them; "
-    "they become callable on your very next step. Unlock only what you will "
-    "actually use. Groups:\n"
-    + tool_group_catalog() + "\n"
+    + _TOOLS_PARAGRAPH +
     "Choose and chain tools by their descriptions. If a survey/review returns "
     "status 'running' with a run_id, it continues in the background: don't "
     "re-run it — read it later with read_run_result(run_id).\n"
@@ -132,6 +143,8 @@ INSTRUCTIONS = (
     "no hidden reasoning. If a next step needs the user (more context, a "
     "decision), ask for it in that answer in your own words."
 )
+# The small-window variant: same text, the grouped disclosure paragraph instead.
+INSTRUCTIONS_GATED = INSTRUCTIONS.replace(_TOOLS_PARAGRAPH, _TOOLS_PARAGRAPH_GATED, 1)
 
 
 # The instruction set for the TOOL-LESS finalize pass (v0.57.0).

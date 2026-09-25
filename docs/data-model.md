@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v2.1.0 persistence reference.** Migration head **031** (v2.1 adds no migration) (`session_messages.conclusion` and `work_results.conclusion_json_sanitized` — the conclusion the model recorded with `record_conclusion`; 030 added `task_context_versions.summary_sanitized` / `summary_through_seq` for context compaction). Since v2.1 nothing writes a Decision: `task_decisions` is read-only history, restart recovery withdraws pending rows (`superseded`), the `app_settings.approval_policy` key (v1.12) is no longer read, stored `plan` turn items are dropped on read, and the typed context no longer carries `open_decisions`. `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI. v1.17 and v1.18 add no migration; v1.18 adds a `steer` kind to `session_messages.turn_items` (JSON, no schema change).
+> **Storage Agent v2.2.0 persistence reference.** Migration head **031** (v2.1 and v2.2 add no migration) (`session_messages.conclusion` and `work_results.conclusion_json_sanitized` — the conclusion the model recorded with `record_conclusion`; 030 added `task_context_versions.summary_sanitized` / `summary_through_seq` for context compaction). Since v2.1 nothing writes a Decision: `task_decisions` is read-only history, restart recovery withdraws pending rows (`superseded`), the `app_settings.approval_policy` key (v1.12) is no longer read, stored `plan` turn items are dropped on read, and the typed context no longer carries `open_decisions`. `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI. v1.17 and v1.18 add no migration; v1.18 adds a `steer` kind to `session_messages.turn_items` (JSON, no schema change). v2.2 adds two `execution_events` types (`direction.recorded`, `tool.progress`; no schema change), writes the Direction's `session_messages` user row when its execution starts, and stores a resume/retry Direction as the user wrote it.
 >
 > Product vocabulary is Agent Task / Direction / Execution / Work Result / Artifact (Decision is history only since v2.1). SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 
@@ -222,7 +222,7 @@ The current UI projects this record into Agent Task semantics rather than exposi
 
 ### `session_messages`
 
-Durable Direction and Work Result records:
+Durable Direction and Work Result records. Since v2.2 the user (Direction) row is written when its execution starts — `direction.recorded` names it — and the Work Result answers under that row (a FAILED execution removes the row it wrote when nothing answered it — `direction.withdrawn` — so a retry never shows the heading twice; stop and interruption keep it); a continuation answers under the original Direction row while it is still the task's latest message, otherwise it writes its own clean row:
 
 - `id`, `session_id`, `role`, `content`;
 - referenced run/evidence ids;
@@ -314,9 +314,17 @@ Execution is a durable object with a real lifecycle:
   `verify` | `revisit` (submit path; anything else is 422, v1.13) |
   `resume` | `retry` (a resumed user-cancelled execution, v1.13) |
   `steer_followup` (a late steer carried forward). No migration in v1.13:
-  head stays **030**.
+  head stays **030**. Since v2.2 a `resume` / `retry` execution's `direction`
+  is stored clean (the user's text, no `[resume]` / `[retry]` note; a legacy pre-2.2
+  note is stripped when a continuation is built); the continuation note and a bounded digest of
+  completed calls exist only in the model's copy, never in SQLite.
 - `execution_events` — append-only structured progress keyed by sequence
-  number: status transitions, tool started/completed, steer received/applied,
+  number: status transitions, `direction.recorded` (`{message_id,
+  continued?}` — the Direction's `session_messages` row written at execution
+  start, v2.2), `direction.withdrawn` (`{message_id}` — a failed execution
+  removed its unanswered row, v2.2), tool started/completed, `tool.progress` (`{id, tool, done,
+  total, unit}` counts from survey/import, throttled to ≤ 1 per call per
+  second plus the final one and ≤ 120 per call, v2.2), steer received/applied,
   conclusion recorded, work result recorded, context updated (pre-2.1 logs
   may also hold `approval.*`, `decision.resolved` and `plan.updated`). Sanitized,
   bounded payloads; answer deltas are never persisted here. Periodic (and

@@ -25,7 +25,7 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from .. import config
+from .. import config, progress
 from ..security.redaction import redact_text
 
 TOOL_NAME = "import_evidence"
@@ -97,7 +97,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         """Import a DISCOVERED evidence source (an S3 Inventory or server access logs) from the bucket onto this machine for deterministic analysis, then analyze it. This is the only data-moving action. It runs immediately, bounded server-side to at most 500 files / 256 MiB per call (larger requests are clamped; the result says when coverage is partial). Use list_imported_evidence / aggregate_imported_evidence afterwards. Args: source_type ('inventory' | 'access_log'); bucket_name (the bucket whose evidence to import); account_run_id (the survey that discovered it — optional when this task already surveyed the account); time_range_start/time_range_end (ISO-8601, required for access_log); max_files / max_bytes (optional, clamped)."""
         src = (source_type or "").strip().lower()
         target = f"{src}:{bucket_name}"
-        start(target)
+        call_id = start(target)
         if src not in SOURCE_TYPES:
             note(target, "invalid source_type", False)
             return "error: source_type must be 'inventory' or 'access_log'"
@@ -133,8 +133,15 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
                     "import — nothing was downloaded. Narrow the time range or prefix.")
         try:
             import_service.confirm(conn, plan_row["id"], approved_by="agent")
-            out = import_service.run(conn, plan_row["id"], task_id=session_id)
+            out = import_service.run(
+                conn, plan_row["id"], task_id=session_id,
+                on_file=progress.for_call(session_id, call_id, TOOL_NAME),
+                cancel_event=cancel_event)
         except import_service.ImportServiceError as exc:
+            if cancel_event is not None and cancel_event.is_set():
+                note(target, "stopped", False)
+                return ("status: stopped — the execution was stopped during the "
+                        "download; nothing was kept")
             note(target, "import failed", False)
             return f"error: the import failed — {exc.detail}"
         bucket = redact_text(str(plan_row.get("source_bucket") or bucket_name))[:200]

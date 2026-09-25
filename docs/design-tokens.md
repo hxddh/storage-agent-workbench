@@ -1,6 +1,6 @@
 # Design tokens
 
-> **Storage Agent v2.1.0.** Presentation contract for the native Agent
+> **Storage Agent v2.2.0.** Presentation contract for the native Agent
 > window. Tokens do not invent runtime state, progress, or capabilities.
 
 v1.09 replaces the v1.04–v1.08 warm/orange system with one achromatic surface
@@ -107,7 +107,12 @@ keyframe (opacity 0 → 1, a 3px settle) at `--duration-base` with `--ease-out`
 
 Loading uses **skeletons**, not spinners. In-flight tool rows use the
 `.working-mark` pulse and the *Working* shimmer, which is real activity — not a
-fake progress bar.
+fake progress bar. The one progress bar is real (v2.2): a running survey or
+import row whose runtime reported `tool.progress` counts carries a 2px hairline
+meter (`.native-tool-meter`, `role=progressbar`) — `--edge` track, `--gray-300`
+fill, no status colour — whose width eases with `--duration-base` /
+`--ease-out`; `prefers-reduced-motion` removes that transition. Its width is
+`done / total` of units actually finished, never time.
 
 ## Keyboard and focus
 

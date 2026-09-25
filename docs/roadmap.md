@@ -1,9 +1,13 @@
 # Roadmap
 
-> **Status: delivered in v2.1.0 — Native agent.** Nothing pauses the Task for
-> approval and the model keeps no plan: the one data-moving tool runs inside
-> hard server-side bounds, Stop is the brake, and work a restart interrupted
-> continues on its own (`docs/releases/2.1.0.md`). Before it, v2.0.0 —
+> **Status: delivered in v2.2.0 — Native agent depth.** Every tool is
+> callable from the first step, the Direction is durable from the moment its
+> execution starts, a continuation picks up where it stopped, and the long
+> bounded operations show real progress on their tool rows
+> (`docs/releases/2.2.0.md`). Before it, v2.1.0 — Native agent: nothing pauses
+> the Task for approval and the model keeps no plan: the one data-moving tool
+> runs inside hard server-side bounds, Stop is the brake, and work a restart
+> interrupted continues on its own (`docs/releases/2.1.0.md`). Before that, v2.0.0 —
 > Result-first Task: the Task opens on its latest Result — the conclusion the
 > model recorded with `record_conclusion`, then the full answer and detail rows
 > that expand in place — with the Work log below (`docs/releases/2.0.0.md`).
@@ -14,9 +18,25 @@
 > "native, simple, elegant, not a chat tool" and rebuilt the turn as a
 > document section (`docs/releases/1.19.0.md`).
 
-> **Baseline: Storage Agent v2.1.0.** The product invariant is unchanged:
+> **Baseline: Storage Agent v2.2.0.** The product invariant is unchanged:
 > **the Agent Task is the application.** The window is sidebar · title bar ·
 > one Task document · one Composer.
+
+## Native agent depth (shipped in v2.2.0)
+
+| Surface | v2.2 |
+| --- | --- |
+| Tools | every tool callable from the first step; the `load_tools` group gate only for context windows ≤ 16k tokens, decided by the runtime |
+| Direction | persisted when its execution starts (`direction.recorded`); a reload mid-run reads it from the document |
+| Continuation | resume/retry store the Direction as written; the model's copy carries a bounded, redacted digest of calls already completed |
+| Progress | survey and evidence import emit durable, throttled `tool.progress` counts; the running row reads *120 of 500 buckets* over a hairline meter |
+| Stop | ends an evidence import between files; nothing from it is kept |
+| Result | the latest Result stays while a newer Direction works; a one-Direction Task has no Work log (its work sits under the Result) |
+| Reveal | `revealInScroller()` replaces `scrollIntoView`; opening a detail row never moves the window or the Composer |
+| Execution detail | no empty findings section, no default kind label |
+| Resume banner | a quiet note; Resume is a default button beside Open Settings |
+| Report | Task vocabulary: *Task report* · *Goal* · *Analyses* · Directions |
+| Tests | runtime contracts on the streamed path (`test_v220_streamed_agent.py`) |
 
 ## Native agent (shipped in v2.1.0)
 
@@ -41,9 +61,8 @@
 | Work log | every turn below the Result; older answers fold to one line |
 | Tables | preview 8 rows, expand, sort by column; folded rows stay findable |
 
-Follow-ups: persist a Direction when its execution starts (so a reload
-mid-finish shows it at once); a figure hover layer; move the runtime tests
-off the blocking `SESSION_LOOP` seam.
+Follow-up: a figure hover layer. (Persisting a Direction when its execution
+starts shipped in v2.2.)
 
 ## Document-native window (shipped in v1.19.0)
 
@@ -66,8 +85,9 @@ off the blocking `SESSION_LOOP` seam.
 | Steer | a `steer` turn item (*Steered* line), never a tool row |
 | Frontend | `AgentTask` is the one composition root; `liveTasks` / `useTaskDocument` / `taskId`; Task-named `api/` adapters |
 
-Follow-up: move the runtime tests off the blocking `SESSION_LOOP` /
-`answer()` seam onto the streamed path production uses.
+Follow-up delivered in v2.2: the v2.x runtime contracts moved off the
+blocking `SESSION_LOOP` / `answer()` seam onto the streamed path production
+uses; persistence/unit tests keep the seam.
 
 ## Codex window (shipped)
 
@@ -100,9 +120,10 @@ invents a worker, plan, or submit path the Sidecar does not expose.
 ## Next
 
 No next version is planned in this file. Follow-up is ordinary defects against
-the native, result-first contract and the v2.1.0 security floor (read-only storage, bounded data movement). Non-goals remain:
+the native, result-first contract and the v2.2.0 security floor (read-only storage, bounded data movement). Non-goals remain:
 coding-Agent features, a second submit path, slash SKUs, suggestion cards, a
 painted engine grid, the historical Review sheet, artifact chips, a grey
 Direction block, Next Actions, a metrics footer, table pagination, a second
 Agent, a Settings price-table UI, a Verify control, a side panel, or a
-conclusion guessed from prose, an approval pause, or a plan card. Migration head **031**.
+conclusion guessed from prose, an approval pause, or a plan card. Open follow-up:
+a figure hover layer. Migration head **031**.

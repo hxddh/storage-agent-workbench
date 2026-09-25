@@ -409,7 +409,7 @@ def test_session_report_has_evidence_refs_and_no_secrets(client, sync_runs):
     s = _session(client)
     rid = _run_access_log_in_session(client, s["id"])
     report = client.get(f"/sessions/{s['id']}/report").json()["content"]
-    assert "# Session Report" in report
+    assert "# Task report" in report
     assert rid[:8] in report  # linked run referenced
     assert ACCESS not in report and MODEL_KEY not in report
 

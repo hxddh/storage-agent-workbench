@@ -212,6 +212,16 @@ export interface ToolActivity {
    * span of its rows rather than a sum of their durations. */
   started_at?: string | null;
   finished_at?: string | null;
+  /** Live progress of a long, bounded call (v2.2 `tool.progress`): units the
+   * engine actually finished — buckets surveyed, files downloaded. Only a
+   * running row carries it; the completed record replaces it. */
+  progress?: ToolProgress | null;
+}
+
+export interface ToolProgress {
+  done: number;
+  total: number;
+  unit: string;
 }
 
 /** One ordered transcript item recorded BEFORE the answer (v1.11). A `tool`

@@ -28,7 +28,7 @@ import uuid
 from typing import Any, Callable
 
 from . import turn_guard
-from .. import audit, db, run_service
+from .. import audit, db, progress, run_service
 from ..models.schemas import RunCreate
 from ..repositories import account_discovery as account_repo
 from ..repositories import cloud_providers as cloud_repo
@@ -78,7 +78,7 @@ _MAX_RESULT_WAIT = 60
 
 def _execute_run(conn: sqlite3.Connection, body: RunCreate,
                  turn_id: str | None = None, dedup_key: str | None = None,
-                 cancel_event: Any = None) -> str:
+                 cancel_event: Any = None, on_progress: Any = None) -> str:
     """Create + run a read-only run and return its id, bounded by a wall clock.
 
     Commits so ``run_service.run_sync`` (which uses its own connection) sees the
@@ -105,6 +105,10 @@ def _execute_run(conn: sqlite3.Connection, body: RunCreate,
         turn_guard.set_run(turn_id, dedup_key, run_id)
 
     done = threading.Event()
+    # v2.2 — the engine reports progress under its run id; bound to this call
+    # only while the call waits on it (a backgrounded run reports to no one).
+    if on_progress is not None:
+        progress.bind(run_id, on_progress)
 
     def _go() -> None:
         try:
@@ -119,6 +123,8 @@ def _execute_run(conn: sqlite3.Connection, body: RunCreate,
         if cancel_event is not None and cancel_event.is_set():
             break  # user stopped the turn — return the run's current status now
         done.wait(1.0)
+    if on_progress is not None:
+        progress.unbind(run_id)
     with db.transaction(conn):
         conn.commit()  # end any read snapshot so the re-read sees run_sync's writes
     return run_id
@@ -202,7 +208,7 @@ def build(
     # ambiguous the moment two calls share both.
     _ids: dict[int, str] = {}
 
-    def start(tool: str, target: str) -> None:
+    def start(tool: str, target: str) -> str:
         # Emit a START marker so the Execution's tool row shows "running <tool>…"
         # while the (slow) inline run executes. Only "completed" records persist.
         call_id = uuid.uuid4().hex
@@ -210,6 +216,7 @@ def build(
         if activity is not None:
             activity.append({"id": call_id, "tool": tool, "target": target[:80],
                              "status": "started"})
+        return call_id
 
     def note(tool: str, target: str, result: str, ok: bool = True) -> None:
         if activity is not None:
@@ -253,7 +260,7 @@ def build(
         # Was there a survey BEFORE this one? (Checked before running, so the
         # run we're about to create doesn't count itself.)
         had_prior = bool(account_repo.recent_run_ids_for_provider(conn, provider_id, 1))
-        start("survey_account", provider_name(provider_id))
+        call_id = start("survey_account", provider_name(provider_id))
         try:
             # Clamp to the RunCreate schema's ceiling (le=500, matching the
             # executor's HARD_MAX_BUCKETS). Clamping to 2000 handed the
@@ -264,7 +271,9 @@ def build(
                              user_prompt=_DEFAULT_PROMPTS["account_discovery"],
                              session_id=session_id, max_buckets=mb)
             run_id = _execute_run(conn, body, turn_id, f"account_discovery:{provider_id}",
-                                  cancel_event=cancel_event)
+                                  cancel_event=cancel_event,
+                                  on_progress=progress.for_call(session_id, call_id,
+                                                                "survey_account"))
             result = _run_result(conn, run_id, summary_cap)
             profile = account_repo.get_profile(conn, run_id)
         except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises

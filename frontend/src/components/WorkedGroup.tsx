@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CallDetail } from "./CallDetail";
 import { useI18n } from "../i18n";
-import type { ToolActivity } from "../types";
+import type { ToolActivity, ToolProgress } from "../types";
 import { Icon } from "./icons";
 import { fmtElapsed, useElapsed } from "../hooks/useElapsed";
 import { toolLabel } from "../lib/toolLabels";
@@ -76,6 +76,13 @@ export function groupSpanMs(items: ToolActivity[]): number | null {
 // older successful steps; failures are never folded away.
 const FOLD_AFTER = 8;
 const TAIL_WHEN_FOLDED = 6;
+
+/** "120 of 500 buckets" — counts the engine finished, never a guess (v2.2). */
+export function progressLabel(p: ToolProgress, t: (key: string, vars?: Record<string, string | number>) => string): string {
+  const key = `tool.unit.${p.unit}`;
+  const unit = t(key);
+  return t("tool.progress", { done: p.done, total: p.total, unit: unit === key ? p.unit : unit });
+}
 
 /** The Agent is working but has not emitted the first item yet. */
 export function WorkingRow({ label }: { label: string }) {
@@ -222,13 +229,29 @@ export function WorkedGroup({
                         <Icon name="alert" size={12} />
                       </span>
                     ) : null}
-                    {isRunning ? (
+                    {isRunning && a.progress ? (
+                      <span className="native-tool-result native-tool-progress" data-testid="tool-progress">
+                        {progressLabel(a.progress, t)}
+                      </span>
+                    ) : isRunning ? (
                       <span className="native-tool-result">{t("tool.running")}</span>
                     ) : (
                       <span className="native-tool-result" title={a.result}>{a.result}</span>
                     )}
                     {ms && !isRunning ? <span className="native-tool-ms" data-testid="trace-duration">{ms}</span> : null}
                   </div>
+                  {isRunning && a.progress ? (
+                    <div
+                      className="native-tool-meter"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={a.progress.total}
+                      aria-valuenow={a.progress.done}
+                      aria-label={progressLabel(a.progress, t)}
+                    >
+                      <span style={{ width: `${Math.round((100 * a.progress.done) / Math.max(1, a.progress.total))}%` }} />
+                    </div>
+                  ) : null}
                   {isOpen && <CallDetail taskId={taskId as string} callId={a.id as string} />}
                 </div>
               );

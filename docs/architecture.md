@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v2.1.0.** The Native agent: nothing pauses an Execution for approval and the model keeps no plan — the one data-moving tool (`import_evidence`) runs inside hard server-side bounds, Stop is the brake, and restart recovery continues interrupted work on its own. It sits on the v2.0.0 Result-first Task (a Task opens on its latest Result — the runtime-recorded conclusion, then the full answer and detail rows — with the Work log below), the v1.19.0 document and the v1.18.0 native core: one submit path, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **031** (v2.0 conclusion columns; v2.1 adds no migration; v1.12–v1.19 stayed at **030**).
+> **Current architecture baseline: Storage Agent v2.2.0.** Native agent depth: every tool is callable from the first step (the `load_tools` group gate applies only to context windows ≤ 16k tokens), the Direction is persisted when its execution starts (`direction.recorded`), a resume/retry keeps the Direction as written and gives the model a bounded digest of completed calls (`task_runtime/continuation.py`), and survey/import report real counts as durable `tool.progress` events (`app/progress.py`). It sits on the v2.1.0 Native agent: nothing pauses an Execution for approval and the model keeps no plan — the one data-moving tool (`import_evidence`) runs inside hard server-side bounds, Stop is the brake, and restart recovery continues interrupted work on its own. That sits on the v2.0.0 Result-first Task (a Task opens on its latest Result — the runtime-recorded conclusion, then the full answer and detail rows — with the Work log below), the v1.19.0 document and the v1.18.0 native core: one submit path, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **031** (v2.0 conclusion columns; v2.1 and v2.2 add no migration; v1.12–v1.19 stayed at **030**).
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -160,8 +160,9 @@ with lifecycle `queued` / `running` / `completed` / `failed` /
 it since v2.1), not a conversational turn owned by an HTTP request.
 
 Durable truth is the execution row plus its append-only structured event log
-(`execution_events`): status transitions, tool started/completed, steer
-received/applied, conclusion recorded, work result recorded (pre-2.1 logs may
+(`execution_events`): status transitions, direction recorded (v2.2), tool
+started/progress/completed (`tool.progress`, v2.2), steer received/applied,
+conclusion recorded, work result recorded (pre-2.1 logs may
 also hold `approval.*`, `decision.resolved` and `plan.updated`; they are
 ignored on read and replay). Execution
 progress is derived from these structured events — never inferred from
@@ -177,7 +178,7 @@ Tool rows are one collapsed *Worked for …* group between the model's commentar
 
 ### No approval (v2.1)
 
-Nothing pauses an Execution for the user. `import_evidence` (`agent_runtime/import_tools.py`, formerly `gated_tools.py`) plans and runs the import inside the running Execution without a Decision: the target must be an evidence source the task's account survey discovered; each call is clamped server-side to `AGENT_MAX_FILES` (500) / `AGENT_MAX_BYTES` (256 MiB) and the result says when coverage is partial; the call is refused with nothing downloaded when the data directory would keep less than 1 GiB free; the plan is confirmed and audited as `approved_by="agent"` (`approval_events` + `audit_logs`); the tool checks Stop before downloading. `survey_account` runs up to its 500-bucket hard cap (default 100) and reports coverage through `truncated`; the `survey_account_large` gate is gone.
+Nothing pauses an Execution for the user. `import_evidence` (`agent_runtime/import_tools.py`, formerly `gated_tools.py`) plans and runs the import inside the running Execution without a Decision: the target must be an evidence source the task's account survey discovered; each call is clamped server-side to `AGENT_MAX_FILES` (500) / `AGENT_MAX_BYTES` (256 MiB) and the result says when coverage is partial; the call is refused with nothing downloaded when the data directory would keep less than 1 GiB free; the plan is confirmed and audited as `approved_by="agent"` (`approval_events` + `audit_logs`); the tool checks Stop before downloading and, since v2.2, between files (`ImportStopped`; nothing is kept). `survey_account` runs up to its 500-bucket hard cap (default 100) and reports coverage through `truncated`; the `survey_account_large` gate is gone.
 
 `runtime.request_approval`, `runtime.on_decision_resolved`, `settle_waiting_executions` and `task_runtime/approval_policy.py` were removed. `task_decisions` rows are read-only history (`GET /agent-tasks/{id}/decisions`); restart recovery withdraws any left pending (`superseded`). The frontend has no approval card, no approval policy UI and paints nothing the runtime did not do.
 
@@ -187,7 +188,7 @@ A completed assistant-side task event is rendered as Work Result.
 
 Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables (long ones preview 8 rows, expand and sort in place; folded rows stay findable), code/config fragments, storage-specific artifacts, metrics, and provenance links into the detail rows.
 
-**v2.0 — result-first.** The latest Work Result is the **Result** at the top of the Task (`components/TaskResult.tsx`): the conclusion the model recorded with `record_conclusion` (`lib/conclusion.ts` accepts only the recorded shape; findings sort most severe first; the answer is one lead paragraph; next steps are a vertical list of asks that prefill the Composer) under one meta line derived from the trace (*Result · when · Evidence n · Gaps n · Tool calls n*; a calendar date after a week), the full answer, figures, and the detail rows (`components/TaskDetails.tsx`). The **Work log** below holds every turn; older answers fold to one line and the latest points up to the Result. Work-log Direction headings sit one step below the Result lead. The live turn (Direction · Execution · its conclusion from `conclusion.recorded`) renders above the Result. The Task opens at scrollTop 0 and never follows the end; *Jump to latest* is gone.
+**v2.0 — result-first.** The latest Work Result is the **Result** at the top of the Task (`components/TaskResult.tsx`): the conclusion the model recorded with `record_conclusion` (`lib/conclusion.ts` accepts only the recorded shape; findings sort most severe first; the answer is one lead paragraph; next steps are a vertical list of asks that prefill the Composer) under one meta line derived from the trace (*Result · when · Evidence n · Gaps n · Tool calls n*; a calendar date after a week), the full answer, figures, and the detail rows (`components/TaskDetails.tsx`). The **Work log** below holds every turn; older answers fold to one line and the latest points up to the Result. Work-log Direction headings sit one step below the Result lead. The live turn (Direction · Execution · its conclusion from `conclusion.recorded`) renders above the Result. Since v2.2 the latest Result stays while a newer Direction is at work (`lastWorkResult` returns the latest assistant message even when an unanswered Direction follows); the persisted Direction heads the work in progress (`liveDirectionRow`) and joins the Work log when its answer lands. A one-Direction Task has no Work log: its commentary and collapsed *Worked for …* line render under the Result, above the detail rows (`task-result-work`); Find still renders the ordinary log. Reveals go through `lib/scroll.ts` `revealInScroller()` — never `scrollIntoView`, which also scrolled the overflow-hidden window columns and left the Composer floating. The Task opens at scrollTop 0 and never follows the end; *Jump to latest* is gone.
 
 ### Detail rows (formerly Artifacts)
 
@@ -199,7 +200,7 @@ Streaming work is Execution; persisted completed output is Work Result. Once the
 
 - **Evidence** — persisted evidence/finding/activity truth, with provenance marks.
 - **Reports** — the durable Markdown Report artifact.
-- **Execution** — persisted executions; one opens as a document (header · *Worked for …* rows · findings · result).
+- **Execution** — persisted executions; one opens as a document (header · *Worked for …* rows · findings · result). No empty findings section and no default kind label: only Verify / revisit / resume / retry name their kind (v2.2).
 
 A row appears only when something is behind it (no empty placeholders). v2.1 removed the Plans and Baselines & Drift rows; those engines remain in the Sidecar and the Agent narrates what they return. There is no Overview surface, no tabbed application, no side panel or overlay, and no engine walls. It replaced the historical Review sheet and the v1.11–v1.19 Artifacts panel.
 
@@ -248,7 +249,10 @@ pre-2.1 `waiting` row, whose pending Decision is withdrawn as `superseded`) and,
 since v2.1, continues them automatically:
 `recovery.reconcile_interrupted_executions()` returns the ids it stamped and
 `recovery.resume_interrupted(ids)` submits one continuation each
-(`runtime.resume` → a new `kind=resume` execution with a `[resume]` note) —
+(`runtime.resume` → a new `kind=resume` execution; since v2.2 its stored
+Direction is the user's text as written, and `task_runtime/continuation.py`
+adds the continuation note plus a bounded digest of completed calls to the
+model's copy only) —
 never for an execution that was itself a continuation of interrupted work (no
 crash loop), and not while no model is usable. Only then does the Task show the
 explicit Resume action (`retry` when the prior execution was user-cancelled). Do not bypass this
@@ -270,7 +274,10 @@ The Sidecar owns:
 - the durable task runtime (`app/task_runtime/`): the execution supervisor,
   durable event log, first-class Work Results/Artifacts (Decisions as
   read-only history since v2.1), typed task context, and restart recovery with
-  automatic continuation;
+  automatic continuation (`continuation.py` builds the model's continuation
+  Direction, v2.2);
+- the live-progress bridge (`app/progress.py`, v2.2) from long bounded engines
+  to durable `tool.progress` events;
 - whitelisted storage tools;
 - deterministic run/analysis engines, including cost/lifecycle simulation,
   remediation-plan verify diffs, and baseline/Drift comparison
@@ -323,6 +330,15 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
   status only.
 - **Tool timing.** Tool records and `tool.*` events carry `started_at` /
   `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
+
+### 6.x Native agent depth (v2.2.0)
+
+- **Every tool from the first step.** `limits.tools_gated(model, explicit_window)` is true only when the resolved context window is ≤ 16,384 tokens (`_GATED_WINDOW_MAX`). Otherwise every group is open, `load_tools` is not registered, and `prompt.INSTRUCTIONS` says every tool is callable from the first step; a small-window model gets `prompt.INSTRUCTIONS_GATED` and the grouped `load_tools` disclosure. The runtime decides, never the model.
+- **Direction durable at start.** `task_runtime/runtime._record_direction` writes the user's `session_messages` row when the execution starts (after model credentials resolve) and appends `direction.recorded` {`message_id`, `continued?`}; `_finish` answers under that row instead of writing it. A reload mid-run reads the Direction from the document.
+- **Continuations pick up where they stopped.** `kind=resume` / `kind=retry` store the Direction clean. `task_runtime/continuation.py`: `prompt_direction()` adds the continuation note and a digest of completed calls from the stopped execution's durable `tool.completed` events (up to 3 links of its chain, ≤ 24 lines, ≤ 2 400 chars, oldest dropped first with an "… N earlier call(s) not listed" line, redacted) to the model's copy only; `clean_direction()` strips a legacy pre-2.2 note. A continuation whose original Direction row is still the task's latest message answers under it (`direction.recorded` with `continued: true`); otherwise it writes its own clean row.
+- **Live progress.** `app/progress.py` binds a key (a run id or tool call id) to the running call (`bind` / `unbind` / `report`; `attach_turn` / `detach_turn` / `for_call`). The survey engine (`runs/account_discovery_run._probe_buckets`) reports each finished bucket keyed by run id (`survey_account` binds it via `_execute_run(on_progress=...)` only while the call waits); `evidence/managed_import.download_and_combine(on_file=..., cancel_event=...)`, threaded through `import_service.run`, reports each downloaded file and raises `ImportStopped` on Stop between files. The runtime writes a durable, throttled `tool.progress` {`id`, `tool`, `done`, `total`, `unit`} (`buckets` | `files`) on a private connection: at most one per call per second plus the final one, ≤ 120 per call. Counts only. The frontend reducer `applyToolProgress` sets `ToolActivity.progress`; the running row shows the count and a 2px hairline meter (`role=progressbar`).
+- **Task report vocabulary.** `sessions/session_report.py` reads *Task report* · *Goal* · *Analyses* and Directions; the duplicate linked-runs appendix is gone.
+- **Streamed contracts.** `sidecar/tests/test_v220_streamed_agent.py` pins these on the streamed path (the real OpenAI Agents SDK against `tests/fake_model.py`); the v2.0 conclusion, v2.1 recovery, v1.12 compaction-before-the-loop and prose-never-a-Decision contracts moved there too. `SESSION_LOOP` remains for persistence/unit tests. Frontend: `frontend/src/components/v220.test.tsx`.
 
 ### 6.x Native agent (v2.1.0)
 
