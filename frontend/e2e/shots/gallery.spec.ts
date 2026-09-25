@@ -54,6 +54,13 @@ async function openTask(page: Page, title: string) {
 
 async function shoot(page: Page, name: string, theme: Theme, lang: Lang = "en") {
   const file = `${name}--${theme}--${lang}.png`;
+  // Photograph settled states: let every finite animation (sheet rise, scrim
+  // fade, reveals) finish; infinite ones (live pulse, activity bar) keep going.
+  await page.evaluate(() => Promise.all(
+    document.getAnimations()
+      .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+      .map((a) => a.finished.catch(() => undefined)),
+  ));
   await page.screenshot({ path: path.join(OUT, file), fullPage: false });
   taken.push({ name, theme, lang, file });
 }

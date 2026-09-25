@@ -308,8 +308,11 @@ test.describe("Escape with two overlays open", () => {
 
     await page.keyboard.press("Control+i");
     await expect(page.getByTestId("task-detail-report")).toBeVisible();
-    const paneBox = await page.getByTestId("task-sidepane").boundingBox();
-    expect(paneBox && paneBox.x + paneBox.width).toBeLessThanOrEqual(821);
+    // Measured once its slide-in has settled: the pane ends at the window edge.
+    await expect.poll(async () => {
+      const box = await page.getByTestId("task-sidepane").boundingBox();
+      return box ? Math.round(box.x + box.width) : Infinity;
+    }).toBeLessThanOrEqual(820);
     const overflow = await page.getByTestId("task-scroll").evaluate((el) => el.scrollWidth - el.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });

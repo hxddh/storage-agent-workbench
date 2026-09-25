@@ -201,14 +201,16 @@ export function CommandPalette({
   const groupLabel = (group: Cmd["group"]) => (group === "task" ? (q.trim() ? copy.tasks : copy.recent) : copy.actions);
 
   return (
-    <div className="fixed inset-0 z-palette flex items-start justify-center bg-scrim pt-[16vh] animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-palette flex items-start justify-center pt-[16vh]" onClick={onClose}>
+      {/* The scrim fades as a sibling: an opaque sheet must never inherit a fade. */}
+      <div className="absolute inset-0 bg-scrim animate-fade-in" aria-hidden />
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label={copy.placeholder}
         data-testid="command-palette"
-        className="native-palette w-[min(600px,92vw)] overflow-hidden"
+        className="native-palette relative w-[min(600px,92vw)] overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="native-palette-search">

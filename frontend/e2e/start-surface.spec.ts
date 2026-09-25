@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * The empty Agent task is a greeting and the Composer in the middle band of
+ * The empty Agent task is a greeting, the Composer and three starters in the middle band of
  * the work area — not a poster in the top corner, not a wizard. Assert
  * rendered geometry rather than styling utilities.
  */
@@ -17,13 +17,19 @@ test("the task start surface sits in the middle band with the Composer", async (
   const composer = main.getByTestId("agent-composer");
   await expect(composer).toBeVisible({ timeout: 30_000 });
   await expect(composer.getByRole("textbox")).toHaveAttribute("placeholder", /Describe the storage work to delegate/);
-  await expect(main.getByRole("heading", { level: 1 })).toHaveCount(0);
+  // v3.0 — the greeting is the page's one heading, with three starters that
+  // only fill the Composer.
+  await expect(main.getByRole("heading", { level: 1 })).toHaveCount(1);
+  await expect(main.getByTestId("start-starter")).toHaveCount(3);
   await expect(main.getByTestId("task-start")).toBeVisible();
   // The greeting rotates by hour of day; every variant is one question line.
   await expect(main.locator(".native-start-greeting")).toBeVisible();
   await expect(main.locator(".native-start-greeting")).toHaveText(/Agent/);
   await expect(page.getByTestId("delegate-suggestion-checkup")).toHaveCount(0);
   await expect(page.getByTestId("model-chip")).toBeVisible();
+  await main.getByTestId("start-starter").first().click();
+  await expect(composer.getByRole("textbox")).not.toHaveValue("");
+  await expect(main.getByTestId("task-start")).toBeVisible();
 
   const geometry = await main.evaluate((root) => {
     const box = root.querySelector('[data-testid="agent-composer"]') as HTMLElement;
