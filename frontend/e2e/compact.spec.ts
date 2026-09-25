@@ -54,7 +54,7 @@ test.describe("Compact context", () => {
       await page.keyboard.press("ControlOrMeta+k");
       const palette = page.getByTestId("command-palette");
       await expect(palette).toBeVisible();
-      await palette.getByRole("button", { name: /Compact context/ }).click();
+      await palette.getByRole("option", { name: /Compact context/ }).click();
 
       await expect.poll(() => surface.saw(/POST \/agent-tasks\/.+\/compact/), {
         timeout: 20_000,
@@ -85,6 +85,6 @@ test.describe("Compact context", () => {
     await page.keyboard.press("ControlOrMeta+k");
     const palette = page.getByTestId("command-palette");
     await expect(palette).toBeVisible();
-    await expect(palette.getByRole("button", { name: /Compact context/ })).toHaveCount(0);
+    await expect(palette.getByRole("option", { name: /Compact context/ })).toHaveCount(0);
   });
 });

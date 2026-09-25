@@ -3,10 +3,10 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 
-/** ⌘I: the detail rows under the Result open in place (v2.0). */
+/** ⌘I: the outputs open in the side pane beside the Result (v3.0). */
 async function openDetails(page: Page) {
   await page.keyboard.press("Control+i");
-  const open = page.getByTestId("task-scroll").locator('[data-testid^="task-detail-"][data-open="true"]');
+  const open = page.getByTestId("task-sidepane").locator('[data-testid^="task-detail-"][data-open="true"]');
   await expect(open).toHaveCount(1);
   return open;
 }
@@ -55,7 +55,7 @@ test.describe("Agent-native task shell", () => {
       await openDetails(page);
       await expect(task.getByTestId("task-details")).toBeVisible();
       await expect(page.getByTestId("agent-artifacts-panel")).toHaveCount(0);
-      await expect(page.getByRole("tab")).toHaveCount(0);
+      await expect(page.getByTestId("task-sidepane")).toHaveAttribute("data-kind", "report");
       await expect(task).toBeVisible();
     } finally {
       await cleanup();
@@ -123,7 +123,7 @@ test.describe("Agent-native task shell", () => {
     }
   });
 
-  test("the Report opens in place under the Result of the durable task", async ({ page }) => {
+  test("the Report opens in the side pane beside the Result of the durable task", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
@@ -132,7 +132,7 @@ test.describe("Agent-native task shell", () => {
       await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true", { timeout: 20_000 });
       await expect(page.getByTestId("report-artifact")).toBeVisible();
       await expect(page.getByTestId("task-scroll")).toBeVisible();
-      await expect(page.getByRole("tab")).toHaveCount(0);
+      await expect(page.getByTestId("task-sidepane")).toHaveAttribute("data-kind", "report");
       await expect(page.locator(".fixed.inset-0.z-floating")).toHaveCount(0);
       await expect(page.getByTestId("report-copy")).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("report-save")).toBeVisible();

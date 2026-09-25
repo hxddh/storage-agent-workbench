@@ -56,7 +56,7 @@ function kindCount(details: TaskDetailsState, kind: ArtifactKind): number | null
 export function TaskDetails({ hasResult }: { hasResult: boolean }) {
   const details = useTaskDetails();
   const labels = useKindLabels();
-  const { taskId, selection, open } = details;
+  const { taskId, selection, open, close } = details;
   if (!taskId) return null;
   const kinds = availableKinds(details, hasResult);
   if (kinds.length === 0) return null;
@@ -72,7 +72,7 @@ export function TaskDetails({ hasResult }: { hasResult: boolean }) {
             className="task-output"
             aria-pressed={active}
             data-testid={`task-detail-toggle-${kind}`}
-            onClick={() => open(kind)}
+            onClick={() => (active ? close() : open(kind))}
           >
             <Icon name={KIND_ICON[kind]} size={14} />
             <span>{labels[kind]}</span>
@@ -187,15 +187,15 @@ export function TaskInspector({ hasResult }: { hasResult: boolean }) {
         {kind === null ? (
           <p className="native-sidepane-empty">{c.execution.statuses.queued}</p>
         ) : kind === "evidence" ? (
-          <div data-testid="task-detail-evidence">
+          <div data-testid="task-detail-evidence" data-open="true">
             <EvidenceReview detail={detail} taskId={taskId} selectedFindingId={selection.findingId ?? selection.id} provenance={provenance} />
           </div>
         ) : kind === "report" ? (
-          <div data-testid="task-detail-report">
+          <div data-testid="task-detail-report" data-open="true">
             <ReportArtifact report={report} loading={reportLoading} error={error} />
           </div>
         ) : (
-          <div data-testid="task-detail-execution">
+          <div data-testid="task-detail-execution" data-open="true">
             {openExecution ? (
               <div className="task-detail-document">
                 <div className="px-3 pt-3">

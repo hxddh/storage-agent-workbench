@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v2.2.0.** Native agent depth: every tool is callable from the first step (the `load_tools` group gate applies only to context windows ≤ 16k tokens), the Direction is persisted when its execution starts (`direction.recorded`), a resume/retry keeps the Direction as written and gives the model a bounded digest of completed calls (`task_runtime/continuation.py`), and survey/import report real counts as durable `tool.progress` events (`app/progress.py`). It sits on the v2.1.0 Native agent: nothing pauses an Execution for approval and the model keeps no plan — the one data-moving tool (`import_evidence`) runs inside hard server-side bounds, Stop is the brake, and restart recovery continues interrupted work on its own. That sits on the v2.0.0 Result-first Task (a Task opens on its latest Result — the runtime-recorded conclusion, then the full answer and detail rows — with the Work log below), the v1.19.0 document and the v1.18.0 native core: one submit path, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **031** (v2.0 conclusion columns; v2.1 and v2.2 add no migration; v1.12–v1.19 stayed at **030**).
+> **Current architecture baseline: Storage Agent v3.0.0.** Design system v3 / Refined native — a frontend-only redesign: a five-step type scale, a calibrated neutral ladder, one restrained indigo accent (status stays a separate palette), one component library (`components/ui.tsx`, styled in `agent/native-components.css`), the Task's durable outputs in a resizable, closable side pane (`TaskInspector`) instead of rows that expand in place, an empty start with three Composer-filling starters, redesigned figures with a Chart/Table toggle and the `--viz-1…6` palette, and a Recent · Actions palette. The Sidecar runtime, API, security floor and migrations are unchanged. It sits on v2.2.0 Native agent depth: every tool is callable from the first step (the `load_tools` group gate applies only to context windows ≤ 16k tokens), the Direction is persisted when its execution starts (`direction.recorded`), a resume/retry keeps the Direction as written and gives the model a bounded digest of completed calls (`task_runtime/continuation.py`), and survey/import report real counts as durable `tool.progress` events (`app/progress.py`). It sits on the v2.1.0 Native agent: nothing pauses an Execution for approval and the model keeps no plan — the one data-moving tool (`import_evidence`) runs inside hard server-side bounds, Stop is the brake, and restart recovery continues interrupted work on its own. That sits on the v2.0.0 Result-first Task (a Task opens on its latest Result — the runtime-recorded conclusion, then the full answer and detail rows — with the Work log below), the v1.19.0 document and the v1.18.0 native core: one submit path, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **031** (v2.0 conclusion columns; v2.1, v2.2 and v3.0 add no migration; v1.12–v1.19 stayed at **030**).
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -71,18 +71,18 @@ The packaged Tauri launcher chooses a free localhost port, generates a per-launc
 - durable task list refresh;
 - active task identity;
 - task lifecycle actions (create/rename/delete);
-- the window title bar (task name + real task state; the sidebar toggle and New task when the sidebar is collapsed) and the OS window title;
+- the window title bar — a three-column grid: sidebar toggle (plus New task when the sidebar is collapsed) · task name + real state pill, centred · the side-pane toggle (`titlebar-sidepane`), with a thin indeterminate progress hairline while working (`titlebar-progress`) — and the OS window title;
 - the Settings dialog, command palette, and shortcuts sheet;
 - **one command handler** (`runCommand`) that the keyboard, the palette and the native menu all dispatch through, with a short de-duplication window so a menu accelerator and a keydown for one keypress are one command;
 - the shell bridge (`hooks/useNativeAgent.ts` → `useNativeShell`): menu commands, deep links, the summon shortcut, notifications on background settle (`useSettleNotifications`, driven by the per-task run store), and the window title. A plain browser is a no-op.
 
-The window it composes is exactly: `AgentTaskNavigation` (sidebar) · title bar · `AgentShell` → `AgentTask`. There is no activity bar, no status bar, no Details/inspector column. On the packaged macOS shell the overlay title bar leaves room for the native traffic lights (`hasNativeTrafficLights`).
+The window it composes is exactly: `AgentTaskNavigation` (sidebar) · title bar · `AgentShell` → `AgentTask`, plus (v3.0) the one closable side pane `TaskInspector` beside the document when an output is open. There is no activity bar, no status bar, no permanent inspector column. On the packaged macOS shell the overlay title bar leaves room for the native traffic lights (`hasNativeTrafficLights`).
 
 Legacy frontend adapters from earlier releases were physically removed. Do not recreate an intermediate application shell merely to mirror backend entity names.
 
 ### 3.2 `AgentTaskNavigation`: the sidebar
 
-`frontend/src/agent/AgentTaskNavigation.tsx` owns the sidebar: a window chrome row (drag region + collapse toggle), **New task**, one chronological task list, and **Settings**.
+`frontend/src/agent/AgentTaskNavigation.tsx` owns the sidebar: a window chrome row (drag region + collapse toggle), a raised **New task** button with its key caps, an in-place title search (v3.0; filters the list, Esc clears), one chronological task list (the selected row in the accent tint), and **Settings**.
 
 Each task row combines:
 
@@ -91,7 +91,7 @@ Each task row combines:
 - a state mark (Ready paints nothing; Working pulses; Needs attention is warn-coloured);
 - relative time on hover, and Rename / Delete behind one More control.
 
-The list is chronological by `updated_at`, grouped by day (`dayGroups()`: Today, Yesterday, then dated headers). Search, pin, duplicate, archive and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
+The list is chronological by `updated_at`, grouped by day (`dayGroups()`: Today, Yesterday, then dated headers). Pin, duplicate, archive and database counters are not painted; the one search field filters titles in place (v3.0). The New task control is a button that shows its key caps (v3.0). Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
 
 The Sidecar `/agent-tasks` projection provides durable lifecycle truth so state survives reload/restart even when browser-local runtime state is gone. Since v2.1 no row carries `requires_decision` and no task is derived *needs decision*.
 
@@ -99,14 +99,14 @@ The Sidecar `/agent-tasks` projection provides durable lifecycle truth so state 
 
 `frontend/src/agent/AgentShell.tsx` owns the active task environment:
 
-- which detail row under the Result is expanded, and the document open in it (`TaskDetailsContext`; v2.0 — formerly the `agent-artifacts-panel` right split, now retired), opened from the document or ⌘I;
-- the durable outputs those rows list (`useAgentTaskProjection`), re-read when an execution settles.
+- which output the side pane shows, and the document open in it (`TaskDetailsContext`, selection state from `agent/model.ts`; v3.0 — the side pane replaced v2.0's rows that expanded in place, which had replaced the `agent-artifacts-panel` right split), opened from the outputs bar, the title-bar toggle, tool rows, provenance marks, the palette or ⌘I;
+- the durable outputs the pane lists (`useAgentTaskProjection`), re-read when an execution settles.
 
 There is no task header inside the document, no live execution strip, and no second presentation mode.
 
 `AgentShell` receives `taskContent: ReactNode`. Its primary area is always the Agent Task.
 
-The detail rows are part of the Task document. Expanding one does not create another task, another lifecycle, or another Agent input.
+The side pane belongs to the Task. Opening it does not create another task, another lifecycle, or another Agent input.
 
 ### 3.4 `AgentTask`: public task boundary
 
@@ -116,7 +116,7 @@ It composes (through `useTaskDocument`, `useLiveTask`, `useTurnRunner`, `useTask
 
 - durable task document loading and paging;
 - task draft state;
-- the one Composer, and the empty start (greeting + Composer in the middle band);
+- the one Composer, and the empty start (`components/TaskStart.tsx`, v3.0: the greeting as the page's one `<h1>`, one sub line, the Composer, and three starters — diagnose access · survey the account · analyze an access log — that only fill the Composer, never submit);
 - submission/streaming integration;
 - steering/stopping/resuming;
 - attachments (type inferred from filename);
@@ -128,7 +128,7 @@ Historical `session` terminology stays inside the `api/` adapters' URLs and wire
 
 ### 3.5 One Composer
 
-`frontend/src/components/Composer.tsx` is the only Agent input. It is `+` attach + textarea + model chip (`ModelChip`, backed by `/model-providers`; switching activates a provider server-side) + Delegate / Steer / Stop. Usage (`ContextMeter`) lives in the model menu, not on the Composer bar. Shortcuts exist; they are not painted as a persistent legend on the input. Attachments are keyed by task id. While busy, a present file labels the primary action Delegate (queued Direction), never Steer.
+`frontend/src/components/Composer.tsx` is the only Agent input. It is a docked, bordered card with an accent focus ring (v3.0): paperclip attach + textarea + model chip (`ModelChip`, backed by `/model-providers`; switching activates a provider server-side; *Set up a model…* when none is configured) + Delegate / Steer / Stop. Usage (`ContextMeter`) lives in the model menu, not on the Composer bar. Shortcuts exist; they are not painted as a persistent legend on the input. Attachments are keyed by task id. While busy, a present file labels the primary action Delegate (queued Direction), never Steer.
 
 ```text
 no active execution  -> Delegate (round ↑)
@@ -137,11 +137,11 @@ upload preparation   -> preparing/working state
 runtime unavailable  -> truthful disabled/actionable state
 ```
 
-A detail row or a deep artifact must never mount a hidden second composer.
+The side pane or a deep artifact must never mount a hidden second composer.
 
 ### 3.6 Presentation layers
 
-`frontend/src/index.css` holds the tokens (achromatic ladder, ink primary, status colours, type/radius/motion). `frontend/src/agent/native-shell.css` styles the window, sidebar and title bar. `frontend/src/agent/native-document.css` styles the Task document: the Result (conclusion, findings, next steps, detail rows), Work log turns (Direction heading, commentary, *Worked for …* group, folded answers), banners, Composer, empty start; things that open in place ease in with the `reveal-in` keyframe (removed under `prefers-reduced-motion`). There are no other presentation layers.
+`frontend/src/index.css` holds the design system v3 tokens (v3.0: calibrated cool-neutral ladder, one indigo accent, a separate status palette, the categorical `--viz-1…6`, the five-step type scale, 4px spacing, three radii, two shadows, three motion durations). `frontend/src/components/ui.tsx` is the component library (Button, IconButton, Kbd, Badge, StatusDot, SectionLabel, Segmented, Field / TextInput / Select), styled only by the `ui-*` classes in `frontend/src/agent/native-components.css`; surfaces compose these controls instead of restyling them. `frontend/src/agent/native-shell.css` styles the window, sidebar, title bar, side pane (`.native-sidepane`; an overlay below 1100px) and Settings. `frontend/src/agent/native-document.css` styles the Task document: the Result (badge, conclusion, findings, next steps, outputs bar), Work log turns (Direction heading, commentary, *Worked for …* group, folded answers), banners, Composer, empty start and figures; things that open in place ease in with the `reveal-in` keyframe and sheets rise without fading (motion removed under `prefers-reduced-motion`). There are no other presentation layers.
 
 ## 4. Task document primitives
 
@@ -174,7 +174,7 @@ presentation state. Losing it (reload, task switch, second window) loses
 nothing — the client reattaches by replaying the durable event log from any
 sequence number.
 
-Tool rows are one collapsed *Worked for …* group between the model's commentary segments (v1.11 transcript turn); its time is the group's wall clock, not a sum of durations (v1.12). In the live work in progress every group stays open until the turn settles (v2.1). A compaction is one muted marker line. There is no plan card (the `update_plan` tool was removed in v2.1). The Execution detail row exposes sanitized Execution detail — built from `task_executions` + the durable `execution_events` log + one sanitized `tool_calls` row on demand, never a `/runs` stream (v1.12) — without turning the Task into a permanent trace console.
+Tool rows are one collapsed *Worked for …* group between the model's commentary segments (v1.11 transcript turn); its time is the group's wall clock, not a sum of durations (v1.12). In the live work in progress every group stays open until the turn settles (v2.1). A compaction is one muted marker line. There is no plan card (the `update_plan` tool was removed in v2.1). Execution detail in the side pane (v3.0) exposes sanitized Execution detail — built from `task_executions` + the durable `execution_events` log + one sanitized `tool_calls` row on demand, never a `/runs` stream (v1.12) — without turning the Task into a permanent trace console.
 
 ### No approval (v2.1)
 
@@ -186,13 +186,13 @@ Nothing pauses an Execution for the user. `import_evidence` (`agent_runtime/impo
 
 A completed assistant-side task event is rendered as Work Result.
 
-Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables (long ones preview 8 rows, expand and sort in place; folded rows stay findable), code/config fragments, storage-specific artifacts, metrics, and provenance links into the detail rows.
+Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables (long ones preview 8 rows, expand and sort in place; folded rows stay findable), code/config fragments, storage-specific artifacts, metrics, and provenance links into the side pane.
 
-**v2.0 — result-first.** The latest Work Result is the **Result** at the top of the Task (`components/TaskResult.tsx`): the conclusion the model recorded with `record_conclusion` (`lib/conclusion.ts` accepts only the recorded shape; findings sort most severe first; the answer is one lead paragraph; next steps are a vertical list of asks that prefill the Composer) under one meta line derived from the trace (*Result · when · Evidence n · Gaps n · Tool calls n*; a calendar date after a week), the full answer, figures, and the detail rows (`components/TaskDetails.tsx`). The **Work log** below holds every turn; older answers fold to one line and the latest points up to the Result. Work-log Direction headings sit one step below the Result lead. The live turn (Direction · Execution · its conclusion from `conclusion.recorded`) renders above the Result. Since v2.2 the latest Result stays while a newer Direction is at work (`lastWorkResult` returns the latest assistant message even when an unanswered Direction follows); the persisted Direction heads the work in progress (`liveDirectionRow`) and joins the Work log when its answer lands. A one-Direction Task has no Work log: its commentary and collapsed *Worked for …* line render under the Result, above the detail rows (`task-result-work`); Find still renders the ordinary log. Reveals go through `lib/scroll.ts` `revealInScroller()` — never `scrollIntoView`, which also scrolled the overflow-hidden window columns and left the Composer floating. The Task opens at scrollTop 0 and never follows the end; *Jump to latest* is gone.
+**v2.0 — result-first.** The latest Work Result is the **Result** at the top of the Task (`components/TaskResult.tsx`): the conclusion the model recorded with `record_conclusion` (`lib/conclusion.ts` accepts only the recorded shape; findings sort most severe first; the answer is one lead paragraph; next steps are a vertical list of asks that prefill the Composer) under one meta line derived from the trace (*Result · when · Evidence n · Gaps n · Tool calls n*; a calendar date after a week), the full answer, figures, and (since v3.0) the outputs bar (`components/TaskDetails.tsx`). v3.0 restyles it: an accent *Result* badge beside the meta line, the answer at 20px, findings as a bordered list with severity badges, next steps as suggestion cards, and the full answer under a section label. The **Work log** below holds every turn; older answers fold to one line and the latest points up to the Result. Work-log Direction headings sit one step below the Result lead. The live turn (Direction · Execution · its conclusion from `conclusion.recorded`) renders above the Result. Since v2.2 the latest Result stays while a newer Direction is at work (`lastWorkResult` returns the latest assistant message even when an unanswered Direction follows); the persisted Direction heads the work in progress (`liveDirectionRow`) and joins the Work log when its answer lands. A one-Direction Task has no Work log: its commentary and collapsed *Worked for …* line render under the Result, above the outputs bar (`task-result-work`); Find still renders the ordinary log. Reveals go through `lib/scroll.ts` `revealInScroller()` — never `scrollIntoView`, which also scrolled the overflow-hidden window columns and left the Composer floating. The Task opens at scrollTop 0 and never follows the end; *Jump to latest* is gone.
 
-### Detail rows (formerly Artifacts)
+### Side pane (v3.0; formerly detail rows, formerly Artifacts)
 
-`frontend/src/components/TaskDetails.tsx` renders the Task's durable outputs as rows under the Result (v2.0; the `agent-artifacts-panel` right split is retired). Each row expands in place; ⌘I opens the first available one; tool rows, provenance marks and the palette open the matching row:
+`frontend/src/components/TaskDetails.tsx` exports `TaskDetails` — the outputs bar under the Result (one button per available output, with its count) — and `TaskInspector`, the side pane on the right of the document. The pane has one tab per available output; ⌘I, the title-bar toggle, tool rows, provenance marks and the palette open it on the matching output; the close button, Esc and ⌘I close it; focus moves into it when it opens. It is resizable by dragging its left edge (352–880px; double-click resets; the width is kept per device in `localStorage` under `saw.sidepaneWidth`) and below 1100px it overlays the document. v2.0's rows that expanded in place and the v1.11–v1.19 `agent-artifacts-panel` right split are retired. Outputs:
 
 ```ts
 "evidence" | "report" | "execution"
@@ -200,9 +200,9 @@ Streaming work is Execution; persisted completed output is Work Result. Once the
 
 - **Evidence** — persisted evidence/finding/activity truth, with provenance marks.
 - **Reports** — the durable Markdown Report artifact.
-- **Execution** — persisted executions; one opens as a document (header · *Worked for …* rows · findings · result). No empty findings section and no default kind label: only Verify / revisit / resume / retry name their kind (v2.2).
+- **Execution** — persisted executions; one opens inside the pane with one Back as a document (header · *Worked for …* rows · findings · result). No empty findings section and no default kind label: only Verify / revisit / resume / retry name their kind (v2.2).
 
-A row appears only when something is behind it (no empty placeholders). v2.1 removed the Plans and Baselines & Drift rows; those engines remain in the Sidecar and the Agent narrates what they return. There is no Overview surface, no tabbed application, no side panel or overlay, and no engine walls. It replaced the historical Review sheet and the v1.11–v1.19 Artifacts panel.
+An output (button and tab) appears only when something is behind it (no empty placeholders). v2.1 removed the Plans and Baselines & Drift entries; those engines remain in the Sidecar and the Agent narrates what they return. There is no Overview surface, no overlay dialog, no tabbed application outside the pane, and no engine walls.
 
 ## 5. Runtime state and task concurrency
 
@@ -331,6 +331,18 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 - **Tool timing.** Tool records and `tool.*` events carry `started_at` /
   `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
 
+### 6.x Design system v3 (v3.0.0)
+
+Frontend only; no Sidecar, API, security or migration change.
+
+- **Tokens.** Five type sizes (`--text-2xs` 11 · `--text-xs` 13 · `--text-prose` 15 · `--text-xl` 20 · `--text-2xl` 28; older names are aliases); a cool-neutral ladder with every text step AA on `--hover`; one accent (`--accent`, `--accent-soft`, `--accent-dim`, `--accent-fg`, `--accent-text`) for the primary action, selection, focus, links and live progress; status apart; `--space-1…12` on a 4px grid; radii 6 / 10 / 14; `--shadow-elev` / `--shadow-pop`; `--duration-fast` 120 · `--duration-base` 200 · `--duration-slow` 280ms. See `design-tokens.md`.
+- **Component library.** `components/ui.tsx` + `agent/native-components.css` (`ui-btn` variants primary / secondary / ghost / selected / danger, `ui-icon-btn`, `ui-kbd`, `ui-badge`, `ui-dot`, `ui-label`, `ui-segmented`, `ui-field` / `ui-input`); 16px icons at 1.5 stroke.
+- **Side pane.** `TaskInspector` (above); the title bar gains `titlebar-sidepane` and the working hairline.
+- **Empty start.** `TaskStart` with three starters that only fill the Composer.
+- **Figures.** `viz/marks.tsx` `ChartFrame`: full-width card, title, Chart/Table toggle (every figure has a table), responsive SVG with y-axis ticks, dashed recessive gridlines and a baseline, 4px rounded data-ends, 2px surface gaps between stacked segments, a per-column hover tooltip, a legend for ≥ 2 series, ink text, series in `--viz-1…6`.
+- **Palette.** `CommandPalette` is a combobox + listbox: Recent (up to 8 tasks at rest) · Actions, one fuzzy ranking with matched letters marked, a key-hint footer. The v1.16 engine catalog is gone.
+- **Settings.** Compact preference panes (accent-selected nav, grouped rows, one pane title style); General's safety floor is three points (vault · read-only · bounded imports + Stop).
+
 ### 6.x Native agent depth (v2.2.0)
 
 - **Every tool from the first step.** `limits.tools_gated(model, explicit_window)` is true only when the resolved context window is ≤ 16,384 tokens (`_GATED_WINDOW_MAX`). Otherwise every group is open, `load_tools` is not registered, and `prompt.INSTRUCTIONS` says every tool is callable from the first step; a small-window model gets `prompt.INSTRUCTIONS_GATED` and the grouped `load_tools` disclosure. The runtime decides, never the model.
@@ -345,13 +357,13 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 - **No approval.** `agent_runtime/import_tools.py` replaces `gated_tools.py`: `import_evidence` runs without a Decision inside hard bounds (discovered source only; `AGENT_MAX_FILES` 500 / `AGENT_MAX_BYTES` 256 MiB per call, clamped; refused below 1 GiB free disk; audited `approved_by="agent"`; checks Stop before downloading). `survey_account` runs to its 500-bucket hard cap. `runtime.request_approval`, `on_decision_resolved`, `settle_waiting_executions`, `approval_policy.py`, the approval-policy and decision resolve routes, `pending_decisions`, `requires_decision`, `open_decisions` and the `needs_decision` derivation are gone.
 - **No plan.** `update_plan`, `plan_tools.py`, `plan.updated` and `plan` turn items are gone.
 - **Work resumes itself.** Restart recovery continues each interrupted execution once (`recovery.resume_interrupted`), never a continuation of a continuation, and falls back to the manual Resume banner when no model is usable.
-- **Native reading.** Tool rows are localized verbs (`lib/toolLabels.ts`); the Result has one meta line and a lead-paragraph answer; next steps are a list of asks; live groups stay open until the turn settles; the title bar centres name and state as one group; reveals use `reveal-in` and honour `prefers-reduced-motion`; the native menu's ⌘I item reads *Show Details*. Pinned by `sidecar/tests/test_v210_native_agent.py` and the frontend architecture test "never pauses the Task for approval and never paints a plan (v2.1)".
+- **Native reading.** Tool rows are localized verbs (`lib/toolLabels.ts`); the Result has one meta line and a lead-paragraph answer; next steps are a list of asks; live groups stay open until the turn settles; the title bar centres name and state as one group; reveals use `reveal-in` and honour `prefers-reduced-motion`; the native menu's ⌘I item reads *Show Details* (since v3.0 it opens or closes the side pane). Pinned by `sidecar/tests/test_v210_native_agent.py` and the frontend architecture test "never pauses the Task for approval and never paints a plan (v2.1)".
 
 ### 6.x Result-first Task (v2.0.0)
 
 - **Runtime-recorded conclusion.** `agent_runtime/conclusion_tools.py` — the core, budget-exempt `record_conclusion(answer, findings, next_steps)` tool; bounded and redacted, last call wins, never a tool row. `finalize` carries it as `contract["conclusion"]`; `task_runtime/runtime.py` appends `conclusion.recorded` and persists it on the assistant message and the durable Work Result (migration 031).
 - **Result first.** The Task page is banners → work in progress → Result (conclusion · grounding · full answer · figures · detail rows) → Work log. It opens at the top; nothing follows the end.
-- **Details in place.** The Artifacts side panel is retired; `TaskDetailsContext` (AgentShell) + `TaskDetails` render Evidence · Report · Execution (v2.0 also had Plans · Baselines; v2.1 removed them) as rows that expand in place.
+- **Details in place.** The Artifacts side panel is retired; `TaskDetailsContext` (AgentShell) + `TaskDetails` render Evidence · Report · Execution (v2.0 also had Plans · Baselines; v2.1 removed them) as rows that expand in place (v3.0 moved them into the side pane).
 - **Tables that read.** Long tables preview 8 rows and expand; headers sort (sizes and numbers numerically); folded rows stay in the DOM and an open Find shows them.
 
 ### 6.x Document-native window (v1.19.0)
@@ -575,14 +587,15 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 - the sidebar as one chronological title list with Rename / Delete only;
 - one Agent input: attach + text + model chip + Delegate / Steer / Stop, with the contract placeholders;
 - Direction / Execution (*Worked for …* group) / Work Result as one document without chat chrome;
-- the empty start as greeting + Composer, no wizard or SKU catalog;
+- the empty start as greeting `<h1>` + sub line + Composer + three Composer-filling starters, no wizard or SKU catalog (v3.0);
 - no approval pause and no plan card (v2.1);
-- detail rows under the Result limited to Evidence / Report / Execution detail — never a side panel;
-- Settings as a dialog of general (with the read-only safety floor statement) + model + storage + skills & bridges;
+- the outputs bar under the Result and the one resizable, closable side pane, limited to Evidence / Report / Execution detail (v3.0);
+- Settings as a dialog of general (with the read-only safety floor as three points) + model + storage + skills & bridges;
 - sequence-only stream recovery and settled-execution catch-up;
 - task-native keyboard contracts;
 - deterministic figures from provenance;
-- tokens: achromatic ladder, ink primary, hairline depth, measure/track.
+- tokens: neutral ladder, one indigo accent (v3.0; formerly an ink primary), hairline depth, measure/track;
+- the palette without the engine catalog (v3.0).
 
 ### Negative production-source guard
 
@@ -603,7 +616,7 @@ Playwright validates real Sidecar-backed behavior including:
 - evidence/file analysis;
 - bounded evidence import without an approval pause, and automatic continuation after restart;
 - task navigation/drafts/paging;
-- the result-first page (conclusion, detail rows, Report) and landing at the top;
+- the result-first page (conclusion, side pane, Report) and landing at the top;
 - localization, accessibility, contrast, narrow layouts;
 - credential sanitization.
 

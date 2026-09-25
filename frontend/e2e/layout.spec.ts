@@ -172,7 +172,7 @@ test.describe("task navigation at a small window", () => {
     await expect(navigation(page)).toHaveAttribute("data-collapsed", "true");
     await page.keyboard.press("ControlOrMeta+k");
     const palette = page.getByTestId("command-palette");
-    const box = palette.getByRole("textbox");
+    const box = palette.getByRole("combobox");
     await expect(box).toBeVisible();
     await box.fill(title.slice(0, 18));
     await palette.getByText(title).first().click();

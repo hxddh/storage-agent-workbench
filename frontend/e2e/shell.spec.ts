@@ -238,7 +238,7 @@ test.describe("Escape with two overlays open", () => {
     await expect(settings).toBeVisible();
 
     await page.keyboard.press("ControlOrMeta+k");
-    const palette = page.getByRole("dialog").filter({ has: page.getByRole("textbox") });
+    const palette = page.getByRole("dialog").filter({ has: page.getByRole("combobox") });
     await expect(palette).toBeVisible();
 
     await page.keyboard.press("Escape");
@@ -249,31 +249,33 @@ test.describe("Escape with two overlays open", () => {
     await expect(settings).toHaveCount(0);
   });
 
-  test("⌘I expands the detail rows in place; Escape leaves them alone (v2.0)", async ({ page }) => {
+  test("⌘I opens the side pane beside the Result; Escape and ⌘I close it (v3.0)", async ({ page }) => {
     const { title } = seedSession(2);
     await seedFreshApp(page);
     await page.goto("/");
     await page.getByText(title, { exact: true }).first().click();
     await expect(page.getByTestId("task-result")).toBeVisible({ timeout: 20_000 });
-    const openRow = page.locator('[data-testid^="task-detail-"][data-open="true"]');
+    const pane = page.getByTestId("task-sidepane");
 
     await page.keyboard.press("Control+i");
-    // No row named by ⌘I exists on a task without findings: the first that
-    // does (the Report) opens, in the document, beside nothing.
-    await expect(openRow).toHaveCount(1);
-    await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
+    // No output named by ⌘I exists on a task without findings: the first that
+    // does (the Report) opens in the side pane.
+    await expect(pane).toHaveAttribute("data-kind", "report");
+    await expect(page.getByTestId("task-detail-report")).toBeVisible();
+    await expect(page.getByTestId("titlebar-sidepane")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("agent-composer")).toBeVisible();
 
-    // Details are part of the document, not an overlay: Escape leaves them.
     await page.keyboard.press("Escape");
-    await expect(openRow).toHaveCount(1);
+    await expect(pane).toHaveCount(0);
 
     await page.keyboard.press("Control+i");
-    await expect(openRow).toHaveCount(0);
+    await expect(pane).toBeVisible();
+    await page.keyboard.press("Control+i");
+    await expect(pane).toHaveCount(0);
     await expect(page.getByTestId("agent-composer")).toBeVisible();
   });
 
-  test("a palette opened over open details closes first", async ({ page }) => {
+  test("a palette opened over the side pane closes first", async ({ page }) => {
     const { title } = seedSession(2);
     await seedFreshApp(page);
     await page.goto("/");
@@ -281,7 +283,7 @@ test.describe("Escape with two overlays open", () => {
     await expect(page.getByTestId("task-result")).toBeVisible({ timeout: 20_000 });
 
     await page.keyboard.press("Control+i");
-    await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
+    await expect(page.getByTestId("task-detail-report")).toBeVisible();
 
     await page.keyboard.press("ControlOrMeta+k");
     const palette = page.getByTestId("command-palette");
@@ -289,13 +291,13 @@ test.describe("Escape with two overlays open", () => {
 
     await page.keyboard.press("Escape");
     await expect(palette).toHaveCount(0);
-    await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
+    await expect(page.getByTestId("task-detail-report")).toBeVisible();
 
     await page.getByTestId("task-detail-toggle-report").click();
-    await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "false");
+    await expect(page.getByTestId("task-sidepane")).toHaveCount(0);
   });
 
-  test("under a narrow window the details stay in the document — no overlay, no sideways scroll", async ({ page }) => {
+  test("under a narrow window the side pane overlays the document — no sideways scroll", async ({ page }) => {
     const { title } = seedSession(2);
     await seedFreshApp(page);
     await page.goto("/");
@@ -305,8 +307,9 @@ test.describe("Escape with two overlays open", () => {
     await page.waitForTimeout(300);
 
     await page.keyboard.press("Control+i");
-    await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
-    await expect(page.getByTestId("agent-artifacts-scrim")).toHaveCount(0);
+    await expect(page.getByTestId("task-detail-report")).toBeVisible();
+    const paneBox = await page.getByTestId("task-sidepane").boundingBox();
+    expect(paneBox && paneBox.x + paneBox.width).toBeLessThanOrEqual(821);
     const overflow = await page.getByTestId("task-scroll").evaluate((el) => el.scrollWidth - el.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });

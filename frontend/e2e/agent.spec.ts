@@ -122,10 +122,11 @@ test.describe("a real agent turn", () => {
       await ask(page, "why does acme-logs return 403?");
       await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
       await expect(page.getByTestId("turn-commentary").first()).toContainText(/read the IAM policy skill/);
-      const order = await task(page).evaluate((el) =>
+      // The Result can render a beat before the settled turn's items reload;
+      // poll until the persisted order is on the page.
+      await expect.poll(() => task(page).evaluate((el) =>
         [...el.querySelectorAll("[data-testid='task-result-work'] :is([data-testid='turn-commentary'],[data-testid='worked-group'],[data-testid='log-result-above'])")]
-          .map((node) => node.getAttribute("data-testid")));
-      expect(order).toEqual(["turn-commentary", "worked-group"]);
+          .map((node) => node.getAttribute("data-testid"))), { timeout: 20_000 }).toEqual(["turn-commentary", "worked-group"]);
       // The commentary is NOT repeated inside the answer.
       await expect(page.getByTestId("turn-answer").last()).not.toContainText(/read the IAM policy skill/);
     } finally {

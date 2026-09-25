@@ -39,7 +39,7 @@ async function boot(page: Page) {
 async function openExecutionDetail(page: Page) {
   const toggle = page.getByTestId("task-detail-toggle-execution");
   await expect(toggle).toBeVisible({ timeout: 20_000 });
-  if ((await page.getByTestId("task-detail-execution").getAttribute("data-open")) !== "true") await toggle.click();
+  if ((await page.getByTestId("task-detail-execution").count()) === 0) await toggle.click();
   const row = page.getByTestId("execution-row").first();
   await expect(row).toBeVisible({ timeout: 20_000 });
   await row.click();

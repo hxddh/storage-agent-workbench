@@ -221,7 +221,7 @@ test.describe("Agent runtime states", () => {
       await expect(page.locator('[data-testid="work-result"][data-streaming="false"]').filter({ hasText: /every principal/ }).last()).toBeVisible({ timeout: 90_000 });
       await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", { timeout: 60_000 });
       await page.keyboard.press("Control+k");
-      await page.getByTestId("command-palette").getByRole("button", { name: /Compact context/ }).click();
+      await page.getByTestId("command-palette").getByRole("option", { name: /Compact context/ }).click();
       await expect(page.getByTestId("toast-viewport")).toContainText(/Context compacted/, { timeout: 30_000 });
       await composer(page).fill("and now?");
       await composer(page).press("Enter");
