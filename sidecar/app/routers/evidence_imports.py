@@ -1,9 +1,8 @@
 """Managed evidence imports — read-only compatibility API.
 
 Data movement (plan → confirm → run in ``app.evidence.import_service``) is
-reachable ONLY through the Agent's gated ``import_evidence`` tool, which opens
-a durable Decision (``runtime.request_approval``) inside the running Execution
-and consults the approval policy. This router exposes no route that plans,
+reachable ONLY through the Agent's bounded ``import_evidence`` tool inside a
+running Execution (v2.1: no approval pause; hard server-side bounds). This router exposes no route that plans,
 confirms or runs an import; it only reads the recorded rows.
 """
 

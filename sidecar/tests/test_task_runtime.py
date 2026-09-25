@@ -252,65 +252,6 @@ def test_stop_running_execution_cancels_durably(client, monkeypatch):
 # --- decisions gate executions ----------------------------------------------------
 
 
-def test_gated_tool_leaves_execution_waiting_until_decision(client, monkeypatch):
-    """v1.11: the Decision is raised by the gated tool INSIDE the execution; the
-    same execution waits, then continues once the user resolves it."""
-    from app.db import connect
-    from app.task_runtime import runtime
-
-    task = _task(client)
-    _add_model_provider(client)
-    seen: dict = {}
-
-    def loop(spec):
-        conn = connect()
-        try:
-            from app.task_runtime import store
-            execution = store.get_execution_by_turn(conn, spec["session_id"], spec["turn_id"])
-            seen["decision"] = runtime.request_approval(
-                conn, execution["id"], spec["session_id"], action_type="import_access_log",
-                title="Import logs", reason="bounded", proposal={"impact": {"file_count": 2}},
-                cancel_event=spec.get("cancel_event"))
-        finally:
-            conn.close()
-        return _contract(answer="Declined, so here is what I have.")
-
-    monkeypatch.setattr(session_agent, "SESSION_LOOP", loop)
-    execution = client.post(f"/agent-tasks/{task['id']}/executions",
-                            json={"direction": "import the logs", "turn_id": "d1"}
-                            ).json()["execution"]
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        state = client.get(f"/agent-tasks/{task['id']}/state").json()
-        if state["pending_decisions"]:
-            break
-        time.sleep(0.05)
-    assert state["status"] == "needs_decision"
-    decisions = state["pending_decisions"]
-    assert len(decisions) == 1 and decisions[0]["execution_id"] == execution["id"]
-    assert decisions[0]["kind"] == "approval"
-    assert client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}"
-                      ).json()["status"] == "waiting"
-
-    r = client.post(f"/agent-tasks/{task['id']}/decisions/{decisions[0]['id']}/resolve",
-                    json={"resolution": "declined", "note": "not now"})
-    assert r.status_code == 200
-    # The SAME execution goes waiting → running → completed once the tool
-    # thread wakes; `waiting` is not settled here.
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        row = client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}").json()
-        if row["status"] not in ("queued", "running", "waiting"):
-            break
-        time.sleep(0.05)
-    assert row["status"] == "completed"
-    assert seen["decision"]["status"] == "declined"
-    assert client.get(f"/agent-tasks/{task['id']}/state").json()["status"] == "ready"
-    events = client.get(f"/agent-tasks/{task['id']}/events").json()["events"]
-    kinds = [e["event_type"] for e in events]
-    assert "approval.opened" in kinds and "decision.resolved" in kinds
-
-
 # --- recovery ------------------------------------------------------------------
 
 
@@ -331,7 +272,7 @@ def test_restart_recovery_marks_interrupted_and_resume_continues(client, monkeyp
     finally:
         conn.close()
 
-    assert recovery.reconcile_interrupted_executions() == 1
+    assert recovery.reconcile_interrupted_executions() == [execution["id"]]
 
     row = client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}").json()
     assert row["status"] == "interrupted"
@@ -342,11 +283,12 @@ def test_restart_recovery_marks_interrupted_and_resume_continues(client, monkeyp
     assert any(e["event_type"] == "execution.status"
                and e["payload"].get("reason") == "sidecar_restart" for e in events)
 
-    # Resume: a NEW execution carrying the direction; history is not rewritten.
+    # v2.1 — recovery continues it on its own: a NEW execution carrying the
+    # direction; history is not rewritten.
     monkeypatch.setattr(session_agent, "SESSION_LOOP", lambda spec: _contract())
-    r = client.post(f"/agent-tasks/{task['id']}/executions/{execution['id']}/resume")
-    assert r.status_code == 201
-    resumed = r.json()["execution"]
+    assert recovery.resume_interrupted([execution["id"]]) == 1
+    resumed = client.get(f"/agent-tasks/{task['id']}/executions").json()["executions"][-1]
+    assert resumed["kind"] == "resume"
     assert resumed["resumed_from"] == execution["id"]
     assert "long survey" in resumed["direction"]
     assert _wait_settled(client, task["id"], resumed["id"])["status"] == "completed"
@@ -418,7 +360,7 @@ def test_typed_context_is_versioned_and_never_replays_chat(client, monkeypatch):
     assert ctx["context"]["schema_version"] == 1
     assert ctx["context"]["task_id"] == task["id"]
     assert "buckets_in_focus" in ctx["context"]
-    assert "open_decisions" in ctx["context"]
+    assert "open_decisions" not in ctx["context"]
 
     # An execution that changes durable state bumps the version.
     def loop(spec):
@@ -433,7 +375,6 @@ def test_typed_context_is_versioned_and_never_replays_chat(client, monkeypatch):
     _wait_settled(client, task["id"], execution["id"])
     ctx2 = client.get(f"/agent-tasks/{task['id']}/context").json()
     assert ctx2["version"] > ctx["version"]
-    assert ctx2["context"]["open_decisions"] == []
 
 
 # --- compatibility shims stay on the ONE lifecycle ----------------------------------

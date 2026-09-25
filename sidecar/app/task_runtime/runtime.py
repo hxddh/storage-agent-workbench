@@ -11,10 +11,13 @@ Lifecycle:
 
     submit()  → queued row (+ event) → per-task worker → running (+ event)
               → model loop streams (tool events persisted, deltas via hub)
-              → final: Direction + steers + Work Result persisted, first-class
-                Decisions opened, typed context versioned
-              → completed | waiting (a gated Decision is pending)
-              | failed | cancelled          — every transition a durable event.
+              → final: Direction + steers + Work Result persisted, typed
+                context versioned
+              → completed | failed | cancelled — every transition a durable event.
+
+v2.1: nothing pauses an execution for a human. The one data-moving tool runs
+inside a hard server-side envelope (see agent_runtime.import_tools); Stop is
+the user's brake. A restart resumes in-flight work automatically.
 
 Steer acts ON the current execution: the text is pushed into the running model
 loop and injected at the next tool boundary (see session_agent.SteerQueue). A
@@ -44,7 +47,7 @@ from ..security.redaction import redact_text
 from ..sessions import summary_builder
 from . import context as task_context
 from . import titling
-from . import approval_policy, hub, store
+from . import hub, store
 
 _CONTEXT_MESSAGES = session_agent._MAX_MESSAGES_CEIL
 
@@ -57,8 +60,7 @@ class LiveExecution:
     """In-process handle for one running execution (signals only — all durable
     state lives in the store)."""
 
-    __slots__ = ("execution_id", "task_id", "cancel_event", "steer_queue", "done_event",
-                 "approvals")
+    __slots__ = ("execution_id", "task_id", "cancel_event", "steer_queue", "done_event")
 
     def __init__(self, execution_id: str, task_id: str) -> None:
         self.execution_id = execution_id
@@ -66,9 +68,6 @@ class LiveExecution:
         self.cancel_event = threading.Event()
         self.steer_queue = session_agent.SteerQueue()
         self.done_event = threading.Event()
-        # decision_id → Event set when the user resolves it (the tool that
-        # raised the approval blocks on this, never on an HTTP request).
-        self.approvals: dict[str, threading.Event] = {}
 
 
 _lock = threading.RLock()
@@ -145,25 +144,8 @@ def submit(conn: sqlite3.Connection, task_id: str, direction: str,
 
 
 def steerable_execution(conn: sqlite3.Connection, task_id: str) -> dict[str, Any] | None:
-    """The execution a steer acts on: running/queued first, else a live
-    `waiting` one (v1.14 — steering while an approval is open used to 409 and
-    the client silently re-submitted it as a queued follow-up, which reads as
-    guidance for the pending decision but runs after it)."""
-    execution = store.active_execution(conn, task_id)
-    if execution is not None:
-        return execution
-    row = conn.execute(
-        "SELECT * FROM task_executions WHERE task_id = ? AND status = ? "
-        "ORDER BY rowid ASC LIMIT 1", (task_id, store.EXEC_WAITING)).fetchone()
-    if row is None:
-        return None
-    candidate = dict(row)
-    # Without a live worker there is nothing to inject into (a restart stamps
-    # waiting rows interrupted, so this is only a race window) — fall through
-    # to None so the caller submits instead of writing to a dead execution.
-    if live_handle(candidate["id"]) is None:
-        return None
-    return candidate
+    """The execution a steer acts on: the running (else queued) one."""
+    return store.active_execution(conn, task_id)
 
 
 def steer(conn: sqlite3.Connection, task_id: str, text: str) -> dict[str, Any] | None:
@@ -199,7 +181,7 @@ def stop(conn: sqlite3.Connection, execution_id: str) -> dict[str, Any] | None:
     execution = store.get_execution(conn, execution_id)
     if execution is None:
         return None
-    if execution["status"] in store.EXEC_TERMINAL_STATUSES + (store.EXEC_WAITING,):
+    if execution["status"] in store.EXEC_TERMINAL_STATUSES:
         return execution
     handle = live_handle(execution_id)
     if execution["status"] == store.EXEC_QUEUED:
@@ -245,125 +227,6 @@ def resume(conn: sqlite3.Connection, execution_id: str) -> dict[str, Any]:
             "task has already established; do not start over.")
     return submit(conn, execution["task_id"], direction + note,
                   kind=tag, resumed_from=execution_id)
-
-
-def on_decision_resolved(conn: sqlite3.Connection, decision: dict[str, Any]) -> None:
-    """Durable follow-through of a Decision resolution: event + wake the tool
-    that raised it (an inline approval) or settle a legacy waiting execution +
-    task status."""
-    exec_id = decision.get("execution_id") or ""
-    store.append_event(conn, exec_id, decision["task_id"], "decision.resolved",
-                       {"decision_id": decision["id"], "resolution": decision["status"],
-                        "action_type": decision["action_type"],
-                        "scope": decision.get("scope")}, commit=False)
-    handle = live_handle(exec_id) if exec_id else None
-    if handle is not None and decision["id"] in handle.approvals:
-        # The gated tool is blocked on this event: it re-reads the row, then
-        # continues (approved) or returns a structured refusal (declined).
-        # The execution goes back to RUNNING there — not here.
-        handle.approvals[decision["id"]].set()
-    else:
-        settle_waiting_executions(conn, decision["task_id"])
-    store.refresh_task_status(conn, decision["task_id"])
-    conn.commit()
-
-
-def request_approval(conn: sqlite3.Connection, execution_id: str, task_id: str, *,
-                     action_type: str, title: str, reason: str | None,
-                     proposal: dict[str, Any], cancel_event: Any = None,
-                     timeout_s: float | None = None) -> dict[str, Any]:
-    """Raise a Decision from INSIDE a running execution and block until the user
-    resolves it (or stops the execution).
-
-    Durable order: decision row → `approval.opened` event → execution status
-    `waiting`. The tool thread then waits on an in-process Event; on resolve the
-    execution returns to `running` and the resolved row is returned. If the
-    process restarts meanwhile, recovery stamps the execution `interrupted` and
-    the pending row stays for the user to see (Resume starts a new execution).
-
-    The approval policy (v1.12, ``allow_session`` / ``allow_always``) or a
-    prior "allow for this task" grant for the same action_type skips the pause:
-    the call is recorded as an already-approved Decision and the
-    ``approval.granted`` event says which policy answered it. This is the ONE
-    place a policy is consulted."""
-    auto = approval_policy.auto_grant_scope(conn)
-    if auto is None and store.task_grant_exists(conn, task_id, action_type):
-        auto = store.SCOPE_TASK
-    if auto is not None:
-        granted = store.record_granted_approval(conn, task_id, execution_id, action_type,
-                                               title, proposal, scope=auto)
-        store.append_event(conn, execution_id, task_id, "approval.granted",
-                           {"decision_id": granted["id"], "action_type": action_type,
-                            "title": granted.get("title"), "policy": auto}, commit=False)
-        conn.commit()
-        return granted
-    handle = live_handle(execution_id)
-    decision = store.open_approval(conn, task_id, execution_id, action_type, title, reason,
-                                   proposal)
-    event = threading.Event()
-    if handle is not None:
-        handle.approvals[decision["id"]] = event
-    store.append_event(conn, execution_id, task_id, "approval.opened",
-                       {"decision_id": decision["id"], "action_type": action_type,
-                        "title": decision.get("title"), "reason": decision.get("reason"),
-                        "impact": (proposal.get("impact") or {})}, commit=False)
-    store.set_execution_status(conn, execution_id, store.EXEC_WAITING)
-    store.append_event(conn, execution_id, task_id, "execution.status",
-                       {"status": store.EXEC_WAITING, "reason": "approval",
-                        "decision_id": decision["id"]}, commit=False)
-    store.refresh_task_status(conn, task_id)
-    conn.commit()
-    try:
-        deadline = (time.monotonic() + timeout_s) if timeout_s else None
-        while not event.is_set():
-            if cancel_event is not None and cancel_event.is_set():
-                break
-            if deadline is not None and time.monotonic() >= deadline:
-                break
-            event.wait(0.5)
-    finally:
-        if handle is not None:
-            handle.approvals.pop(decision["id"], None)
-        conn.commit()  # end the read snapshot so the re-read sees the resolution
-    resolved = store.get_decision(conn, decision["id"]) or decision
-    if resolved["status"] == store.DECISION_PENDING:
-        # Stopped (or timed out) while waiting: the request is withdrawn, never
-        # silently approved.
-        store.resolve_decision(conn, decision["id"], store.DECISION_DECLINED,
-                               note="execution stopped while waiting for approval")
-        resolved = store.get_decision(conn, decision["id"]) or resolved
-        store.append_event(conn, execution_id, task_id, "decision.resolved",
-                           {"decision_id": decision["id"], "resolution": resolved["status"],
-                            "action_type": action_type, "reason": "stopped"}, commit=False)
-    store.set_execution_status(conn, execution_id, store.EXEC_RUNNING)
-    store.append_event(conn, execution_id, task_id, "execution.status",
-                       {"status": store.EXEC_RUNNING, "reason": "approval_resolved",
-                        "decision_id": decision["id"]}, commit=False)
-    store.refresh_task_status(conn, task_id)
-    conn.commit()
-    return resolved
-
-
-def settle_waiting_executions(conn: sqlite3.Connection, task_id: str) -> None:
-    """Complete every WAITING execution whose pending decisions are all gone
-    (resolved or superseded) and that has no live worker — pre-1.11 executions
-    that ended on a proposal-derived Decision. An execution waiting on an
-    INLINE approval keeps its worker and settles itself."""
-    rows = conn.execute(
-        "SELECT id FROM task_executions WHERE task_id = ? AND status = ?",
-        (task_id, store.EXEC_WAITING)).fetchall()
-    for r in rows:
-        if live_handle(r["id"]) is not None:
-            continue
-        pending = conn.execute(
-            "SELECT 1 FROM task_decisions WHERE execution_id = ? AND status = ? LIMIT 1",
-            (r["id"], store.DECISION_PENDING)).fetchone()
-        if pending is None:
-            store.set_execution_status(conn, r["id"], store.EXEC_COMPLETED)
-            store.append_event(conn, r["id"], task_id, "execution.status",
-                               {"status": store.EXEC_COMPLETED,
-                                "reason": "decision_resolved"}, commit=False)
-            hub.mark_done(r["id"])
 
 
 # --- the per-task worker ---------------------------------------------------------
@@ -488,9 +351,6 @@ def _run_execution(execution: dict[str, Any]) -> None:
                 cancel_event=handle.cancel_event)
             for rec in contract.get("tool_activity") or []:
                 _persist_tool_event(conn, exec_id, task_id, rec)
-            for steps in contract.get("plan_updates") or []:
-                store.append_event(conn, exec_id, task_id, "plan.updated",
-                                   {"steps": list(steps)})
             seam_conclusion = conclusion_tools.bounded(contract.get("conclusion"))
             if seam_conclusion is not None:
                 store.append_event(conn, exec_id, task_id, "conclusion.recorded",
@@ -600,18 +460,13 @@ def _persist_tool_event(conn: sqlite3.Connection, exec_id: str, task_id: str,
     """One structured tool progress event, bounded. `user_steer` activity rows
     are the injection wrapper's delivery notices — persisted as steer.applied."""
     payload = {k: record.get(k) for k in ("id", "tool", "target", "result", "ok",
-                                           "decision_id", "started_at", "finished_at",
+                                           "started_at", "finished_at",
                                            "duration_ms")
                if record.get(k) is not None}
     status = record.get("status")
     if record.get("tool") == "user_steer":
         store.append_event(conn, exec_id, task_id, "steer.applied",
                            {"text": str(record.get("result") or "")[:200]})
-        return
-    if record.get("tool") == "update_plan":
-        if status != "started":
-            store.append_event(conn, exec_id, task_id, "plan.updated",
-                               {"steps": list(record.get("plan") or [])})
         return
     if record.get("tool") == "record_conclusion":
         # v2.0 — the Work Result's structured head, live before the answer.
@@ -661,16 +516,6 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
     store.append_event(conn, exec_id, task_id, "work_result.recorded",
                        {"work_result_id": wr_id, "message_id": mid, "stopped": stopped,
                         **({"cut_short": cut_short} if cut_short else {})}, commit=False)
-    # A finished execution never leaves its OWN approval pending: a tool that
-    # raised one either got its answer or was stopped (withdrawn). Pre-1.11
-    # proposal-derived rows of this task are retired by the newer Work Result.
-    conn.execute(
-        "UPDATE task_decisions SET status = ?, resolved_at = ?, "
-        "resolution_note = COALESCE(resolution_note, 'superseded by a newer work result') "
-        "WHERE task_id = ? AND status = ? AND kind = ?",
-        (store.DECISION_SUPERSEDED, _now(), task_id, store.DECISION_PENDING,
-         store.DECISION_KIND_PROPOSAL))
-    settle_waiting_executions(conn, task_id)
     audit.record(conn, "session.message", {"session_id": task_id, "stopped": stopped},
                  run_id=None, session_id=task_id)
     session_activity.record_turn(
@@ -726,7 +571,7 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
         if data.get(k) is not None:
             metrics[k] = data[k]
     # task.status lands BEFORE the terminal execution.status: a follower stops
-    # at the terminal frame, so the task's settled state (ready / needs_decision
+    # at the terminal frame, so the task's settled state (ready / needs_attention
     # / the queued follow-up) must already be on the stream.
     store.refresh_task_status(conn, task_id)
     store.append_event(conn, exec_id, task_id, "execution.status",
@@ -780,6 +625,5 @@ def _reset_for_tests() -> None:
         _workers.clear()
 
 
-__all__ = ["submit", "steer", "stop", "resume", "on_decision_resolved",
-           "settle_waiting_executions", "live_handle",
+__all__ = ["submit", "steer", "stop", "resume", "resume_interrupted", "live_handle",
            "LiveExecution"]

@@ -2,13 +2,12 @@
 
 The Agent Task is a durable domain object and this router is its front door:
 task list/state, Execution submit/steer/stop/resume, the durable structured
-event stream (resumable by sequence number), first-class Decisions, the
-Artifact index, Work Results, and the typed Storage Task Context.
+event stream (resumable by sequence number), the Artifact index, Work
+Results, and the typed Storage Task Context. Decisions are read-only history
+since v2.1 (nothing raises or resolves one).
 
 Compatibility: the summary rows keep the historical Session-summary shape
-(``AgentTaskSummary``) so existing clients keep working; ``requires_decision``
-now reads the durable ``task_decisions`` table instead of re-parsing the latest
-message, and ``task_status`` / ``active_execution_id`` are additive.
+(``AgentTaskSummary``); ``task_status`` / ``active_execution_id`` are additive.
 """
 
 from __future__ import annotations
@@ -35,7 +34,6 @@ router = APIRouter(prefix="/agent-tasks", tags=["agent-tasks"])
 class AgentTaskSummary(SessionSummary):
     """Durable Session summary projected into product-level Agent task state."""
 
-    requires_decision: bool = False
     task_status: str = store.TASK_READY
     active_execution_id: str | None = None
 
@@ -52,14 +50,6 @@ class SteerRequest(BaseModel):
 
 class ExecutionEdit(BaseModel):
     direction: str = Field(min_length=1, max_length=32000)
-
-
-class DecisionResolve(BaseModel):
-    resolution: str = Field(pattern="^(approved|declined)$")
-    note: str | None = Field(default=None, max_length=1000)
-    # once (default) | task — "allow for this task" auto-approves later calls of
-    # the same action_type in this task.
-    scope: str | None = Field(default=None, pattern="^(once|task)$")
 
 
 def _task_or_404(conn: sqlite3.Connection, task_id: str) -> dict[str, Any]:
@@ -80,7 +70,6 @@ def list_agent_tasks(q: str | None = None, conn: sqlite3.Connection = Depends(ge
     # and by the periodic maintenance loop (main.py / data_maintenance.py).
     rows = sessions_repo.search(conn, q) if q else sessions_repo.list_all(conn)
     ids = [row["id"] for row in rows]
-    decisions = store.pending_decision_tasks(conn, ids)
     tasks: dict[str, dict[str, Any]] = {}
     if ids:
         ph = ",".join("?" * len(ids))
@@ -92,7 +81,6 @@ def list_agent_tasks(q: str | None = None, conn: sqlite3.Connection = Depends(ge
         t = tasks.get(row["id"]) or {}
         out.append(AgentTaskSummary(
             **{**row,
-               "requires_decision": decisions.get(row["id"], False),
                "task_status": t.get("status") or store.TASK_READY,
                "active_execution_id": t.get("active_execution_id")}))
     return out
@@ -103,7 +91,7 @@ def get_task_state(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -
     """Everything a client needs to (re)attach after a reload, task switch, or
     sidecar restart — derived from durable rows, so it is true in every one of
     those cases: current status, the active execution (with the durable event
-    cursor to resume its stream from), pending decisions, context version."""
+    cursor to resume its stream from), queued Directions, context version."""
     task = _task_or_404(conn, task_id)
     active = store.active_execution(conn, task_id)
     last_seq = 0
@@ -119,7 +107,6 @@ def get_task_state(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -
     active_id = active["id"] if active else None
     queued = [e for e in executions
               if e.get("status") == store.EXEC_QUEUED and e.get("id") != active_id]
-    pending = store.list_decisions(conn, task_id, status=store.DECISION_PENDING)
     return {
         "task_id": task_id,
         "status": store.derive_task_status(conn, task_id)
@@ -128,7 +115,6 @@ def get_task_state(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -
         "last_event_seq": last_seq,
         "last_execution": last_execution,
         "queued_executions": queued,
-        "pending_decisions": [_with_impact(conn, task_id, d) for d in pending],
         "context_version": int(task.get("context_version") or 0),
     }
 
@@ -309,7 +295,7 @@ def resume_execution(task_id: str, execution_id: str,
     return {"execution": execution, "resumed_from": execution_id}
 
 
-# --- decisions ------------------------------------------------------------------
+# --- decisions (read-only history of pre-2.1 approvals) ---------------------------
 
 
 @router.get("/{task_id}/decisions")
@@ -319,36 +305,6 @@ def list_decisions(task_id: str, status_filter: str | None = None,
     rows = store.list_decisions(conn, task_id, status=status_filter)
     return {"task_id": task_id,
             "decisions": [_with_impact(conn, task_id, d) for d in rows]}
-
-
-@router.post("/{task_id}/decisions/{decision_id}/resolve")
-def resolve_decision(task_id: str, decision_id: str, body: DecisionResolve,
-                     conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
-    """Cross (or decline) a confirmation boundary — durably.
-
-    Since v1.11 a Decision is raised by a gated tool inside the running
-    execution: approving here wakes that tool (the bounded, audited import runs
-    server-side and its result goes back to the model), declining returns a
-    structured refusal to the model. ``scope=task`` also allows later calls of
-    the same action_type in this task without pausing."""
-    _task_or_404(conn, task_id)
-    decision = store.get_decision(conn, decision_id)
-    if decision is None or decision["task_id"] != task_id:
-        raise HTTPException(status_code=404, detail="decision not found")
-    resolved = store.resolve_decision(conn, decision_id, body.resolution, body.note,
-                                      scope=body.scope)
-    if resolved is None:
-        raise HTTPException(status_code=409,
-                            detail=f"decision is already {decision['status']}")
-    audit.record(conn, "task.decision.resolved",
-                 {"task_id": task_id, "decision_id": decision_id,
-                  "action_type": resolved["action_type"], "resolution": body.resolution,
-                  "scope": resolved.get("scope")},
-                 run_id=None, session_id=task_id)
-    runtime.on_decision_resolved(conn, resolved)
-    prepared = None
-    conn.commit()
-    return {"decision": resolved, "prepared": prepared}
 
 
 # --- work results / artifacts / context -------------------------------------------

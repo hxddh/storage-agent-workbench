@@ -199,13 +199,13 @@ _DEDUPE_EXEMPT_TOOLS = {"measure_request_latency"}
 _BUDGET_EXEMPT_TOOLS = {
     "note_fact", "record_finding", "note_open_question",
     "update_memory_item", "resolve_memory_item",
-    # App-generated status text, never rows; and it blocks on the user.
+    # App-generated status text, never rows.
     "import_evidence",
-    # The plan checklist and the conclusion: a few bytes, never data.
-    "update_plan", "record_conclusion",
+    # The conclusion: a few bytes, never data.
+    "record_conclusion",
 }
-# Tools that wait on a HUMAN (an inline approval) get no wall-clock ceiling:
-# the user's Stop is their bound.
+# A bounded import downloads up to 256 MiB: it gets no wall-clock ceiling of
+# its own — its byte bounds and the user's Stop are its limits.
 _NO_TIMEOUT_TOOLS = {"import_evidence"}
 
 # --- progressive tool disclosure (v0.55.0) -----------------------------------
@@ -236,8 +236,8 @@ _CORE_TOOLS = {
     # are a few bytes — gating them would only cost a round-trip.
     "note_fact", "record_finding", "note_open_question",
     "update_memory_item", "resolve_memory_item",
-    # The plan and the conclusion the model owns — always at hand, never gated.
-    "update_plan", "record_conclusion",
+    # The conclusion the model owns — always at hand, never gated.
+    "record_conclusion",
     "simulate_storage_cost", "draft_remediation_plan", "verify_remediation_plan",
     "capture_task_baseline", "compare_task_drift", "get_price_table_status",
     "set_task_revisit_days",
@@ -275,8 +275,8 @@ _TOOL_GROUPS: dict[str, tuple[str, frozenset[str]]] = {
                    "aggregate_imported_evidence"})),
     "evidence_import": (
         "move a DISCOVERED evidence source (S3 Inventory, server access logs) "
-        "onto this machine for deterministic analysis — pauses for the user's "
-        "approval inside the turn; the only data-moving tool",
+        "onto this machine for deterministic analysis — bounded to 500 files / "
+        "256 MiB per call; the only data-moving tool",
         frozenset({"import_evidence"})),
     "account_wide": (
         "the whole account — survey it, query the persisted profile, diff against "

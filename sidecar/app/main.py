@@ -103,12 +103,11 @@ async def lifespan(_app: FastAPI):
     # threads don't survive a restart, so such rows are orphans.
     from . import run_service
     run_service.reconcile_interrupted_runs()
-    # Durable execution recovery (v0.94): executions a prior process left
-    # queued/running are stamped `interrupted` — an explicit durable state with
-    # a resume affordance — never silently forgotten. Waiting-on-decision
-    # executions are untouched; a restart does not invalidate the user's call.
+    # Durable execution recovery: executions a prior process left in flight are
+    # stamped `interrupted` durably, then (v2.1) continued automatically — one
+    # continuation each, no crash loop; without a model they wait for Resume.
     from .task_runtime import recovery as task_recovery
-    task_recovery.reconcile_interrupted_executions()
+    task_recovery.resume_interrupted(task_recovery.reconcile_interrupted_executions())
     # Reclaim disk/rows that accumulate over long-lived installs: purge the
     # internal ('agent'-origin) runs of already-deleted sessions (rows + dirs),
     # and age out the write-only audit trail. Both are bounded, best-effort, and

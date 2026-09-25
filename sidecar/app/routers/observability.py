@@ -60,9 +60,8 @@ def _traceparent(trace_id: str, span_id: str) -> str:
 # Durable event types projected as OTel spans (v1.13). Everything else stays
 # in the raw `events` section only.
 _SPAN_EVENTS = frozenset({
-    "tool.started", "tool.completed", "plan.updated", "approval.opened",
-    "approval.granted", "steer.received", "steer.applied",
-    "message.completed", "context.compacted", "decision.resolved",
+    "tool.started", "tool.completed", "steer.received", "steer.applied",
+    "message.completed", "context.compacted", "conclusion.recorded",
     "work_result.recorded", "execution.status", "task.status",
     "context.updated", "task.titled",
 })

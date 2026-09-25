@@ -1,13 +1,13 @@
 """Managed evidence import — the ONE data-moving path (plan → confirm → run).
 
-Its one caller is the Agent's gated ``import_evidence`` tool, which plans
-here, then PAUSES the execution on a durable Decision
-(``runtime.request_approval``, approval policy consulted there), and only
-confirms and runs after it was granted. No HTTP route plans, confirms or runs
-an import; ``/evidence-imports`` only reads the recorded rows.
+Its one caller is the Agent's ``import_evidence`` tool (v2.1: bounded, no
+approval pause — see ``agent_runtime.import_tools``), which plans here within
+its autonomous envelope, confirms (``approved_by="agent"``) and runs. No HTTP
+route plans, confirms or runs an import; ``/evidence-imports`` only reads the
+recorded rows.
 
-Nothing is downloaded until a plan is explicitly confirmed; confirmation is
-recorded in approval_events + audit_logs. Import targets are validated against
+Nothing is downloaded until a plan is confirmed; confirmation is recorded in
+approval_events + audit_logs. Import targets are validated against
 the evidence sources DISCOVERED by account_discovery — a caller cannot point
 this at an arbitrary bucket/key. On run, only the confirmed files are
 downloaded (bounded by max_files / max_bytes) and fed into the existing

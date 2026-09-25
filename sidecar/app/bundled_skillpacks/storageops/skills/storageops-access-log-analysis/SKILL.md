@@ -52,10 +52,11 @@ Two cases, depending on where the logs live:
   403s). Never label `top_user_agents` as requesters.
   If the result carries `"truncated": true`, the metrics cover only the first
   `rows_analyzed` rows — report them as a LOWER BOUND, not the whole file.
-- **Logs still in a bucket** — this is cloud-side data movement, so it stays a
-  confirmed step: propose `plan_access_log_import` to bring them in under a
-  reviewed plan. Once the user confirms and the import run completes, read its
-  findings; if it finished in the background, pick the result back up later with
+- **Logs still in a bucket** — once `survey_account` has discovered the logging
+  target, call `import_evidence(source_type="access_log", …)` with a time range.
+  It downloads a bounded slice (at most 500 files / 256 MiB) and starts the
+  analysis; say what time range you covered and whether coverage is partial. If
+  the analysis finished in the background, pick it back up with
   `read_run_result(run_id)` rather than re-importing.
 
 Either way, route permission decisions to `storageops-security-iam-policy` and

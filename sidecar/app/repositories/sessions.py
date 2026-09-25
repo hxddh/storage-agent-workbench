@@ -506,8 +506,9 @@ def _bounded_turn_items(items: list[dict[str, Any]] | None) -> list[dict[str, An
 
     ``message`` items carry the commentary text; ``tool`` items reference the
     tool_activity record by id (the record itself is the single source of the
-    call's truth); ``plan``, ``compacted`` and ``steer`` items carry their own
-    bounded payload. Anything else is dropped."""
+    call's truth); ``compacted`` and ``steer`` items carry their own bounded
+    payload. Anything else is dropped (v2.1: including pre-2.1 ``plan`` items —
+    the model no longer keeps a plan)."""
     out: list[dict[str, Any]] = []
     for it in (items or [])[:_MAX_TURN_ITEMS]:
         if not isinstance(it, dict):
@@ -519,12 +520,6 @@ def _bounded_turn_items(items: list[dict[str, Any]] | None) -> list[dict[str, An
                 out.append({"kind": "message", "text": text})
         elif kind == "tool" and it.get("id"):
             out.append({"kind": "tool", "id": str(it["id"])[:64]})
-        elif kind == "plan":
-            steps = [{"text": redact_text(str(st.get("text") or ""))[:160],
-                      "status": str(st.get("status") or "pending")[:16]}
-                     for st in (it.get("steps") or [])[:12] if isinstance(st, dict)]
-            if steps:
-                out.append({"kind": "plan", "steps": steps})
         elif kind == "compacted":
             out.append({"kind": "compacted",
                         "before_tokens": it.get("before_tokens"),
@@ -742,7 +737,9 @@ def list_messages(conn: sqlite3.Connection, session_id: str,
             "referenced_evidence_ids": _loads(r["referenced_evidence_ids"], []),
             "tool_activity": _loads(r["tool_activity"] if "tool_activity" in keys else None, []),
             "grounding": _loads(r["grounding"], None) if "grounding" in keys else None,
-            "turn_items": _loads(r["turn_items"], []) if "turn_items" in keys else [],
+            # Pre-2.1 rows may carry `plan` items; the product no longer has one.
+            "turn_items": [it for it in (_loads(r["turn_items"], []) if "turn_items" in keys else [])
+                           if not (isinstance(it, dict) and it.get("kind") == "plan")],
             "conclusion": _loads(r["conclusion"], None) if "conclusion" in keys else None,
             "created_at": r["created_at"],
         })
