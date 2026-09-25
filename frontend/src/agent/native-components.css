@@ -221,8 +221,9 @@ select.ui-input { padding-right: 28px; }
   from { transform: translateX(12px); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
+/* Sheets rise without fading: an opaque surface never shows what is behind it. */
 @keyframes ui-rise-in {
-  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  from { transform: translateY(6px) scale(0.99); }
   to { opacity: 1; transform: none; }
 }
 

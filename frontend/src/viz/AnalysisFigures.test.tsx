@@ -96,7 +96,7 @@ describe("AnalysisFigures", () => {
       </I18nProvider>,
     );
     expect(screen.getByTestId("viz-cost")).toHaveTextContent("0d");
-    const dayLabels = [...screen.getByTestId("viz-cost").querySelectorAll("svg text")].map((n) => n.textContent);
+    const dayLabels = [...screen.getByTestId("viz-cost").querySelectorAll("svg text[data-axis=\"x\"]")].map((n) => n.textContent);
     expect(dayLabels.every((label) => label === "0d")).toBe(true);
     expect(dayLabels.length).toBeGreaterThan(0);
     expect(screen.getByTestId("viz-cost-delta")).toHaveTextContent("estimate");

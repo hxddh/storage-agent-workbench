@@ -8,7 +8,6 @@ import { useTaskViewport } from "../hooks/useTaskViewport";
 import { useDirectionStepping } from "../hooks/useDirectionStepping";
 import { turnItemsOf, type TurnItem } from "../lib/turnItems";
 import { openAgentReview } from "../agent/commands";
-import { pickStartGreeting } from "../agent/startGreeting";
 import { publishPaletteActions } from "../agent/paletteActions";
 import { Button } from "./ui";
 import { useI18n } from "../i18n";
@@ -21,16 +20,10 @@ import {
 } from "../lib/pendingDirection";
 import { TaskBanners } from "./TaskBanners";
 import { useTaskDetails } from "../agent/taskDetails";
-import { Icon, type IconName } from "./icons";
+import { TaskStart } from "./TaskStart";
 import { TaskComposerHost, useComposerActions, useTaskComposer } from "./TaskComposerHost";
 import { TaskDocument, lastWorkResult, useTaskItems } from "./TaskDocument";
 import { useTaskCopy } from "./taskCopy";
-
-const STARTERS: { key: "access" | "survey" | "logs"; icon: IconName }[] = [
-  { key: "access", icon: "shield" },
-  { key: "survey", icon: "storage" },
-  { key: "logs", icon: "table" },
-];
 
 export type AgentTaskProps = {
   taskId: string | null;
@@ -69,7 +62,7 @@ export function AgentTask({
   const workspaceRef = useRef<HTMLElement | null>(null);
   useDirectionStepping(workspaceRef, taskId);
 
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const taskCopy = useTaskCopy();
   const viewport = useTaskViewport();
   const composer = useTaskComposer(taskId);
@@ -274,31 +267,11 @@ export function AgentTask({
           </div>
         </div>
       ) : isEmpty ? (
-        <div className="native-start" data-testid="task-start">
-          <div className="native-start-inner">
-            <h1 className="native-start-greeting">{pickStartGreeting(lang)}</h1>
-            <p className="native-start-sub">{t("start.sub")}</p>
-            {composerNode}
-            <div className="native-start-banners empty:hidden">{banners}</div>
-            {/* v3.0 — three real starting points. A card only fills the
-                Composer; the user still reads and sends it. */}
-            <div className="native-starters" role="group" aria-label={t("start.starters")}>
-              {STARTERS.map((starter) => (
-                <button
-                  key={starter.key}
-                  type="button"
-                  className="native-starter"
-                  data-testid="start-starter"
-                  onClick={() => { composer.setText(t(`start.${starter.key}.ask`)); composer.focus(); }}
-                >
-                  <span className="native-starter-icon" aria-hidden><Icon name={starter.icon} size={16} /></span>
-                  <span className="native-starter-title">{t(`start.${starter.key}.title`)}</span>
-                  <span className="native-starter-body">{t(`start.${starter.key}.body`)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <TaskStart
+          composerNode={composerNode}
+          banners={banners}
+          onStarter={(text) => { composer.setText(text); composer.focus(); }}
+        />
       ) : (
         <TaskDocument
           taskId={taskId}

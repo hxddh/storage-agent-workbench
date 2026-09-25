@@ -73,7 +73,7 @@ describe("v1.17 Codex window", () => {
     const direction = css.match(/\.turn-direction-text \{[^}]*\}/)?.[0] ?? "";
     expect(direction).not.toMatch(/background:/);
     expect(direction).not.toMatch(/border-radius/);
-    expect(direction).toMatch(/font-weight: 5\d\d/);
+    expect(direction).toMatch(/font-weight: [56]\d\d/);
     expect(css).not.toMatch(/\.turn-direction \{[^}]*align-items: flex-end/);
     expect(css).toMatch(/\.task-item\[data-direction\] ~ \.task-item\[data-direction\] \{[^}]*border-top: 1px solid var\(--edge\)/);
     expect(css).not.toContain("turn-user-bubble");

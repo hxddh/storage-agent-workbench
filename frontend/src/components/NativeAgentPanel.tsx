@@ -121,7 +121,7 @@ export function NativeAgentPanel() {
       <section>
         <div className="mb-3 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-medium text-gray-100">{t("prov.skillsTitle")}</h2>
+            <h2 className="text-lg font-semibold text-gray-100">{t("prov.skillsTitle")}</h2>
             <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("prov.skillsHint")}</p>
           </div>
           <Button onClick={() => void openFolder()} data-testid="skills-open-folder">
@@ -151,7 +151,7 @@ export function NativeAgentPanel() {
       <section data-testid="settings-instructions">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="text-lg font-medium text-gray-100">{t("settings.instructions")}</h2>
+            <h2 className="text-lg font-semibold text-gray-100">{t("settings.instructions")}</h2>
             <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("settings.instructionsHint")}</p>
             {instructions ? (
               <p className="mt-2 text-xs text-gray-300" data-testid="instructions-status" data-loaded={instructions.loaded ? "true" : "false"}>
@@ -170,7 +170,7 @@ export function NativeAgentPanel() {
       <section>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-medium text-gray-100">{t("prov.observability")}</h2>
+            <h2 className="text-lg font-semibold text-gray-100">{t("prov.observability")}</h2>
             <p className="mt-1 text-xs leading-relaxed text-gray-500">{copy.exportHint}</p>
           </div>
           <Button onClick={() => void exportTrace()} disabled={exporting} data-testid="observability-export">
@@ -180,7 +180,7 @@ export function NativeAgentPanel() {
       </section>
 
       <section>
-        <h2 className="text-lg font-medium text-gray-100">{t("prov.mcpTitle")}</h2>
+        <h2 className="text-lg font-semibold text-gray-100">{t("prov.mcpTitle")}</h2>
         <p className="mt-1 mb-3 text-xs leading-relaxed text-gray-500">{t("prov.mcpHint")}</p>
         {mcp ? (
           <div className="native-settings-card" data-enabled={mcp.enabled ? "true" : "false"} data-testid="mcp-status">

@@ -49,10 +49,10 @@
      status palette kept apart from it. Every text step clears WCAG AA on the
      surfaces it is used on (checked by e2e/contrast.spec.ts). */
   --canvas: #0e0e10;
-  --sidebar: #131315;
-  --panel: #18181b;
-  --elevated: #1f1f23;
-  --hover: #26262b;
+  --sidebar: #161619;
+  --panel: #1b1b1f;
+  --elevated: #232327;
+  --hover: #2c2c32;
   --edge: #25252a;
   --edge-strong: #34343b;
   /* Accent — the one hue. Fill for the primary action, tint for selection,
@@ -62,22 +62,22 @@
   --accent-dim: rgba(109, 107, 240, 0.16);
   --accent-fg: #ffffff;
   --accent-text: #a4a2ff;
-  --viz-1: #7c7aff;
-  --viz-2: #4fb8c7;
-  --viz-3: var(--success);
-  --viz-4: var(--warn);
-  --viz-5: #b28cf5;
-  --viz-6: var(--gray-500);
+  /* Categorical order validated for CVD/normal-vision separation on the
+   * dark panel (scripts: dataviz validate_palette). Never status colours. */
+  --viz-1: #6c6af2;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #3987e5;
   /* Text ladder: 100 primary · 200 strong secondary · 300 secondary ·
      400 tertiary · 500 meta (AA on every surface up to --elevated) ·
      600 disabled · 700 decorative, never text. */
   --gray-100: #ededef;
   --gray-200: #d1d1d6;
   --gray-300: #b0b0b8;
-  --gray-400: #9c9ca5;
-  --gray-500: #8a8a93;
-  --gray-600: #5d5d66;
-  --gray-700: #3a3a41;
+  --gray-400: #a1a1ab;
+  --gray-500: #9393a0;
   --scrollbar-thumb: #2c2c32;
   --scrollbar-thumb-hover: #3c3c44;
   --selection: rgba(124, 122, 255, 0.28);
@@ -140,7 +140,7 @@
   --control-h: 2rem;
   --header-h: 2.75rem;
   --sidebar-w: 16.25rem;
-  --inspector-w: 30rem;
+  --sidepane-w: 30rem;
   --doc-measure: 46rem;
   --doc-track: 64rem;
   /* 4px grid. */
@@ -164,10 +164,10 @@
 :root[data-theme="light"] {
   color-scheme: light;
   --canvas: #ffffff;
-  --sidebar: #f7f7f8;
-  --panel: #ffffff;
+  --sidebar: #f4f4f5;
+  --panel: #f7f7f8;
   --elevated: #ffffff;
-  --hover: #efeff1;
+  --hover: #ebebee;
   --edge: #e8e8eb;
   --edge-strong: #d6d6db;
   --accent: #4f46e5;
@@ -176,26 +176,24 @@
   --accent-fg: #ffffff;
   --accent-text: #4338ca;
   --viz-1: #4f46e5;
-  --viz-2: #0e7c8c;
-  --viz-3: var(--success);
-  --viz-4: var(--warn);
-  --viz-5: #8b5cf6;
-  --viz-6: var(--gray-500);
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #2a78d6;
   --gray-100: #18181b;
   --gray-200: #3f3f46;
   --gray-300: #52525b;
   --gray-400: #5f5f68;
   --gray-500: #66666f;
-  --gray-600: #a1a1aa;
-  --gray-700: #d4d4d8;
   --scrollbar-thumb: #dcdce0;
   --scrollbar-thumb-hover: #c4c4ca;
   --selection: rgba(79, 70, 229, 0.18);
   --focus-ring: rgba(79, 70, 229, 0.55);
-  --danger: #d92d20;
-  --danger-bg: rgba(217, 45, 32, 0.07);
+  --danger: #c4271b;
+  --danger-bg: rgba(196, 39, 27, 0.07);
   --danger-bg-strong: #fef2f1;
-  --danger-border: rgba(217, 45, 32, 0.3);
+  --danger-border: rgba(196, 39, 27, 0.3);
   --warn: #b45309;
   --warn-fg: #92400e;
   --warn-bg: rgba(180, 83, 9, 0.08);

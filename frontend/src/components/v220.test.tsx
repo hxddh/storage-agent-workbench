@@ -144,7 +144,7 @@ describe("the v2.1 review, fixed", () => {
     expect(banners).toContain('data-testid="task-resume-settings"');
     expect(banners).toMatch(/task-resume-action" variant="default"/);
     const css = source("../agent/native-document.css");
-    expect(css).toMatch(/\.native-banner\[data-quiet="true"\] \{[^}]*background: transparent/);
+    expect(css).toMatch(/\.native-banner\[data-quiet="true"\] \{[^}]*background: var\(--panel\)/);
   });
 
   it("a one-Direction Task reads as its Result, and Find still reaches the log", () => {

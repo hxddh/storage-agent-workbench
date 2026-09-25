@@ -62,8 +62,6 @@ export default {
           300: "var(--gray-300)",
           400: "var(--gray-400)",
           500: "var(--gray-500)",
-          600: "var(--gray-600)",
-          700: "var(--gray-700)",
         },
       },
       // The product type scale (v0.56.0).

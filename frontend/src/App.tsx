@@ -91,7 +91,7 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: 
             label={copy.inspector}
             aria-pressed={inspectorOpen}
             onClick={() => toggleAgentArtifacts()}
-            data-testid="titlebar-inspector"
+            data-testid="titlebar-sidepane"
           />
         ) : null}
       </div>

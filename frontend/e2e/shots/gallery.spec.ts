@@ -108,7 +108,7 @@ for (const theme of THEMES) {
       await openAgent(page, theme, lang);
       await openTask(page, title);
       await page.getByTestId("task-detail-toggle-report").click();
-      await expect(page.getByTestId("task-inspector")).toHaveAttribute("data-kind", "report");
+      await expect(page.getByTestId("task-sidepane")).toHaveAttribute("data-kind", "report");
       await expect(page.getByTestId("task-detail-report")).toBeVisible();
       await expect(page.getByTestId("agent-composer")).toBeVisible();
       await shoot(page, "04-artifacts", theme, lang);

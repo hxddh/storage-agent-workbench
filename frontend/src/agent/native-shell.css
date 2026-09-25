@@ -146,13 +146,13 @@
 
 /* Day groups: Today · Yesterday · a dated header. */
 .native-sidebar-section {
-  margin: 14px 10px 4px;
+  margin: 6px 10px 4px;
   color: var(--gray-500);
   font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-.native-task-group:first-child .native-sidebar-section { margin-top: 6px; }
+.native-task-group + .native-task-group { margin-top: 8px; }
 
 .native-task-list {
   min-height: 0;
@@ -438,7 +438,13 @@
   animation: ui-rise-in var(--duration-base) var(--ease-out);
 }
 .native-palette:focus-within { box-shadow: var(--shadow-pop), 0 0 0 1px var(--edge-strong); }
-.native-palette-list { mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent); }
+.native-palette-search { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--edge); padding: 0 16px; }
+.native-palette-search > svg { flex: none; color: var(--gray-500); }
+.native-palette-search input { width: 100%; height: 52px; border: 0; background: transparent; color: var(--gray-100); font-size: var(--text-prose); outline: none; }
+.native-palette-search input::placeholder { color: var(--gray-500); }
+.native-palette-list { max-height: 52vh; overflow: auto; padding: 6px; }
+.native-palette-empty { padding: 24px 12px; color: var(--gray-500); font-size: var(--text-sm); text-align: center; }
+.native-palette-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .native-palette-item {
   display: flex;
   width: 100%;
@@ -469,21 +475,6 @@
   font-size: var(--text-2xs);
 }
 .native-palette-foot span { display: inline-flex; align-items: center; gap: 5px; }
-.native-kbd {
-  display: inline-grid;
-  min-width: 18px;
-  height: 18px;
-  place-items: center;
-  border: 1px solid var(--edge-strong);
-  border-bottom-width: 1.5px;
-  border-radius: 4px;
-  padding: 0 4px;
-  background: var(--elevated);
-  color: var(--gray-400);
-  font-family: inherit;
-  font-size: var(--text-2xs);
-  line-height: 1;
-}
 
 /* ---------- Task area and the inspector ---------- */
 
@@ -512,10 +503,10 @@
 /* v3.0 — the inspector: Evidence · Report · Execution open on the right,
    resizable and closable (Esc, ⌘I). Below 1100px it floats over the document
    instead of squeezing it. */
-.native-inspector {
+.native-sidepane {
   position: relative;
   display: flex;
-  width: var(--inspector-w);
+  width: var(--sidepane-w);
   min-width: 22rem;
   max-width: 60%;
   flex: none;
@@ -525,7 +516,7 @@
   animation: ui-sheet-in var(--duration-base) var(--ease-out);
 }
 @media (max-width: 1099px) {
-  .native-inspector {
+  .native-sidepane {
     position: absolute;
     z-index: 50;
     top: 0;
@@ -535,7 +526,7 @@
     box-shadow: var(--shadow-pop);
   }
 }
-.native-inspector-resize {
+.native-sidepane-resize {
   position: absolute;
   z-index: 2;
   top: 0;
@@ -544,7 +535,7 @@
   width: 6px;
   cursor: col-resize;
 }
-.native-inspector-resize::after {
+.native-sidepane-resize::after {
   content: "";
   position: absolute;
   top: 0;
@@ -553,9 +544,9 @@
   width: 2px;
   transition: background-color var(--duration-fast) var(--ease-out);
 }
-.native-inspector-resize:hover::after,
-.native-inspector-resize:active::after { background: var(--accent); }
-.native-inspector-head {
+.native-sidepane-resize:hover::after,
+.native-sidepane-resize:active::after { background: var(--accent); }
+.native-sidepane-head {
   display: flex;
   height: 44px;
   flex: none;
@@ -564,8 +555,8 @@
   border-bottom: 1px solid var(--edge);
   padding: 0 8px 0 10px;
 }
-.native-inspector-tabs { display: flex; min-width: 0; flex: 1; align-items: center; gap: 2px; }
-.native-inspector-tab {
+.native-sidepane-tabs { display: flex; min-width: 0; flex: 1; align-items: center; gap: 2px; }
+.native-sidepane-tab {
   display: inline-flex;
   height: 28px;
   align-items: center;
@@ -579,24 +570,24 @@
   font-weight: 500;
   transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.native-inspector-tab:hover { background: var(--hover); color: var(--gray-100); }
-.native-inspector-tab[aria-selected="true"] { background: var(--hover); color: var(--gray-100); }
-.native-inspector-tab small { color: var(--gray-500); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
-.native-inspector-body {
+.native-sidepane-tab:hover { background: var(--hover); color: var(--gray-100); }
+.native-sidepane-tab[aria-selected="true"] { background: var(--hover); color: var(--gray-100); }
+.native-sidepane-tab small { color: var(--gray-500); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
+.native-sidepane-body {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
 }
-.native-inspector-empty { padding: 32px 20px; color: var(--gray-500); font-size: var(--text-sm); }
+.native-sidepane-empty { padding: 32px 20px; color: var(--gray-500); font-size: var(--text-sm); }
 /* A narrow panel: tables keep whole words and scroll sideways here rather
    than break "STANDARD" into "STANDAR/D" (the document itself never scrolls). */
-.native-inspector .agent-table { overflow-x: auto; }
-.native-inspector .agent-table-grid { table-layout: auto; min-width: 100%; }
-.native-inspector .agent-table-grid th,
-.native-inspector .agent-table-grid td { overflow-wrap: normal; white-space: nowrap; }
-.native-inspector .agent-prose { font-size: var(--text-sm); }
+.native-sidepane .agent-table { overflow-x: auto; }
+.native-sidepane .agent-table-grid { table-layout: auto; min-width: 100%; }
+.native-sidepane .agent-table-grid th,
+.native-sidepane .agent-table-grid td { overflow-wrap: normal; white-space: nowrap; }
+.native-sidepane .agent-prose { font-size: var(--text-sm); }
 
 /* ---------- Inspector documents ---------- */
 
@@ -651,13 +642,13 @@
 .agent-run-main small { color: var(--gray-500); font-size: var(--text-2xs); }
 .agent-report-body { max-width: 52rem; }
 
-/* Execution detail: a document in the inspector. */
+/* Execution detail: a document in the side pane. */
 [data-testid="execution-detail"] { min-height: 100%; }
 .native-execution-doc { padding: 4px 20px 56px; }
 .native-execution-doc-head { padding-bottom: 16px; border-bottom: 1px solid var(--edge); }
 .native-execution-doc-head h1 { margin: 8px 0 8px; color: var(--gray-100); font-size: var(--text-lg); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; }
 .native-execution-doc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; margin: 0; color: var(--gray-500); font-size: var(--text-2xs); }
-.native-execution-doc-meta > * + *::before { content: "·"; margin: 0 7px; color: var(--gray-600); }
+.native-execution-doc-meta > * + *::before { content: "·"; margin: 0 7px; color: var(--gray-500); }
 .native-execution-doc-usage { margin: 4px 0 0; color: var(--gray-500); font-size: var(--text-2xs); }
 .native-execution-doc-status { display: inline-flex; align-items: center; gap: 6px; color: var(--gray-200); font-weight: 500; }
 .native-execution-doc .agent-result-prose { font-size: var(--text-sm); line-height: 1.65; }
@@ -718,5 +709,61 @@
   .native-sidebar { transition: none; }
   .native-task-row[data-state="working"] .native-task-mark,
   .agent-run-status[data-status="running"] { animation: none; }
-  .native-inspector, .native-palette, .native-menu, .native-confirm { animation: none; }
+  .native-sidepane, .native-palette, .native-menu, .native-confirm { animation: none; }
 }
+
+/* ---------- Settings dialog (v3.0) ---------- */
+.native-settings-dialog {
+  position: relative;
+  display: flex;
+  width: min(880px, 96vw);
+  height: min(640px, 92vh);
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-2xl);
+  background: var(--canvas);
+  box-shadow: var(--shadow-pop);
+  animation: ui-rise-in var(--duration-base) var(--ease-out);
+}
+.native-settings-nav { display: flex; width: 13rem; flex-shrink: 0; flex-direction: column; border-right: 1px solid var(--edge); padding: 12px; background: var(--sidebar); }
+.native-settings-nav-title { padding: 4px 8px 12px; color: var(--gray-100); font-size: var(--text-sm); font-weight: 600; }
+.native-settings-nav-items { display: grid; gap: 2px; }
+.native-settings-nav-item {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 0 8px;
+  background: transparent;
+  color: var(--gray-300);
+  font-size: var(--text-sm);
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.native-settings-nav-item svg { color: var(--gray-500); }
+.native-settings-nav-item:hover { background: var(--hover); color: var(--gray-100); }
+.native-settings-nav-item[aria-pressed="true"] { background: var(--accent-dim); color: var(--gray-100); font-weight: 500; }
+.native-settings-nav-item[aria-pressed="true"] svg { color: var(--accent-text); }
+.native-settings-close { position: absolute; top: 12px; right: 12px; z-index: 1; }
+.native-settings-body { min-height: 0; flex: 1; overflow: auto; padding: 28px 32px; }
+.native-settings-pane-head { margin-bottom: 20px; padding-right: 32px; }
+.native-settings-pane-head h2 { margin: 0; color: var(--gray-100); font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.01em; }
+.native-settings-pane-head p { margin: 4px 0 0; color: var(--gray-500); font-size: var(--text-sm); line-height: 1.5; }
+.native-settings-group { border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 0 16px; background: var(--panel); }
+.native-settings-row { display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--edge); padding: 10px 0; }
+.native-settings-row:last-child { border-bottom: 0; }
+.native-settings-row-label { color: var(--gray-100); font-size: var(--text-sm); }
+.native-settings-row-hint { margin-top: 2px; color: var(--gray-500); font-size: var(--text-2xs); }
+.native-settings-group-label { margin: 28px 0 10px; }
+.native-settings-note { border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 14px 16px; background: var(--panel); gap: 14px; }
+@media (max-width: 640px) {
+  .native-settings-nav { width: 3.25rem; padding: 12px 6px; }
+  .native-settings-nav-title, .native-settings-nav-item > :not(svg) { display: none; }
+  .native-settings-nav-item { justify-content: center; font-size: 0; }
+  .native-settings-body { padding: 24px 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .native-settings-dialog { animation: none; } }
+.native-settings-title { margin: 0; color: var(--gray-100); font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.01em; }
+.native-settings-hint { margin: 4px 0 0; color: var(--gray-500); font-size: var(--text-sm); line-height: 1.5; }

@@ -58,7 +58,7 @@
 .task-result-meta + .task-result-meta::before {
   content: "·";
   margin: 0 7px;
-  color: var(--gray-600);
+  color: var(--gray-500);
 }
 /* The conclusion is the focal point of the page: the answer at 20px. */
 .result-answer {
@@ -97,6 +97,7 @@
 button.result-finding-head { cursor: pointer; transition: background-color var(--duration-fast) var(--ease-out); }
 button.result-finding-head:hover { background: var(--hover); }
 .result-finding-badge { min-width: 3.75rem; justify-content: center; }
+.result-finding-badge { text-transform: capitalize; }
 .result-finding-title { min-width: 0; flex: 1; overflow-wrap: break-word; }
 .result-finding-chevron { flex: none; color: var(--gray-500); transition: transform var(--duration-fast) var(--ease-out); }
 .result-finding-head[aria-expanded="true"] .result-finding-chevron { transform: rotate(90deg); }
@@ -146,7 +147,7 @@ button.result-finding-head:hover { background: var(--hover); }
 .result-full-label { margin: 32px 0 14px; padding-top: 24px; border-top: 1px solid var(--edge); }
 .result-conclusion + .turn-agent { margin-top: 0; }
 
-/* The outputs bar: Evidence · Report · Execution, each opening the inspector. */
+/* The outputs bar: Evidence · Report · Execution, each opening the side pane. */
 .task-outputs {
   display: flex;
   flex-wrap: wrap;
@@ -588,7 +589,7 @@ button.result-finding-head:hover { background: var(--hover); }
 .native-round:disabled { opacity: 0.4; }
 .native-round[data-primary="true"] { border-radius: 999px; background: var(--accent); color: var(--accent-fg); }
 .native-round[data-primary="true"]:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-fg); }
-.native-round[data-primary="true"]:disabled { opacity: 1; background: var(--hover); color: var(--gray-600); }
+.native-round[data-primary="true"]:disabled { opacity: 1; background: var(--hover); color: var(--gray-500); }
 .native-round:active:not(:disabled) { transform: scale(0.96); }
 .native-model-chip {
   display: inline-flex;
@@ -872,3 +873,106 @@ button.result-finding-head:hover { background: var(--hover); }
 /* v2.1 — live work arrives as it happens: new items ease in. */
 .task-live .turn-commentary,
 .task-live [data-testid="worked-row"] { animation: reveal-in var(--duration-base) var(--ease-out); }
+
+/* ---------- Figures (v3.0) ---------- */
+.viz-figures { display: grid; gap: 16px; margin-top: 24px; }
+.viz-card {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  padding: 14px 16px 12px;
+}
+.viz-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.viz-title { color: var(--gray-100); font-size: var(--text-sm); font-weight: 600; }
+.viz-view-toggle {
+  height: 22px;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius-md);
+  padding: 0 8px;
+  background: transparent;
+  color: var(--gray-400);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.viz-view-toggle:hover, .viz-view-toggle[aria-pressed="true"] { background: var(--hover); color: var(--gray-100); }
+.viz-body { min-width: 0; }
+.viz-section { margin-top: 20px; border-top: 1px solid var(--edge); padding-top: 14px; }
+.viz-section-tight { margin-top: 10px; }
+.viz-subhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.viz-subtitle { margin-bottom: 8px; color: var(--gray-300); font-size: var(--text-2xs); font-weight: 600; }
+.viz-subhead .viz-subtitle { margin-bottom: 0; }
+.viz-stat-inline { display: flex; align-items: baseline; gap: 8px; margin: 0; }
+.viz-stat-inline strong { color: var(--gray-100); font-size: var(--text-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
+.viz-stat-inline span { color: var(--gray-500); font-size: var(--text-2xs); }
+.viz-coverage { margin: 12px 0 0; color: var(--gray-500); font-size: var(--text-2xs); line-height: 1.5; }
+
+.viz-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 10px; color: var(--gray-300); font-size: var(--text-2xs); }
+.viz-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.viz-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+
+.viz-plot { position: relative; width: 100%; min-width: 0; }
+.viz-plot svg { display: block; overflow: visible; }
+.viz-grid { stroke: var(--edge); stroke-width: 1; stroke-dasharray: 2 3; }
+.viz-baseline { stroke: var(--edge-strong); stroke-width: 1; }
+.viz-tick { fill: var(--gray-500); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
+.viz-hit { fill: transparent; cursor: default; }
+.viz-hit:hover { fill: var(--hover); fill-opacity: 0.5; }
+.viz-tooltip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  min-width: 10rem;
+  gap: 4px;
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  background: var(--elevated);
+  box-shadow: var(--shadow-elev);
+  color: var(--gray-200);
+  font-size: var(--text-2xs);
+  pointer-events: none;
+  animation: ui-pop-in var(--duration-fast) var(--ease-out);
+}
+.viz-tooltip strong { color: var(--gray-100); font-weight: 600; }
+.viz-tooltip span { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; }
+.viz-tooltip i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+.viz-tooltip em { overflow: hidden; color: var(--gray-400); font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.viz-tooltip b { color: var(--gray-100); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.viz-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.viz-split-stack { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (max-width: 640px) { .viz-split { grid-template-columns: minmax(0, 1fr); gap: 16px; } }
+.viz-ranked { display: grid; gap: 6px; min-width: 0; }
+.viz-ranked-row {
+  display: grid;
+  grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-radius: 4px;
+}
+.viz-ranked-row:hover .viz-ranked-label { color: var(--gray-100); }
+.viz-ranked-label { overflow: hidden; color: var(--gray-300); font-size: var(--text-2xs); text-overflow: ellipsis; white-space: nowrap; }
+.viz-ranked-track { position: relative; height: 8px; overflow: hidden; border-radius: 2px; background: var(--hover); }
+.viz-ranked-track > span { position: absolute; inset: 0 auto 0 0; border-radius: 0 4px 4px 0; background: var(--viz-1); }
+.viz-ranked-value { min-width: 3.5rem; color: var(--gray-200); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; text-align: right; }
+
+.viz-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.viz-stat { display: grid; gap: 6px; border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 10px 12px; background: var(--canvas); }
+.viz-stat strong { color: var(--gray-100); font-size: var(--text-xl); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+.viz-stat-label { display: inline-flex; align-items: center; gap: 6px; color: var(--gray-400); font-size: var(--text-2xs); }
+.viz-stat-label i { display: inline-block; width: 6px; height: 6px; border-radius: 999px; }
+
+.viz-gap { border: 1px dashed var(--edge-strong); border-radius: var(--radius-md); padding: 10px 12px; color: var(--gray-400); font-size: var(--text-sm); line-height: 1.5; }
+.viz-gap strong { display: block; color: var(--gray-200); font-weight: 500; }
+.viz-gap p { margin: 2px 0 0; color: var(--gray-500); font-size: var(--text-2xs); }
+
+.viz-table-wrap { overflow-x: auto; }
+.viz-table { width: 100%; border-collapse: collapse; font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
+.viz-table th, .viz-table td { border-bottom: 1px solid var(--edge); padding: 6px 8px; text-align: right; white-space: nowrap; }
+.viz-table thead th { color: var(--gray-400); font-weight: 600; }
+.viz-table th[scope="row"], .viz-table thead th:first-child { color: var(--gray-200); font-weight: 500; text-align: left; }
+.viz-table td { color: var(--gray-200); }
+
+@media (prefers-reduced-motion: reduce) { .viz-tooltip { animation: none; } }

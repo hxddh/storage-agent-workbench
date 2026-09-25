@@ -85,14 +85,14 @@ export function TaskDetails({ hasResult }: { hasResult: boolean }) {
   );
 }
 
-const INSPECTOR_WIDTH_KEY = "saw.inspectorWidth";
-const INSPECTOR_MIN = 352;
-const INSPECTOR_MAX = 880;
+const PANE_WIDTH_KEY = "saw.sidepaneWidth";
+const PANE_MIN = 352;
+const PANE_MAX = 880;
 
 function storedInspectorWidth(): number | null {
   try {
-    const raw = Number(localStorage.getItem(INSPECTOR_WIDTH_KEY));
-    return Number.isFinite(raw) && raw >= INSPECTOR_MIN ? Math.min(raw, INSPECTOR_MAX) : null;
+    const raw = Number(localStorage.getItem(PANE_WIDTH_KEY));
+    return Number.isFinite(raw) && raw >= PANE_MIN ? Math.min(raw, PANE_MAX) : null;
   } catch { return null; }
 }
 
@@ -132,9 +132,9 @@ export function TaskInspector({ hasResult }: { hasResult: boolean }) {
     const right = panelRef.current?.getBoundingClientRect().right ?? window.innerWidth;
     handle.setPointerCapture(event.pointerId);
     const move = (next: globalThis.PointerEvent) => {
-      const px = Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, right - next.clientX));
+      const px = Math.max(PANE_MIN, Math.min(PANE_MAX, right - next.clientX));
       setWidth(px);
-      try { localStorage.setItem(INSPECTOR_WIDTH_KEY, String(px)); } catch {}
+      try { localStorage.setItem(PANE_WIDTH_KEY, String(px)); } catch {}
     };
     const stop = () => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", stop); handle.removeEventListener("pointercancel", stop); };
     handle.addEventListener("pointermove", move);
@@ -146,22 +146,22 @@ export function TaskInspector({ hasResult }: { hasResult: boolean }) {
     <aside
       ref={panelRef}
       tabIndex={-1}
-      className="native-inspector"
-      data-testid="task-inspector"
+      className="native-sidepane"
+      data-testid="task-sidepane"
       data-kind={kind ?? "none"}
       aria-label={nav.inspector}
       style={width ? { width } : undefined}
     >
       <div
-        className="native-inspector-resize"
+        className="native-sidepane-resize"
         role="separator"
         aria-orientation="vertical"
         aria-label={nav.resize}
         onPointerDown={startResize}
-        onDoubleClick={() => { setWidth(null); try { localStorage.removeItem(INSPECTOR_WIDTH_KEY); } catch {} }}
+        onDoubleClick={() => { setWidth(null); try { localStorage.removeItem(PANE_WIDTH_KEY); } catch {} }}
       />
-      <header className="native-inspector-head">
-        <div className="native-inspector-tabs" role="tablist" aria-label={nav.inspector}>
+      <header className="native-sidepane-head">
+        <div className="native-sidepane-tabs" role="tablist" aria-label={nav.inspector}>
           {kinds.map((k) => {
             const count = kindCount(details, k);
             return (
@@ -170,8 +170,8 @@ export function TaskInspector({ hasResult }: { hasResult: boolean }) {
                 type="button"
                 role="tab"
                 aria-selected={k === kind}
-                className="native-inspector-tab"
-                data-testid={`inspector-tab-${k}`}
+                className="native-sidepane-tab"
+                data-testid={`sidepane-tab-${k}`}
                 onClick={() => open(k)}
               >
                 <Icon name={KIND_ICON[k]} size={14} />
@@ -181,11 +181,11 @@ export function TaskInspector({ hasResult }: { hasResult: boolean }) {
             );
           })}
         </div>
-        <IconButton icon="close" label={t("common.close")} onClick={close} data-testid="inspector-close" />
+        <IconButton icon="close" label={t("common.close")} onClick={close} data-testid="sidepane-close" />
       </header>
-      <div className="native-inspector-body" role="tabpanel">
+      <div className="native-sidepane-body" role="tabpanel">
         {kind === null ? (
-          <p className="native-inspector-empty">{c.execution.statuses.queued}</p>
+          <p className="native-sidepane-empty">{c.execution.statuses.queued}</p>
         ) : kind === "evidence" ? (
           <div data-testid="task-detail-evidence">
             <EvidenceReview detail={detail} taskId={taskId} selectedFindingId={selection.findingId ?? selection.id} provenance={provenance} />

@@ -170,8 +170,8 @@ export function ModelProvidersPanel() {
     <div className="max-w-3xl" data-testid="settings-model-providers">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-medium text-gray-100">{t("prov.tabModel")}</h2>
-          <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("prov.modelHint")}</p>
+          <h2 className="native-settings-title">{t("prov.tabModel")}</h2>
+          <p className="native-settings-hint">{t("prov.modelHint")}</p>
         </div>
         {!showForm ? (
           <div ref={menuRef} className="relative shrink-0">

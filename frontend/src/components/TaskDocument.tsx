@@ -163,7 +163,7 @@ export function TaskDocument({
   const lastResult = useMemo(() => lastWorkResult(items), [items]);
   const figuresFor = (item: Extract<TaskItem, { kind: "message" }>) =>
     item.id === lastResult?.id && (hasFigures || provenance?.findings.length) ? (
-      <section className="task-analysis-figures mt-4" data-testid="task-analysis-figures">
+      <section className="task-analysis-figures" data-testid="task-analysis-figures">
         {hasFigures ? <AnalysisFigures provenance={provenance} /> : null}
         {provenance?.findings.length ? (
           <div className={hasFigures ? "mt-4 space-y-1" : "space-y-1"}>

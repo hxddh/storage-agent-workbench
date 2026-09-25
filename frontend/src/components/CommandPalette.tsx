@@ -13,12 +13,15 @@ function Keys({ hint }: { hint: string }) {
   const keys = hint.startsWith(MOD) && hint.length > MOD.length ? [MOD, hint.slice(MOD.length)] : [hint];
   return (
     <span className="flex shrink-0 items-center gap-1" data-testid="palette-keys">
-      {keys.map((key) => <kbd key={key} className="native-kbd">{key}</kbd>)}
+      {keys.map((key) => <kbd key={key} className="ui-kbd">{key}</kbd>)}
     </span>
   );
 }
 
-type Cmd = { id: string; label: string; hint?: string; icon: IconName; run: () => void; group: "action" | "engine" | "task" };
+type Cmd = { id: string; label: string; hint?: string; icon: IconName; run: () => void; group: "action" | "task"; marks?: number[] };
+
+/** How many tasks the palette lists before the user types (most recent first). */
+const RECENT_LIMIT = 8;
 
 /** v1.13 — subsequence fuzzy score (higher is better, -1 is no match).
  * Contiguous runs and prefix matches score above scattered letters, so
@@ -42,6 +45,32 @@ export function fuzzyScore(query: string, label: string): number {
   }
   if (qi < q.length) return -1;
   return score - s.length * 0.01; // shorter labels win ties
+}
+
+/** v3.0 — the label positions a query matches (the same greedy subsequence
+ * `fuzzyScore` walks), so the palette can mark them. */
+export function fuzzyIndices(query: string, label: string): number[] {
+  const q = query.toLowerCase();
+  const s = label.toLowerCase();
+  const out: number[] = [];
+  let qi = 0;
+  for (let si = 0; si < s.length && qi < q.length; si++) {
+    if (s[si] === q[qi]) { out.push(si); qi++; }
+  }
+  return qi === q.length ? out : [];
+}
+
+function Marked({ label, marks }: { label: string; marks?: number[] }) {
+  if (!marks || marks.length === 0) return <>{label}</>;
+  const set = new Set(marks);
+  const parts: Array<{ text: string; hit: boolean }> = [];
+  for (let i = 0; i < label.length; i++) {
+    const hit = set.has(i);
+    const last = parts[parts.length - 1];
+    if (last && last.hit === hit) last.text += label[i];
+    else parts.push({ text: label[i], hit });
+  }
+  return <>{parts.map((part, i) => (part.hit ? <mark key={i}>{part.text}</mark> : <span key={i}>{part.text}</span>))}</>;
 }
 
 /** ⌘K: switch tasks or run a real runtime action. An overlay, not a destination. */
@@ -81,19 +110,10 @@ export function CommandPalette({
     langEn: t("palette.langEn"),
     langZh: t("palette.langZh"),
     shortcuts: t("palette.shortcuts"),
-    engines: t("palette.engines"),
-    engineCost: t("palette.engineCost"),
-    enginePlan: t("palette.enginePlan"),
-    engineBaseline: t("palette.engineBaseline"),
-    engineDrift: t("palette.engineDrift"),
-    engineReport: t("palette.engineReport"),
-    // v1.16 — full-sentence drafts: a bare label is too thin a direction
-    // (no scope), and the user reviews the draft before sending.
-    engineCostAsk: t("palette.engineCostAsk"),
-    enginePlanAsk: t("palette.enginePlanAsk"),
-    engineBaselineAsk: t("palette.engineBaselineAsk"),
-    engineDriftAsk: t("palette.engineDriftAsk"),
-    engineReportAsk: t("palette.engineReportAsk"),
+    recent: t("palette.recent"),
+    navigate: t("palette.navigate"),
+    run: t("palette.run"),
+    close: t("palette.close"),
   }), [t]);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
@@ -140,18 +160,6 @@ export function CommandPalette({
         run: () => { live.shortcuts?.(); onClose(); }, group: "action",
       });
     }
-    // v1.16 — the engines are discoverable here, not in painted hints or
-    // model prose: each item fills the Composer with the ask and focuses it.
-    // Typing stays the action; the palette only saves the wording.
-    const engines: Cmd[] = live.prefill && !live.busy
-      ? [
-          { id: "engine-cost", label: copy.engineCost, icon: "storage", run: () => { live.prefill?.(copy.engineCostAsk); onClose(); }, group: "engine" },
-          { id: "engine-plan", label: copy.enginePlan, icon: "tool", run: () => { live.prefill?.(copy.enginePlanAsk); onClose(); }, group: "engine" },
-          { id: "engine-baseline", label: copy.engineBaseline, icon: "file", run: () => { live.prefill?.(copy.engineBaselineAsk); onClose(); }, group: "engine" },
-          { id: "engine-drift", label: copy.engineDrift, icon: "refresh", run: () => { live.prefill?.(copy.engineDriftAsk); onClose(); }, group: "engine" },
-          { id: "engine-report", label: copy.engineReport, icon: "compose", run: () => { live.prefill?.(copy.engineReportAsk); onClose(); }, group: "engine" },
-        ]
-      : [];
     actions.push(
       { id: "theme", label: theme === "dark" ? copy.themeLight : copy.themeDark, icon: "sun", run: () => { toggle(); onClose(); }, group: "action" },
       { id: "lang", label: lang === "zh" ? copy.langEn : copy.langZh, icon: "globe", run: () => { setLang(lang === "zh" ? "en" : "zh"); onClose(); }, group: "action" },
@@ -163,18 +171,18 @@ export function CommandPalette({
       run: () => { onSelectTask(task.id); onClose(); },
       group: "task",
     }));
-    const all = [...actions, ...engines, ...taskItems];
     const query = q.trim();
-    if (!query) return all;
-    // Tasks rank by fuzzy score; actions keep substring matching (few, fixed).
-    const ranked = taskItems
+    // v3.0 — at rest: the few recent tasks first (switching is the common
+    // case), then the actions. The engine catalog is gone: the empty start's
+    // starters and the Composer are where work is worded.
+    if (!query) return [...taskItems.slice(0, RECENT_LIMIT), ...actions];
+    // Everything ranks by one fuzzy score; the matched letters are marked.
+    const rank = (list: Cmd[]) => list
       .map((command) => ({ command, score: fuzzyScore(query, command.label) }))
       .filter((row) => row.score >= 0)
       .sort((a, b) => b.score - a.score)
-      .map((row) => row.command);
-    const ql = query.toLowerCase();
-    const matchedActions = [...actions, ...engines].filter((command) => command.label.toLowerCase().includes(ql));
-    return [...matchedActions, ...ranked];
+      .map((row) => ({ ...row.command, marks: fuzzyIndices(query, row.command.label) }));
+    return [...rank(taskItems), ...rank(actions)];
   }, [q, tasks, onNew, onOpenSettings, onSelectTask, onClose, t, copy, theme, toggle, lang, setLang]);
 
   useEffect(() => {
@@ -190,6 +198,8 @@ export function CommandPalette({
     else if (event.key === "Enter") { event.preventDefault(); items[sel]?.run(); }
   };
 
+  const groupLabel = (group: Cmd["group"]) => (group === "task" ? (q.trim() ? copy.tasks : copy.recent) : copy.actions);
+
   return (
     <div className="fixed inset-0 z-palette flex items-start justify-center bg-scrim pt-[16vh] animate-fade-in" onClick={onClose}>
       <div
@@ -198,11 +208,11 @@ export function CommandPalette({
         aria-modal="true"
         aria-label={copy.placeholder}
         data-testid="command-palette"
-        className="native-palette w-[min(600px,92vw)] overflow-hidden rounded-2xl animate-rise-in"
+        className="native-palette w-[min(600px,92vw)] overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center gap-3 border-b border-edge px-4">
-          <Icon name="search" size={16} className="shrink-0 text-gray-500" />
+        <div className="native-palette-search">
+          <Icon name="search" size={16} />
           <input
             ref={inputRef}
             value={q}
@@ -211,29 +221,43 @@ export function CommandPalette({
             placeholder={copy.placeholder}
             // The palette itself is the focused surface: no inner focus box.
             data-focus-ring="container"
-            className="w-full bg-transparent py-3.5 text-base text-gray-100 placeholder:text-gray-500 focus:outline-none"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="command-palette-list"
+            aria-activedescendant={items[sel] ? `palette-item-${sel}` : undefined}
           />
         </div>
-        <div className="native-palette-list max-h-[52vh] overflow-auto p-2">
-          {items.length === 0 ? <div className="px-3 py-6 text-center text-sm text-gray-500">{copy.empty}</div> : null}
+        <div className="native-palette-list" id="command-palette-list" role="listbox" aria-label={copy.placeholder}>
+          {items.length === 0 ? <div className="native-palette-empty">{copy.empty}</div> : null}
           {items.map((command, index) => (
-            <div key={command.id}>
+            <div key={command.id} role="presentation">
               {command.group !== items[index - 1]?.group ? (
-                <div className="px-2 pb-1 pt-2 text-2xs font-medium text-gray-500" data-testid={`command-palette-${command.group}s`}>
-                  {command.group === "task" ? copy.tasks : command.group === "engine" ? copy.engines : copy.actions}
+                <div className="native-palette-group ui-label" role="presentation" data-testid={`command-palette-${command.group}s`}>
+                  {groupLabel(command.group)}
                 </div>
               ) : null}
               <button
+                type="button"
+                id={`palette-item-${index}`}
+                role="option"
+                aria-selected={index === sel}
+                data-active={index === sel ? "true" : undefined}
+                tabIndex={-1}
                 onMouseEnter={() => setSel(index)}
                 onClick={() => command.run()}
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-[background-color] duration-fast ${index === sel ? "bg-hover ring-1 ring-inset ring-edge" : ""}`}
+                className="native-palette-item"
               >
-                <Icon name={command.icon} size={16} className={index === sel ? "text-gray-100" : "text-gray-500"} />
-                <span className="min-w-0 flex-1 truncate text-sm text-gray-100">{command.label}</span>
+                <Icon name={command.icon} size={16} />
+                <span className="native-palette-label"><Marked label={command.label} marks={command.marks} /></span>
                 {command.hint ? <Keys hint={command.hint} /> : null}
               </button>
             </div>
           ))}
+        </div>
+        <div className="native-palette-foot" aria-hidden>
+          <span><kbd className="ui-kbd">↑</kbd><kbd className="ui-kbd">↓</kbd>{copy.navigate}</span>
+          <span><kbd className="ui-kbd">↵</kbd>{copy.run}</span>
+          <span><kbd className="ui-kbd">Esc</kbd>{copy.close}</span>
         </div>
       </div>
     </div>
