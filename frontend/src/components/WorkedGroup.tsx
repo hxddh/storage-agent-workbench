@@ -154,7 +154,7 @@ export function WorkedGroup({
           onClick={() => setOpen(!expanded)}
           data-testid="execution-head"
         >
-          <Icon name="chevron" size={12} className="chevron" />
+          <Icon name="chevron" size={14} className="chevron" />
           {running ? (
             <span className="flex items-center gap-2">
               <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
@@ -211,9 +211,9 @@ export function WorkedGroup({
                       {isRunning ? (
                         <span className="working-mark" style={{ width: 6, height: 6 }} data-testid="trace-running" aria-hidden />
                       ) : failed ? (
-                        <span data-testid="trace-failed" aria-hidden><Icon name="x" size={11} stroke={2.2} /></span>
+                        <span data-testid="trace-failed" aria-hidden><Icon name="x" size={14} stroke={1.75} /></span>
                       ) : (
-                        <Icon name="check" size={11} stroke={2.2} />
+                        <Icon name="check" size={14} stroke={1.75} />
                       )}
                     </span>
                     <span className="native-tool-name" title={a.tool}>{toolLabel(a.tool, lang)}</span>
@@ -226,7 +226,7 @@ export function WorkedGroup({
                         title={t("trace.auditGap", { reason: a.audit_error })}
                         aria-label={t("trace.auditGap", { reason: a.audit_error })}
                       >
-                        <Icon name="alert" size={12} />
+                        <Icon name="alert" size={14} />
                       </span>
                     ) : null}
                     {isRunning && a.progress ? (

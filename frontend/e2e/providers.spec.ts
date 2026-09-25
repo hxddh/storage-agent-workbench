@@ -75,7 +75,7 @@ test.describe("command palette", () => {
     await boot(page);
     await page.keyboard.press("ControlOrMeta+k");
     const palette = page.getByRole("dialog");
-    const field = palette.getByRole("textbox");
+    const field = palette.getByRole("combobox");
     await expect(field).toBeVisible();
     await field.press("Escape");
     await expect(palette).toHaveCount(0);

@@ -20,6 +20,22 @@ import { asConclusion } from "../lib/conclusion";
 import { useTaskCopy } from "./taskCopy";
 import { useI18n } from "../i18n";
 import { useTaskDetails } from "../agent/taskDetails";
+import { useElapsed } from "../hooks/useElapsed";
+import { StatusDot } from "./ui";
+
+/** v3.0 — the work in progress announces itself: a live dot, the label and
+ * the wall-clock since the turn started (the same clock as the worked group). */
+function LiveHeader({ startedAt, running, stoppedLabel }: { startedAt: number | null; running: boolean; stoppedLabel: string | null }) {
+  const { t } = useI18n();
+  const elapsed = useElapsed(startedAt, running);
+  return (
+    <div className="task-live-head" data-testid="task-live-head">
+      <StatusDot tone={stoppedLabel ? "neutral" : "accent"} pulse={running} />
+      <span className="task-section-kicker">{stoppedLabel ?? t("live.kicker")}</span>
+      {elapsed != null && elapsed >= 1000 ? <span className="task-live-elapsed">{fmtElapsed(elapsed)}</span> : null}
+    </div>
+  );
+}
 
 const PENDING_DIRECTION_ID = "task-pending-direction";
 
@@ -147,7 +163,7 @@ export function TaskDocument({
   const lastResult = useMemo(() => lastWorkResult(items), [items]);
   const figuresFor = (item: Extract<TaskItem, { kind: "message" }>) =>
     item.id === lastResult?.id && (hasFigures || provenance?.findings.length) ? (
-      <section className="task-analysis-figures mt-4" data-testid="task-analysis-figures">
+      <section className="task-analysis-figures" data-testid="task-analysis-figures">
         {hasFigures ? <AnalysisFigures provenance={provenance} /> : null}
         {provenance?.findings.length ? (
           <div className={hasFigures ? "mt-4 space-y-1" : "space-y-1"}>
@@ -331,7 +347,7 @@ export function TaskDocument({
 
             {showLive ? (
               <section className="task-live" data-testid="task-live">
-                <span className="task-section-kicker">{t("live.kicker")}</span>
+                <LiveHeader startedAt={run.startedAt} running={busy && !run.stopped} stoppedLabel={run.stopped ? copy.stopped : null} />
                 {!hideLiveDirection || liveRow ? (
                   <div id={PENDING_DIRECTION_ID} className="task-item" data-direction={pending ?? ""}>
                     <UserTurn content={pending} />

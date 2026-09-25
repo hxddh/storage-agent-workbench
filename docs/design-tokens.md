@@ -1,130 +1,190 @@
 # Design tokens
 
-> **Storage Agent v2.2.0.** Presentation contract for the native Agent
-> window. Tokens do not invent runtime state, progress, or capabilities.
+> **Storage Agent v3.0.0 — Design system v3.** Presentation contract for the
+> native Agent Task window. Tokens do not invent runtime state, progress, or
+> capabilities.
 
-v1.09 replaces the v1.04–v1.08 warm/orange system with one achromatic surface
-ladder and an ink primary. Components must not introduce ad-hoc px font sizes,
-corner radii, z-index numbers, or `transition-all`.
+v3.0 replaces the v1.09–v2.2 system (an achromatic ladder, an ink primary,
+status as the only colour) with a calibrated cool-neutral ladder, **one
+restrained indigo accent** for what is actionable, selected, focused or in
+progress, and a status palette kept apart from it. Components must not
+introduce ad-hoc px font sizes, corner radii, z-index numbers, or
+`transition-all`; controls come from the component library instead of being
+restyled per surface.
 
 ## Source of truth
 
 | Layer | File |
 | --- | --- |
-| CSS variables (color, type, radius, motion, shadow, measure) | `frontend/src/index.css` |
+| CSS variables (color, type, spacing, radius, shadow, motion, measure) | `frontend/src/index.css` |
 | Tailwind mapping | `frontend/tailwind.config.js` |
-| Window, sidebar, title bar | `frontend/src/agent/native-shell.css` |
-| Result (meta line, conclusion, detail rows), Work log turns, tool rows, tables, Composer, banners, the `reveal-in` keyframe | `frontend/src/agent/native-document.css` |
-| Enforcement | `frontend/src/design-tokens.test.ts`, `frontend/src/theme.tokens.test.ts`, `frontend/src/agent/architecture.test.ts` |
+| Component library (Button, IconButton, Kbd, Badge, StatusDot, SectionLabel, Segmented, Field / TextInput / Select) | `frontend/src/components/ui.tsx` |
+| Component styles (`ui-*` only), menus, the activity bar, the `ui-rise-in` / `ui-pop-in` keyframes | `frontend/src/agent/native-components.css` |
+| Window, sidebar, title bar, side pane, Settings | `frontend/src/agent/native-shell.css` |
+| Result, outputs bar, Work log turns, tool rows, tables, figures, Composer, banners, empty start, the `reveal-in` keyframe | `frontend/src/agent/native-document.css` |
+| Figures (`ChartFrame`, marks, legend, tooltip) | `frontend/src/viz/marks.tsx` |
+| Enforcement | `frontend/src/design-tokens.test.ts`, `frontend/src/theme.tokens.test.ts`, `frontend/src/agent/architecture.test.ts`, `e2e/contrast.spec.ts` |
 
 Both themes are first-class. Dark is the default; light is not an inversion of
-foregrounds on a white page. Neighbouring surfaces stay at least 2.5 CIE L*
-apart and the ladder spans at least 12 L*; every ink step (`--gray-100` …
-`--gray-500`) clears WCAG AA (4.5:1) against `--hover`, the worst ground text
-can land on.
+foregrounds on a white page. Every text step (`--gray-100` … `--gray-500`)
+clears WCAG AA (4.5:1) against `--hover`, the worst ground text can land on.
 
 ## Color
 
-Surfaces (achromatic, dark → light in the dark theme):
-`--canvas #0f0f0f` < `--sidebar #181818` < `--panel #1f1f1f` < `--elevated #292929` < `--hover #333333`;
-edges `--edge #2a2a2a`, `--edge-strong #3d3d3d`. Light mirrors the ladder from `#ffffff` down to `#dadada`.
+### Neutral ladder
 
-Ink: `--gray-100` strongest … `--gray-500` faintest. No `--gray-600/700`.
+Surfaces (cool, low chroma; dark theme, darkest first):
+`--canvas #0e0e10` < `--sidebar #161619` < `--panel #1b1b1f` < `--elevated #232327` < `--hover #2c2c32`;
+edges `--edge #25252a`, `--edge-strong #34343b`. Light: `--canvas #ffffff`,
+`--sidebar #f4f4f5`, `--panel #f7f7f8`, `--elevated #ffffff`, `--hover #ebebee`,
+edges `#e8e8eb` / `#d6d6db`.
 
-Primary: `--accent` is **ink**, not a hue — `#ececec` on dark, `#0d0d0d` on
-light — with `--accent-fg` the opposing canvas. Filled controls (send,
-primary buttons) are the only places it is used as a fill. `--accent-soft` is
-the hover step; `--accent-dim` a faint tint.
+Ink: `--gray-100` primary · `--gray-200` strong secondary · `--gray-300`
+secondary · `--gray-400` tertiary · `--gray-500` meta. No `--gray-600/700`
+as text.
 
-Status is the only colour: `--danger` / `--warn` / `--success` with matching
-`-bg` and `-border`; `--warn-fg` for warning text. *Needs attention* is a
-warn-coloured dot (v2.1). Working is not a colour: it
-is the pulsing `.working-mark` and the `.working-shimmer` label.
+### Accent — the one hue
 
-Code: `--code-bg` plus `--syn-*` slots, AA against the slab in both themes.
-Figures: `--viz-1` … `--viz-6` for discrete series; `--viz-1` is the one blue
-in the system and exists for charts only.
+| Token | Dark | Light | Use |
+| --- | --- | --- | --- |
+| `--accent` | `#5d5bd4` | `#4f46e5` | fill of the primary action (one per surface), Composer send |
+| `--accent-soft` | `#6b69e0` | `#5b52f0` | hover step of the fill |
+| `--accent-fg` | `#ffffff` | `#ffffff` | label on an accent fill |
+| `--accent-text` | `#a4a2ff` | `#4338ca` | accent ink: links, the *Result* badge, live progress, the working dot |
+| `--accent-dim` | 16% tint | 9% tint | selection tint (selected sidebar row, selected Settings nav, accent badges) |
 
-Never use a raw `red-950` (or similar) palette step. Status meaning is a token.
+`--focus-ring` and `--selection` derive from the same hue. The accent is used
+**only** for the primary action, selection, focus, links and live progress —
+never for decoration, headings or status.
+
+### Status
+
+`--danger` / `--warn` / `--success` with matching `-bg` and `-border`;
+`--warn-fg` for warning text; `--danger-bg-strong` for an error slab. Status
+is carried by a dot (`StatusDot`) or a badge (`Badge` tone) — never coloured
+prose or a coloured number. Severity badges read High / Medium / Low / Info.
+*Needs attention* is a warn dot. Status colours are never series colours.
+
+### Figures
+
+`--viz-1` … `--viz-6` is a categorical order — indigo, orange, aqua, gold,
+magenta, blue — validated for CVD and normal-vision separation in both themes
+(dark `#6c6af2 #d95926 #199e70 #c98500 #d55181 #3987e5`; light
+`#4f46e5 #eb6834 #1baf7a #eda100 #e87ba4 #2a78d6`). Series take them in order;
+text in figures uses ink tokens, never a series colour.
+
+### Code
+
+`--code-bg` plus `--syn-*` slots (`str`, `num`, `kw`, `com`, `name`, `tag`,
+`punct`), AA against the slab in both themes.
+
+Never use a raw palette step (`red-950` or similar). Meaning is a token.
 
 ## Type
 
-| Token | Size | Use |
+Five sizes, each with one job. Older token names remain as aliases so nothing
+silently loses its size.
+
+| Token | Size / leading | Use |
 | --- | --- | --- |
-| `--text-2xs` | 11px | meta, keycaps, chips |
-| `--text-xs` | 12px | secondary chrome, tool rows |
-| `--text-sm` | 13px | sidebar rows, title bar, controls |
-| `--text-base` | 14px | Direction, Composer input |
-| `--text-prose` | 15px / 1.75 | Work Result, Evidence, Report reading |
-| `--text-lg` | 16px | section titles (Settings) |
-| `--text-xl` | 19px | headings |
-| `--text-2xl` | 24px / 400 | the empty-start greeting |
+| `--text-2xs` | 11px / 16px | labels (`SectionLabel`), meta, key caps, badges |
+| `--text-xs` (= `--text-sm`, `--text-base`) | 13px / 20px | interface: sidebar rows, title bar, controls, tool rows, Composer |
+| `--text-prose` (= `--text-lg`) | 15px / 1.7 | reading: Work Result, Evidence, Report |
+| `--text-xl` | 20px / 28px | the conclusion's answer, the Result's focal point |
+| `--text-2xl` | 28px / 34px | page title: the empty-start greeting (the page's one `<h1>`) |
 
 Faces (v1.19): the **platform UI face first** — SF Pro on macOS, Segoe UI
 Variable on Windows — with vendored **Inter Variable** as the fallback where
 the platform face is not a UI face (Linux); **JetBrains Mono Variable** (93%
 size-adjusted) for tool names, keys, payloads, and code. CJK falls through to
 the platform face. Rank comes from size, weight, and space — not from fading
-text. Display weight is 400–500; nothing in chrome is bold.
+text.
+
+## Spacing, radius, elevation, icons
+
+Spacing is a **4px grid**: `--space-1` (4) · `-2` (8) · `-3` (12) · `-4` (16) ·
+`-5` (20) · `-6` (24) · `-8` (32) · `-10` (40) · `-12` (48).
+
+Radii are three: **6px** controls (`--radius-sm` / `--radius` / `--radius-md`),
+**10px** cards and menus (`--radius-lg` / `--radius-xl`), **14px** panels and
+dialogs (`--radius-2xl` / `--radius-3xl`). Dots and round controls are `full`.
+
+Shadows are two: `--shadow-elev` for menus and popovers, `--shadow-pop` for
+dialogs, the palette and the overlaid side pane (`--shadow-glow` is an alias of
+`--shadow-pop`). The canvas itself has hairline depth only.
+
+Icons are 16px (14px in dense rows) at a 1.5 stroke with rounded joins
+(`components/icons.tsx`).
 
 ## Measure and layout
 
-`--doc-measure: 46rem` is the reading column for Direction, prose, figures
-and banners. `--doc-track: 64rem` is the document track: tables,
-code fences and other data may use it and share the left edge
-(`.agent-result-prose > .agent-result-wide`). `--sidebar-w: 16.25rem` is the
-default sidebar; `--header-h: 2.25rem` the title bar and chrome rows;
-`--control-h: 2rem` controls.
+`--doc-measure: 46rem` is the reading column for Direction, prose and banners;
+`--doc-track: 64rem` is the document track for tables, code and figure cards.
+`--sidebar-w: 16.25rem` is the sidebar; `--sidepane-w: 30rem` the default side
+pane (resizable 352–880px; below 1100px it overlays the document);
+`--header-h: 2.75rem` the title bar; `--control-h: 2rem` controls.
 
-The window is `sidebar · title bar · document`. Depth is a hairline
-(`--shadow-elev`), never a drop shadow; popovers use `--shadow-pop`.
+The window is `sidebar · title bar · document`, plus the one side pane when an
+output is open.
 
-## Spacing, radius
+## Components
 
-Spacing follows the Tailwind 4px rhythm (`--space-1` … `--space-8`).
-Radius: `--radius-sm` (3px) through `--radius-2xl` (16px, dialogs) and
-`--radius-3xl` (24px, the Composer). Chips and round controls are `full`.
+`components/ui.tsx` is the only place a control's look is decided; the look
+lives in `agent/native-components.css`:
+
+- `Button` (`ui-btn`, `data-variant`): `primary` (accent fill, one per
+  surface) · `secondary` (raised neutral) · `ghost` (text only) · `selected`
+  · `danger`; sizes `sm` / `md` / `lg`.
+- `IconButton` (`ui-icon-btn`): square, its label is the accessible name and
+  tooltip.
+- `Kbd` (`ui-kbd`): one cap per key.
+- `Badge` (`ui-badge`, `data-tone` neutral / accent / success / warn / danger
+  / outline) and `StatusDot` (`ui-dot`, pulses only while work is live).
+- `SectionLabel` (`ui-label`): the one 11px section eyebrow.
+- `Segmented` (`ui-segmented`), `Field` + `TextInput` / `Select`
+  (`ui-field`, `ui-input`).
 
 ## Motion
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `--duration-instant` | 70ms | hover color |
-| `--duration-fast` | 120ms | chrome, controls |
-| `--duration-base` | 180ms | dialogs, palette, scrim, `reveal-in` |
-| `--duration-slow` | 240ms | sidebar collapse |
+| `--duration-fast` | 120ms | hover, controls, chrome (`--duration-instant` is an alias) |
+| `--duration-base` | 200ms | menus, palette, `reveal-in`, the progress meter |
+| `--duration-slow` | 280ms | sheets, dialogs, the side pane, sidebar collapse |
 
-Easing is one spring-like curve, `cubic-bezier(0.16, 1, 0.3, 1)` (`--ease-out`
-/ `--ease-emphasized`); `--ease-in-out` for cycles. Only `background`,
-`border`, `color`, `transform`, `opacity`, `width` transition.
-`prefers-reduced-motion` zeros animation and transition duration and replaces
-skeletons/pulses/shimmer with static surfaces.
+Easing: `--ease-out` `cubic-bezier(0.2, 0.8, 0.2, 1)`, `--ease-emphasized`
+`cubic-bezier(0.3, 0, 0, 1)`, `--ease-in-out` for cycles.
 
-Things that open in place — detail rows, finding details, folded answers,
-worked rows, new live items — ease in with one short reveal: the `reveal-in`
-keyframe (opacity 0 → 1, a 3px settle) at `--duration-base` with `--ease-out`
-(v2.1). Under `prefers-reduced-motion` the reveal is removed entirely.
+Things that open in place — finding details, folded answers, worked rows, new
+live items — ease in with the `reveal-in` keyframe. Menus pop in
+(`ui-pop-in`). **Sheets rise without fading** (`ui-rise-in`): an opaque
+surface never shows what is behind it.
 
-Loading uses **skeletons**, not spinners. In-flight tool rows use the
-`.working-mark` pulse and the *Working* shimmer, which is real activity — not a
-fake progress bar. The one progress bar is real (v2.2): a running survey or
-import row whose runtime reported `tool.progress` counts carries a 2px hairline
-meter (`.native-tool-meter`, `role=progressbar`) — `--edge` track, `--gray-300`
-fill, no status colour — whose width eases with `--duration-base` /
-`--ease-out`; `prefers-reduced-motion` removes that transition. Its width is
-`done / total` of units actually finished, never time.
+`prefers-reduced-motion` zeros animation and transition durations, stops the
+pulsing dot and the activity bar, and replaces skeletons and shimmer with
+static surfaces.
+
+Loading uses **skeletons**, not spinners. Live work is a pulsing
+`StatusDot` / `.working-mark` in `--accent-text` with a live elapsed timer;
+the title bar shows a thin indeterminate `ui-activity` hairline while the
+runtime reports work. The one determinate bar is real (v2.2): a running survey
+or import row whose runtime reported `tool.progress` counts carries a hairline
+meter (`.native-tool-meter`, `role=progressbar`, `--hover` track,
+`--accent-text` fill) whose width is `done / total` of units actually
+finished, never time.
 
 ## Keyboard and focus
 
-Visible `:focus-visible` ring follows the element's own radius. Opt out only
-with `data-focus-ring="container"` when an ancestor already draws the ring
-(Composer textarea). ⌘K / Ctrl+K is an overlay, not a destination. Palette
-actions: new task, focus composer, Stop, Steer, Resume, settings, theme,
-language, and task switch — only runtime-true work.
+Focus is a 2px `--focus-ring` (accent) outside a 1px canvas gap, following the
+element's own radius. Opt out only with `data-focus-ring="container"` when an
+ancestor already draws the ring (the Composer card draws an accent focus
+ring). ⌘K / Ctrl+K is a combobox/listbox palette (Recent · Actions, a
+key-hint footer), not a destination: only runtime-true work.
 
 ## Non-goals
 
 Tokens must not be used to imply a second Agent, a synthetic plan/stepper, an
-approval pause, a status bar, an inspector column, or a second presentation
-lifecycle. Detail rows under the Result are a quiet list of durable referents,
-each expanding in place.
+approval pause, a status bar, a permanent inspector column, or a second
+presentation lifecycle. The accent never signals status; status colours never
+mark series or decoration. The side pane is the one place the Agent Task's
+durable outputs open.

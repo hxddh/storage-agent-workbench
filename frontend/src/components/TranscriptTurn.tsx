@@ -23,7 +23,7 @@ function CopyAction({ text, testId }: { text: string; testId: string }) {
       aria-label={t("common.copy")}
       data-testid={testId}
     >
-      <Icon name={copied ? "check" : "copy"} size={12} />
+      <Icon name={copied ? "check" : "copy"} size={14} />
       {copied ? t("common.copied") : t("common.copy")}
     </button>
   );
@@ -156,7 +156,7 @@ export const AgentTurn = memo(function AgentTurn({
       {text.trim() && answerMode === "folded" && !findActive ? (
         <details className="turn-answer-fold" data-testid="log-answer">
           <summary>
-            <span className="turn-answer-fold-chevron" aria-hidden><Icon name="chevron" size={11} /></span>
+            <span className="turn-answer-fold-chevron" aria-hidden><Icon name="chevron" size={14} /></span>
             <span className="turn-answer-fold-gist">{conclusion?.answer || answerGist(text)}</span>
           </summary>
           <div className="turn-answer">
@@ -171,7 +171,7 @@ export const AgentTurn = memo(function AgentTurn({
           data-testid="log-result-above"
           onClick={() => revealInScroller(document.getElementById("task-result"), "start")}
         >
-          <Icon name="arrowUp" size={11} />
+          <Icon name="arrowUp" size={14} />
           {t("log.resultAbove")}
         </button>
       ) : null}

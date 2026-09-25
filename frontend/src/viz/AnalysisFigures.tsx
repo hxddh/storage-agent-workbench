@@ -7,6 +7,7 @@ import {
   Legend,
   RankedBars,
   StackedHorizon,
+  formatBytes,
   formatSignedBytes,
   formatUsd,
   seriesColor,
@@ -29,7 +30,7 @@ export function AnalysisFigures({
   if (!cost && !inventory && !drift && !access) return null;
 
   return (
-    <div className={compact ? "space-y-4" : "space-y-5"} data-testid="analysis-figures">
+    <div className="viz-figures" data-compact={compact ? "true" : undefined} data-testid="analysis-figures">
       {cost ? (
         cost.horizons.length === 0 ? (
           <ChartFrame title={t("viz.costTitle")} testId="viz-cost" coverage={cost.coverage} estimate>
@@ -42,6 +43,16 @@ export function AnalysisFigures({
             coverage={cost.coverage}
             estimate
             extra={t("viz.horizonsNote")}
+            table={{
+              columns: [t("viz.horizon"), ...cost.classes, ...(cost.priceConfirmed ? [t("viz.baseline"), t("viz.candidate")] : [])],
+              rows: cost.horizons.map((h) => [
+                `${h.day}d`,
+                ...cost.classes.map((name) => formatBytes(h.classes[name] ?? 0)),
+                ...(cost.priceConfirmed
+                  ? [h.baselineCost != null ? `$${h.baselineCost.toFixed(2)}` : "—", h.candidateCost != null ? `$${h.candidateCost.toFixed(2)}` : "—"]
+                  : []),
+              ]),
+            }}
           >
             {cost.classes.length > 1 ? (
               <Legend items={cost.classes.map((name, i) => ({ label: name, color: seriesColor(i) }))} />
@@ -53,23 +64,29 @@ export function AnalysisFigures({
             />
             {cost.priceConfirmed ? (
               <>
-                <div className="mt-4">
+                <div className="viz-section">
+                  <div className="viz-subhead">
+                    <div className="viz-subtitle">{t("viz.monthlyCost")}</div>
+                    {cost.delta != null ? (
+                      <p className="viz-stat-inline" data-testid="viz-cost-delta">
+                        <strong>{formatUsd(cost.delta)}</strong>
+                        <span>{t("viz.at365")}</span>
+                      </p>
+                    ) : null}
+                  </div>
                   <Legend items={[{ label: t("viz.baseline"), color: "var(--gray-500)" }, { label: t("viz.candidate"), color: "var(--viz-1)" }]} />
+                  <CostColumns
+                    days={cost.horizons.map((h) => h.day)}
+                    baseline={cost.horizons.map((h) => h.baselineCost)}
+                    candidate={cost.horizons.map((h) => h.candidateCost)}
+                    labels={{ baseline: t("viz.baseline"), candidate: t("viz.candidate") }}
+                  />
                 </div>
-                <CostColumns
-                  days={cost.horizons.map((h) => h.day)}
-                  baseline={cost.horizons.map((h) => h.baselineCost)}
-                  candidate={cost.horizons.map((h) => h.candidateCost)}
-                />
-                {cost.delta != null ? (
-                  <p className="mt-2 flex items-baseline gap-2" data-testid="viz-cost-delta">
-                    <span className="text-lg font-semibold tabular-nums text-gray-100">{formatUsd(cost.delta)}</span>
-                    <span className="text-2xs text-gray-500">{t("viz.at365")}</span>
-                  </p>
-                ) : null}
               </>
             ) : (
-              <GapState title={t("viz.costWithheld")} body={t("viz.costWithheldBody")} />
+              <div className="viz-section">
+                <GapState title={t("viz.costWithheld")} body={t("viz.costWithheldBody")} />
+              </div>
             )}
           </ChartFrame>
         )
@@ -82,10 +99,17 @@ export function AnalysisFigures({
           coverage={inventory.coverage}
           estimate={inventory.estimate}
           extra={t("viz.inventoryNote")}
+          table={{
+            columns: [t("viz.dimension"), t("viz.bucketLabel"), t("viz.objectsCol")],
+            rows: [
+              ...inventory.age.map((r) => [t("viz.ariaAge"), r.label, r.count.toLocaleString()]),
+              ...inventory.storageClass.map((r) => [t("viz.ariaClass"), r.label, r.count.toLocaleString()]),
+            ],
+          }}
         >
-          <div className={compact ? "space-y-3" : "grid gap-4 sm:grid-cols-2"}>
-            <RankedBars points={inventory.age.map((r) => ({ label: r.label, value: r.count }))} ariaLabel={t("viz.ariaAge")} />
-            <RankedBars points={inventory.storageClass.map((r) => ({ label: r.label, value: r.count }))} ariaLabel={t("viz.ariaClass")} />
+          <div className={compact ? "viz-split viz-split-stack" : "viz-split"}>
+            <RankedBars title={t("viz.ariaAge")} points={inventory.age.map((r) => ({ label: r.label, value: r.count }))} ariaLabel={t("viz.ariaAge")} />
+            <RankedBars title={t("viz.ariaClass")} points={inventory.storageClass.map((r) => ({ label: r.label, value: r.count }))} ariaLabel={t("viz.ariaClass")} />
           </div>
         </ChartFrame>
       ) : null}
@@ -97,27 +121,29 @@ export function AnalysisFigures({
           ) : (
             // Three counts as quiet stat cells: the number is ink, status lives
             // in one dot beside the label (never a coloured number).
-            <div className="grid grid-cols-3 divide-x divide-edge border-y border-edge">
+            <div className="viz-stats">
               {[
                 [t("viz.added"), drift.added, "var(--warn)"],
                 [t("viz.resolved"), drift.resolved, "var(--success)"],
                 [t("viz.stillHere"), drift.stillPresent, "var(--gray-500)"],
               ].map(([label, count, color]) => (
-                <div key={String(label)} className="px-3 py-2.5" data-testid="viz-drift-cell">
-                  <div className="text-xl font-semibold tabular-nums text-gray-100">{count}</div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-2xs text-gray-500">
-                    <i className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: String(color) }} aria-hidden />
+                <div key={String(label)} className="viz-stat" data-testid="viz-drift-cell">
+                  <span className="viz-stat-label">
+                    <i style={{ background: String(color) }} aria-hidden />
                     {label}
-                  </div>
+                  </span>
+                  <strong>{count}</strong>
                 </div>
               ))}
             </div>
           )}
           {drift.objectDelta != null ? (
-            <p className="mt-2 text-xs tabular-nums text-gray-300">
-              {t("viz.objects", { n: `${(drift.objectDelta ?? 0) >= 0 ? "+" : "−"}${Math.abs(drift.objectDelta ?? 0)}` })}
-              {drift.sizeDelta != null ? ` · ${formatSignedBytes(drift.sizeDelta)}` : ""}
-              <span className="ml-1.5 text-2xs text-gray-500">{t("viz.twoSnapshots")}</span>
+            <p className="viz-stat-inline viz-section-tight">
+              <strong>
+                {t("viz.objects", { n: `${(drift.objectDelta ?? 0) >= 0 ? "+" : "−"}${Math.abs(drift.objectDelta ?? 0)}` })}
+                {drift.sizeDelta != null ? ` · ${formatSignedBytes(drift.sizeDelta)}` : ""}
+              </strong>
+              <span>{t("viz.twoSnapshots")}</span>
             </p>
           ) : null}
         </ChartFrame>
@@ -127,6 +153,9 @@ export function AnalysisFigures({
         <ChartFrame title={t("viz.accessTitle")} testId="viz-access" coverage={access.coverage} estimate={access.estimate}>
           {access.latency ? (
             <RankedBars
+              title={t("viz.latency")}
+              format={(n) => `${n.toLocaleString()} ms`}
+              share={false}
               points={[
                 { label: "p50", value: access.latency.p50 },
                 { label: "p95", value: access.latency.p95 },
@@ -139,9 +168,9 @@ export function AnalysisFigures({
             <GapState title={t("viz.latencyGap")} body={t("viz.latencyBody")} />
           )}
           {access.methods.length || access.statuses.length ? (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <RankedBars points={access.methods.map((r) => ({ label: r.label, value: r.count }))} ariaLabel="Requests by method" />
-              <RankedBars points={access.statuses.map((r) => ({ label: r.label, value: r.count }))} ariaLabel="Requests by status" />
+            <div className={compact ? "viz-split viz-split-stack viz-section" : "viz-split viz-section"}>
+              <RankedBars title={t("viz.byMethod")} points={access.methods.map((r) => ({ label: r.label, value: r.count }))} ariaLabel="Requests by method" />
+              <RankedBars title={t("viz.byStatus")} points={access.statuses.map((r) => ({ label: r.label, value: r.count }))} ariaLabel="Requests by status" />
             </div>
           ) : null}
         </ChartFrame>

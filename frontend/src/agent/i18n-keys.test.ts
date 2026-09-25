@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  * Keys built at runtime must use one of the named dynamic prefixes.
  */
 const srcRoot = join(process.cwd(), "src");
-const DYNAMIC_PREFIXES = ["confidence.", "severity.", "settings.policy.", "tool.unit."];
+const DYNAMIC_PREFIXES = ["confidence.", "severity.", "settings.policy.", "tool.unit.", "settings.safety.", "start.access.", "start.survey.", "start.logs."];
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {

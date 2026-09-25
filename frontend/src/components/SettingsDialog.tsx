@@ -8,6 +8,7 @@ import { getVaultStatus } from "../api";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import { Icon, type IconName } from "./icons";
+import { IconButton, Segmented } from "./ui";
 
 const LANGUAGE_KEY = "saw.lang";
 
@@ -29,49 +30,30 @@ function VaultWarning() {
 
 function SectionHeading({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="mb-4">
-      <h2 className="text-lg font-medium text-gray-100">{title}</h2>
-      {hint ? <p className="mt-1 text-xs leading-relaxed text-gray-500">{hint}</p> : null}
-    </div>
+    <header className="native-settings-pane-head">
+      <h2>{title}</h2>
+      {hint ? <p>{hint}</p> : null}
+    </header>
   );
 }
 
 function Row({ label, hint, children }: { label: ReactNode; hint?: string; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-6 border-b border-edge py-4 last:border-0">
+    <div className="native-settings-row">
       <div className="min-w-0">
-        <div className="text-sm text-gray-100">{label}</div>
-        {hint ? <div className="mt-0.5 text-xs text-gray-500">{hint}</div> : null}
+        <div className="native-settings-row-label">{label}</div>
+        {hint ? <div className="native-settings-row-hint">{hint}</div> : null}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
   );
 }
 
-function Segmented<T extends string>({ options, value, onChange, labelId }: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (value: T) => void;
-  labelId: string;
-}) {
-  return (
-    <div className="inline-flex rounded-lg bg-elevated p-0.5" role="group" aria-labelledby={labelId}>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={value === option.value}
-          onClick={() => onChange(option.value)}
-          className={`rounded-md px-3 py-1 text-xs transition-[background-color,color] duration-fast ${
-            value === option.value ? "bg-canvas font-medium text-gray-100 shadow-elev" : "text-gray-400 hover:text-gray-100"
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+const SAFETY_POINTS: Array<{ key: "secrets" | "readOnly" | "imports"; icon: IconName }> = [
+  { key: "secrets", icon: "lock" },
+  { key: "readOnly", icon: "shield" },
+  { key: "imports", icon: "download" },
+];
 
 /** Settings: model, storage credentials, language and theme. Nothing else. */
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -112,23 +94,21 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         tabIndex={-1}
         aria-label={t("settings.title")}
         data-testid="settings-dialog"
-        className="relative flex h-[min(640px,92vh)] w-[min(880px,96vw)] overflow-hidden rounded-2xl border border-edge bg-canvas shadow-pop animate-rise-in"
+        className="native-settings-dialog"
         onClick={(event) => event.stopPropagation()}
       >
-        <nav className="flex w-52 shrink-0 flex-col border-r border-edge bg-sidebar p-3" aria-label={t("settings.title")}>
-          <div className="px-2 pb-3 pt-1 text-sm font-medium text-gray-100">{t("settings.title")}</div>
-          <div className="space-y-0.5" role="group" aria-label={t("settings.title")}>
+        <nav className="native-settings-nav" aria-label={t("settings.title")}>
+          <div className="native-settings-nav-title">{t("settings.title")}</div>
+          <div className="native-settings-nav-items" role="group" aria-label={t("settings.title")}>
             {sections.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 aria-pressed={section === item.id}
                 onClick={() => setSection(item.id)}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-[background-color,color] duration-fast ${
-                  section === item.id ? "bg-elevated text-gray-100" : "text-gray-300 hover:bg-hover hover:text-gray-100"
-                }`}
+                className="native-settings-nav-item"
               >
-                <Icon name={item.icon} size={15} className="text-gray-500" />
+                <Icon name={item.icon} size={16} />
                 {item.label}
               </button>
             ))}
@@ -136,32 +116,34 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         </nav>
 
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <button
-            onClick={onClose}
-            aria-label={t("common.close")}
-            className="native-icon-button absolute right-3 top-3"
-          >
-            <Icon name="close" size={15} />
-          </button>
-          <div className="min-h-0 flex-1 overflow-auto px-8 py-7">
+          <IconButton icon="close" label={t("common.close")} onClick={onClose} className="native-settings-close" />
+          <div className="native-settings-body">
             <VaultWarning />
             {section === "general" ? (
               <section>
                 <SectionHeading title={t("settings.general")} hint={t("settings.appearanceHint")} />
-                <Row label={<span id="seg-theme-label">{t("settings.theme")}</span>}>
-                  <Segmented labelId="seg-theme-label" options={themes} value={theme} onChange={(value) => setTheme(value as Theme)} />
-                </Row>
-                <Row label={<span id="seg-lang-label">{t("settings.language")}</span>}>
-                  <Segmented labelId="seg-lang-label" options={LANGS} value={lang} onChange={(value) => selectLanguage(value as Lang)} />
-                </Row>
-                {/* v2.1 — nothing asks for approval; the floor is a statement. */}
-                <div className="native-settings-note" data-testid="settings-safety">
-                  <div className="native-settings-note-head">
-                    <Icon name="shield" size={14} />
-                    {t("settings.safetyTitle")}
-                  </div>
-                  <p>{t("settings.safety")}</p>
+                <div className="native-settings-group">
+                  <Row label={<span id="seg-theme-label">{t("settings.theme")}</span>}>
+                    <Segmented labelId="seg-theme-label" options={themes} value={theme} onChange={(value) => setTheme(value as Theme)} />
+                  </Row>
+                  <Row label={<span id="seg-lang-label">{t("settings.language")}</span>}>
+                    <Segmented labelId="seg-lang-label" options={LANGS} value={lang} onChange={(value) => selectLanguage(value as Lang)} />
+                  </Row>
                 </div>
+                {/* v2.1 — nothing asks for approval; the floor is a statement.
+                    v3.0 — stated as three points, not a paragraph. */}
+                <h3 className="ui-label native-settings-group-label">{t("settings.safetyTitle")}</h3>
+                <ul className="native-settings-note" data-testid="settings-safety">
+                  {SAFETY_POINTS.map((point) => (
+                    <li key={point.key}>
+                      <span aria-hidden><Icon name={point.icon} size={14} /></span>
+                      <div>
+                        <strong>{t(`settings.safety.${point.key}.title`)}</strong>
+                        <p>{t(`settings.safety.${point.key}.body`)}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               </section>
             ) : null}
             {section === "model" ? <ModelProvidersPanel /> : null}

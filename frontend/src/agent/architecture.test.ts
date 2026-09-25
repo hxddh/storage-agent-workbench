@@ -193,14 +193,23 @@ describe("v1.09.0 native Agent window boundaries", () => {
   it("makes the empty start a greeting and the Composer, with no wizard or SKU catalog", () => {
     const task = source("../components/AgentTask.tsx");
     const app = source("../App.tsx");
-    expect(task).toContain('data-testid="task-start"');
-    expect(task).toContain("native-start-greeting");
-    expect(task).toContain("{composerNode}");
+    const start = source("../components/TaskStart.tsx");
+    expect(task).toContain("<TaskStart");
+    expect(task).toContain("composerNode={composerNode}");
+    expect(start).toContain('data-testid="task-start"');
+    expect(start).toContain("{composerNode}");
     expect(source("../components/TaskComposerHost.tsx")).toContain("void runner.submit");
     expect(task).not.toContain("FirstRunFlow");
     expect(task).not.toContain("showFirstRun");
     expect(task).not.toContain("delegate-suggestion");
-    expect(task).not.toContain("<h1");
+    // v3.0 — the greeting is the page's one heading, and three real starters
+    // sit under the Composer. A starter only fills the Composer; it never
+    // submits on its own.
+    expect(start).toContain('<h1 className="native-start-greeting"');
+    expect(start).toContain('data-testid="start-starter"');
+    expect(start).toContain("onStarter(t(`start.${starter.key}.ask`))");
+    expect(start).not.toContain("submit");
+    expect(task).toContain("onStarter={(text) => { composer.setText(text); composer.focus(); }}");
     expect(app).not.toContain("FirstRunWizard");
     absent("../hooks/useFirstRun.ts");
     absent("../lib/firstRun.ts");
@@ -239,7 +248,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     absent("../components/Chart.tsx");
   });
 
-  it("keeps the durable outputs as detail rows under the Result, never a side panel (v2.0)", () => {
+  it("opens the durable outputs in one inspector beside the Result (v3.0)", () => {
     const details = source("../components/TaskDetails.tsx");
     const shell = source("./AgentShell.tsx");
     const model = source("./model.ts");
@@ -248,8 +257,12 @@ describe("v1.09.0 native Agent window boundaries", () => {
     absent("./ArtifactsPanel.tsx");
     absent("./AgentReviewPanel.tsx");
     absent("./ExecutionReview.tsx");
-    expect(details).toContain("data-testid={`task-detail-${kind}`}");
-    expect(details).toContain("aria-expanded={open}");
+    // v3.0 — the outputs bar under the Result opens a resizable, closable
+    // inspector on the right; it replaced the v2.0 rows that expanded in place.
+    expect(details).toContain("data-testid={`task-detail-toggle-${kind}`}");
+    expect(details).toContain('data-testid="task-sidepane"');
+    expect(details).toContain('role="separator"');
+    expect(details).toContain('data-testid="sidepane-close"');
     expect(details).toContain("<EvidenceReview");
     expect(details).toContain("<ReportArtifact");
     expect(details).toContain("<ExecutionDetail");
@@ -268,9 +281,10 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(commands).toContain("openAgentArtifacts");
     expect(commands).toContain("openAgentReview");
     expect(commands).toContain("openAgentExecution");
-    expect(shell).not.toContain("overlay");
-    expect(shell).not.toContain("localStorage");
-    expect(css).toContain(".task-details");
+    expect(shell).toContain("<TaskInspector");
+    expect(shell).toContain("useDismissOnEscape(expanded,");
+    expect(css).toContain(".task-outputs");
+    expect(source("./native-shell.css")).toContain(".native-sidepane");
     expect(source("./native-shell.css")).not.toContain(".agent-artifacts-panel");
     expect(source("./EvidenceReview.tsx")).toContain('data-testid="evidence-review"');
     expect(source("./ReportArtifact.tsx")).toContain("export function ReportArtifact");
@@ -375,8 +389,10 @@ describe("v1.09.0 native Agent window boundaries", () => {
     const css = source("../index.css");
     const shell = source("./native-shell.css");
     const document = source("./native-document.css");
-    expect(css).toContain("--accent: #ececec");
-    expect(css).toContain("--accent: #0d0d0d");
+    // v3.0 — one restrained indigo accent (fill + ink) replaced the ink primary.
+    expect(css).toContain("--accent: #5d5bd4");
+    expect(css).toContain("--accent: #4f46e5");
+    expect(css).toContain("--accent-text:");
     expect(css).not.toContain("#ff6b35");
     expect(css).not.toContain("#c73a00");
     expect(css).toContain("--doc-measure: 46rem");
@@ -703,7 +719,9 @@ describe("v1.12.0 native runtime", () => {
     const agent = source("../components/NativeAgentPanel.tsx");
     const api = source("../api/settings.ts");
     expect(settings).toContain('data-testid="settings-safety"');
-    expect(settings).toContain('t("settings.safety")');
+    // v3.0 — the floor reads as three points (vault · read-only · bounded imports).
+    expect(settings).toContain("t(`settings.safety.${point.key}.title`)");
+    expect(settings).toContain("t(`settings.safety.${point.key}.body`)");
     expect(settings).not.toContain('id: "safety"');
     expect(agent).toContain("getInstructionsStatus");
     expect(agent).toContain('data-testid="instructions-open"');
@@ -718,11 +736,15 @@ describe("v1.12.0 native runtime", () => {
     const meter = source("../components/ContextMeter.tsx");
     const hook = source("../hooks/useCompactContext.ts");
     const i18n = source("../i18n.tsx");
-    // v1.16 — palette copy lives in the i18n dict; engines + shortcuts entries exist.
+    // v1.16 — palette copy lives in the i18n dict; shortcuts entries exist.
+    // v3.0 — the engine catalog left the palette (the empty start's starters
+    // and the Composer are where work is worded); groups are Recent · Actions.
     expect(palette).toContain('t("palette.compact")');
     expect(i18n).toContain('"palette.compact"');
     expect(palette).toContain('t("palette.shortcuts")');
-    expect(palette).toContain('group: "engine"');
+    expect(palette).not.toContain('group: "engine"');
+    expect(palette).toContain("RECENT_LIMIT");
+    expect(palette).toContain("fuzzyIndices(query, row.command.label)");
     expect(palette).toContain('data-testid={`command-palette-${command.group}s`}');
     expect(palette).toContain("live.hasTask && !live.busy && !live.compacting && live.compact");
     expect(actions).toContain("compact?: () => void");
@@ -1167,7 +1189,7 @@ describe("v1.15.0 true native agent", () => {
 describe("v1.16.0 true native agent, finished", () => {
   it("owns palette, chip, triage, shortcuts and day labels in dictionaries", () => {
     const i18n = source("../i18n.tsx");
-    for (const key of ["\"palette.placeholder\"", "\"palette.engineCost\"", "\"chip.none\"", "\"triage.title\"", "\"shortcuts.title\""]) {
+    for (const key of ["\"palette.placeholder\"", "\"palette.recent\"", "\"chip.none\"", "\"triage.title\"", "\"shortcuts.title\""]) {
       expect(i18n).toContain(key);
     }
     expect(source("../components/CommandPalette.tsx")).toContain('t("palette.placeholder")');
@@ -1184,7 +1206,7 @@ describe("v1.16.0 true native agent, finished", () => {
     expect(actions).toContain("prefill?: (text: string) => void");
     expect(actions).toContain("shortcuts?: () => void");
     expect(actions).toContain("publishBasePaletteActions");
-    expect(palette).toContain("live.prefill");
+    expect(palette).not.toContain("live.prefill");
     expect(palette).toContain("live.shortcuts");
   });
 
@@ -1235,7 +1257,7 @@ describe("v1.16.0 true native agent, finished", () => {
 
   it("prefills full-sentence drafts and promises no charts from tables", () => {
     const palette = source("../components/CommandPalette.tsx");
-    expect(palette).toContain("copy.engineCostAsk");
+    expect(palette).not.toContain("engineCostAsk");
     expect(palette).toContain("useMemo(() => ({");
     const prompt = source("../../../sidecar/app/agent_runtime/prompt.py");
     expect(prompt).not.toContain("the UI draws a chart from that shape");
@@ -1318,7 +1340,7 @@ describe("v1.17.0 Codex window", () => {
     const direction = css.match(/\.turn-direction-text \{[^}]*\}/)?.[0] ?? "";
     expect(direction).not.toMatch(/background:/);
     expect(direction).not.toMatch(/border-radius/);
-    expect(direction).toMatch(/font-weight: 5\d\d/);
+    expect(direction).toMatch(/font-weight: [56]\d\d/);
     expect(css).not.toMatch(/\.turn-direction \{[^}]*align-items: flex-end/);
     expect(css).toMatch(/\.task-item\[data-direction\] ~ \.task-item\[data-direction\] \{[^}]*border-top: 1px solid var\(--edge\)/);
     expect(css).not.toContain("turn-user-bubble");

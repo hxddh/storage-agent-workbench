@@ -1,6 +1,12 @@
 # Roadmap
 
-> **Status: delivered in v2.2.0 — Native agent depth.** Every tool is
+> **Status: delivered in v3.0.0 — Design system v3 / Refined native.** A full
+> UI redesign on an unchanged runtime: a five-step type scale, a calibrated
+> neutral ladder, one restrained indigo accent, one component library, the
+> Task's durable outputs in a resizable, closable side pane, an empty start
+> with Composer-filling starters, redesigned figures, a Recent · Actions palette
+> and compact Settings panes (`docs/releases/3.0.0.md`). Before it, v2.2.0 —
+> Native agent depth: every tool is
 > callable from the first step, the Direction is durable from the moment its
 > execution starts, a continuation picks up where it stopped, and the long
 > bounded operations show real progress on their tool rows
@@ -18,9 +24,27 @@
 > "native, simple, elegant, not a chat tool" and rebuilt the turn as a
 > document section (`docs/releases/1.19.0.md`).
 
-> **Baseline: Storage Agent v2.2.0.** The product invariant is unchanged:
+> **Baseline: Storage Agent v3.0.0.** The product invariant is unchanged:
 > **the Agent Task is the application.** The window is sidebar · title bar ·
-> one Task document · one Composer.
+> one Task document · one Composer, plus one closable side pane for outputs.
+
+## Design system v3 (shipped in v3.0.0)
+
+| Surface | v3.0 |
+| --- | --- |
+| Tokens | five type sizes (11 · 13 · 15 · 20 · 28); cool-neutral ladder, every text step AA on `--hover`; one indigo accent (`--accent`, `--accent-text`, `--accent-dim`, `--accent-fg`) for primary action, selection, focus, links and live progress; status apart; 4px grid; radii 6 / 10 / 14; `--shadow-elev` / `--shadow-pop`; motion 120 / 200 / 280ms, reduced-motion honoured |
+| Components | `components/ui.tsx` (Button primary / secondary / ghost / selected / danger, IconButton, Kbd, Badge, StatusDot, SectionLabel, Segmented, Field / TextInput / Select), styled only in `native-components.css` |
+| Window | sidebar · title bar · one Task document · one Composer + one side pane for outputs |
+| Sidebar | raised New task with key caps; in-place title search (Esc clears); selected row in the accent tint |
+| Title bar | sidebar toggle · centred name + state pill · side-pane toggle; progress hairline while working |
+| Outputs | an outputs bar under the Result opens a resizable (352–880px), closable (close, Esc, ⌘I) side pane with tabs; overlays below ~1100px; replaces rows that expand in place |
+| Empty start | greeting `<h1>` · sub line · Composer · three starters that only fill the Composer |
+| Result | accent *Result* badge + meta; 20px answer; findings with severity badges; next steps as suggestion cards that fill the Composer |
+| Figures | full-width cards, Chart/Table toggle, y-axis ticks, dashed gridlines, per-column tooltip, legends for ≥ 2 series, `--viz-1…6` |
+| Palette | Recent (≤ 8 tasks) · Actions, fuzzy ranking with matched letters, key-hint footer; engine catalog removed |
+| Settings | compact preference panes; the safety floor as three points |
+
+No Sidecar, API, security or migration change (head stays **031**).
 
 ## Native agent depth (shipped in v2.2.0)
 
@@ -120,10 +144,13 @@ invents a worker, plan, or submit path the Sidecar does not expose.
 ## Next
 
 No next version is planned in this file. Follow-up is ordinary defects against
-the native, result-first contract and the v2.2.0 security floor (read-only storage, bounded data movement). Non-goals remain:
-coding-Agent features, a second submit path, slash SKUs, suggestion cards, a
-painted engine grid, the historical Review sheet, artifact chips, a grey
-Direction block, Next Actions, a metrics footer, table pagination, a second
-Agent, a Settings price-table UI, a Verify control, a side panel, or a
-conclusion guessed from prose, an approval pause, or a plan card. Open follow-up:
-a figure hover layer. Migration head **031**.
+the native, result-first contract, design system v3, and the unchanged
+security floor (read-only storage, bounded data movement). Non-goals remain:
+coding-Agent features, a second submit path, slash SKUs, starters or next-step
+cards that submit on their own, a painted engine grid or palette engine
+catalog, the historical Review sheet, artifact chips, a grey Direction block,
+Next Actions, a metrics footer, table pagination, a second Agent, a Settings
+price-table UI, a Verify control, a second side pane or an overlay dialog for
+artifacts, a conclusion guessed from prose, an approval pause, or a plan card.
+The figure hover layer shipped in v3.0 (a tooltip per column). Migration head
+**031**.

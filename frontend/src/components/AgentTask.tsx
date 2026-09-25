@@ -8,7 +8,6 @@ import { useTaskViewport } from "../hooks/useTaskViewport";
 import { useDirectionStepping } from "../hooks/useDirectionStepping";
 import { turnItemsOf, type TurnItem } from "../lib/turnItems";
 import { openAgentReview } from "../agent/commands";
-import { pickStartGreeting } from "../agent/startGreeting";
 import { publishPaletteActions } from "../agent/paletteActions";
 import { Button } from "./ui";
 import { useI18n } from "../i18n";
@@ -20,6 +19,8 @@ import {
   visibleQueuedExecutions,
 } from "../lib/pendingDirection";
 import { TaskBanners } from "./TaskBanners";
+import { useTaskDetails } from "../agent/taskDetails";
+import { TaskStart } from "./TaskStart";
 import { TaskComposerHost, useComposerActions, useTaskComposer } from "./TaskComposerHost";
 import { TaskDocument, lastWorkResult, useTaskItems } from "./TaskDocument";
 import { useTaskCopy } from "./taskCopy";
@@ -61,7 +62,7 @@ export function AgentTask({
   const workspaceRef = useRef<HTMLElement | null>(null);
   useDirectionStepping(workspaceRef, taskId);
 
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const taskCopy = useTaskCopy();
   const viewport = useTaskViewport();
   const composer = useTaskComposer(taskId);
@@ -158,6 +159,9 @@ export function AgentTask({
   const loadingTask = Boolean(taskId) && detail?.id !== taskId && !loadError;
   const isEmpty = items.length === 0 && !pending && !loadError && !loadingTask;
   const lastResult = useMemo(() => lastWorkResult(items), [items]);
+  // v3.0 — the inspector (in the shell) offers the Report only with a Result.
+  const { setHasResult } = useTaskDetails();
+  useEffect(() => { setHasResult(Boolean(lastResult)); }, [lastResult, setHasResult]);
 
   const lastExec = taskRuntime?.last_execution;
   const offline = sidecarStatus === "disconnected" || sidecarStatus === "error";
@@ -263,13 +267,11 @@ export function AgentTask({
           </div>
         </div>
       ) : isEmpty ? (
-        <div className="native-start" data-testid="task-start">
-          <div className="native-start-inner">
-            <p className="native-start-greeting">{pickStartGreeting(lang)}</p>
-            {composerNode}
-            <div className="mt-4 space-y-2">{banners}</div>
-          </div>
-        </div>
+        <TaskStart
+          composerNode={composerNode}
+          banners={banners}
+          onStarter={(text) => { composer.setText(text); composer.focus(); }}
+        />
       ) : (
         <TaskDocument
           taskId={taskId}

@@ -176,8 +176,8 @@ export function CloudProvidersPanel() {
     <div className="max-w-3xl" data-testid="settings-cloud-providers">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-medium text-gray-100">{t("prov.tabCloud")}</h2>
-          <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("prov.cloudHint")}</p>
+          <h2 className="native-settings-title">{t("prov.tabCloud")}</h2>
+          <p className="native-settings-hint">{t("prov.cloudHint")}</p>
         </div>
         {!showForm ? <Button variant="primary" onClick={openCreate}>{t("prov.addCloud")}</Button> : null}
       </div>
@@ -235,7 +235,7 @@ export function CloudProvidersPanel() {
           </div>
 
           <button type="button" onClick={() => setAdvanced((value) => !value)} className="native-settings-advanced" aria-expanded={advanced}>
-            <Icon name="chevron" size={11} className={advanced ? "rotate-90" : ""} />
+            <Icon name="chevron" size={14} className={advanced ? "rotate-90" : ""} />
             {t("prov.advanced")}
           </button>
 
@@ -318,7 +318,7 @@ export function CloudProvidersPanel() {
                 </>
               ) : (
                 <Button size="sm" variant="ghost" onClick={() => { setError(null); setConfirmId(provider.id); }} aria-label={`${t("prov.delete")} ${provider.name}`}>
-                  <Icon name="x" size={13} />
+                  <Icon name="x" size={14} />
                 </Button>
               )}
             </div>

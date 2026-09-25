@@ -33,6 +33,9 @@ export function useFocusTrap<T extends HTMLElement>(active: boolean) {
 
     const focusables = () =>
       Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE))
+        // An element taken out of the tab order (tabindex="-1", e.g. a
+        // listbox option driven by arrow keys) is never a Tab stop.
+        .filter((el) => el.tabIndex >= 0)
         .filter((el) => el.offsetParent !== null || el === document.activeElement);
 
     // Move focus in, unless the overlay already claimed it (e.g. a search input

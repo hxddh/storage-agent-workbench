@@ -42,7 +42,7 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
         <div className="flex items-center justify-between border-b border-edge px-5 py-3">
           <span className="text-sm font-medium text-gray-100">{title}</span>
           <button onClick={onClose} aria-label={t("common.close")} className="native-icon-button">
-            <Icon name="close" size={15} />
+            <Icon name="close" size={16} />
           </button>
         </div>
         <div className="max-h-[70vh] space-y-5 overflow-auto px-5 py-4">

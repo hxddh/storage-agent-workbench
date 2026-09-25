@@ -93,9 +93,9 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
 
   if (missing) {
     return (
-      <button type="button" className="native-model-chip" data-missing="true" data-testid="model-chip" onClick={onOpenSettings} title={copy.setUp}>
-        <Icon name="chip" size={13} />
-        <span>{copy.none}</span>
+      <button type="button" className="native-model-chip" data-missing="true" data-testid="model-chip" onClick={onOpenSettings} title={copy.setUp} aria-label={`${copy.none} — ${copy.setUp}`}>
+        <Icon name="chip" size={14} />
+        <span>{copy.setUp}</span>
       </button>
     );
   }
@@ -116,12 +116,12 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
         onClick={() => setOpen((value) => !value)}
         title={copy.title}
       >
-        <Icon name="chip" size={13} />
+        <Icon name="chip" size={14} />
         <span>{switching ? copy.switching : active ? label(active) : copy.none}</span>
         {showEffort && active && !switching ? (
           <span className="native-model-effort" data-testid="model-chip-effort">· {effortLabel(active.reasoning_effort)}</span>
         ) : null}
-        <Icon name="chevron" size={11} className="rotate-90 opacity-60" />
+        <Icon name="chevron" size={14} className="rotate-90 opacity-60" />
       </button>
       {open ? (
         <div
@@ -156,7 +156,7 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
               onMouseEnter={() => setHighlight(index)}
               onClick={() => void choose(provider)}
             >
-              <span className="grid w-3.5 place-items-center">{provider.active ? <Icon name="check" size={12} stroke={2} /> : null}</span>
+              <span className="grid w-3.5 place-items-center">{provider.active ? <Icon name="check" size={14} stroke={1.75} /> : null}</span>
               <span className="min-w-0 flex-1 truncate">{label(provider)}</span>
               <small>{provider.name}</small>
             </button>
@@ -183,7 +183,7 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
             <>
               <div className="native-model-menu-sep" />
               <button type="button" onClick={() => { setOpen(false); onOpenSettings(); }}>
-                <span className="grid w-3.5 place-items-center"><Icon name="settings" size={12} /></span>
+                <span className="grid w-3.5 place-items-center"><Icon name="settings" size={14} /></span>
                 <span>{copy.settings}</span>
               </button>
             </>

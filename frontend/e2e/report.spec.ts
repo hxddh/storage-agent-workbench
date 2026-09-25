@@ -52,10 +52,11 @@ async function ask(page: Page, question: string) {
 }
 
 async function openReport(page: Page) {
-  // v2.0 — the Report is a detail row under the Result; it expands in place.
+  // v3.0 — the Report opens in the side pane beside the Result.
+  const toggle = page.getByTestId("task-detail-toggle-report");
+  await expect(toggle).toBeVisible({ timeout: 30_000 });
   const row = page.getByTestId("task-detail-report");
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  if ((await row.getAttribute("data-open")) !== "true") await page.getByTestId("task-detail-toggle-report").click();
+  if ((await row.count()) === 0) await toggle.click();
   await expect(row).toHaveAttribute("data-open", "true");
 }
 

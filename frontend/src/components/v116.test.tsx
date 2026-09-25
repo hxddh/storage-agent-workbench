@@ -52,43 +52,61 @@ describe("v1.16 usage truth, finished", () => {
   });
 });
 
-describe("v1.16 discoverability without painted hints", () => {
-  it("lists engine asks and the shortcuts sheet in the palette", () => {
-    publishPaletteActions({
-      prefill: () => {},
-      focusComposer: () => {},
-      find: () => {},
-      hasTask: true,
-      busy: false,
-    });
+describe("v1.16 discoverability without painted hints (v3.0 palette)", () => {
+  const tasks = [
+    { id: "t1", title: "Diagnose bucket access", state: "ready" },
+    { id: "t2", title: "Survey the account", state: "ready" },
+  ] as unknown as Parameters<typeof CommandPalette>[0]["tasks"];
+
+  it("lists recent tasks, then actions and the shortcuts sheet — no engine catalog", () => {
+    publishPaletteActions({ prefill: () => {}, focusComposer: () => {}, find: () => {}, hasTask: true, busy: false });
     publishBasePaletteActions({ shortcuts: () => {} });
     render(createElement(ThemeProvider, null, createElement(I18nProvider, null, createElement(CommandPalette, {
         open: true,
         onClose: () => {},
-        tasks: [],
+        tasks,
         onSelectTask: () => {},
         onNew: () => {},
         onOpenSettings: () => {},
       }))));
-    expect(screen.getByTestId("command-palette-engines")).toBeTruthy();
-    expect(screen.getByText("Analyze storage costs")).toBeTruthy();
+    expect(screen.getByTestId("command-palette-tasks")).toHaveTextContent("Recent");
+    expect(screen.getByTestId("command-palette-actions")).toBeTruthy();
+    expect(screen.queryByTestId("command-palette-engines")).toBeNull();
+    expect(screen.queryByText("Analyze storage costs")).toBeNull();
     expect(screen.getByText("Keyboard shortcuts")).toBeTruthy();
   });
 
-  it("prefills the Composer instead of navigating away", () => {
-    const prefill = vi.fn();
-    publishPaletteActions({ prefill, hasTask: true, busy: false });
+  it("puts the best match first even when it is an action", () => {
+    publishPaletteActions({ hasTask: true, busy: false });
     render(createElement(ThemeProvider, null, createElement(I18nProvider, null, createElement(CommandPalette, {
         open: true,
         onClose: () => {},
-        tasks: [],
+        tasks: [{ id: "n1", title: "Network audit", state: "ready" }] as unknown as Parameters<typeof CommandPalette>[0]["tasks"],
         onSelectTask: () => {},
         onNew: () => {},
         onOpenSettings: () => {},
       }))));
-    fireEvent.click(screen.getByText("Draft a remediation plan"));
-    // v1.16 — a full-sentence draft, not the bare label.
-    expect(prefill).toHaveBeenCalledWith("Draft a remediation plan to cut storage spend.");
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "new" } });
+    expect(screen.getAllByRole("option")[0]).toHaveTextContent("New task");
+  });
+
+  it("marks the letters a fuzzy query matched and opens the task", () => {
+    const onSelectTask = vi.fn();
+    publishPaletteActions({ hasTask: true, busy: false });
+    render(createElement(ThemeProvider, null, createElement(I18nProvider, null, createElement(CommandPalette, {
+        open: true,
+        onClose: () => {},
+        tasks,
+        onSelectTask,
+        onNew: () => {},
+        onOpenSettings: () => {},
+      }))));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "srvy" } });
+    const option = screen.getAllByRole("option")[0];
+    expect(option).toHaveTextContent("Survey the account");
+    expect([...option.querySelectorAll("mark")].map((m) => m.textContent).join("")).toBe("Srvy");
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    expect(onSelectTask).toHaveBeenCalledWith("t2");
   });
 });
 

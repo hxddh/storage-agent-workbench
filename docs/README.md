@@ -1,7 +1,17 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v2.2.0** (`v2.2.0`).
-> **v2.2.0 is Native agent depth** (`docs/releases/2.2.0.md`): every tool is
+> **Current architecture baseline: Storage Agent v3.0.0** (`v3.0.0`).
+> **v3.0.0 is Design system v3 / Refined native** (`docs/releases/3.0.0.md`):
+> a full UI redesign on an unchanged runtime. A five-step type scale, a
+> calibrated cool-neutral ladder that clears AA on every surface, and one
+> restrained indigo accent for the primary action, selection, focus, links and
+> live progress (status stays a separate palette); one component library
+> (`components/ui.tsx`). Durable outputs (Evidence · Report · Execution) open in
+> a resizable, closable **side pane** on the right instead of expanding in
+> place; the empty start has three starters that only fill the Composer;
+> figures are cards with a Chart/Table toggle and a validated categorical
+> palette; the palette is Recent · Actions. No migration (head stays **031**).
+> **v2.2.0 was Native agent depth** (`docs/releases/2.2.0.md`): every tool is
 > callable from the first step (the `load_tools` group gate remains only for
 > context windows ≤ 16k tokens); the Direction is durable from the moment its
 > execution starts (`direction.recorded`); a resume/retry keeps the Direction
@@ -10,7 +20,7 @@
 > `tool.progress` event (a hairline meter on the running tool row); Stop ends
 > an import between files. A one-Direction Task has no Work log, the latest
 > Result stays while a newer Direction works, and opening a detail row never
-> moves the window. No migration (head stays **031**).
+> moves the window (detail rows became the side pane in v3.0). No migration (head stays **031**).
 > **v2.1.0 was the Native agent** (`docs/releases/2.1.0.md`): nothing pauses an
 > Execution for approval and the model keeps no plan. `import_evidence` runs in
 > the turn inside hard server-side bounds (a survey-discovered source, ≤ 500
@@ -63,7 +73,7 @@
 > context compaction (`context.compacted`, ⌘K Compact context), `AGENTS.md`
 > instructions, Execution detail from the durable log, wall-clock *Worked
 > for …*, and the frontend split into document / runner / api modules.
-> Migration head was **030** through v1.19.0 (v1.13.0–v1.19.0 add no migration; v2.0.0 appends **031**; v2.1.0 and v2.2.0 add none).
+> Migration head was **030** through v1.19.0 (v1.13.0–v1.19.0 add no migration; v2.0.0 appends **031**; v2.1.0, v2.2.0 and v3.0.0 add none).
 > **v1.14.0 is interaction truth and content craft.** Steering reaches waiting
 > executions, queued Directions edit until they run, Execution detail shows
 > measured usage, figures and evidence read localized, times read relative,
@@ -121,7 +131,7 @@ Use these terms in product-facing and new frontend architecture work:
 | **Direction** | User objective, constraint, correction, or steering input. |
 | **Execution** | Real runtime/tool work; never a synthetic plan. Shown as tool rows in the document. |
 | **Work Result** | Durable Agent output for a Task, including inline figures; the latest one is the **Result**, conclusion first. |
-| **Artifact** | Evidence, Execution detail and Reports, shown as detail rows under the Result (⌘I). Not an application destination. |
+| **Artifact** | Evidence, Execution detail and Reports, opened from the outputs bar under the Result into the one side pane (⌘I, v3.0). Not an application destination. |
 | **Bounds** | Since v2.1 there is no approval: data movement runs inside hard server-side bounds and Stop is the brake. Decisions are read-only history. |
 | **Delegate / Steer / Stop** | The one Agent control path. |
 
@@ -130,13 +140,13 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 ## Current documents
 
 - [`product.md`](product.md) — product model, UX semantics, states, design rules, non-goals.
-- [`design-tokens.md`](design-tokens.md) — presentation tokens (type, color, motion, elevation, `--viz-*` series).
+- [`design-tokens.md`](design-tokens.md) — design system v3 tokens (type scale, neutral ladder, accent, status, spacing, radii, shadows, motion, `--viz-*` series) and the `components/ui.tsx` library.
 - [`architecture.md`](architecture.md) — Tauri/React/Sidecar topology and ownership boundaries.
 - [`security.md`](security.md) — secret, tool, model-context, evidence and data-movement-bound guarantees.
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
 - [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 031, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — next direction after **v2.2.0 — Native agent depth**. Delivered history lives in `releases/`.
+- [`roadmap.md`](roadmap.md) — next direction after **v3.0.0 — Design system v3**. Delivered history lives in `releases/`.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.

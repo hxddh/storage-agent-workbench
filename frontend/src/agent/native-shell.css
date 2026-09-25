@@ -1,10 +1,11 @@
-/* Native Agent window: sidebar · title bar · one document.
- * No activity bar, no status bar, no inspector column. Depth is a hairline. */
+/* Native Agent window v3 (v3.0.0): sidebar · title bar · one Task document ·
+ * an optional inspector on the right. No activity bar, no status bar.
+ * Controls come from native-components.css; this file lays out the window.
+ *
+ * v2.2 — the window columns CLIP rather than hide: a hidden overflow is still
+ * scrollable by script and by focus. `clip` cannot be scrolled at all;
+ * `hidden` stays as the fallback for older engines. */
 
-/* v2.2 — the window columns CLIP rather than hide: a hidden overflow is still
-   scrollable by script and by focus (a row revealed under the dock shifted the
-   whole column and left the Composer floating mid-window). `clip` cannot be
-   scrolled at all; `hidden` stays as the fallback for older engines. */
 .native-window {
   display: flex;
   width: 100%;
@@ -29,20 +30,17 @@
   overflow: hidden;
   transition: width var(--duration-base) var(--ease-out);
 }
-
 .native-sidebar[data-collapsed="true"] {
   width: 0 !important;
   min-width: 0 !important;
   border-right-color: transparent;
 }
-
 .native-sidebar-inner {
   display: flex;
   height: 100%;
   min-width: 0;
   flex-direction: column;
 }
-
 .native-sidebar-resize {
   position: absolute;
   z-index: 30;
@@ -52,10 +50,18 @@
   height: 100%;
   cursor: col-resize;
 }
-.native-sidebar-resize:hover,
-.native-sidebar-resize:active {
-  background: color-mix(in srgb, var(--edge-strong) 60%, transparent);
+.native-sidebar-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: transparent;
+  transition: background-color var(--duration-fast) var(--ease-out);
 }
+.native-sidebar-resize:hover::after,
+.native-sidebar-resize:active::after { background: var(--accent); }
 
 /* Window chrome row: drag region; traffic lights live over it on macOS. */
 .native-chrome {
@@ -64,16 +70,13 @@
   flex: none;
   align-items: center;
   gap: 2px;
-  padding: 0 8px;
+  padding: 0 10px;
   -webkit-app-region: drag;
 }
-.native-chrome > * {
-  -webkit-app-region: no-drag;
-}
-.native-chrome[data-traffic-lights="true"] {
-  padding-left: 76px;
-}
+.native-chrome > * { -webkit-app-region: no-drag; }
+.native-chrome[data-traffic-lights="true"] { padding-left: 78px; }
 
+/* Kept for window chrome buttons written before the component library. */
 .native-icon-button {
   display: grid;
   width: 28px;
@@ -86,57 +89,77 @@
   color: var(--gray-400);
   transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.native-icon-button:hover {
-  background: var(--hover);
-  color: var(--gray-100);
-}
-.native-icon-button[aria-pressed="true"] {
-  color: var(--gray-100);
-}
+.native-icon-button:hover { background: var(--hover); color: var(--gray-100); }
+.native-icon-button[aria-pressed="true"] { background: var(--hover); color: var(--gray-100); }
 
+/* New task — the sidebar's primary action: a raised, full-width control
+   with its shortcut, the accent in the glyph. */
 .native-sidebar-new {
   display: flex;
-  height: 36px;
+  height: 34px;
   flex: none;
   align-items: center;
-  gap: 8px;
-  margin: 6px 8px 4px;
-  border: 0;
-  border-radius: var(--radius-lg);
-  padding: 0 8px;
-  background: transparent;
-  color: var(--gray-200);
+  gap: 10px;
+  margin: 2px 10px 8px;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius-md);
+  padding: 0 8px 0 10px;
+  background: var(--panel);
+  color: var(--gray-100);
   font-size: var(--text-sm);
   font-weight: 500;
   text-align: left;
-  transition: background-color var(--duration-fast) var(--ease-out);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
 }
-.native-sidebar-new:hover {
-  background: var(--hover);
-  color: var(--gray-100);
-}
-.native-sidebar-new svg {
-  color: var(--gray-400);
-}
+.native-sidebar-new:hover { background: var(--hover); }
+.native-sidebar-new > svg { color: var(--accent-text); }
+.native-sidebar-new > span:first-of-type { flex: 1; }
 
-/* Day groups: Today · Yesterday · a dated header. Quiet, not uppercase. */
+/* Search — filters the list in place; ⌘K is the full palette. */
+.native-sidebar-search {
+  position: relative;
+  flex: none;
+  margin: 0 10px 6px;
+}
+.native-sidebar-search > svg {
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  color: var(--gray-500);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.native-sidebar-search input {
+  width: 100%;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 0 8px 0 30px;
+  background: color-mix(in srgb, var(--hover) 70%, transparent);
+  color: var(--gray-100);
+  font-size: var(--text-sm);
+  transition: border-color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
+}
+.native-sidebar-search input::placeholder { color: var(--gray-500); }
+.native-sidebar-search input:focus { outline: none; border-color: var(--accent); background: var(--canvas); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+/* Day groups: Today · Yesterday · a dated header. */
 .native-sidebar-section {
-  margin: 10px 8px 4px;
+  margin: 6px 10px 4px;
   color: var(--gray-500);
   font-size: var(--text-2xs);
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.02em;
 }
-.native-task-group + .native-task-group .native-sidebar-section {
-  margin-top: 14px;
-}
+.native-task-group + .native-task-group { margin-top: 8px; }
 
 .native-task-list {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 8px 12px;
+  padding: 0 10px 12px;
 }
 
 .native-task-row {
@@ -144,27 +167,20 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  height: 32px;
+  height: 30px;
   margin-bottom: 1px;
   border-radius: var(--radius-md);
-  padding: 0 34px 0 10px;
+  padding: 0 32px 0 10px;
   cursor: default;
   color: var(--gray-300);
   transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.native-task-row:hover {
-  color: var(--gray-100);
-  background: var(--hover);
-}
+.native-task-row:hover { background: var(--hover); color: var(--gray-100); }
 .native-task-row[data-selected="true"] {
-  background: var(--elevated);
+  background: var(--accent-dim);
   color: var(--gray-100);
 }
-.native-task-row[data-selected="true"]:hover {
-  background: var(--hover);
-}
-
+.native-task-row[data-selected="true"] .native-task-title strong { font-weight: 500; }
 .native-task-title {
   display: flex;
   min-width: 0;
@@ -193,7 +209,7 @@
 .native-task-row[data-state="working"] .native-task-mark,
 .native-task-row[data-state="uploading"] .native-task-mark {
   display: block;
-  background: var(--gray-100);
+  background: var(--accent-text);
   animation: native-pulse 1.4s var(--ease-in-out) infinite;
 }
 .native-task-row[data-state="attention"] .native-task-mark {
@@ -201,129 +217,113 @@
   background: var(--warn);
 }
 
-/* Hover must not move anything: meta hides, the More control fades in over
- * the same reserved 24px, so a click lands on what the eye saw. The meta
- * uses visibility, not a fade — half-faded text is unreadable text. */
-/* v1.19 — rows carry no time: the day group already says when, and the
-   exact relative time is in the row tooltip and accessible label. */
-
 .native-task-more {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 4px;
+  right: 4px;
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   place-items: center;
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: 4px;
   background: transparent;
   color: var(--gray-400);
   opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out);
+  transition: opacity var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
 }
 .native-task-row:hover .native-task-more,
 .native-task-more:focus-visible,
-.native-task-row[data-menu-open="true"] .native-task-more {
-  opacity: 1;
-}
-.native-task-more:hover {
-  background: var(--elevated);
-  color: var(--gray-100);
-}
+.native-task-row[data-menu-open="true"] .native-task-more { opacity: 1; }
+.native-task-more:hover { background: var(--elevated); color: var(--gray-100); }
 
 .native-menu,
 .native-confirm {
   position: absolute;
   z-index: 40;
-  top: 34px;
-  right: 4px;
+  top: 30px;
+  right: 2px;
   overflow: hidden;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-xl);
-  background: var(--panel);
-  box-shadow: var(--shadow-pop);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  box-shadow: var(--shadow-elev);
+  animation: ui-pop-in var(--duration-fast) var(--ease-out);
 }
-.native-menu {
-  width: 156px;
-  padding: 4px;
-}
+.native-menu { width: 160px; padding: 4px; }
 .native-menu button {
-  display: block;
+  display: flex;
   width: 100%;
+  min-height: 28px;
+  align-items: center;
   border: 0;
-  border-radius: var(--radius-md);
-  padding: 7px 10px;
+  border-radius: 4px;
+  padding: 0 8px;
   background: transparent;
   color: var(--gray-200);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   text-align: left;
 }
-.native-menu button:hover {
-  background: var(--hover);
-  color: var(--gray-100);
-}
-.native-menu button[data-danger="true"] {
-  color: var(--danger);
-}
+.native-menu button:hover { background: var(--hover); color: var(--gray-100); }
+.native-menu button[data-danger="true"] { color: var(--danger); }
 .native-confirm {
-  width: 228px;
-  padding: 10px 10px 8px;
+  width: 232px;
+  padding: 12px;
   color: var(--gray-200);
-  font-size: var(--text-xs);
-  line-height: 1.5;
+  font-size: var(--text-sm);
+  line-height: 1.45;
 }
 
-.native-task-rename {
-  height: 36px;
-  margin-bottom: 1px;
-  padding: 0 4px;
-}
+.native-task-rename { height: 32px; margin-bottom: 1px; }
 .native-task-rename input {
   width: 100%;
-  height: 32px;
-  border: 1px solid var(--edge-strong);
+  height: 30px;
+  border: 1px solid var(--accent);
   border-radius: var(--radius-md);
-  padding: 0 8px;
+  padding: 0 9px;
   background: var(--canvas);
   color: var(--gray-100);
   font-size: var(--text-sm);
   outline: none;
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .native-sidebar-footer {
   flex: none;
-  padding: 6px 8px 10px;
+  padding: 8px 10px 10px;
   border-top: 1px solid var(--edge);
 }
 .native-sidebar-settings {
   display: flex;
   width: 100%;
-  height: 32px;
+  height: 30px;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   border: 0;
-  border-radius: var(--radius-lg);
-  padding: 0 8px;
+  border-radius: var(--radius-md);
+  padding: 0 10px;
   background: transparent;
   color: var(--gray-300);
   font-size: var(--text-sm);
   text-align: left;
   transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.native-sidebar-settings:hover {
-  background: var(--hover);
-  color: var(--gray-100);
-}
-/* v1.15 — the sidebar footer is Settings alone. The read-only policy lives
-   in Settings → Safety and on the Composer lock affordance; a painted footer
-   fact clipped to "之读" at narrow widths and competed with the task list.
-   The selector stays as a deprecated no-op so older snapshots fail visibly. */
-.native-sidebar-readonly {
-  display: none;
-}
+.native-sidebar-settings:hover { background: var(--hover); color: var(--gray-100); }
+.native-sidebar-settings > svg { color: var(--gray-400); }
+/* v1.15 — deprecated no-op selector kept so older snapshots fail visibly. */
+.native-sidebar-readonly { display: none; }
 
-/* Context meter: lives in the model menu (v1.17), not on the Composer bar. */
+.native-empty-list {
+  margin: 8px 0 0;
+  padding: 16px 12px;
+  border: 1px dashed var(--edge-strong);
+  border-radius: var(--radius-lg);
+  color: var(--gray-500);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.native-empty-list strong { display: block; margin-bottom: 2px; color: var(--gray-200); font-weight: 500; }
+
+/* Context meter: lives in the model menu, not on the Composer bar. */
 .native-context-meter {
   display: inline-flex;
   height: 28px;
@@ -337,17 +337,7 @@
   cursor: default;
 }
 .native-context-meter[data-pct="100"],
-.native-context-meter[data-pct^="9"] {
-  color: var(--warn-fg);
-}
-
-.native-empty-list {
-  margin: 0;
-  padding: 24px 16px;
-  color: var(--gray-500);
-  font-size: var(--text-xs);
-  line-height: 1.6;
-}
+.native-context-meter[data-pct^="9"] { color: var(--warn-fg); }
 
 /* ---------- Main column ---------- */
 
@@ -362,24 +352,32 @@
 }
 
 .native-titlebar {
-  display: flex;
+  position: relative;
+  display: grid;
   height: var(--header-h);
   flex: none;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  padding: 0 16px 0 8px;
+  padding: 0 10px;
+  border-bottom: 1px solid transparent;
   -webkit-app-region: drag;
 }
-.native-titlebar > * {
-  -webkit-app-region: no-drag;
+.native-titlebar[data-task="true"] { border-bottom-color: var(--edge); }
+.native-titlebar > * { -webkit-app-region: no-drag; }
+.native-titlebar[data-traffic-lights="true"] { padding-left: 78px; }
+.native-titlebar-start,
+.native-titlebar-end {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
 }
-.native-titlebar[data-traffic-lights="true"] {
-  padding-left: 76px;
-}
+.native-titlebar-end { justify-content: flex-end; }
 .native-titlebar-center {
   display: flex;
   min-width: 0;
-  flex: 1;
+  max-width: 100%;
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -388,53 +386,39 @@
 .native-titlebar-title {
   min-width: 0;
   overflow: hidden;
-  color: var(--gray-300);
+  color: var(--gray-400);
   font-size: var(--text-sm);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: center;
   -webkit-app-region: drag;
 }
-.native-titlebar-title[data-task="true"] {
-  color: var(--gray-100);
-}
-/* Command palette (v1.19): a raised, opaque sheet above the scrim. */
-.native-palette {
-  border: 1px solid var(--edge-strong);
-  background: var(--panel);
-  box-shadow: var(--shadow-pop);
-}
-/* The palette draws the focus for its input (data-focus-ring="container"). */
-.native-palette:focus-within { border-color: var(--focus-ring); }
-.native-palette-list {
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
-}
-.native-kbd {
-  display: inline-grid;
-  min-width: 20px;
-  height: 20px;
-  place-items: center;
-  border: 1px solid var(--edge-strong);
-  border-radius: var(--radius-md);
-  padding: 0 5px;
-  background: var(--elevated);
-  color: var(--gray-400);
-  font-family: inherit;
-  font-size: var(--text-2xs);
-  line-height: 1;
-}
-
+.native-titlebar-title[data-task="true"] { color: var(--gray-100); font-weight: 600; }
 .native-titlebar-state {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 6px;
-  color: var(--gray-500);
+  border-radius: 999px;
+  padding: 2px 8px 2px 7px;
+  background: var(--hover);
+  color: var(--gray-300);
   font-size: var(--text-2xs);
+  font-weight: 500;
 }
-/* One shape for every state: a dot and a quiet label. Colour lives in the
-   dot only (v1.19) — a red sentence in the title bar read as an error page. */
+.native-titlebar-state[data-state="working"],
+.native-titlebar-state[data-state="uploading"] { background: var(--accent-dim); color: var(--accent-text); }
+.native-titlebar-state[data-state="attention"] { background: var(--warn-bg); color: var(--warn-fg); }
+.native-titlebar-state .working-mark { background: var(--accent-text); }
+/* Live work: one hairline of indeterminate activity under the title bar. */
+.native-titlebar-progress {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+}
+
+/* One shape for every state: a dot and a quiet label. */
 .native-state-dot {
   width: 6px;
   height: 6px;
@@ -443,6 +427,56 @@
   background: var(--gray-500);
 }
 .native-state-dot[data-state="attention"] { background: var(--warn); }
+.native-state-dot[data-state="completed"] { background: var(--success); }
+.native-state-dot[data-state="waiting"] { background: var(--gray-100); }
+
+/* Command palette: a raised, opaque sheet above the scrim. */
+.native-palette {
+  border-radius: var(--radius-2xl);
+  background: var(--elevated);
+  box-shadow: var(--shadow-pop);
+  animation: ui-rise-in var(--duration-base) var(--ease-out);
+}
+.native-palette:focus-within { box-shadow: var(--shadow-pop), 0 0 0 1px var(--edge-strong); }
+.native-palette-search { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--edge); padding: 0 16px; }
+.native-palette-search > svg { flex: none; color: var(--gray-500); }
+.native-palette-search input { width: 100%; height: 52px; border: 0; background: transparent; color: var(--gray-100); font-size: var(--text-prose); outline: none; }
+.native-palette-search input::placeholder { color: var(--gray-500); }
+.native-palette-list { max-height: 52vh; overflow: auto; padding: 6px; }
+.native-palette-empty { padding: 24px 12px; color: var(--gray-500); font-size: var(--text-sm); text-align: center; }
+.native-palette-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.native-palette-item {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 0 10px;
+  background: transparent;
+  color: var(--gray-200);
+  font-size: var(--text-sm);
+  text-align: left;
+}
+.native-palette-item > svg { flex: none; color: var(--gray-500); }
+.native-palette-item[data-active="true"] { background: var(--accent-dim); color: var(--gray-100); }
+.native-palette-item[data-active="true"] > svg { color: var(--accent-text); }
+.native-palette-item mark { background: transparent; color: var(--accent-text); font-weight: 600; }
+.native-palette-item small { margin-left: auto; color: var(--gray-500); font-size: var(--text-2xs); }
+.native-palette-group { padding: 10px 10px 4px; }
+.native-palette-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid var(--edge);
+  padding: 8px 14px;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+}
+.native-palette-foot span { display: inline-flex; align-items: center; gap: 5px; }
+
+/* ---------- Task area and the inspector ---------- */
 
 .native-task-area {
   position: relative;
@@ -453,7 +487,6 @@
   overflow: hidden;
   overflow: clip;
 }
-
 .agent-task-content {
   display: flex;
   min-width: 0;
@@ -462,35 +495,117 @@
   overflow: hidden;
   overflow: clip;
 }
+.agent-workspace {
+  overflow: hidden;
+  overflow: clip;
+}
 
-/* ---------- Detail rows (v2.0: under the Result, in the document) ---------- */
+/* v3.0 — the inspector: Evidence · Report · Execution open on the right,
+   resizable and closable (Esc, ⌘I). Below 1100px it floats over the document
+   instead of squeezing it. */
+.native-sidepane {
+  position: relative;
+  display: flex;
+  width: var(--sidepane-w);
+  min-width: 22rem;
+  max-width: 60%;
+  flex: none;
+  flex-direction: column;
+  border-left: 1px solid var(--edge);
+  background: var(--sidebar);
+  animation: ui-sheet-in var(--duration-base) var(--ease-out);
+}
+@media (max-width: 1099px) {
+  .native-sidepane {
+    position: absolute;
+    z-index: 50;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    max-width: calc(100% - 24px);
+    box-shadow: var(--shadow-pop);
+  }
+}
+.native-sidepane-resize {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+}
+.native-sidepane-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.native-sidepane-resize:hover::after,
+.native-sidepane-resize:active::after { background: var(--accent); }
+.native-sidepane-head {
+  display: flex;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--edge);
+  padding: 0 8px 0 10px;
+}
+.native-sidepane-tabs { display: flex; min-width: 0; flex: 1; align-items: center; gap: 2px; }
+.native-sidepane-tab {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 0 10px;
+  background: transparent;
+  color: var(--gray-400);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.native-sidepane-tab:hover { background: var(--hover); color: var(--gray-100); }
+.native-sidepane-tab[aria-selected="true"] { background: var(--hover); color: var(--gray-100); }
+.native-sidepane-tab small { color: var(--gray-500); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
+.native-sidepane-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+.native-sidepane-empty { padding: 32px 20px; color: var(--gray-500); font-size: var(--text-sm); }
+/* A narrow panel: tables keep whole words and scroll sideways here rather
+   than break "STANDARD" into "STANDAR/D" (the document itself never scrolls). */
+.native-sidepane .agent-table { overflow-x: auto; }
+.native-sidepane .agent-table-grid { table-layout: auto; min-width: 100%; }
+.native-sidepane .agent-table-grid th,
+.native-sidepane .agent-table-grid td { overflow-wrap: normal; white-space: nowrap; }
+.native-sidepane .agent-prose { font-size: var(--text-sm); }
 
+/* ---------- Inspector documents ---------- */
 
-.agent-artifact-document { padding: 14px 16px 40px; color: var(--gray-200); font-size: var(--text-sm); line-height: 1.55; }
+.agent-artifact-document { padding: 16px 20px 40px; color: var(--gray-200); font-size: var(--text-sm); line-height: 1.55; }
 .agent-artifact-document > header { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
-.agent-artifact-document > header strong { color: var(--gray-100); font-size: var(--text-base); font-weight: 500; }
+.agent-artifact-document > header strong { color: var(--gray-100); font-size: var(--text-lg); font-weight: 600; }
 .agent-artifact-document > header small { color: var(--gray-500); font-size: var(--text-2xs); }
-.agent-artifact-document h3 { margin: 16px 0 6px; color: var(--gray-100); font-size: var(--text-xs); font-weight: 500; }
+.agent-artifact-document h3 { margin: 16px 0 6px; color: var(--gray-100); font-size: var(--text-sm); font-weight: 600; }
 .agent-artifact-document p { margin: 0 0 8px; }
 .agent-artifact-note { margin-top: 16px; color: var(--gray-500); font-size: var(--text-2xs); }
-.agent-plan-actions { margin: 0; padding-left: 18px; }
-.agent-plan-actions li { margin-bottom: 10px; }
-.agent-plan-actions li strong { display: block; color: var(--gray-100); font-weight: 500; }
-.agent-plan-actions li small { color: var(--gray-500); font-size: var(--text-2xs); }
-.agent-plan-checklist { margin: 0; padding-left: 18px; }
-.agent-plan-json { margin: 6px 0 0; overflow: auto; border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 8px 10px; background: var(--elevated); color: var(--gray-200); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); line-height: 1.5; }
-.agent-plan-raw { margin-top: 10px; }
-.agent-plan-raw > summary { cursor: pointer; color: var(--gray-400); font-size: var(--text-xs); font-weight: 500; }
-.agent-plan-raw > summary:hover { color: var(--gray-100); }
-.agent-plan-raw-actions { margin: 6px 0 0; }
 
 .agent-review-artifact { padding: 16px 20px 48px; }
 .agent-review-block { padding: 4px 0 20px; }
 .agent-review-block + .agent-review-block { border-top: 1px solid var(--edge); padding-top: 18px; }
-.agent-review-block h2 { margin: 0 0 10px; color: var(--gray-100); font-size: var(--text-sm); font-weight: 500; }
-.agent-review-empty, .agent-review-error { margin: 0; padding: 16px 20px; color: var(--gray-500); font-size: var(--text-xs); line-height: 1.55; }
+.agent-review-block > h2 { margin: 0 0 12px; color: var(--gray-500); font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.agent-review-empty, .agent-review-error { margin: 0; padding: 20px; color: var(--gray-500); font-size: var(--text-sm); line-height: 1.55; }
 .agent-review-error { color: var(--danger); }
-.agent-empty-line { margin: 0; max-width: 24rem; color: var(--gray-500); font-size: var(--text-sm); line-height: 1.55; }
+.agent-empty-line { margin: 0; max-width: 26rem; color: var(--gray-500); font-size: var(--text-sm); line-height: 1.55; }
 
 .agent-review-list-dot {
   display: block;
@@ -501,91 +616,72 @@
   background: var(--gray-500);
 }
 .agent-review-list-dot[data-status="completed"], .agent-review-list-dot[data-status="approved"] { background: var(--success); }
-.agent-review-list-dot[data-status="running"], .agent-review-list-dot[data-status="pending"] { background: var(--warn); }
+.agent-review-list-dot[data-status="running"], .agent-review-list-dot[data-status="pending"] { background: var(--accent-text); }
 .agent-review-list-dot[data-status="declined"], .agent-review-list-dot[data-status="superseded"] { background: var(--gray-500); }
 .agent-review-list-dot[data-status="failed"], .agent-review-list-dot[data-severity="high"], .agent-review-list-dot[data-severity="critical"] { background: var(--danger); }
 .agent-review-list-dot[data-severity="warning"] { background: var(--warn); }
-.agent-review-list-dot[data-severity="info"] { background: var(--viz-1); }
+.agent-review-list-dot[data-severity="info"] { background: var(--accent-text); }
 
-.agent-record-list, .agent-run-list, .agent-file-table { border-top: 1px solid var(--edge); }
-.agent-record { padding: 14px 0 16px; border-bottom: 1px solid var(--edge); }
+.agent-record-list, .agent-file-table { display: grid; gap: 8px; }
+.agent-record { border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 12px 14px; background: var(--panel); }
 .agent-record strong { display: block; color: var(--gray-100); font-size: var(--text-sm); font-weight: 500; }
-.agent-record p { margin: 6px 0 0; color: var(--gray-300); font-size: var(--text-xs); line-height: 1.6; }
-.agent-record-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; color: var(--gray-500); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); text-transform: uppercase; }
-.agent-record[data-selected="true"] { margin-inline: -10px; padding-inline: 10px; border-radius: var(--radius-lg); background: var(--panel); outline: 1px solid var(--edge-strong); }
-.agent-file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; min-height: 38px; border-bottom: 1px solid var(--edge); color: var(--gray-500); font-size: var(--text-2xs); }
-.agent-file-name { overflow: hidden; color: var(--gray-300); font-family: "JetBrains Mono Variable", ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
-.agent-run-row { display: grid; width: 100%; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 52px; border: 0; border-bottom: 1px solid var(--edge); background: transparent; color: inherit; text-align: left; transition: background-color var(--duration-fast) var(--ease-out); }
-.agent-run-row:hover { background: var(--panel); }
+.agent-record p { margin: 6px 0 0; color: var(--gray-300); font-size: var(--text-sm); line-height: 1.55; }
+.agent-record-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; color: var(--gray-500); font-size: var(--text-2xs); font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; }
+.agent-record[data-selected="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.agent-file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; min-height: 40px; border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 0 12px; color: var(--gray-500); font-size: var(--text-2xs); }
+.agent-file-name { overflow: hidden; color: var(--gray-200); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); text-overflow: ellipsis; white-space: nowrap; }
+.agent-run-list { display: grid; gap: 6px; padding: 12px; }
+.agent-run-row { display: grid; width: 100%; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 56px; border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 0 14px; background: var(--panel); color: inherit; text-align: left; transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
+.agent-run-row:hover { border-color: var(--edge-strong); background: var(--hover); }
 .agent-run-status { width: 6px; height: 6px; border-radius: 999px; background: var(--gray-500); }
 .agent-run-status[data-status="completed"] { background: var(--success); }
-.agent-run-status[data-status="running"] { background: var(--warn); }
-.agent-run-status[data-status="failed"] { background: var(--danger); }
-.agent-run-main { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.agent-run-status[data-status="running"] { background: var(--accent-text); animation: native-pulse 1.4s var(--ease-in-out) infinite; }
+.agent-run-status[data-status="failed"], .agent-run-status[data-status="interrupted"] { background: var(--warn); }
+.agent-run-main { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .agent-run-main strong { overflow: hidden; color: var(--gray-100); font-size: var(--text-sm); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .agent-run-main small { color: var(--gray-500); font-size: var(--text-2xs); }
 .agent-report-body { max-width: 52rem; }
 
-/* Execution detail inside the Review sheet: a document, not a run page. */
-[data-testid="execution-detail"] { min-height: 100%; background: var(--canvas); }
-.native-execution-doc { padding: 12px 20px 56px; }
-.native-execution-doc-head { padding-bottom: 14px; border-bottom: 1px solid var(--edge); }
-.native-execution-doc-head h1 { margin: 6px 0 8px; color: var(--gray-100); font-size: var(--text-lg); font-weight: 560; line-height: 1.4; letter-spacing: -0.01em; }
-/* Meta reads as a sentence of facts separated by middots; colour only in the dot. */
-.native-execution-doc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; margin: 0; color: var(--gray-500); font-size: var(--text-xs); }
+/* Execution detail: a document in the side pane. */
+[data-testid="execution-detail"] { min-height: 100%; }
+.native-execution-doc { padding: 4px 20px 56px; }
+.native-execution-doc-head { padding-bottom: 16px; border-bottom: 1px solid var(--edge); }
+.native-execution-doc-head h1 { margin: 8px 0 8px; color: var(--gray-100); font-size: var(--text-lg); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; }
+.native-execution-doc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; margin: 0; color: var(--gray-500); font-size: var(--text-2xs); }
 .native-execution-doc-meta > * + *::before { content: "·"; margin: 0 7px; color: var(--gray-500); }
 .native-execution-doc-usage { margin: 4px 0 0; color: var(--gray-500); font-size: var(--text-2xs); }
-.native-execution-doc-status { display: inline-flex; align-items: center; gap: 6px; color: var(--gray-200); }
-.native-state-dot[data-state="completed"] { background: var(--success); }
-.native-state-dot[data-state="waiting"] { background: var(--gray-100); }
-/* Result prose steps down with the panel, keeping headings above body text. */
+.native-execution-doc-status { display: inline-flex; align-items: center; gap: 6px; color: var(--gray-200); font-weight: 500; }
 .native-execution-doc .agent-result-prose { font-size: var(--text-sm); line-height: 1.65; }
 .native-execution-doc .agent-prose h1,
-.native-execution-doc .agent-prose h2 { font-size: var(--text-base); }
+.native-execution-doc .agent-prose h2 { font-size: var(--text-lg); }
 .native-execution-doc .agent-prose h3,
 .native-execution-doc .agent-prose h4 { font-size: var(--text-sm); }
-.native-execution-doc-block { padding: 16px 0 4px; }
+.native-execution-doc-block { padding: 18px 0 4px; }
 .native-execution-doc-block + .native-execution-doc-block { border-top: 1px solid var(--edge); margin-top: 12px; }
-.native-execution-doc-block h2 { margin: 0 0 10px; color: var(--gray-100); font-size: var(--text-sm); font-weight: 500; }
+.native-execution-doc-block > h2 { margin: 0 0 12px; color: var(--gray-500); font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .native-execution-doc-block .native-direction { margin: 0; }
 .native-execution-doc-findings { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
-.native-execution-doc-findings li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: var(--text-xs); line-height: 1.55; color: var(--gray-300); }
+.native-execution-doc-findings li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: var(--text-sm); line-height: 1.55; color: var(--gray-300); }
 .native-execution-doc-findings strong { color: var(--gray-100); font-weight: 500; }
-.native-execution-doc-severity { display: inline-block; min-width: 4.5rem; color: var(--gray-500); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.native-execution-doc-severity { display: inline-block; min-width: 4.5rem; color: var(--gray-500); font-size: var(--text-2xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .native-execution-doc-findings li[data-severity="critical"] .native-execution-doc-severity,
 .native-execution-doc-findings li[data-severity="error"] .native-execution-doc-severity { color: var(--danger); }
 .native-execution-doc-findings li[data-severity="warning"] .native-execution-doc-severity { color: var(--warn); }
 .native-execution-doc-findings li[data-severity="good"] .native-execution-doc-severity { color: var(--success); }
-.native-execution-doc-report { max-height: 32rem; overflow: auto; border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 10px 14px; background: var(--sidebar); }
+.native-execution-doc-report { max-height: 32rem; overflow: auto; border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 10px 14px; background: var(--panel); }
+.native-direction { margin: 0; border-left: 2px solid var(--edge-strong); padding: 2px 0 2px 12px; color: var(--gray-200); font-size: var(--text-sm); white-space: pre-wrap; }
 
-/* Settings panes: one list, one editor, presets menu. */
-.native-settings-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--edge); }
-.native-settings-list > li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--edge); }
-.native-settings-list > li[data-active="true"] { background: color-mix(in srgb, var(--panel) 60%, transparent); }
-.native-settings-empty { color: var(--gray-500); font-size: var(--text-sm); }
-/* v2.1 — the safety floor is a statement in General, not a pane of controls. */
-.native-settings-note {
-  margin-top: 28px;
-}
-.native-settings-note-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  color: var(--gray-200);
-  font-size: var(--text-sm);
-  font-weight: 500;
-}
-.native-settings-note-head svg { color: var(--gray-500); }
-.native-settings-note p {
-  max-width: 38rem;
-  margin: 0;
-  color: var(--gray-400);
-  font-size: var(--text-sm);
-  line-height: 1.65;
-}
-/* v1.15 — provider rows wrap cleanly at narrow widths: the action group
-   drops below the identity instead of squeezing CJK hints into orphans. */
+/* ---------- Settings (preference panes) ---------- */
+.native-settings-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.native-settings-list > li { display: flex; align-items: flex-start; gap: 12px; border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 12px 14px; background: var(--panel); }
+.native-settings-list > li[data-active="true"] { border-color: color-mix(in srgb, var(--accent) 45%, var(--edge-strong)); }
+.native-settings-empty { border: 1px dashed var(--edge-strong); border-radius: var(--radius-lg); padding: 20px; color: var(--gray-500); font-size: var(--text-sm); text-align: center; }
+.native-settings-note { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.native-settings-note li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; }
+.native-settings-note li > span:first-child { display: grid; width: 28px; height: 28px; place-items: center; border-radius: var(--radius-md); background: var(--accent-dim); color: var(--accent-text); }
+.native-settings-note strong { display: block; color: var(--gray-100); font-size: var(--text-sm); font-weight: 500; }
+.native-settings-note p { margin: 2px 0 0; color: var(--gray-400); font-size: var(--text-sm); line-height: 1.5; }
+/* v1.15 — provider rows wrap cleanly at narrow widths. */
 .native-settings-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 16rem; }
 @media (max-width: 560px) {
   .native-settings-list > li { flex-wrap: wrap; }
@@ -595,26 +691,79 @@
 .native-settings-dot { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: 999px; background: var(--gray-500); }
 .native-settings-dot[data-on="true"] { background: var(--success); }
 .native-settings-card[data-enabled="true"] .native-settings-dot { background: var(--success); }
-.native-settings-tag { display: inline-flex; align-items: center; border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 1px 7px; color: var(--gray-300); font-size: var(--text-2xs); }
-.native-settings-tag[data-tone="ok"] { color: var(--success); border-color: var(--success-border); }
-.native-settings-tag[data-tone="warn"] { color: var(--warn); border-color: var(--warn-border); }
-.native-settings-editor { margin-bottom: 20px; border: 1px solid var(--edge); border-radius: var(--radius-xl); padding: 14px 16px 12px; background: var(--panel); }
-.native-settings-editor-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; font-size: var(--text-sm); }
-.native-settings-editor-head strong { color: var(--gray-100); font-weight: 500; }
-.native-settings-advanced { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 10px; border: 0; background: none; padding: 0; color: var(--gray-500); font-size: var(--text-xs); cursor: pointer; }
-.native-settings-advanced:hover { color: var(--gray-300); }
-.native-settings-advanced-body { margin-bottom: 4px; border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 12px 12px 0; background: var(--canvas); }
+.native-settings-tag { display: inline-flex; height: 20px; align-items: center; border-radius: var(--radius-md); padding: 0 7px; background: var(--hover); color: var(--gray-300); font-size: var(--text-2xs); font-weight: 500; }
+.native-settings-tag[data-tone="ok"] { background: var(--success-bg); color: var(--success); }
+.native-settings-tag[data-tone="warn"] { background: var(--warn-bg); color: var(--warn-fg); }
+.native-settings-editor { margin-bottom: 20px; border: 1px solid var(--edge-strong); border-radius: var(--radius-lg); padding: 16px; background: var(--panel); }
+.native-settings-editor-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; font-size: var(--text-sm); }
+.native-settings-editor-head strong { color: var(--gray-100); font-size: var(--text-lg); font-weight: 600; }
+.native-settings-advanced { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 10px; border: 0; background: none; padding: 0; color: var(--gray-400); font-size: var(--text-sm); cursor: pointer; }
+.native-settings-advanced:hover { color: var(--gray-100); }
+.native-settings-advanced-body { margin-bottom: 4px; border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 12px 12px 0; background: var(--canvas); }
 .native-settings-presets { top: calc(100% + 6px); right: 0; left: auto; width: 17rem; }
 .native-settings-presets small { margin-left: 10px; color: var(--gray-500); font-size: var(--text-2xs); }
-.native-settings-card { border: 1px solid var(--edge); border-radius: var(--radius-xl); padding: 12px 14px; }
-.native-settings-code { border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 3px 8px; background: var(--elevated); color: var(--gray-100); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-xs); }
+.native-settings-card { border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 12px 14px; background: var(--panel); }
+.native-settings-code { border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 3px 8px; background: var(--elevated); color: var(--gray-100); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); }
 
 @media (prefers-reduced-motion: reduce) {
   .native-sidebar { transition: none; }
-  .native-task-row[data-state="working"] .native-task-mark { animation: none; }
+  .native-task-row[data-state="working"] .native-task-mark,
+  .agent-run-status[data-status="running"] { animation: none; }
+  .native-sidepane, .native-palette, .native-menu, .native-confirm { animation: none; }
 }
 
-.agent-workspace {
+/* ---------- Settings dialog (v3.0) ---------- */
+.native-settings-dialog {
+  position: relative;
+  display: flex;
+  width: min(880px, 96vw);
+  height: min(640px, 92vh);
   overflow: hidden;
-  overflow: clip;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-2xl);
+  background: var(--canvas);
+  box-shadow: var(--shadow-pop);
+  animation: ui-rise-in var(--duration-base) var(--ease-out);
 }
+.native-settings-nav { display: flex; width: 13rem; flex-shrink: 0; flex-direction: column; border-right: 1px solid var(--edge); padding: 12px; background: var(--sidebar); }
+.native-settings-nav-title { padding: 4px 8px 12px; color: var(--gray-100); font-size: var(--text-sm); font-weight: 600; }
+.native-settings-nav-items { display: grid; gap: 2px; }
+.native-settings-nav-item {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 0 8px;
+  background: transparent;
+  color: var(--gray-300);
+  font-size: var(--text-sm);
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.native-settings-nav-item svg { color: var(--gray-500); }
+.native-settings-nav-item:hover { background: var(--hover); color: var(--gray-100); }
+.native-settings-nav-item[aria-pressed="true"] { background: var(--accent-dim); color: var(--gray-100); font-weight: 500; }
+.native-settings-nav-item[aria-pressed="true"] svg { color: var(--accent-text); }
+.native-settings-close { position: absolute; top: 12px; right: 12px; z-index: 1; }
+.native-settings-body { min-height: 0; flex: 1; overflow: auto; padding: 28px 32px; }
+.native-settings-pane-head { margin-bottom: 20px; padding-right: 32px; }
+.native-settings-pane-head h2 { margin: 0; color: var(--gray-100); font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.01em; }
+.native-settings-pane-head p { margin: 4px 0 0; color: var(--gray-500); font-size: var(--text-sm); line-height: 1.5; }
+.native-settings-group { border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 0 16px; background: var(--panel); }
+.native-settings-row { display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--edge); padding: 10px 0; }
+.native-settings-row:last-child { border-bottom: 0; }
+.native-settings-row-label { color: var(--gray-100); font-size: var(--text-sm); }
+.native-settings-row-hint { margin-top: 2px; color: var(--gray-500); font-size: var(--text-2xs); }
+.native-settings-group-label { margin: 28px 0 10px; }
+.native-settings-note { border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 14px 16px; background: var(--panel); gap: 14px; }
+@media (max-width: 640px) {
+  .native-settings-nav { width: 3.25rem; padding: 12px 6px; }
+  .native-settings-nav-title, .native-settings-nav-item > :not(svg) { display: none; }
+  .native-settings-nav-item { justify-content: center; font-size: 0; }
+  .native-settings-body { padding: 24px 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .native-settings-dialog { animation: none; } }
+.native-settings-title { margin: 0; color: var(--gray-100); font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.01em; }
+.native-settings-hint { margin: 4px 0 0; color: var(--gray-500); font-size: var(--text-sm); line-height: 1.5; }

@@ -179,8 +179,11 @@ describe("contrast", () => {
       // made "Add model provider" the least readable string on the screen.
       const fill = parse(v["--accent"]);
       expect(ratio(parse(v["--accent-fg"]), fill), `${theme} --accent-fg`).toBeGreaterThanOrEqual(4.5);
-      // …and the accent is also used AS text, on the canvas.
-      expect(ratio(fill, canvas), `${theme} --accent as ink`).toBeGreaterThanOrEqual(4.5);
+      // …and the accent is also used AS text, on the canvas. v3.0 splits the
+      // fill from the ink: links, selection labels and live progress use
+      // --accent-text, which has to read on the lightest ground it lands on.
+      expect(ratio(parse(v["--accent-text"]), canvas), `${theme} --accent-text as ink`).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(parse(v["--accent-text"]), parse(v["--hover"])), `${theme} --accent-text on hover`).toBeGreaterThanOrEqual(4.5);
     });
 
     it(`${theme}: every syntax slot clears AA on the code slab`, () => {
@@ -294,7 +297,10 @@ describe("contrast", () => {
         return 116 * (Y > d ** 3 ? Math.cbrt(Y) : Y / (3 * d * d) + 4 / 29) - 16;
       };
       const span = Math.abs(lstar("--canvas") - lstar("--hover"));
-      expect(span, `${theme}: canvas..hover span`).toBeGreaterThanOrEqual(12);
+      // v3.0 — in light, cards and menus are lifted by a hairline and a
+      // shadow as well as a surface step; a hover 12 L* below white turns
+      // every row into a grey slab. Dark keeps the full range.
+      expect(span, `${theme}: canvas..hover span`).toBeGreaterThanOrEqual(theme === "dark" ? 12 : 6);
     });
 
     it(`${theme}: the neutral ramp keeps its ordering`, () => {

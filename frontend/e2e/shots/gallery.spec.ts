@@ -54,6 +54,13 @@ async function openTask(page: Page, title: string) {
 
 async function shoot(page: Page, name: string, theme: Theme, lang: Lang = "en") {
   const file = `${name}--${theme}--${lang}.png`;
+  // Photograph settled states: let every finite animation (sheet rise, scrim
+  // fade, reveals) finish; infinite ones (live pulse, activity bar) keep going.
+  await page.evaluate(() => Promise.all(
+    document.getAnimations()
+      .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+      .map((a) => a.finished.catch(() => undefined)),
+  ));
   await page.screenshot({ path: path.join(OUT, file), fullPage: false });
   taken.push({ name, theme, lang, file });
 }
@@ -102,13 +109,14 @@ for (const theme of THEMES) {
       await shoot(page, "03-execution", theme, lang);
     });
 
-    test("Details expand in place under the Result", async ({ page }) => {
+    test("Details open in the inspector beside the Result", async ({ page }) => {
       const title = `Artifact review ${theme} ${lang}`;
       seedTask(2, title, "short", true);
       await openAgent(page, theme, lang);
       await openTask(page, title);
       await page.getByTestId("task-detail-toggle-report").click();
-      await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
+      await expect(page.getByTestId("task-sidepane")).toHaveAttribute("data-kind", "report");
+      await expect(page.getByTestId("task-detail-report")).toBeVisible();
       await expect(page.getByTestId("agent-composer")).toBeVisible();
       await shoot(page, "04-artifacts", theme, lang);
     });
@@ -220,7 +228,7 @@ test.describe("Agent runtime states", () => {
       await expect(page.locator('[data-testid="work-result"][data-streaming="false"]').filter({ hasText: /every principal/ }).last()).toBeVisible({ timeout: 90_000 });
       await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", { timeout: 60_000 });
       await page.keyboard.press("Control+k");
-      await page.getByTestId("command-palette").getByRole("button", { name: /Compact context/ }).click();
+      await page.getByTestId("command-palette").getByRole("option", { name: /Compact context/ }).click();
       await expect(page.getByTestId("toast-viewport")).toContainText(/Context compacted/, { timeout: 30_000 });
       await composer(page).fill("and now?");
       await composer(page).press("Enter");

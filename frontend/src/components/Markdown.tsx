@@ -43,7 +43,7 @@ function Outline({ entries }: { entries: Array<{ id: string; text: string; level
                 event.preventDefault();
                 revealInScroller(document.getElementById(e.id), "start");
               }}
-              className="text-xs text-gray-500 transition-colors hover:text-accent-soft"
+              className="text-xs text-gray-500 transition-colors hover:text-accent-text"
             >
               {e.text}
             </a>
@@ -123,7 +123,7 @@ function ListBlock({ block }: { block: ListBlockT }) {
               aria-checked={it.task}
               aria-disabled
               data-testid="task-marker"
-              className={`mt-1 flex h-[11px] w-[11px] shrink-0 items-center justify-center rounded-sm border ${it.task ? "border-accent bg-accent/25 text-accent-soft" : "border-edge-strong"}`}
+              className={`mt-1 flex h-[11px] w-[11px] shrink-0 items-center justify-center rounded-sm border ${it.task ? "border-accent bg-accent text-accent-fg" : "border-edge-strong"}`}
             >
               {it.task && (
                 <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" aria-hidden>
@@ -550,7 +550,7 @@ function link(href: string, label: string, key: number): ReactNode {
         void openExternal(href).then((handled) => void handled);
         if (tauriInvoke()) e.preventDefault();
       }}
-      className="text-accent-soft underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+      className="text-accent-text underline decoration-accent-text/40 underline-offset-2 hover:decoration-accent-text"
     >
       {label}
     </a>
