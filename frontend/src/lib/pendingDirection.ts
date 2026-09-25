@@ -61,3 +61,21 @@ export function isCurrentPersistedWorkResult(
   }
   return false;
 }
+
+/**
+ * Queued executions the Task should paint as queued.
+ *
+ * A Direction delegated to an idle task is briefly `queued` before the
+ * supervisor starts it; the live pending heading already IS that Direction,
+ * so painting it again as a queued row would show the same words twice.
+ * Only the head of the queue with nothing running ahead of it can be the
+ * live Direction; anything behind a running execution is genuinely queued.
+ */
+export function visibleQueuedExecutions<T extends { direction: string | null }>(
+  queued: T[],
+  pending: string | null | undefined,
+  hasActiveExecution: boolean,
+): T[] {
+  if (!pending || hasActiveExecution || queued.length === 0) return queued;
+  return queued[0].direction === pending ? queued.slice(1) : queued;
+}
