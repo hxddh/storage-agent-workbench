@@ -6,6 +6,10 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS release packaging** — `scripts/sign-macos-app-bundle.sh` retries `hdiutil create` / `attach` with backoff (detaching a stale volume between attempts): hosted macOS runners intermittently answer "Resource busy" while `diskimages-helper` still holds the image Tauri just built.
+
 ## [2.2.0] - 2026-09-25
 
 _Native agent depth — every tool from the first step, Directions durable from the start, continuations that pick up where they stopped, real progress on long work. No migration (head stays **031**)._ See `docs/releases/2.2.0.md`.
