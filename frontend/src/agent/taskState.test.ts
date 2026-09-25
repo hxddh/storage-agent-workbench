@@ -8,6 +8,7 @@ const run = (patch: Partial<LiveTask> = {}): LiveTask => ({
   pending: null,
   items: [],
   answer: null,
+  conclusion: null,
   waiting: false,
   startedAt: null,
   lastMetrics: null,

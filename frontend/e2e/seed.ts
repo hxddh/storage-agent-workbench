@@ -29,6 +29,9 @@ db, n, title = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 # untestable against the short shape, because the short shape never makes the
 # container grow after first layout.
 shape = sys.argv[4] if len(sys.argv) > 4 else "short"
+# "conclude": each Work Result carries the conclusion a real turn records with
+# the record_conclusion tool (v2.0) — answer, findings with severity, next steps.
+conclude = len(sys.argv) > 5 and sys.argv[5] == "conclude"
 conn = sqlite3.connect(db)
 sid = "e2e-" + uuid.uuid4().hex[:12]
 conn.execute(
@@ -58,6 +61,22 @@ def answer_text(i):
             "- point one about lifecycle\\n- point two about replication\\n"
             "- point three about logging\\n- point four about encryption\\n") % (i, i, i, paras, rows)
 
+def conclusion(i):
+    return json.dumps({
+        "answer": "bucket-%03d denies list because its bucket policy omits s3:ListBucket for the caller principal." % i,
+        "findings": [
+            {"title": "Bucket policy omits s3:ListBucket for the caller principal", "severity": "high",
+             "detail": "Every ListObjectsV2 returns 403 AccessDenied while HeadObject on a known key still succeeds."},
+            {"title": "No AbortIncompleteMultipartUpload lifecycle rule", "severity": "medium",
+             "detail": "Incomplete multipart uploads are never cleaned up and keep accruing storage."},
+            {"title": "Versioning is off on 8 of 24 buckets", "severity": "low"},
+            {"title": "Default encryption is SSE-S3 on every bucket", "severity": "info"},
+        ],
+        "next_steps": ["Draft a remediation plan for the bucket policy",
+                       "Estimate the cost of a lifecycle rule",
+                       "Capture a baseline to track drift"],
+    })
+
 for i in range(n):
     ts = "2026-01-01T00:%02d:00Z" % (i * 2)
     # The row shape session_tools.note() really writes: mixed types, not the
@@ -80,6 +99,8 @@ for i in range(n):
         }
         if act is not None and "tool_activity" in cols:
             row["tool_activity"] = act
+        if role == "assistant" and conclude and "conclusion" in cols:
+            row["conclusion"] = conclusion(i)
         keys = ",".join(row)
         conn.execute(
             "INSERT INTO session_messages (%s) VALUES (%s)" % (keys, ",".join("?" * len(row))),
@@ -127,6 +148,7 @@ export function seedSession(
   exchanges: number,
   title = `seeded task ${randomUUID().slice(0, 8)}`,
   shape: "short" | "tall" = "short",
+  conclude = false,
 ): {
   id: string;
   title: string;
@@ -147,7 +169,7 @@ export function seedSession(
   const { dataDir } = JSON.parse(raw) as { dataDir: string };
   const id = execFileSync(
     process.env.E2E_PYTHON || "python3",
-    ["-c", PY, `${dataDir}/app.db`, String(exchanges), title, shape],
+    ["-c", PY, `${dataDir}/app.db`, String(exchanges), title, shape, conclude ? "conclude" : "plain"],
     { encoding: "utf8" },
   ).trim();
   return { id, title };

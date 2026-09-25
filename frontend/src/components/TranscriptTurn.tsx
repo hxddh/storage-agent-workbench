@@ -1,4 +1,5 @@
 import { memo, useMemo, type ReactNode } from "react";
+import type { Conclusion } from "../types";
 import { useCopy } from "../hooks/useCopy";
 import { useI18n } from "../i18n";
 import { isMostlyError, parseS3Error } from "../lib/s3error";
@@ -50,6 +51,21 @@ export const UserTurn = memo(function UserTurn({ content, tag }: { content: stri
   );
 });
 
+/** The first readable line of a Markdown answer, bounded — the folded
+ * summary of a Work Result in the Work log when no conclusion was recorded. */
+export function answerGist(text: string, limit = 160): string {
+  const line = text
+    .split("\n")
+    .map((part) => part.replace(/^[#>*\-\s|`]+/, "").replace(/[*_`]/g, "").trim())
+    .find((part) => part.length > 0) ?? "";
+  return line.length > limit ? `${line.slice(0, limit - 1)}…` : line;
+}
+
+/** How a turn shows its answer: whole (live, or a Task without a Result
+ * section), folded to one line (older turns in the Work log), or as a pointer
+ * to the Result at the top of the Task (the latest turn). */
+export type AnswerMode = "full" | "folded" | "above";
+
 /**
  * One Agent turn: items (commentary · worked group · approval) then the
  * answer as Markdown on the reading measure. `live` renders the same shape
@@ -67,9 +83,17 @@ export const AgentTurn = memo(function AgentTurn({
   onResolve,
   resolvingId = null,
   findActive = false,
+  answerMode = "full",
+  conclusion = null,
+  head,
 }: {
   items: TurnItem[];
   answer: string | null;
+  answerMode?: AnswerMode;
+  /** The turn's recorded conclusion (folded summary; live head). */
+  conclusion?: Conclusion | null;
+  /** Rendered before the answer (the live conclusion, v2.0). */
+  head?: ReactNode;
   live?: boolean;
   waiting?: boolean;
   /** Rendered as a tag on the last segment after the user pressed Stop. */
@@ -107,8 +131,10 @@ export const AgentTurn = memo(function AgentTurn({
   return (
     <article
       className="turn-agent group"
-      data-testid="work-result"
-      data-work-result="true"
+      // A Work log turn is the process record; the Work Result itself is the
+      // Result at the top of the Task (v2.0).
+      data-testid={answerMode === "full" ? "work-result" : "log-turn"}
+      data-work-result={answerMode === "full" ? "true" : undefined}
       data-streaming={live ? "true" : "false"}
       aria-label={live ? t("turn.executionLabel") : t("turn.answerLabel")}
     >
@@ -125,14 +151,43 @@ export const AgentTurn = memo(function AgentTurn({
       {longRunning ? (
         <p className="turn-long-running" data-testid="turn-long-running">{t("turn.longRunning")}</p>
       ) : null}
-      {text.trim() ? (
+      {head}
+      {text.trim() && answerMode === "full" ? (
         <div className="turn-answer" data-testid="turn-answer">
           <Markdown text={text} />
         </div>
       ) : null}
+      {/* An open Find walks folded answers as plain text: one copy, visible. */}
+      {text.trim() && answerMode === "folded" && findActive ? (
+        <div className="turn-answer turn-answer-found" data-testid="log-answer">
+          <Markdown text={text} />
+        </div>
+      ) : null}
+      {text.trim() && answerMode === "folded" && !findActive ? (
+        <details className="turn-answer-fold" data-testid="log-answer">
+          <summary>
+            <span className="turn-answer-fold-chevron" aria-hidden><Icon name="chevron" size={11} /></span>
+            <span className="turn-answer-fold-gist">{conclusion?.answer || answerGist(text)}</span>
+          </summary>
+          <div className="turn-answer">
+            <Markdown text={text} />
+          </div>
+        </details>
+      ) : null}
+      {text.trim() && answerMode === "above" ? (
+        <button
+          type="button"
+          className="turn-result-above"
+          data-testid="log-result-above"
+          onClick={() => document.getElementById("task-result")?.scrollIntoView({ block: "start", behavior: "smooth" })}
+        >
+          <Icon name="arrowUp" size={11} />
+          {t("log.resultAbove")}
+        </button>
+      ) : null}
       {figures}
       {stoppedLabel ? <div className="turn-tag" data-testid="turn-stopped">{stoppedLabel}</div> : null}
-      {!live && text.trim() ? (
+      {!live && text.trim() && answerMode === "full" ? (
         <div className="native-row-actions">
           <CopyAction text={text} testId="copy-work-result" />
         </div>

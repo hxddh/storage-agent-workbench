@@ -6,25 +6,19 @@ const COPY = {
       navigation: "Tasks",
       workspace: "Active task",
     },
+    details: {
+      title: "Details",
+      findings: (n: number) => (n === 1 ? "1 finding" : `${n} findings`),
+      reportMeta: "The whole task as one document",
+      executions: (n: number) => (n === 1 ? "1 execution" : `${n} executions`),
+    },
     artifacts: {
-      title: "Artifacts",
-      close: "Close artifacts",
-      back: "Back",
-      open: "Open",
-      loading: "Loading task artifacts…",
       sections: {
         evidence: "Evidence",
         reports: "Reports",
         plans: "Plans",
         baselines: "Baselines & Drift",
         execution: "Execution",
-      },
-      empty: {
-        evidence: "No evidence yet — delegate work or attach a file and the Agent will record what it used.",
-        reports: "No report yet — ask the Agent for a write-up in the Composer.",
-        plans: "No remediation plan yet — ask the Agent to draft one.",
-        baselines: "No baseline yet — ask the Agent to capture one.",
-        execution: "No executions yet — delegate work above and they will appear here.",
       },
       report: "Task report",
       plan: {
@@ -59,7 +53,6 @@ const COPY = {
         } as Record<string, string>,
         kinds: { direction: "Direction", verify: "Verify", revisit: "Revisit", steer_followup: "Steer follow-up", resume: "Resume", retry: "Retry" } as Record<string, string>,
       },
-      error: "Couldn't load this task's artifacts:",
     },
     evidence: {
       eyebrow: "Evidence",
@@ -88,25 +81,19 @@ const COPY = {
       navigation: "任务",
       workspace: "当前任务",
     },
+    details: {
+      title: "详情",
+      findings: (n: number) => `${n} 项发现`,
+      reportMeta: "把整个任务整理成一份文档",
+      executions: (n: number) => `${n} 次执行`,
+    },
     artifacts: {
-      title: "产物",
-      close: "关闭产物面板",
-      back: "返回",
-      open: "打开",
-      loading: "正在加载任务产物…",
       sections: {
         evidence: "证据",
         reports: "报告",
         plans: "整改方案",
         baselines: "基线与漂移",
         execution: "执行记录",
-      },
-      empty: {
-        evidence: "还没有证据——在 Composer 里委派工作或附加文件，Agent 会记下它用过的依据。",
-        reports: "还没有报告——在 Composer 里请 Agent 写一份。",
-        plans: "还没有整改方案——请 Agent 起草一份。",
-        baselines: "还没有基线——请 Agent 记录一条。",
-        execution: "还没有执行记录——在上方委派工作，执行会出现在这里。",
       },
       report: "任务报告",
       plan: {
@@ -141,7 +128,6 @@ const COPY = {
         } as Record<string, string>,
         kinds: { direction: "方向", verify: "验证", revisit: "回访", steer_followup: "补充方向的后续执行", resume: "恢复执行", retry: "重新执行" } as Record<string, string>,
       },
-      error: "无法加载这个任务的产物：",
     },
     evidence: {
       eyebrow: "证据",

@@ -6,6 +6,26 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-25
+
+_Result-first Task — a Task opens on what the Agent concluded, not on the tail of a transcript. Migration **031**._ See `docs/releases/2.0.0.md`.
+
+### Added
+
+- **`record_conclusion`** — core, budget-exempt tool through which the model records a turn's conclusion (answer; findings with severity `high|medium|low|info`; next steps). Bounded, redacted, last call wins, never a tool row. Runtime event `conclusion.recorded`; persisted on `session_messages.conclusion` and `work_results.conclusion_json_sanitized` (migration 031).
+- **Result** at the top of the Task: conclusion · grounding line (evidence · gaps · tool calls from the trace) · full answer · figures · detail rows. Next steps fill the Composer.
+- **Work log** below the Result: every turn; older answers fold to one line; the latest points up to the Result.
+- **Tables** preview 8 rows and expand in place; headers sort (sizes and numbers numerically); folded rows stay findable.
+
+### Changed
+
+- A Task opens at its top and never follows the end; a new Direction scrolls back up to the work in progress.
+- Evidence · Report · Execution · Plans · Baselines are rows under the Result that expand in place (⌘I opens the first that exists).
+
+### Removed
+
+- The Artifacts right split panel (and its narrow-window overlay), its empty-state placeholders, the *Jump to latest* pill and bottom-pinning.
+
 ## [1.19.0] - 2026-09-24
 
 _Document-native window — the Task reads as a document, not a message exchange. No migration (head stays **030**)._ See `docs/releases/1.19.0.md`.

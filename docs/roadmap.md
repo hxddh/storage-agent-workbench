@@ -1,15 +1,34 @@
 # Roadmap
 
-> **Status: delivered in v1.19.0 — Document-native window.** v1.16.0 finished
+> **Status: delivered in v2.0.0 — Result-first Task.** The Task opens on its
+> latest Result — the conclusion the model recorded with `record_conclusion`,
+> then the full answer and detail rows that expand in place — with the Work log
+> below (`docs/releases/2.0.0.md`). Before it, v1.19.0 — Document-native
+> window. v1.16.0 finished
 > the true native Agent; v1.17.0 shipped
 > the Codex window; v1.18.0 the native core underneath it
 > (`docs/releases/1.18.0.md`). v1.19.0 reviewed the rendered window against
 > "native, simple, elegant, not a chat tool" and rebuilt the turn as a
 > document section (`docs/releases/1.19.0.md`).
 
-> **Baseline: Storage Agent v1.19.0.** The product invariant is unchanged:
+> **Baseline: Storage Agent v2.0.0.** The product invariant is unchanged:
 > **the Agent Task is the application.** The window is sidebar · title bar ·
 > one Task document · one Composer.
+
+## Result-first Task (shipped in v2.0.0)
+
+| Surface | v2.0 |
+| --- | --- |
+| Opening a Task | lands at the top, on the latest Result; nothing follows the end; no *Jump to latest* |
+| Result | the recorded conclusion (answer · findings by severity · next steps) · grounding · full answer · figures · detail rows |
+| Conclusion | runtime-recorded (`record_conclusion` → `conclusion.recorded`, migration 031); never guessed from prose |
+| Details | Evidence · Report · Execution · Plans · Baselines expand in place; no side panel, no empty placeholders |
+| Work log | every turn below the Result; older answers fold to one line |
+| Tables | preview 8 rows, expand, sort by column; folded rows stay findable |
+
+Follow-ups: persist a Direction when its execution starts (so a reload
+mid-finish shows it at once); a figure hover layer; move the runtime tests
+off the blocking `SESSION_LOOP` seam.
 
 ## Document-native window (shipped in v1.19.0)
 
@@ -66,9 +85,9 @@ invents a worker, plan, or submit path the Sidecar does not expose.
 ## Next
 
 No next version is planned in this file. Follow-up is ordinary defects against
-the Codex window contract and the v1.18.0 security floor. Non-goals remain:
+the result-first contract and the v1.18.0 security floor. Non-goals remain:
 coding-Agent features, a second submit path, slash SKUs, suggestion cards, a
 painted engine grid, the historical Review sheet, artifact chips, a grey
 Direction block, Next Actions, a metrics footer, table pagination, a second
-Agent, a Settings price-table UI, or a Verify control. No migration (head
-stays **030**).
+Agent, a Settings price-table UI, a Verify control, a side panel, or a
+conclusion guessed from prose. Migration head **031**.

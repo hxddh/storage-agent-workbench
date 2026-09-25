@@ -138,6 +138,23 @@ export interface NextAction {
 
 // What the agent's answer is grounded in, and what it couldn't verify. Produced
 // per turn by the skill contract; surfaced as a transparency affordance.
+/** v2.0 — the Work Result's structured head, recorded by the model through
+ * the runtime's `record_conclusion` tool. Absent means none was recorded: the
+ * page then shows the answer only and never guesses a head from prose. */
+export type ConclusionSeverity = "high" | "medium" | "low" | "info";
+
+export interface ConclusionFinding {
+  title: string;
+  severity: ConclusionSeverity;
+  detail?: string;
+}
+
+export interface Conclusion {
+  answer: string;
+  findings: ConclusionFinding[];
+  next_steps: string[];
+}
+
 export interface Grounding {
   evidence_used: string[];
   evidence_gaps: string[];
@@ -230,6 +247,8 @@ export interface TaskMessage {
   grounding?: Grounding | null;
   /** Ordered commentary / tool items before the answer (v1.11). */
   turn_items?: TurnItemRef[];
+  /** v2.0 — `record_conclusion`; null when the model recorded none. */
+  conclusion?: Conclusion | null;
   /** Opaque paging cursor (v0.47.0); hand the oldest back as `before`. */
   seq?: number | null;
   created_at: string;

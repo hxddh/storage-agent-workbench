@@ -1,36 +1,17 @@
-import { useEffect, useReducer, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
 import { publishAgentCommands } from "./commands";
-import { ArtifactsPanel } from "./ArtifactsPanel";
 import { agentShellReducer, initialAgentShellState } from "./model";
+import { TaskDetailsContext, type TaskDetailsState } from "./taskDetails";
 import { useAgentTaskProjection } from "./useAgentTaskProjection";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
 import { useLiveTask } from "../liveTasks";
 
-const ARTIFACTS_KEY = "saw.artifacts.open";
-const OVERLAY_BELOW_PX = 960;
-
-function readOpenPreference(): boolean {
-  try {
-    return localStorage.getItem(ARTIFACTS_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function useNarrowWindow(): boolean {
-  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < OVERLAY_BELOW_PX);
-  useEffect(() => {
-    const onResize = () => setNarrow(window.innerWidth < OVERLAY_BELOW_PX);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  return narrow;
-}
-
 /**
- * The active task environment: the Task document plus the Artifacts panel
- * beside it (a right split; an overlay only under a narrow window). No header,
- * no strip, no second presentation mode.
+ * The active task environment: one Task document. v2.0 — the durable outputs
+ * are not a side panel any more; the shell owns which of them is expanded
+ * (the document renders them under the Result) and publishes the one command
+ * target the menu, the keyboard and the document use. No header, no strip,
+ * no second presentation mode.
  */
 export function AgentShell({
   taskContent,
@@ -39,55 +20,46 @@ export function AgentShell({
   taskContent: ReactNode;
   taskId: string | null;
 }) {
-  const [state, dispatch] = useReducer(agentShellReducer, taskId, (id) => initialAgentShellState(id, readOpenPreference()));
-  const narrow = useNarrowWindow();
+  const [state, dispatch] = useReducer(agentShellReducer, taskId, (id) => initialAgentShellState(id));
   const run = useLiveTask(taskId ?? "");
   const [reloadKey, setReloadKey] = useState(0);
-  const open = state.artifactsOpen && Boolean(taskId);
-  const projection = useAgentTaskProjection(taskId, open, state.selection, reloadKey);
+  const expanded = state.artifactsOpen && Boolean(taskId);
+  // The rows list what exists, so they load with the task, not on demand.
+  const projection = useAgentTaskProjection(taskId, Boolean(taskId), expanded ? state.selection : null, reloadKey);
   const provenance = useTaskProvenance(taskId, Boolean(taskId));
 
   useEffect(() => {
     dispatch({ type: "task.changed", taskId });
   }, [taskId]);
 
-  // The panel lists durable outputs: re-read them when the task's execution settles.
+  // Durable outputs change when the task's execution settles: re-read them.
   useEffect(() => {
     if (!run.busy) setReloadKey((key) => key + 1);
   }, [run.busy]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(ARTIFACTS_KEY, state.artifactsOpen ? "1" : "0");
-    } catch {
-      /* private mode */
-    }
-  }, [state.artifactsOpen]);
-
   useEffect(() => publishAgentCommands((command) => dispatch(command)), []);
+
+  const details = useMemo<TaskDetailsState>(() => ({
+    taskId,
+    selection: expanded ? state.selection : null,
+    projection,
+    provenance,
+    open: (kind, id) => dispatch({ type: "artifacts.open", kind, id: id ?? null }),
+    back: () => dispatch({ type: "artifacts.back" }),
+    close: () => dispatch({ type: "artifacts.close" }),
+  }), [taskId, expanded, state.selection, projection, provenance]);
 
   return (
     <div
       data-testid="agent-shell"
-      data-artifacts={open ? "open" : "closed"}
-      data-artifacts-kind={open ? state.selection?.kind ?? "evidence" : undefined}
+      data-details={expanded ? state.selection?.kind ?? "evidence" : "closed"}
       className="native-task-area"
     >
-      <section className="agent-task-content" data-testid="agent-task-content" data-empty={taskId ? "false" : "true"}>
-        {taskContent}
-      </section>
-      {open && taskId ? (
-        <ArtifactsPanel
-          taskId={taskId}
-          selection={state.selection}
-          projection={projection}
-          provenance={provenance}
-          overlay={narrow}
-          onOpen={(kind, id) => dispatch({ type: "artifacts.open", kind, id: id ?? null })}
-          onBack={() => dispatch({ type: "artifacts.back" })}
-          onClose={() => dispatch({ type: "artifacts.close" })}
-        />
-      ) : null}
+      <TaskDetailsContext.Provider value={details}>
+        <section className="agent-task-content" data-testid="agent-task-content" data-empty={taskId ? "false" : "true"}>
+          {taskContent}
+        </section>
+      </TaskDetailsContext.Provider>
     </div>
   );
 }

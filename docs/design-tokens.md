@@ -1,6 +1,6 @@
 # Design tokens
 
-> **Storage Agent v1.19.0.** Presentation contract for the native Agent
+> **Storage Agent v2.0.0.** Presentation contract for the native Agent
 > window. Tokens do not invent runtime state, progress, or capabilities.
 
 v1.09 replaces the v1.04–v1.08 warm/orange system with one achromatic surface
@@ -13,8 +13,8 @@ corner radii, z-index numbers, or `transition-all`.
 | --- | --- |
 | CSS variables (color, type, radius, motion, shadow, measure) | `frontend/src/index.css` |
 | Tailwind mapping | `frontend/tailwind.config.js` |
-| Window, sidebar, title bar, Artifacts panel | `frontend/src/agent/native-shell.css` |
-| Transcript turn, Composer, approval card, banners | `frontend/src/agent/native-document.css` |
+| Window, sidebar, title bar | `frontend/src/agent/native-shell.css` |
+| Result (conclusion, detail rows), Work log turns, tables, Composer, approval card, banners | `frontend/src/agent/native-document.css` |
 | Enforcement | `frontend/src/design-tokens.test.ts`, `frontend/src/theme.tokens.test.ts`, `frontend/src/agent/architecture.test.ts` |
 
 Both themes are first-class. Dark is the default; light is not an inversion of

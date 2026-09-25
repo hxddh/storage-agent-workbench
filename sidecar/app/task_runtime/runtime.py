@@ -34,7 +34,7 @@ import time
 from typing import Any
 
 from .. import audit, config
-from ..agent_runtime import compaction, session_agent
+from ..agent_runtime import compaction, conclusion_tools, session_agent
 from ..agent_runtime.agent_service import AgentUnavailable, get_model_credentials
 from ..db import connect
 from ..repositories import session_activity
@@ -491,6 +491,10 @@ def _run_execution(execution: dict[str, Any]) -> None:
             for steps in contract.get("plan_updates") or []:
                 store.append_event(conn, exec_id, task_id, "plan.updated",
                                    {"steps": list(steps)})
+            seam_conclusion = conclusion_tools.bounded(contract.get("conclusion"))
+            if seam_conclusion is not None:
+                store.append_event(conn, exec_id, task_id, "conclusion.recorded",
+                                   seam_conclusion)
             # The legacy blocking seam is a test double; the title step belongs
             # to the streamed runtime only.
             _finish(conn, execution, handle, _with_compaction(contract), creds,
@@ -609,6 +613,12 @@ def _persist_tool_event(conn: sqlite3.Connection, exec_id: str, task_id: str,
             store.append_event(conn, exec_id, task_id, "plan.updated",
                                {"steps": list(record.get("plan") or [])})
         return
+    if record.get("tool") == "record_conclusion":
+        # v2.0 — the Work Result's structured head, live before the answer.
+        conclusion = conclusion_tools.bounded(record.get("conclusion"))
+        if status != "started" and conclusion is not None:
+            store.append_event(conn, exec_id, task_id, "conclusion.recorded", conclusion)
+        return
     event_type = "tool.started" if status == "started" else "tool.completed"
     store.append_event(conn, exec_id, task_id, event_type, payload)
 
@@ -639,12 +649,15 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
     sessions_repo.add_message(conn, task_id, "user", execution["direction"] or "")
     for steer_text in handle.steer_queue.delivered:
         sessions_repo.add_message(conn, task_id, "user", f"[steer] {steer_text}")
+    conclusion = conclusion_tools.bounded(data.get("conclusion"))
     mid = sessions_repo.add_message(conn, task_id, "assistant", data["answer"],
                                     tool_activity=data.get("tool_activity"),
                                     grounding=grounding,
-                                    turn_items=data.get("turn_items"))
+                                    turn_items=data.get("turn_items"),
+                                    conclusion=conclusion)
     wr_id = store.record_work_result(conn, task_id, exec_id, mid, stopped=stopped,
-                                     cut_short=cut_short, grounding=grounding)
+                                     cut_short=cut_short, grounding=grounding,
+                                     conclusion=conclusion)
     store.append_event(conn, exec_id, task_id, "work_result.recorded",
                        {"work_result_id": wr_id, "message_id": mid, "stopped": stopped,
                         **({"cut_short": cut_short} if cut_short else {})}, commit=False)

@@ -3,12 +3,12 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 
-async function openEvidence(page: Page) {
+/** ⌘I: the detail rows under the Result open in place (v2.0). */
+async function openDetails(page: Page) {
   await page.keyboard.press("Control+i");
-  const review = page.getByTestId("agent-artifacts-panel");
-  await expect(review).toBeVisible();
-  await expect(page.getByTestId("evidence-review")).toBeVisible();
-  return review;
+  const open = page.getByTestId("task-scroll").locator('[data-testid^="task-detail-"][data-open="true"]');
+  await expect(open).toHaveCount(1);
+  return open;
 }
 const SKILL = "storageops-security-iam-policy";
 const FOLLOW_UP = "Summarize the evidence again while I keep the review open.";
@@ -44,19 +44,18 @@ async function completeTurn(page: Page) {
 }
 
 test.describe("Agent-native task shell", () => {
-  test("Artifacts is a panel beside the task and never replaces the active Agent task", async ({ page }) => {
+  test("details open in place under the Result and never replace the active Agent task", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
       const task = page.getByTestId("task-scroll");
       await expect(task).toBeVisible();
+      await expect(task.getByTestId("task-result")).toBeVisible();
 
-      await openEvidence(page);
-      const review = page.getByTestId("agent-artifacts-panel");
-      await expect(review).toBeVisible();
-      await expect(task).toBeVisible();
+      await openDetails(page);
+      await expect(task.getByTestId("task-details")).toBeVisible();
+      await expect(page.getByTestId("agent-artifacts-panel")).toHaveCount(0);
       await expect(page.getByRole("tab")).toHaveCount(0);
-      await expect(page.getByTestId("evidence-review")).toBeVisible();
       await expect(task).toBeVisible();
     } finally {
       await cleanup();
@@ -81,14 +80,12 @@ test.describe("Agent-native task shell", () => {
     }
   });
 
-  test("Artifacts stays open while the same task Composer continues the Agent task", async ({ page }) => {
+  test("open details stay open while the same task Composer continues the Agent task", async ({ page }) => {
     const { cleanup, model } = await setup(page);
     try {
       await completeTurn(page);
       const baselineRequests = model.requests.length;
-      await openEvidence(page);
-      const review = page.getByTestId("agent-artifacts-panel");
-      await expect(review).toBeVisible();
+      const review = await openDetails(page);
 
       await composer(page).fill(FOLLOW_UP);
       await composer(page).press("Enter");
@@ -126,15 +123,13 @@ test.describe("Agent-native task shell", () => {
     }
   });
 
-  test("Report opens as an Artifact document beside the durable task", async ({ page }) => {
+  test("the Report opens in place under the Result of the durable task", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      await page.keyboard.press("Control+i");
-      await page.getByTestId("artifact-report-row").click();
+      await page.getByTestId("task-detail-toggle-report").click();
 
-      const review = page.getByTestId("agent-artifacts-panel");
-      await expect(review).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true", { timeout: 20_000 });
       await expect(page.getByTestId("report-artifact")).toBeVisible();
       await expect(page.getByTestId("task-scroll")).toBeVisible();
       await expect(page.getByRole("tab")).toHaveCount(0);

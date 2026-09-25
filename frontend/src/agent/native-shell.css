@@ -455,96 +455,7 @@
   overflow: hidden;
 }
 
-/* ---------- Artifacts panel (right split; overlay under narrow windows) ---------- */
-
-.agent-artifacts-panel {
-  display: flex;
-  width: clamp(320px, 30vw, 440px);
-  min-width: 300px;
-  min-height: 0;
-  height: 100%;
-  flex: none;
-  flex-direction: column;
-  border-left: 1px solid var(--edge);
-  background: var(--panel);
-}
-.agent-artifacts-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  justify-content: flex-end;
-  background: var(--scrim);
-}
-.agent-artifacts-scrim .agent-artifacts-panel {
-  width: min(100%, 440px);
-  animation: artifacts-panel-in var(--duration-slow) var(--ease-out);
-}
-@keyframes artifacts-panel-in {
-  from { transform: translateX(24px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-.agent-artifacts-header {
-  display: flex;
-  height: var(--header-h);
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px 0 14px;
-  border-bottom: 1px solid var(--edge);
-}
-.agent-artifacts-header strong {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--gray-100);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.agent-artifacts-close, .agent-artifacts-back {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: none;
-  place-items: center;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--gray-400);
-  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
-}
-.agent-artifacts-close { margin-left: auto; }
-.agent-artifacts-back { margin-left: -6px; }
-.agent-artifacts-back-icon { display: inline-flex; transform: rotate(180deg); }
-.agent-artifacts-close:hover, .agent-artifacts-back:hover {
-  background: var(--hover);
-  color: var(--gray-100);
-}
-
-.agent-artifacts-body {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding-bottom: 32px;
-}
-.agent-artifacts-section { padding: 12px 14px 14px; }
-.agent-artifacts-section + .agent-artifacts-section { border-top: 1px solid var(--edge); }
-.agent-artifacts-section > h2 {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 0 0 8px;
-  color: var(--gray-100);
-  font-size: var(--text-xs);
-  font-weight: 500;
-}
-.agent-artifacts-section > h2 small { color: var(--gray-500); font-size: var(--text-2xs); font-weight: 400; }
-.agent-artifacts-section .agent-review-artifact { padding: 0; }
-.agent-artifacts-section .agent-review-block h2 { font-size: var(--text-xs); }
+/* ---------- Detail rows (v2.0: under the Result, in the document) ---------- */
 
 .agent-artifact-row {
   display: flex;
@@ -686,12 +597,7 @@
 .native-settings-card { border: 1px solid var(--edge); border-radius: var(--radius-xl); padding: 12px 14px; }
 .native-settings-code { border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 3px 8px; background: var(--elevated); color: var(--gray-100); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-xs); }
 
-@media (max-width: 720px) {
-  .agent-artifacts-panel { width: 100%; min-width: 0; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .native-sidebar { transition: none; }
   .native-task-row[data-state="working"] .native-task-mark { animation: none; }
-  .agent-artifacts-scrim .agent-artifacts-panel { animation: none; }
 }

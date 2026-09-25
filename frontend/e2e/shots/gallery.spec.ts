@@ -131,13 +131,14 @@ for (const theme of THEMES) {
       await shoot(page, "01-delegate", theme, lang);
     });
 
-    test("Work Result — durable technical output", async ({ page }) => {
+    test("Result — the conclusion first, the work log below", async ({ page }) => {
       const title = `Lifecycle diagnosis ${theme} ${lang}`;
-      seedTask(3, title, "tall");
+      seedTask(3, title, "tall", true);
       await openAgent(page, theme, lang);
       await openTask(page, title);
-      await expect(page.getByTestId("turn-user").first()).toBeVisible();
-      await expect(page.getByTestId("work-result").first()).toBeVisible();
+      await expect(page.getByTestId("result-conclusion")).toBeVisible();
+      await expect(page.getByTestId("result-finding")).toHaveCount(4);
+      await expect(page.getByTestId("task-scroll")).toHaveJSProperty("scrollTop", 0);
       await shoot(page, "02-work-result", theme, lang);
     });
 
@@ -154,14 +155,13 @@ for (const theme of THEMES) {
       await shoot(page, "03-execution", theme, lang);
     });
 
-    test("Artifacts panel opens beside the document", async ({ page }) => {
+    test("Details expand in place under the Result", async ({ page }) => {
       const title = `Artifact review ${theme} ${lang}`;
-      seedTask(2, title, "tall");
+      seedTask(2, title, "short", true);
       await openAgent(page, theme, lang);
       await openTask(page, title);
-      await page.keyboard.press("Control+i");
-      await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
-      await expect(page.getByTestId("evidence-review")).toBeVisible();
+      await page.getByTestId("task-detail-toggle-report").click();
+      await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
       await expect(page.getByTestId("agent-composer")).toBeVisible();
       await shoot(page, "04-artifacts", theme, lang);
     });
@@ -221,8 +221,7 @@ for (const theme of THEMES) {
       seedExecutionLog(id);
       await openAgent(page, theme, lang);
       await openTask(page, title);
-      await page.keyboard.press("Control+i");
-      await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
+      await page.getByTestId("task-detail-toggle-execution").click();
       await page.getByTestId("execution-row").first().click();
       await expect(page.getByTestId("execution-detail")).toBeVisible();
       await expect(page.getByTestId("execution-status")).toBeVisible();
@@ -378,6 +377,6 @@ test.afterAll(() => {
     path.join(OUT, "index.html"),
     `<!doctype html><meta charset="utf-8"><title>Storage Agent visual review</title><style>
 body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39;font-size:12px}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:1100px){.pair{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style><h1>Storage Agent — v1.19.0 visual review</h1><p>Native Agent window: sidebar · title bar · one transcript · one Composer · the Artifacts panel. Empty start is a greeting and the Composer; a turn is the user bubble, commentary, the plan checklist the model owns, one Worked for … group timed by wall-clock, an inline approval card where the gated tool raised it, the compaction marker, and the answer. Execution detail reads the same durable log; Settings → Safety carries the approval policy. No activity bar, no status bar, no inspector. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
+</style><h1>Storage Agent — v2.0.0 visual review</h1><p>Result-first Agent window: sidebar · title bar · one Task document · one Composer. A Task opens on its Result — the conclusion the runtime recorded (answer, findings by severity, next steps), the full answer, figures, and detail rows (Evidence · Report · Execution · Plans · Baselines) that expand in place — with the Work log below: each turn headed by its Direction, commentary, the plan checklist, one Worked for … group timed by wall-clock, an inline approval card where the gated tool raised it, and older answers folded to one line. Execution detail reads the durable log; Settings → Safety carries the approval policy. No side panel, no activity bar, no inspector. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
   );
 });

@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v1.19.0**
+**Current release: v2.0.0**
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. Give it a storage goal or problem; it investigates with real read-only tools, remains steerable while it works, stops at explicit confirmation boundaries, and produces durable results backed by reviewable execution and evidence.
 
@@ -44,7 +44,7 @@ Read-only investigation proceeds autonomously. The one operation that moves clou
 
 ### Work Result and Review
 
-A turn reads like a native Agent's transcript: your message, the model's short commentary, one *Worked for …* group of real tool rows, and the answer as Markdown — the durable **Work Result**. Evidence, Execution detail, Reports, Plans and Baselines live in the Artifacts panel beside the Task (⌘I).
+A Task opens on its **Result**: the conclusion the Agent recorded (the answer, findings by severity, next steps you can put in the Composer), then the full answer as Markdown — the durable **Work Result** — with Evidence, the Report, Execution detail, Plans and Baselines as rows that expand in place (⌘I). Below it, the **Work log** keeps every turn: your Direction, the model's short commentary, one *Worked for …* group of real tool rows.
 
 ## Storage capabilities
 

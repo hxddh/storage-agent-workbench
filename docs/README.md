@@ -1,6 +1,12 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.19.0** (`v1.19.0`).
+> **Current architecture baseline: Storage Agent v2.0.0** (`v2.0.0`).
+> **v2.0.0 is the Result-first Task** (`docs/releases/2.0.0.md`): a Task
+> opens on its latest Result — the conclusion the model recorded with
+> `record_conclusion` (answer, findings by severity, next steps), then the
+> full answer, figures and detail rows that expand in place — with the Work
+> log below. The Artifacts side panel and *Jump to latest* are gone; long
+> tables preview and sort in place. Migration head **031**.
 > v1.16.0 finished the true native agent; v1.16.1 patched tables, search,
 > wrapping, and a first Codex-grade polish pass. **v1.17.0 is the Codex
 > window** (`docs/releases/1.17.0.md`): UI and UE match Codex's quiet Agent
@@ -38,7 +44,7 @@
 > context compaction (`context.compacted`, ⌘K Compact context), `AGENTS.md`
 > instructions, Execution detail from the durable log, wall-clock *Worked
 > for …*, and the frontend split into document / runner / api modules.
-> Migration head is **030** (v1.13.0–v1.16.0 add no migration).
+> Migration head was **030** through v1.19.0 (v1.13.0–v1.19.0 add no migration; v2.0.0 appends **031**).
 > **v1.14.0 is interaction truth and content craft.** Steering reaches waiting
 > executions, queued Directions edit until they run, Execution detail shows
 > measured usage, figures and evidence read localized, times read relative,
@@ -110,9 +116,9 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`architecture.md`](architecture.md) — Tauri/React/Sidecar topology and ownership boundaries.
 - [`security.md`](security.md) — secret, tool, model-context, evidence and approval guarantees.
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
-- [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 030, and product-to-persistence mapping.
+- [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 031, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — next direction after **v1.19.0 — Document-native window**. Delivered history lives in `releases/`.
+- [`roadmap.md`](roadmap.md) — next direction after **v2.0.0 — Result-first Task**. Delivered history lives in `releases/`.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.

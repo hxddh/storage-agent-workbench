@@ -7,7 +7,7 @@
  * task list can reflect that state without inventing background workers.
  */
 import { useCallback, useSyncExternalStore } from "react";
-import type { ExecutionMetrics } from "./types";
+import type { Conclusion, ExecutionMetrics } from "./types";
 import type { TaskStatusPayload } from "./api";
 import type { LiveTurn, TurnItem } from "./lib/turnItems";
 
@@ -20,6 +20,8 @@ export type LiveTask = {
   items: TurnItem[];
   /** The final segment, once the model closed it. */
   answer: string | null;
+  /** v2.0 — the turn's conclusion, once the model recorded it. */
+  conclusion: Conclusion | null;
   /** The execution is parked on an inline approval; the worker is alive. */
   waiting: boolean;
   /** When this client saw the turn start, for the live elapsed timer. */
@@ -44,7 +46,7 @@ export const liveTurnOf = (run: LiveTask): LiveTurn =>
   ({ items: run.items, answer: run.answer, waiting: run.waiting });
 
 /** A cleared live turn, used whenever a run starts or settles. */
-export const CLEAR_TURN = { items: [] as TurnItem[], answer: null, waiting: false, startedAt: null };
+export const CLEAR_TURN = { items: [] as TurnItem[], answer: null, conclusion: null, waiting: false, startedAt: null };
 
 const EMPTY: LiveTask = {
   busy: false,
@@ -52,6 +54,7 @@ const EMPTY: LiveTask = {
   pending: null,
   items: [],
   answer: null,
+  conclusion: null,
   waiting: false,
   startedAt: null,
   lastMetrics: null,

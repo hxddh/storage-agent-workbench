@@ -227,7 +227,7 @@ export function useTaskDocument({
       const startedMs = startedAt ? Date.parse(startedAt) : NaN;
       patchLiveTask(taskId, {
         busy: true, error: null, stopped: false, stalled: false,
-        items: [], answer: null, waiting: false,
+        items: [], answer: null, conclusion: null, waiting: false,
         startedAt: Number.isFinite(startedMs) ? startedMs : Date.now(),
         ...(direction ? { pending: direction } : {}),
       });
@@ -247,7 +247,7 @@ export function useTaskDocument({
       if (localId.current === taskId) void reload(taskId);
       // busy → idle: the effect above runs the one "end" poll.
       patchLiveTask(taskId, {
-        busy: false, pending: null, items: [], answer: null, waiting: false, startedAt: null, stopped: false,
+        busy: false, pending: null, items: [], answer: null, conclusion: null, waiting: false, startedAt: null, stopped: false,
       });
     };
 
@@ -325,7 +325,7 @@ export function useTaskDocument({
       followCtl?.abort();
       if (following) {
         patchLiveTask(taskId, {
-          busy: false, items: [], answer: null, waiting: false, startedAt: null, stopped: false,
+          busy: false, items: [], answer: null, conclusion: null, waiting: false, startedAt: null, stopped: false,
         });
       }
       document.removeEventListener("visibilitychange", onVisible);

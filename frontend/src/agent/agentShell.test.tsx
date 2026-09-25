@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agentShellReducer, initialAgentShellState, selectionOpensDocument } from "./model";
 
-describe("v1.11.0 Agent shell: one task document and the Artifacts panel", () => {
+describe("Agent shell: one task document; detail rows expand in place (v2.0)", () => {
   it("starts closed with no selection", () => {
     expect(initialAgentShellState("task-1")).toEqual({ artifactsOpen: false, selection: null, taskId: "task-1" });
   });
@@ -34,14 +34,16 @@ describe("v1.11.0 Agent shell: one task document and the Artifacts panel", () =>
     expect(selectionOpensDocument(opened.selection)).toBe(true);
   });
 
-  it("toggles with ⌘I and remembers the open preference across a task switch", () => {
+  it("toggles with ⌘I and folds every detail row when another task opens (v2.0)", () => {
     const open = agentShellReducer(initialAgentShellState("task-1"), { type: "artifacts.toggle" });
     expect(open.artifactsOpen).toBe(true);
     expect(open.selection?.kind).toBe("evidence");
     const switched = agentShellReducer(open, { type: "task.changed", taskId: "task-2" });
-    expect(switched.artifactsOpen).toBe(true);
+    expect(switched.artifactsOpen).toBe(false);
     expect(switched.selection).toBeNull();
-    const closed = agentShellReducer(switched, { type: "artifacts.toggle" });
+    const reopened = agentShellReducer(switched, { type: "artifacts.toggle" });
+    expect(reopened.artifactsOpen).toBe(true);
+    const closed = agentShellReducer(reopened, { type: "artifacts.toggle" });
     expect(closed.artifactsOpen).toBe(false);
     expect(closed.selection).toBeNull();
   });

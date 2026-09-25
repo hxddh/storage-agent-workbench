@@ -935,6 +935,22 @@ ALTER TABLE task_context_versions ADD COLUMN summary_sanitized TEXT;
 ALTER TABLE task_context_versions ADD COLUMN summary_through_seq INTEGER;
 """
 
+# --- Migration 031: v2.0 result-first Task — the Work Result's conclusion ----
+#
+#   session_messages.conclusion              JSON {answer, findings[{title,
+#                                            severity, detail?}], next_steps[]}
+#                                            the model recorded with the
+#                                            `record_conclusion` tool (NULL =
+#                                            none recorded; the UI then shows the
+#                                            answer only, never a guessed head).
+#   work_results.conclusion_json_sanitized   the same, on the durable row.
+# Never edit shipped 030.
+
+_M031 = """
+ALTER TABLE session_messages ADD COLUMN conclusion TEXT;
+ALTER TABLE work_results ADD COLUMN conclusion_json_sanitized TEXT;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -982,6 +998,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (29, "native_agent_turn_items_approvals", _M029),
     # v1.12.0 — context compaction summary on the typed task context. Append-only.
     (30, "native_agent_context_compaction", _M030),
+    (31, "result_first_work_result_conclusion", _M031),
 ]
 
 

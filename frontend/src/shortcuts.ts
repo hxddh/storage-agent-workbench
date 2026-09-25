@@ -37,7 +37,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "toggleTaskNavigation", keys: [MOD, "\\"], label: { en: "Show / hide task navigation", zh: "显示 / 隐藏侧栏" }, group: "global", mod: "mod", key: "\\", handled: true },
   { id: "shortcuts", keys: ["?"], label: { en: "Keyboard shortcuts", zh: "键盘快捷键" }, group: "global", mod: null, key: "?", handled: true },
   { id: "close", keys: ["Esc"], label: { en: "Close the active panel", zh: "关闭当前面板" }, group: "global", mod: null, key: "Escape", handled: true },
-  { id: "review", keys: [MOD, "I"], label: { en: "Show or hide Artifacts", zh: "显示或隐藏产物" }, group: "task", mod: "mod", key: "i", handled: true },
+  { id: "review", keys: [MOD, "I"], label: { en: "Show or hide details", zh: "显示或隐藏详情" }, group: "task", mod: "mod", key: "i", handled: true },
   { id: "find", keys: [MOD, "F"], label: { en: "Find in this task", zh: "在当前任务中查找" }, group: "task", mod: "mod", key: "f", handled: true },
   { id: "prevStep", keys: ["K"], label: { en: "Previous task step", zh: "上一步" }, group: "task", mod: null, key: "k", handled: true },
   { id: "nextStep", keys: ["J"], label: { en: "Next task step", zh: "下一步" }, group: "task", mod: null, key: "j", handled: true },

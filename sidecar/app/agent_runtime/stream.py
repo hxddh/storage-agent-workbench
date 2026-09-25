@@ -158,6 +158,10 @@ class _Segments:
             if text:
                 self.items.append({"kind": "steer", "text": text[:200]})
             return
+        if record.get("tool") == "record_conclusion":
+            # The Work Result's conclusion (v2.0) — carried on the message,
+            # not a transcript item.
+            return
         if record.get("tool") == "update_plan":
             # ONE plan item per turn, at the position of the first call;
             # later calls replace its steps in place (Codex semantics).

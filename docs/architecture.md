@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.19.0.** The Document-native window (a turn is a section headed by its Direction) on the v1.18.0 native core: one submit path, every data movement behind a Decision, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
+> **Current architecture baseline: Storage Agent v2.0.0.** The Result-first Task (a Task opens on its latest Result — the runtime-recorded conclusion, then the full answer and detail rows — with the Work log below) on the v1.19.0 document and the v1.18.0 native core: one submit path, every data movement behind a Decision, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **031** (v2.0 conclusion columns; v1.12–v1.19 stayed at **030**).
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -49,7 +49,7 @@ No UI may imply a capability, worker, plan, or control path that the runtime doe
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
 │ React + TypeScript Agent UI                                 │
-│ Sidebar · Title bar · AgentShell · AgentTask · Artifacts   │
+│ Sidebar · Title bar · AgentShell · AgentTask (Result · log)│
 └──────────────────────────┬──────────────────────────────────┘
                            │ localhost HTTP / SSE
                            │ X-Sidecar-Token / SSE token query
@@ -103,14 +103,14 @@ The Sidecar `/agent-tasks` projection provides durable decision truth so a pendi
 
 `frontend/src/agent/AgentShell.tsx` owns the active task environment:
 
-- Artifacts panel open/close state and selection (`agent-artifacts-panel`, a right split; an overlay only under a narrow window), opened from the document or ⌘I;
-- selected Execution inside that panel.
+- which detail row under the Result is expanded, and the document open in it (`TaskDetailsContext`; v2.0 — formerly the `agent-artifacts-panel` right split, now retired), opened from the document or ⌘I;
+- the durable outputs those rows list (`useAgentTaskProjection`), re-read when an execution settles.
 
 There is no task header inside the document, no live execution strip, and no second presentation mode.
 
 `AgentShell` receives `taskContent: ReactNode`. Its primary area is always the Agent Task.
 
-The Artifacts panel is subordinate to the Task. Opening it does not create another task, another lifecycle, or another Agent input.
+The detail rows are part of the Task document. Expanding one does not create another task, another lifecycle, or another Agent input.
 
 ### 3.4 `AgentTask`: public task boundary
 
@@ -142,11 +142,11 @@ upload preparation   -> preparing/working state
 runtime unavailable  -> truthful disabled/actionable state
 ```
 
-The Artifacts panel or a deep artifact must never mount a hidden second composer.
+A detail row or a deep artifact must never mount a hidden second composer.
 
 ### 3.6 Presentation layers
 
-`frontend/src/index.css` holds the tokens (achromatic ladder, ink primary, status colours, type/radius/motion). `frontend/src/agent/native-shell.css` styles the window, sidebar, title bar, and Artifacts panel. `frontend/src/agent/native-document.css` styles the Task document: transcript turns (user bubble, commentary, *Worked for …* group, approval card, answer), banners, Composer, empty start. There are no other presentation layers.
+`frontend/src/index.css` holds the tokens (achromatic ladder, ink primary, status colours, type/radius/motion). `frontend/src/agent/native-shell.css` styles the window, sidebar and title bar. `frontend/src/agent/native-document.css` styles the Task document: the Result (conclusion, findings, next steps, detail rows), Work log turns (Direction heading, commentary, *Worked for …* group, approval card, folded answers), banners, Composer, empty start. There are no other presentation layers.
 
 ## 4. Task document primitives
 
@@ -176,7 +176,7 @@ presentation state. Losing it (reload, task switch, second window) loses
 nothing — the client reattaches by replaying the durable event log from any
 sequence number.
 
-Tool rows are one collapsed *Worked for …* group between the model's commentary segments (v1.11 transcript turn); its time is the group's wall clock, not a sum of durations (v1.12). The model's plan (`update_plan`) is one quiet checklist card at the position of its first call; a compaction is one muted marker line. The Artifacts panel exposes sanitized Execution detail — built from `task_executions` + the durable `execution_events` log + one sanitized `tool_calls` row on demand, never a `/runs` stream (v1.12) — without turning the Task into a permanent trace console.
+Tool rows are one collapsed *Worked for …* group between the model's commentary segments (v1.11 transcript turn); its time is the group's wall clock, not a sum of durations (v1.12). The model's plan (`update_plan`) is one quiet checklist card at the position of its first call; a compaction is one muted marker line. The Execution detail row exposes sanitized Execution detail — built from `task_executions` + the durable `execution_events` log + one sanitized `tool_calls` row on demand, never a `/runs` stream (v1.12) — without turning the Task into a permanent trace console.
 
 ### Decision (inline approval)
 
@@ -188,11 +188,13 @@ The frontend must not downgrade a real confirmation boundary into an ordinary su
 
 A completed assistant-side task event is rendered as Work Result.
 
-Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables (whole in the page flow), code/config fragments, storage-specific artifacts, metrics, and provenance links into the Artifacts panel.
+Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables (long ones preview 8 rows, expand and sort in place; folded rows stay findable), code/config fragments, storage-specific artifacts, metrics, and provenance links into the detail rows.
 
-### Artifacts
+**v2.0 — result-first.** The latest Work Result is the **Result** at the top of the Task (`components/TaskResult.tsx`): the conclusion the model recorded with `record_conclusion` (`lib/conclusion.ts` accepts only the recorded shape; findings sort most severe first; next steps prefill the Composer), a grounding line derived from the trace, the full answer, figures, and the detail rows (`components/TaskDetails.tsx`). The **Work log** below holds every turn; older answers fold to one line and the latest points up to the Result. The live turn (Direction · Execution · approval · its conclusion from `conclusion.recorded`) renders above the Result. The Task opens at scrollTop 0 and never follows the end; *Jump to latest* is gone.
 
-`frontend/src/agent/ArtifactsPanel.tsx` is a right split (`agent-artifacts-panel`) beside the Task document (an overlay only under a narrow window), toggled by ⌘I and opened from the document:
+### Detail rows (formerly Artifacts)
+
+`frontend/src/components/TaskDetails.tsx` renders the Task's durable outputs as rows under the Result (v2.0; the `agent-artifacts-panel` right split is retired). Each row expands in place; ⌘I opens the first available one; tool rows, provenance marks and the palette open the matching row:
 
 ```ts
 "evidence" | "report" | "plan" | "baseline" | "execution"
@@ -204,7 +206,7 @@ Streaming work is Execution; persisted completed output is Work Result. Once the
 - **Baselines & Drift** — versioned baselines and Drift reports.
 - **Execution** — persisted executions; one opens as a document (header · *Worked for …* rows · findings · result).
 
-There is no Overview surface, no tabbed application, and no engine walls: the panel lists durable referents and shows one document at a time, with a back control. It is not an independent application destination. It replaced the historical Review sheet.
+A row appears only when something is behind it (no empty placeholders). There is no Overview surface, no tabbed application, no side panel or overlay, and no engine walls. It replaced the historical Review sheet and the v1.11–v1.19 Artifacts panel.
 
 ## 5. Runtime state and task concurrency
 
@@ -327,6 +329,13 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
   status only.
 - **Tool timing.** Tool records and `tool.*` events carry `started_at` /
   `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
+
+### 6.x Result-first Task (v2.0.0)
+
+- **Runtime-recorded conclusion.** `agent_runtime/conclusion_tools.py` — the core, budget-exempt `record_conclusion(answer, findings, next_steps)` tool; bounded and redacted, last call wins, never a tool row. `finalize` carries it as `contract["conclusion"]`; `task_runtime/runtime.py` appends `conclusion.recorded` and persists it on the assistant message and the durable Work Result (migration 031).
+- **Result first.** The Task page is banners → work in progress → Result (conclusion · grounding · full answer · figures · detail rows) → Work log. It opens at the top; nothing follows the end.
+- **Details in place.** The Artifacts side panel is retired; `TaskDetailsContext` (AgentShell) + `TaskDetails` render Evidence · Report · Execution · Plans · Baselines as rows that expand in place.
+- **Tables that read.** Long tables preview 8 rows and expand; headers sort (sizes and numbers numerically); folded rows stay in the DOM and an open Find shows them.
 
 ### 6.x Document-native window (v1.19.0)
 
@@ -551,7 +560,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 - Direction / Execution (*Worked for …* group) / Work Result as one document without chat chrome;
 - the empty start as greeting + Composer, no wizard or SKU catalog;
 - explicit Decision boundaries with impact and Deny;
-- the Artifacts panel limited to Evidence / Reports / Plans / Baselines & Drift / Execution detail;
+- detail rows under the Result limited to Evidence / Report / Plans / Baselines & Drift / Execution detail — never a side panel;
 - Settings as a dialog of model + storage + general + safety;
 - sequence-only stream recovery and settled-execution catch-up;
 - task-native keyboard contracts;
@@ -564,7 +573,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.19.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v2.0.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
 
 ### Real-Sidecar E2E
 
@@ -577,7 +586,7 @@ Playwright validates real Sidecar-backed behavior including:
 - evidence/file analysis;
 - Decisions and confirmation flows;
 - task navigation/drafts/paging;
-- Artifacts panel and Report artifacts;
+- the result-first page (conclusion, detail rows, Report) and landing at the top;
 - localization, accessibility, contrast, narrow layouts;
 - credential sanitization.
 

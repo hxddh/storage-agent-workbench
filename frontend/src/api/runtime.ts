@@ -1,6 +1,7 @@
 import { sidecarBaseUrl } from "../config";
 import { authHeaders, errorDetail, request } from "./client";
-import type { ExecutionMetrics, PlanStep, ToolActivity } from "../types";
+import type { Conclusion, ExecutionMetrics, PlanStep, ToolActivity } from "../types";
+import { asConclusion } from "../lib/conclusion";
 
 /**
  * The durable Agent Task runtime (v0.94, one protocol since v1.12).
@@ -261,6 +262,8 @@ export interface LiveEventHandlers {
   onStatus?: (payload: ExecutionStatusPayload) => void;
   onTaskStatus?: (payload: TaskStatusPayload) => void;
   onPlanUpdated?: (payload: PlanUpdatedPayload) => void;
+  /** v2.0 — the model recorded this turn's conclusion (`conclusion.recorded`). */
+  onConclusionRecorded?: (payload: Conclusion) => void;
   /** A Steer reached the running model loop (`steer.applied`): a Direction,
    * never a tool row. */
   onSteerApplied?: (payload: { text: string }) => void;
@@ -337,6 +340,10 @@ export function dispatchDurableEvent(
     });
   else if (type === "plan.updated")
     on.onPlanUpdated?.({ steps: Array.isArray(payload.steps) ? payload.steps : [] });
+  else if (type === "conclusion.recorded") {
+    const conclusion = asConclusion(payload);
+    if (conclusion) on.onConclusionRecorded?.(conclusion);
+  }
   else if (type === "context.compacted")
     on.onContextCompacted?.({
       before_tokens: payload.before_tokens ?? null, after_tokens: payload.after_tokens ?? null,

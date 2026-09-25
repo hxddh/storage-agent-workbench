@@ -122,16 +122,18 @@ test("j/k navigate task history but remain ordinary text in the Agent input", as
   await openLongTask(page);
   const scroll = taskScroll(page);
   const position = () => scroll.evaluate((element) => Math.round(element.scrollTop));
-  await expect.poll(position, { timeout: 10_000 }).toBeGreaterThan(100);
+  // v2.0 — the Task opens at its top (the Result); j walks down the Work
+  // log's Directions and k walks back up.
+  await expect.poll(position, { timeout: 10_000 }).toBe(0);
   // Bare j/k are task-step keys only when the Agent input is not focused.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
-  const start = await position();
-  await page.keyboard.press("k");
-  await expect.poll(position).toBeLessThan(start);
-  const up = await position();
   await page.keyboard.press("j");
-  await expect.poll(position).toBeGreaterThan(up);
+  await expect.poll(position).toBeGreaterThan(0);
+  await page.keyboard.press("j");
+  const down = await position();
+  await page.keyboard.press("k");
+  await expect.poll(position).toBeLessThan(down);
 
   const input = composer(page);
   await input.click();

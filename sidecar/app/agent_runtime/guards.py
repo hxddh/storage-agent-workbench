@@ -42,6 +42,9 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
     # The plan the model owns (v1.12): a checklist the runtime records.
     from . import plan_tools
     tools += plan_tools.build(function_tool, activity)
+    # The conclusion the model states (v2.0): the Work Result's structured head.
+    from . import conclusion_tools
+    tools += conclusion_tools.build(function_tool, activity)
     return tools
 
 

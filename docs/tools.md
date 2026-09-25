@@ -310,6 +310,28 @@ Sets this Task's optional revisit interval (1–365 days) or disables it. Revisi
 
 Args: `steps` — a list of `{text, status}` (`pending` | `in_progress` | `completed`), at most 12 steps of at most 160 characters each. The model keeps a short checklist of what it intends to do and updates it as steps complete (Codex `update_plan` semantics). Each call replaces the whole plan; the runtime appends a `plan.updated` event and the turn carries ONE `plan` item at the position of the first call, holding the latest steps. Steps are redacted and chain-of-thought-stripped. The tool executes nothing, is budget-exempt, and is never a tool row in the *Worked for …* group.
 
+## Conclusion tool (v2.0)
+
+### `record_conclusion`
+
+Args:
+- `answer`: the direct answer in one or two sentences, at most 400 characters.
+- `findings`: a list of `{title, severity, detail}`. `severity` is one of `high`, `medium`, `low` or `info`; aliases such as `critical` or `warning` map onto that set, and unknown values become `info`. At most 8 findings; titles are at most 140 characters and details at most 400.
+- `next_steps`: at most 4 follow-ups of at most 160 characters each.
+
+The model calls this tool once, right before its final answer, whenever the Direction asked it to investigate, diagnose, review or estimate something. The last call of a turn wins.
+
+What the runtime does with it:
+- appends a `conclusion.recorded` event;
+- persists the conclusion on the assistant message (`session_messages.conclusion`) and on the durable Work Result (`work_results.conclusion_json_sanitized`, migration 031);
+- shows it at the top of the Task as the Work Result's head.
+
+Constraints:
+- Every string is redacted and has hidden reasoning stripped.
+- The tool executes nothing, is budget-exempt, and is never a tool row.
+- Evidence and gaps are not model-claimed here. They stay derived from the tool trace.
+- A turn without this call has no conclusion. The UI then shows the answer only and never guesses a head from the prose.
+
 ## Task memory tools
 
 The Agent can maintain durable sanitized working memory through tools equivalent to:
