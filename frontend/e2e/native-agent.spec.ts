@@ -45,7 +45,7 @@ test.describe("native agent", () => {
       await expect(page.getByText(/Waiting for approval/)).toHaveCount(0);
       const group = page.getByTestId("task-log").getByTestId("worked-group").last();
       if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
-      await expect(group.getByTestId("worked-row").first()).toContainText("import_evidence");
+      await expect(group.getByTestId("worked-row").first()).toHaveAttribute("data-tool", "import_evidence");
       await expect(page.getByTestId("plan-card")).toHaveCount(0);
     } finally {
       await dropModelProvider(providerId);

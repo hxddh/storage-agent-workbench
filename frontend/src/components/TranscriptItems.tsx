@@ -46,6 +46,7 @@ export const TranscriptItems = memo(function TranscriptItems({
               records={segment.records}
               taskId={taskId}
               live={live && index === lastIndex}
+              keepOpen={live}
               startedAt={startedAt}
               forceExpanded={findActive}
             />

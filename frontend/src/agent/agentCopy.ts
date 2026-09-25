@@ -9,7 +9,6 @@ const COPY = {
     details: {
       title: "Details",
       findings: (n: number) => (n === 1 ? "1 finding" : `${n} findings`),
-      reportMeta: "The whole task as one document",
       executions: (n: number) => (n === 1 ? "1 execution" : `${n} executions`),
     },
     artifacts: {
@@ -57,7 +56,6 @@ const COPY = {
     details: {
       title: "详情",
       findings: (n: number) => `${n} 项发现`,
-      reportMeta: "把整个任务整理成一份文档",
       executions: (n: number) => `${n} 次执行`,
     },
     artifacts: {

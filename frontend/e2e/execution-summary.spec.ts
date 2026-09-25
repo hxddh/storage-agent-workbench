@@ -21,7 +21,7 @@ test.describe("Worked groups in the Agent turn", () => {
     await expect(group).toBeVisible();
     await expect(group).toContainText(/Worked/);
     await group.getByTestId("execution-head").click();
-    await expect(task(page).getByText("head_bucket").last()).toBeVisible();
+    await expect(task(page).locator('[data-testid="worked-row"][data-tool="head_bucket"]').last()).toBeVisible();
     await expect(page.getByTestId("execution-summary")).toHaveCount(0);
   });
 

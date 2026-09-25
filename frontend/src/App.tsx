@@ -71,15 +71,19 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: 
           </button>
         </>
       ) : null}
-      <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>{title}</span>
-      {stateLabel ? (
-        <span className="native-titlebar-state" data-state={state} data-testid="titlebar-state">
-          {state === "working" || state === "uploading"
-            ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
-            : <span className="native-state-dot" data-state={state} aria-hidden />}
-          {stateLabel}
-        </span>
-      ) : null}
+      {/* v2.1 — the state rides with the name, centred as one group, instead
+          of sitting alone at the far edge of the window. */}
+      <span className="native-titlebar-center" data-tauri-drag-region>
+        <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>{title}</span>
+        {stateLabel ? (
+          <span className="native-titlebar-state" data-state={state} data-testid="titlebar-state">
+            {state === "working" || state === "uploading"
+              ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
+              : <span className="native-state-dot" data-state={state} aria-hidden />}
+            {stateLabel}
+          </span>
+        ) : null}
+      </span>
     </header>
   );
 }

@@ -3,7 +3,7 @@ import type { Conclusion, ConclusionFinding, TaskMessage } from "../types";
 import { useCopy } from "../hooks/useCopy";
 import { useI18n } from "../i18n";
 import { asConclusion } from "../lib/conclusion";
-import { timeAgo } from "../lib/time";
+import { resultWhen } from "../lib/time";
 import { Markdown } from "./Markdown";
 import { severityLabel } from "./SeverityMark";
 import { Icon } from "./icons";
@@ -43,18 +43,14 @@ function FindingRow({ finding }: { finding: ConclusionFinding }) {
 export function ConclusionView({
   conclusion,
   onNextStep,
-  meta,
 }: {
   conclusion: Conclusion;
   onNextStep?: (text: string) => void;
-  /** A quiet line under the answer (the grounding counts). */
-  meta?: ReactNode;
 }) {
   const { t } = useI18n();
   return (
     <div className="result-conclusion" data-testid="result-conclusion">
       <p className="result-answer" data-testid="result-answer">{conclusion.answer}</p>
-      {meta}
       {conclusion.findings.length > 0 ? (
         <div className="result-block">
           <h3 className="result-label">{t("result.findings")}</h3>
@@ -66,21 +62,23 @@ export function ConclusionView({
       {conclusion.next_steps.length > 0 ? (
         <div className="result-block">
           <h3 className="result-label">{t("result.nextSteps")}</h3>
-          <div className="result-next-steps" data-testid="result-next-steps">
+          <ul className="result-next-steps" data-testid="result-next-steps">
             {conclusion.next_steps.map((step, index) => (
-              <button
-                key={index}
-                type="button"
-                className="result-next-step"
-                onClick={() => onNextStep?.(step)}
-                disabled={!onNextStep}
-                title={t("result.askNext")}
-                data-testid="result-next-step"
-              >
-                {step}
-              </button>
+              <li key={index}>
+                <button
+                  type="button"
+                  className="result-next-step"
+                  onClick={() => onNextStep?.(step)}
+                  disabled={!onNextStep}
+                  title={t("result.askNext")}
+                  data-testid="result-next-step"
+                >
+                  <span className="result-next-step-mark" aria-hidden><Icon name="arrowRight" size={12} /></span>
+                  <span className="result-next-step-text">{step}</span>
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       ) : null}
     </div>
@@ -99,8 +97,7 @@ function CopyResult({ text }: { text: string }) {
 }
 
 /** Evidence · gaps · tool calls — derived from the tool trace, never claimed. */
-function GroundingLine({ message }: { message: TaskMessage }) {
-  const { t } = useI18n();
+function groundingParts(message: TaskMessage, t: ReturnType<typeof useI18n>["t"]): string[] {
   const evidence = message.grounding?.evidence_used?.length ?? 0;
   const gaps = message.grounding?.evidence_gaps?.length ?? 0;
   const tools = (message.tool_activity ?? []).filter((record) => record.status !== "started").length;
@@ -108,8 +105,7 @@ function GroundingLine({ message }: { message: TaskMessage }) {
   if (evidence > 0) parts.push(`${t("result.evidence")} ${evidence}`);
   if (gaps > 0) parts.push(`${t("result.gaps")} ${gaps}`);
   if (tools > 0) parts.push(`${t("result.tools")} ${tools}`);
-  if (parts.length === 0) return null;
-  return <p className="result-grounding" data-testid="result-grounding">{parts.join(" · ")}</p>;
+  return parts;
 }
 
 /**
@@ -130,21 +126,24 @@ export const TaskResult = memo(function TaskResult({
   details?: ReactNode;
   onNextStep?: (text: string) => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const conclusion = asConclusion(message.conclusion);
   const text = message.content ?? "";
-  const when = timeAgo(message.created_at, t);
+  const when = resultWhen(message.created_at, t, lang);
+  const grounding = groundingParts(message, t);
   return (
     <section className="task-result" id="task-result" data-testid="task-result" data-has-conclusion={conclusion ? "true" : "false"}>
-      <header className="task-result-head">
+      {/* One quiet line: what this is, when, and what it stands on. The
+          Direction it answers heads that turn in the Work log; here it is a
+          hover hint, not a second copy of the words. */}
+      <header className="task-result-head" title={direction ?? undefined}>
         <span className="task-result-kicker">{t("result.kicker")}</span>
-        {/* The Direction it answers heads that turn in the Work log; here it
-            is a hover hint, not a second copy of the words. */}
-        <span className="task-result-for" title={direction ?? undefined}>{when}</span>
+        {when ? <span className="task-result-meta" title={message.created_at}>{when}</span> : null}
+        {grounding.length ? (
+          <span className="task-result-meta" data-testid="result-grounding">{grounding.join(" · ")}</span>
+        ) : null}
       </header>
-      {conclusion ? (
-        <ConclusionView conclusion={conclusion} onNextStep={onNextStep} meta={<GroundingLine message={message} />} />
-      ) : null}
+      {conclusion ? <ConclusionView conclusion={conclusion} onNextStep={onNextStep} /> : null}
       {text.trim() ? (
         <article className="turn-agent" data-testid="work-result" data-work-result="true" data-streaming="false" aria-label={t("turn.answerLabel")}>
           {conclusion ? <h3 className="result-label">{t("result.fullAnswer")}</h3> : null}
@@ -157,8 +156,6 @@ export const TaskResult = memo(function TaskResult({
           </div>
         </article>
       ) : figures}
-      {/* Without a conclusion the grounding reads as a footnote to the answer. */}
-      {!conclusion ? <GroundingLine message={message} /> : null}
       {details}
     </section>
   );

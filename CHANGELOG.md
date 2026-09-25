@@ -6,6 +6,24 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-25
+
+_Native agent — nothing waits for approval, the model keeps no plan, and interrupted work continues on its own. No migration (head stays **031**)._ See `docs/releases/2.1.0.md`.
+
+### Changed
+
+- **`import_evidence` is bounded, not gated** — it runs inside the Execution: a discovered source only, ≤ 500 files / 256 MiB per call (clamped), refused without 1 GiB disk headroom, audited as `approved_by=agent`, stopped by Stop. A survey runs up to its 500-bucket hard cap and reports coverage. Security rule 7 now reads "bounded, audited, stoppable" instead of "confirmation".
+- **Restart recovery continues interrupted work** — one automatic continuation per chain (a `kind=resume` Execution); a manual Resume remains only when no model is usable.
+- **Tool rows read as what the Agent did** — localized verbs (*Checked bucket*), target quiet in mono, result muted, status in the glyph; the raw name stays as `data-tool` and tooltip.
+- **Result** — one meta line (*Result · when · evidence · gaps · tool calls*; a calendar date after a week); the conclusion's answer is one lead paragraph; next steps are a list of asks.
+- **Live work** — every Worked group stays open until the turn settles; new commentary and rows ease in. Title and state are one centred group. Work-log Directions sit one step below the Result. One short reveal for everything that opens in place, removed under `prefers-reduced-motion`. *Needs attention* is a warn dot. Settings states the safety floor in General. Native menu ⌘I is *Show Details*.
+
+### Removed
+
+- Approvals: `runtime.request_approval`, the approval policy and `/settings/approval-policy`, the decision resolve route, `pending_decisions` in task state/status/context, `requires_decision`, the `needs_decision` derivation, the approval card, the Safety pane. Decision rows stay readable; recovery withdraws any left pending.
+- The model plan: `update_plan`, `plan.updated`, `plan` turn items (older ones are ignored), the plan card.
+- The Remediation Plans and Baselines & Drift detail rows (the engines remain; the Agent narrates them).
+
 ## [2.0.0] - 2026-09-25
 
 _Result-first Task — a Task opens on what the Agent concluded, not on the tail of a transcript. Migration **031**._ See `docs/releases/2.0.0.md`.

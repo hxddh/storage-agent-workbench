@@ -66,7 +66,7 @@ describe("find unfolds the group", () => {
     draw(<WorkedGroup records={many} forceExpanded />);
     expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("true");
     expect(screen.queryAllByTestId("worked-row")).toHaveLength(12);
-    expect(screen.getByText("tool_0")).toBeTruthy();
-    expect(screen.getByText("tool_11")).toBeTruthy();
+    expect(screen.getByTitle("tool_0")).toBeTruthy();
+    expect(screen.getByTitle("tool_11")).toBeTruthy();
   });
 });

@@ -60,7 +60,7 @@ test("a recorded conclusion leads the Task, survives a reload, and its next step
     const group = log.getByTestId("worked-group").last();
     if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
     await expect(group.getByTestId("worked-row")).toHaveCount(1);
-    await expect(group.getByTestId("worked-row").first()).toContainText("read_skill");
+    await expect(group.getByTestId("worked-row").first()).toHaveAttribute("data-tool", "read_skill");
     await expect(group).not.toContainText("record_conclusion");
 
     await page.reload();

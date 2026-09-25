@@ -86,7 +86,7 @@ export function TaskDetails({ hasResult }: { hasResult: boolean }) {
   }
   if (hasResult) {
     rows.push(
-      <DetailRow key="report" kind="report" label={c.report} meta={copy.details.reportMeta} open={isOpen("report")} onToggle={toggle("report")}>
+      <DetailRow key="report" kind="report" label={c.report} open={isOpen("report")} onToggle={toggle("report")}>
         <ReportArtifact report={report} loading={reportLoading} error={error} />
       </DetailRow>,
     );

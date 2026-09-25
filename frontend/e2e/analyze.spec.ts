@@ -114,12 +114,13 @@ test.describe("analyzing an attached file", () => {
       const group = page.getByTestId("worked-group").last();
       if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
 
-      const trace = await task(page).evaluate((el) => el.textContent ?? "");
-      expect(trace).toContain("list_uploaded_files");
-      expect(trace).toContain("analyze_uploaded_file");
-      expect(trace.indexOf("list_uploaded_files")).toBeLessThan(
-        trace.indexOf("analyze_uploaded_file"),
+      // v2.1 — rows read as verbs; the raw tool name rides on `data-tool`.
+      const tools = await group.getByTestId("worked-row").evaluateAll(
+        (rows) => rows.map((row) => row.getAttribute("data-tool") ?? ""),
       );
+      expect(tools).toContain("list_uploaded_files");
+      expect(tools).toContain("analyze_uploaded_file");
+      expect(tools.indexOf("list_uploaded_files")).toBeLessThan(tools.indexOf("analyze_uploaded_file"));
     } finally {
       await cleanup();
     }
