@@ -30,7 +30,10 @@ test.describe("native agent", () => {
   test("an import call runs in the turn — no approval card, no waiting state", async ({ page }) => {
     // No survey ran in this task, so the tool answers with its own bounded
     // refusal; what matters is that nothing parked the execution to ask.
+    // import_evidence lives in the `evidence_import` group: unlock it first,
+    // as the model does.
     const model = await startFakeModel([
+      toolTurn("load_tools", { group: "evidence_import" }),
       toolTurn("import_evidence", { source_type: "access_log", bucket_name: "acme-logs",
         time_range_start: "2026-09-01T00:00:00Z", time_range_end: "2026-09-02T00:00:00Z" }),
       textTurn("I need an account survey before importing the access logs."),
@@ -45,7 +48,7 @@ test.describe("native agent", () => {
       await expect(page.getByText(/Waiting for approval/)).toHaveCount(0);
       const group = page.getByTestId("task-log").getByTestId("worked-group").last();
       if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
-      await expect(group.getByTestId("worked-row").first()).toHaveAttribute("data-tool", "import_evidence");
+      await expect(group.locator('[data-testid="worked-row"][data-tool="import_evidence"]')).toHaveCount(1);
       await expect(page.getByTestId("plan-card")).toHaveCount(0);
     } finally {
       await dropModelProvider(providerId);
