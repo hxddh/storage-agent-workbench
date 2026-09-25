@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TaskRecord, TaskMessage, TriageCase } from "../types";
 import type { LiveTask } from "../liveTasks";
-import type { ApprovalItem, TurnItem } from "../lib/turnItems";
+import type { TurnItem } from "../lib/turnItems";
 import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
 import { getFindRoots } from "../lib/findRoots";
@@ -12,7 +12,6 @@ import type { useTaskViewport } from "../hooks/useTaskViewport";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
 import { ProvenanceMark } from "../viz/ProvenanceMark";
 import { AgentTurn, UserTurn } from "./TranscriptTurn";
-import { ApprovalCard, type ApprovalResolution, type ApprovalScope } from "./ApprovalCard";
 import { TriageCard } from "./AgentRuntimeArtifacts";
 import { FindBar } from "./FindBar";
 import { TaskDetails } from "./TaskDetails";
@@ -77,7 +76,6 @@ export function TaskDocument({
   taskId,
   items,
   turnItems,
-  unplaced,
   run,
   hideLiveDirection,
   hideLiveWorkResult,
@@ -86,8 +84,6 @@ export function TaskDocument({
   loadingEarlier,
   loadEarlier,
   loadAllEarlier,
-  onResolve,
-  resolvingId,
   liveStatus,
   banners,
   composer,
@@ -100,7 +96,6 @@ export function TaskDocument({
   taskId: string | null;
   items: TaskItem[];
   turnItems: Map<string, TurnItem[]>;
-  unplaced: ApprovalItem[];
   run: LiveTask;
   hideLiveDirection: boolean;
   hideLiveWorkResult: boolean;
@@ -109,8 +104,6 @@ export function TaskDocument({
   loadingEarlier: boolean;
   loadEarlier: () => void;
   loadAllEarlier: () => void;
-  onResolve: (decisionId: string, resolution: ApprovalResolution, scope: ApprovalScope) => void;
-  resolvingId: string | null;
   liveStatus: string;
   banners: ReactNode;
   composer: ReactNode;
@@ -127,7 +120,7 @@ export function TaskDocument({
   const copy = useTaskCopy();
   const { t } = useI18n();
   const { scrollRef, contentRef, onScroll, releaseToUser } = viewport;
-  const { busy, pending, items: liveItems, answer: liveAnswer, waiting } = run;
+  const { busy, pending, items: liveItems, answer: liveAnswer } = run;
 
   const provenance = useTaskProvenance(taskId);
   const hasFigures = Boolean(
@@ -165,8 +158,8 @@ export function TaskDocument({
       setRanges([]);
       return;
     }
-    // v1.14 — the open Artifacts panel registers its body, so Find covers
-    // open documents too, not just the transcript.
+    // Open detail rows register their bodies, so Find covers open documents
+    // too, not just the transcript.
     const roots = [scrollRef.current, ...getFindRoots()].filter((node): node is HTMLDivElement => node != null);
     if (roots.length === 0) return;
     const found = meetsMinQuery(findQuery) ? roots.flatMap((root) => findRanges(root, findQuery)) : [];
@@ -328,31 +321,15 @@ export function TaskDocument({
                       items={liveItems}
                       answer={liveAnswer}
                       live={!run.stopped}
-                      waiting={waiting}
                       stoppedLabel={run.stopped ? copy.stopped : null}
                       startedAt={run.startedAt}
                       taskId={taskId}
-                      onResolve={onResolve}
-                      resolvingId={resolvingId}
                       findActive={findActive}
                       head={liveConclusion}
                     />
                   ) : null
                 ) : null}
               </section>
-            ) : null}
-
-            {unplaced.length > 0 ? (
-              <div className="space-y-3" data-testid="pending-approvals">
-                {unplaced.map((approval) => (
-                  <ApprovalCard
-                    key={approval.decision_id}
-                    item={approval}
-                    onResolve={onResolve}
-                    busy={resolvingId === approval.decision_id}
-                  />
-                ))}
-              </div>
             ) : null}
 
             {!pending && remoteExecution?.running ? (
@@ -407,8 +384,6 @@ export function TaskDocument({
                           answer={item.content}
                           taskId={taskId}
                           figures={lastResult ? undefined : figuresFor(item)}
-                          onResolve={onResolve}
-                          resolvingId={resolvingId}
                           findActive={findActive}
                           answerMode={!lastResult ? "full" : item.id === lastResult.id ? "above" : "folded"}
                           conclusion={asConclusion(item.message.conclusion)}

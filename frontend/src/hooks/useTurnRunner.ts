@@ -43,15 +43,10 @@ import { useI18n, type TFunc } from "../i18n";
 import {
   applyCompacted,
   applyDelta,
-  applyPlan,
   applySteer,
-  applyStatus,
   applyTool,
   completeMessage,
-  grantApproval,
   mergeTool,
-  openApproval,
-  resolveApproval,
   type LiveTurn,
 } from "../lib/turnItems";
 
@@ -101,24 +96,19 @@ export function liveHandlers(id: string) {
   const reduce = (fn: (turn: LiveTurn) => LiveTurn) =>
     patchLiveTask(id, (s: LiveTask) => {
       const next = fn(liveTurnOf(s));
-      return { items: next.items, answer: next.answer, waiting: next.waiting };
+      return { items: next.items, answer: next.answer };
     });
   return {
     onDelta: (chunk: string) => reduce((turn) => applyDelta(turn, chunk)),
     onTool: (rec: Parameters<typeof applyTool>[1]) => reduce((turn) => applyTool(turn, rec)),
     onMessageCompleted: (payload: Parameters<typeof completeMessage>[1]) => reduce((turn) => completeMessage(turn, payload)),
-    onApprovalOpened: (payload: Parameters<typeof openApproval>[1]) => reduce((turn) => openApproval(turn, payload)),
-    onApprovalGranted: (payload: Parameters<typeof grantApproval>[1]) => reduce((turn) => grantApproval(turn, payload)),
-    onDecisionResolved: (payload: Parameters<typeof resolveApproval>[1]) => reduce((turn) => resolveApproval(turn, payload)),
-    onStatus: (payload: { status: string }) => reduce((turn) => applyStatus(turn, payload.status)),
-    // v1.12: the plan the model owns, the compaction marker (+ the meter's
-    // new figure), and the task's derived status straight from the stream.
-    onPlanUpdated: (payload: { steps: Parameters<typeof applyPlan>[1] }) => reduce((turn) => applyPlan(turn, payload.steps)),
+    // The compaction marker (+ the meter's new figure) and the task's derived
+    // status straight from the stream.
     onSteerApplied: (payload: { text: string }) => reduce((turn) => applySteer(turn, payload.text)),
     onContextCompacted: (payload: Parameters<typeof applyCompacted>[1] & { summary_chars?: number }) =>
       patchLiveTask(id, (s: LiveTask) => {
         const next = applyCompacted(liveTurnOf(s), payload);
-        return { items: next.items, answer: next.answer, waiting: next.waiting, contextTokens: payload.after_tokens ?? s.contextTokens };
+        return { items: next.items, answer: next.answer, contextTokens: payload.after_tokens ?? s.contextTokens };
       }),
     onTaskStatus: (payload: LiveTask["taskStatus"]) => patchLiveTask(id, { taskStatus: payload }),
     onConclusionRecorded: (payload: Conclusion) => patchLiveTask(id, { conclusion: payload }),

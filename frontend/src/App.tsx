@@ -51,7 +51,7 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: 
   const copy = useNavigationCopy();
   const { t } = useI18n();
   const run = useLiveTask(task?.id ?? null);
-  const state = task ? agentTaskState(run, true, task.requires_decision, task.task_status) : "idle";
+  const state = task ? agentTaskState(run, true, task.task_status) : "idle";
   const stateLabel = state in copy.state ? copy.state[state as keyof typeof copy.state] : "";
   const title = task ? (task.title || t("common.untitled")) : copy.appTitle;
 

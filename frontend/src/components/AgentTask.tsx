@@ -6,7 +6,7 @@ import { useTaskDocument } from "../hooks/useTaskDocument";
 import { useCompactContext } from "../hooks/useCompactContext";
 import { useTaskViewport } from "../hooks/useTaskViewport";
 import { useDirectionStepping } from "../hooks/useDirectionStepping";
-import { useApprovals } from "../hooks/useApprovals";
+import { turnItemsOf, type TurnItem } from "../lib/turnItems";
 import { openAgentReview } from "../agent/commands";
 import { pickStartGreeting } from "../agent/startGreeting";
 import { publishPaletteActions } from "../agent/paletteActions";
@@ -43,8 +43,7 @@ export type AgentTaskProps = {
  *
  * This is the composition root (v1.12 split): it owns the durable
  * document (`useTaskDocument`), the runtime state of the task
- * (`useLiveTask`), the one turn runner, the Composer state and the inline
- * approvals, and hands them to `TaskDocument` (transcript · paging · find),
+ * (`useLiveTask`), the one turn runner and the Composer state, and hands them to `TaskDocument` (transcript · paging · find),
  * `TaskBanners` and `TaskComposerHost`. It paints only the three task-level
  * frames — load failure, the loading skeleton, the empty start — itself.
  */
@@ -67,7 +66,7 @@ export function AgentTask({
   const viewport = useTaskViewport();
   const composer = useTaskComposer(taskId);
   const run = useLiveTask(taskId);
-  const { busy, uploading, pending, needKey, waiting } = run;
+  const { busy, uploading, pending, needKey } = run;
   const [viewError, setViewError] = useState<string | null>(null);
   useEffect(() => {
     if (run.busy) setViewError(null);
@@ -122,10 +121,14 @@ export function AgentTask({
     patchLiveTask(taskId, { pending: null });
   }, [taskId, pending, busy, items]);
 
-  const approvals = useApprovals({
-    taskId, localId, items, taskRuntime, busy,
-    followExecution: runner.followExecution, reload, onChanged, setViewError, t,
-  });
+  // The durable projection of every Agent turn: ordered items before its answer.
+  const turnItems = useMemo(() => {
+    const byId = new Map<string, TurnItem[]>();
+    for (const item of items) {
+      if (item.kind === "message" && item.role === "assistant") byId.set(item.id, turnItemsOf(item.message));
+    }
+    return byId;
+  }, [items]);
 
   const cancelQueued = async (executionId: string) => {
     const id = localId.current;
@@ -187,7 +190,7 @@ export function AgentTask({
       : run.stopped
         ? taskCopy.liveStopped
         : busy
-          ? (waiting ? taskCopy.liveWaiting : taskCopy.liveWorking)
+          ? taskCopy.liveWorking
           : lastResult
             ? taskCopy.liveReady
             : "";
@@ -271,8 +274,7 @@ export function AgentTask({
         <TaskDocument
           taskId={taskId}
           items={items}
-          turnItems={approvals.turnItems}
-          unplaced={approvals.unplaced}
+          turnItems={turnItems}
           run={run}
           hideLiveDirection={hideLiveDirection}
           hideLiveWorkResult={hideLiveWorkResult}
@@ -281,8 +283,6 @@ export function AgentTask({
           loadingEarlier={loadingEarlier}
           loadEarlier={loadEarlier}
           loadAllEarlier={loadAllEarlier}
-          onResolve={approvals.resolveApprovalDecision}
-          resolvingId={approvals.resolvingId}
           liveStatus={liveStatus}
           banners={banners}
           composer={composerNode}
@@ -296,7 +296,7 @@ export function AgentTask({
             // v1.16 — clear the live turn only when the reload landed; on
             // failure the stalled line stays and backs off for another try.
             const ok = await reload(id);
-            if (ok) patchLiveTask(id, { pending: null, stalled: false, items: [], answer: null, conclusion: null, waiting: false });
+            if (ok) patchLiveTask(id, { pending: null, stalled: false, items: [], answer: null, conclusion: null });
             return ok;
           }}
         />

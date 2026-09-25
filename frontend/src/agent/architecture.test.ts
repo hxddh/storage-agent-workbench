@@ -161,7 +161,8 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(turn).not.toContain("resultShape");
     expect(items).toContain('data-testid="turn-commentary"');
     expect(items).toContain("<WorkedGroup");
-    expect(items).toContain("<ApprovalCard");
+    expect(items).not.toContain("ApprovalCard");
+    expect(items).not.toContain("PlanCard");
     expect(group).toContain('data-testid="worked-group"');
     expect(group).toContain('data-testid="worked-row"');
     expect(group).toContain("native-execution-head");
@@ -169,7 +170,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(task).toContain('import { AgentTurn, UserTurn } from "./TranscriptTurn"');
     expect(task).toContain("<AgentTurn");
     expect(task).toContain("<UserTurn");
-    expect(source("../hooks/useApprovals.ts")).toContain("turnItemsOf(");
+    expect(root).toContain("turnItemsOf(item.message)");
     expect(task).toContain('data-testid="task-scroll"');
     expect(task).toContain("task-item-");
     expect(task).toContain("data-direction=");
@@ -205,30 +206,28 @@ describe("v1.09.0 native Agent window boundaries", () => {
     absent("../lib/firstRun.ts");
   });
 
-  it("raises approvals inline from gated tool calls, with Allow / Allow for this task / Deny", () => {
-    const card = source("../components/ApprovalCard.tsx");
+  it("never pauses the Task for approval and never paints a plan (v2.1)", () => {
     const task = source("../components/TaskDocument.tsx");
-    const approvals = source("../hooks/useApprovals.ts");
     const model = source("../lib/turnItems.ts");
     const api = source("../api/runtime.ts");
-    expect(card).toContain('data-testid="approval-card"');
-    expect(card).toContain('data-testid="approval-allow"');
-    expect(card).toContain('data-testid="approval-allow-task"');
-    expect(card).toContain('data-testid="approval-deny"');
-    expect(card).toContain('data-testid="approval-impact"');
-    expect(card).not.toContain("Decision required");
-    expect(approvals).toContain("resolveTaskDecision(");
-    expect(task).toContain("<ApprovalCard");
-    for (const text of [task, approvals, source("../components/AgentTask.tsx")]) {
-      expect(text).not.toContain("durable-pending-decisions");
-      expect(text).not.toContain("EvidenceImportDialog");
-      expect(text).not.toContain("AgentNextAction");
+    const settings = source("../components/SettingsDialog.tsx");
+    absent("../components/ApprovalCard.tsx");
+    absent("../components/PlanCard.tsx");
+    absent("../hooks/useApprovals.ts");
+    absent("../lib/approvalAction.ts");
+    absent("../settings/SafetyPane.tsx");
+    for (const text of [task, model, api, settings, source("../components/AgentTask.tsx")]) {
+      expect(text).not.toContain("ApprovalCard");
+      expect(text).not.toContain("resolveTaskDecision");
+      expect(text).not.toContain("approval.opened");
+      expect(text).not.toContain("plan.updated");
+      expect(text).not.toContain("pending_decisions");
+      expect(text).not.toContain("approval-policy");
     }
-    expect(model).toContain("export function openApproval(");
-    expect(api).toContain('"approval.opened"');
+    expect(model).not.toContain('kind: "plan"');
+    expect(model).not.toContain('kind: "approval"');
+    expect(source("./taskState.ts")).not.toContain('"decision"');
     expect(api).toContain('"message.completed"');
-    expect(api).toContain('"decision.resolved"');
-    expect(api).toContain("scope ? { scope }");
     expect(api).not.toContain("approveDecisionOrPrepare");
     expect(api).not.toContain("prepareSessionAction");
     // The proposal-era modules are physically gone.
@@ -254,13 +253,15 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(details).toContain("<EvidenceReview");
     expect(details).toContain("<ReportArtifact");
     expect(details).toContain("<ExecutionDetail");
-    expect(details).toContain("<PlanDocument");
-    expect(details).toContain("<BaselineDocument");
+    // v2.1 — Remediation Plans and Baselines & Drift have no rows.
+    expect(details).not.toContain("PlanDocument");
+    expect(details).not.toContain("BaselineDocument");
+    absent("./ArtifactDocuments.tsx");
     // A row exists only when something is behind it: no empty placeholders.
     expect(details).not.toContain("c.empty");
     expect(details).not.toContain("useFocusTrap");
     expect(details).not.toContain('role="dialog"');
-    expect(model).toContain('export type ArtifactKind = "evidence" | "report" | "plan" | "baseline" | "execution"');
+    expect(model).toContain('export type ArtifactKind = "evidence" | "report" | "execution"');
     expect(model).not.toContain("ReviewSurface");
     expect(model).not.toContain('"overview"');
     expect(commands).toContain("toggleAgentArtifacts");
@@ -564,15 +565,16 @@ describe("v1.11.0 shell details", () => {
     expect(shortcuts).toContain('id: "stopEmpty"');
   });
 
-  it("rotates the start greeting and names a waiting approval in the title bar", () => {
+  it("rotates the start greeting and names only real states in the title bar", () => {
     const greeting = source("./startGreeting.ts");
     const copy = source("./navigationCopy.ts");
     expect(greeting).toContain("export const START_GREETINGS");
     expect(greeting).toContain("export function pickStartGreeting(");
     expect(greeting).toContain('"What should the Agent work on?"');
     expect(greeting).toContain('"让 Agent 处理什么？"');
-    expect(copy).toContain('decision: "Waiting for approval"');
-    expect(copy).toContain('decision: "等待批准"');
+    // v2.1 — nothing waits for approval.
+    expect(copy).not.toContain("Waiting for approval");
+    expect(copy).not.toContain("等待批准");
     expect(copy).not.toContain("Needs decision");
     expect(copy).toContain('working: "Working"');
     expect(copy).toContain('attention: "Needs attention"');
@@ -622,12 +624,12 @@ describe("v1.11.0 turn transcript boundaries", () => {
     expect(model).toContain("export function segmentsOf(");
     expect(runs).toContain("items: TurnItem[]");
     expect(runs).toContain("answer: string | null");
-    expect(runs).toContain("waiting: boolean");
+    expect(runs).not.toContain("waiting: boolean");
     expect(runs).not.toContain("streamText");
     expect(runs).not.toContain("proposals");
     expect(runner).toContain("onMessageCompleted");
-    expect(runner).toContain("onApprovalOpened");
-    expect(runner).toContain("onDecisionResolved");
+    expect(runner).not.toContain("onApprovalOpened");
+    expect(runner).not.toContain("onPlanUpdated");
     expect(doc).toContain("liveHandlers(taskId)");
   });
 
@@ -661,32 +663,20 @@ describe("v1.11.0 turn transcript boundaries", () => {
  * the instructions file, and a wall-clock "Worked for".
  */
 describe("v1.12.0 native runtime", () => {
-  it("renders the plan card only from a `plan` turn item the runtime emitted", () => {
-    const card = source("../components/PlanCard.tsx");
+  it("renders the compaction marker from the runtime's own turn item, and no plan", () => {
     const items = source("../components/TranscriptItems.tsx");
     const model = source("../lib/turnItems.ts");
     const runner = source("../hooks/useTurnRunner.ts");
     const api = source("../api/runtime.ts");
-    expect(card).toContain('data-testid="plan-card"');
-    expect(card).toContain('data-testid="plan-step"');
-    expect(card).toContain("data-status={step.status}");
-    expect(card).toContain("The UI never invents a step");
-    expect(items).toMatch(/segment\.kind === "plan"[\s\S]{0,120}<PlanCard/);
     expect(items).toContain('data-testid="context-compacted"');
-    expect(model).toContain("export function applyPlan(");
     expect(model).toContain("export function applyCompacted(");
-    expect(model).toContain('ref.kind === "plan"');
     expect(model).toContain('ref.kind === "compacted"');
-    expect(runner).toContain("onPlanUpdated");
+    expect(model).not.toContain("applyPlan");
     expect(runner).toContain("onContextCompacted");
     expect(runner).toContain("onTaskStatus");
-    expect(api).toContain('type === "plan.updated"');
     expect(api).toContain('type === "context.compacted"');
     expect(api).toContain('type === "task.status"');
-    // Only the transcript items renderer mounts the card.
-    for (const relative of ["../components/AgentTask.tsx", "../components/TaskDocument.tsx", "../components/TranscriptTurn.tsx", "../components/ExecutionDetail.tsx"]) {
-      expect(source(relative)).not.toContain("<PlanCard");
-    }
+    expect(api).not.toContain("plan.updated");
   });
 
   it("reads task status from the stream and never polls /state on an interval while following", () => {
@@ -708,22 +698,17 @@ describe("v1.12.0 native runtime", () => {
     expect(group).not.toContain("sum +=");
   });
 
-  it("puts the approval policy in Settings → Safety and the instructions file in Skills & bridges", () => {
-    const pane = source("../settings/SafetyPane.tsx");
+  it("states the safety floor in General and the instructions file in Skills & bridges (v2.1)", () => {
     const settings = source("../components/SettingsDialog.tsx");
     const agent = source("../components/NativeAgentPanel.tsx");
     const api = source("../api/settings.ts");
-    expect(settings).toContain("<SafetyPane");
+    expect(settings).toContain('data-testid="settings-safety"');
     expect(settings).toContain('t("settings.safety")');
-    expect(pane).toContain('data-testid="approval-policy"');
-    expect(pane).toContain("data-testid={`approval-policy-${policy}`}");
-    expect(pane).toContain('["ask", "allow_session", "allow_always"]');
-    expect(pane).toContain("putApprovalPolicy(");
-    expect(pane).toContain('data-testid="approval-gated-tools"');
+    expect(settings).not.toContain('id: "safety"');
     expect(agent).toContain("getInstructionsStatus");
     expect(agent).toContain('data-testid="instructions-open"');
     expect(agent).toContain('openNativeFolder("data")');
-    expect(api).toContain('"/settings/approval-policy"');
+    expect(api).not.toContain("approval-policy");
     expect(api).toContain('"/settings/instructions"');
   });
 
@@ -732,7 +717,6 @@ describe("v1.12.0 native runtime", () => {
     const actions = source("./paletteActions.ts");
     const meter = source("../components/ContextMeter.tsx");
     const hook = source("../hooks/useCompactContext.ts");
-    const card = source("../components/ApprovalCard.tsx");
     const i18n = source("../i18n.tsx");
     // v1.16 — palette copy lives in the i18n dict; engines + shortcuts entries exist.
     expect(palette).toContain('t("palette.compact")');
@@ -745,8 +729,7 @@ describe("v1.12.0 native runtime", () => {
     expect(meter).toContain("run.contextTokens");
     expect(hook).toContain("compactTaskContext(");
     expect(hook).toContain("toast.success");
-    expect(card).toContain('t("approval.policySession")');
-    expect(i18n.match(/\/\/ v1\.12 transcript/g)).toHaveLength(2);
+    expect(i18n).not.toContain('"approval.');
   });
 });
 
@@ -815,7 +798,7 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     expect(tasks).toContain("/sessions/${id}/activity/${encodeURIComponent(callId)}");
     expect(tasks).not.toContain("/agent-tasks/${taskId}/executions");
     const settings = source("../api/settings.ts");
-    expect(settings).toContain('"/settings/approval-policy"');
+    expect(settings).not.toContain('"/settings/approval-policy"');
     expect(settings).toContain('"/settings/instructions"');
     // The price table is an engine API: the frontend has no client for it.
     expect(settings).not.toContain('"/settings/price-table"');
@@ -834,11 +817,10 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     const document = source("../components/TaskDocument.tsx");
     const banners = source("../components/TaskBanners.tsx");
     const host = source("../components/TaskComposerHost.tsx");
-    const approvals = source("../hooks/useApprovals.ts");
     expect(root).toContain("<TaskDocument");
     expect(root).toContain("<TaskBanners");
     expect(root).toContain("<TaskComposerHost");
-    expect(root).toContain("useApprovals(");
+    expect(root).not.toContain("useApprovals");
     expect(root).toContain("useTaskComposer(");
     expect(root).toContain("useComposerActions(");
     expect(root.split("\n").length).toBeLessThan(320);
@@ -861,8 +843,6 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     expect(host).toContain("<Composer");
     expect(host).toContain("runner.steer(");
     expect(host).toContain("runner.stop()");
-    expect(approvals).toContain("export function useApprovals(");
-    expect(approvals).toContain("unplacedApprovals(");
     expect(source("../components/taskCopy.ts")).toContain("export function useTaskCopy(");
   });
 
@@ -942,16 +922,8 @@ describe("v1.13.0 honesty and completeness", () => {
     expect(palette).toContain("fuzzyScore(query, command.label)");
   });
 
-  it("projects large-scan bounds on the approval card", () => {
-    const card = source("../components/ApprovalCard.tsx");
-    const api = source("../api/runtime.ts");
-    const i18n = source("../i18n.tsx");
-    expect(card).toContain('data-testid="approval-scan-calls"');
-    expect(card).toContain("estimated_calls");
-    expect(api).toContain("estimated_calls?: number | null");
-    expect(api).toContain("buckets?: number | null");
-    expect(i18n).toContain('"approval.estimatedCalls"');
-    expect(i18n).toContain('"turn.longRunning"');
+  it("says a long execution is still going", () => {
+    expect(source("../i18n.tsx")).toContain('"turn.longRunning"');
   });
 
   it("reads Execution detail per execution and hints at long runs", () => {
@@ -1253,15 +1225,12 @@ describe("v1.16.0 true native agent, finished", () => {
     expect(source("../components/Composer.tsx")).toContain("glpat-");
   });
 
-  it("triggers @ mentions on word boundaries and shares the gate-name map", () => {
+  it("triggers @ mentions on word boundaries", () => {
     const composer = source("../components/Composer.tsx");
     expect(composer).toContain("mentionQueryAt(value, caret)");
     expect(composer).toContain("mentionTriggered(text)");
     expect(composer).toContain("accept={ANALYZED_EXT.join");
     expect(source("../lib/mention.ts")).toContain("mentionTriggered");
-    expect(source("../lib/approvalAction.ts")).toContain("approvalActionLabel");
-    expect(source("../components/ApprovalCard.tsx")).toContain("approvalActionLabel(item.action_type, t)");
-    expect(source("../settings/SafetyPane.tsx")).toContain("approvalActionLabel(a, t)");
   });
 
   it("prefills full-sentence drafts and promises no charts from tables", () => {

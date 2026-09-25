@@ -18,7 +18,6 @@ const COPY = {
     state: {
       working: "Working",
       uploading: "Preparing",
-      decision: "Waiting for approval",
       attention: "Needs attention",
     },
   },
@@ -39,7 +38,6 @@ const COPY = {
     state: {
       working: "执行中",
       uploading: "准备中",
-      decision: "等待批准",
       attention: "需要处理",
     },
   },

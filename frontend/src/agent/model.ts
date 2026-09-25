@@ -4,9 +4,9 @@
  * (v2.0; formerly a right split panel). `artifactsOpen` + `selection` name the
  * one expanded row and the document open in it.
  */
-export type ArtifactKind = "evidence" | "report" | "plan" | "baseline" | "execution";
+export type ArtifactKind = "evidence" | "report" | "execution";
 
-export const ARTIFACT_KINDS: readonly ArtifactKind[] = ["evidence", "report", "plan", "baseline", "execution"];
+export const ARTIFACT_KINDS: readonly ArtifactKind[] = ["evidence", "report", "execution"];
 
 /** What the panel is pointed at. `id` names a document inside the panel;
  * without an id the panel shows the section list (scrolled to `kind`). */

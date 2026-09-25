@@ -206,9 +206,6 @@ export interface ToolActivity {
    * its presence — not its value — is the signal. A gap the reader cannot see
    * reads as "nothing happened", which is why it reaches the UI at all. */
   audit_error?: string | null;
-  /** The inline approval this call raised (v1.11). Set on a gated call whose
-   * execution paused for the user; the approval card renders at this row. */
-  decision_id?: string | null;
   /** Wall-clock bounds of this call (v1.12). Durable rows may carry them from
    * the Sidecar; a live row is stamped by the client when its `tool.started`
    * / `tool.completed` frame arrives, so a "Worked for …" group can read the
@@ -217,19 +214,11 @@ export interface ToolActivity {
   finished_at?: string | null;
 }
 
-/** One step of the plan the model owns through `update_plan` (v1.12). */
-export interface PlanStep {
-  text: string;
-  status: "pending" | "in_progress" | "completed";
-}
-
 /** One ordered transcript item recorded BEFORE the answer (v1.11). A `tool`
  * item references `tool_activity[].id`; pre-1.11 rows carry no items. */
 export type TurnItemRef =
   | { kind: "message"; text: string }
   | { kind: "tool"; id: string }
-  /** The latest plan, at the position of the first `update_plan` call (v1.12). */
-  | { kind: "plan"; steps: PlanStep[] }
   /** The runtime compacted the replayed context before this point (v1.12). */
   | { kind: "compacted"; before_tokens: number | null; after_tokens: number | null }
   /** A Steer the running model loop received at this point (v1.18). */

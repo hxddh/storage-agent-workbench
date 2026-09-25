@@ -1,6 +1,6 @@
 /**
  * One renderer for both the live run and the persisted message: user bubble,
- * commentary segments, worked group, inline approval, answer.
+ * commentary segments, worked group, answer.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -61,19 +61,6 @@ describe("the Agent turn", () => {
   it("shows a working row with the elapsed time before the first item", () => {
     draw(<AgentTurn items={[]} answer={null} live startedAt={Date.now() - 12_000} />);
     expect(screen.getByTestId("working-row").textContent).toMatch(/Working · 12s/);
-  });
-
-  it("says it is waiting for approval while an approval is pending", () => {
-    const pending: TurnItem[] = [
-      { kind: "tool", record: call({ status: "started", decision_id: "d1" }) },
-      { kind: "approval", decision_id: "d1", action_type: "import_access_log", title: "Download logs", reason: null, impact: null, status: "pending" },
-    ];
-    const onResolve = vi.fn();
-    draw(<AgentTurn items={pending} answer={null} live waiting onResolve={onResolve} />);
-    expect(screen.getByTestId("approval-card")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("approval-allow"));
-    expect(onResolve).toHaveBeenCalledWith("d1", "approved", "once");
-    expect(screen.queryByTestId("working-row")).toBeNull();
   });
 
   it("streams the live commentary with a caret and no answer yet", () => {

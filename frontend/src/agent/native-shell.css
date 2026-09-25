@@ -190,12 +190,6 @@
   background: var(--gray-100);
   animation: native-pulse 1.4s var(--ease-in-out) infinite;
 }
-/* An approval waiting on the user is a Working task, not a state of its own:
- * the mark is ink, held still. No yellow. */
-.native-task-row[data-state="decision"] .native-task-mark {
-  display: block;
-  background: var(--gray-100);
-}
 .native-task-row[data-state="attention"] .native-task-mark {
   display: block;
   background: var(--danger);
@@ -427,7 +421,6 @@
 }
 /* One shape for every state: a dot and a quiet label. Colour lives in the
    dot only (v1.19) — a red sentence in the title bar read as an error page. */
-.native-titlebar-state[data-state="decision"] { color: var(--gray-300); }
 .native-state-dot {
   width: 6px;
   height: 6px;
@@ -435,7 +428,6 @@
   border-radius: 999px;
   background: var(--gray-500);
 }
-.native-state-dot[data-state="decision"] { background: var(--gray-100); }
 .native-state-dot[data-state="attention"] { background: var(--danger); }
 
 .native-task-area {
@@ -457,23 +449,6 @@
 
 /* ---------- Detail rows (v2.0: under the Result, in the document) ---------- */
 
-.agent-artifact-row {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 6px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--gray-400);
-  text-align: left;
-  transition: background-color var(--duration-fast) var(--ease-out);
-}
-.agent-artifact-row:hover { background: var(--hover); color: var(--gray-100); }
-.agent-artifact-row-main { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
-.agent-artifact-row-main strong { overflow: hidden; color: var(--gray-100); font-size: var(--text-sm); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.agent-artifact-row-main small { overflow: hidden; color: var(--gray-500); font-size: var(--text-2xs); text-overflow: ellipsis; white-space: nowrap; }
 
 .agent-artifact-document { padding: 14px 16px 40px; color: var(--gray-200); font-size: var(--text-sm); line-height: 1.55; }
 .agent-artifact-document > header { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }

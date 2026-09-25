@@ -1,6 +1,6 @@
 /**
- * Extra find roots beyond the Task document (v1.14): the Artifacts panel
- * registers its body while open so ⌘F covers plans, baselines, and reports —
+ * Extra find roots beyond the Task document (v1.14): an open detail row
+ * registers its body so ⌘F covers the report and execution documents —
  * not just the transcript. Same document, so ranges stay comparable.
  */
 const roots = new Set<HTMLElement>();

@@ -7,11 +7,10 @@
  * - `api/client.ts`    — the HTTP primitive: auth header, timeouts, `ApiError`.
  * - `api/runtime.ts`   — the durable Agent Task runtime: executions, the
  *                        event stream (SSE, resume by sequence), steer / stop /
- *                        resume, decisions, on-demand compaction.
+ *                        resume, on-demand compaction.
  * - `api/tasks.ts`     — the task record: document, messages, triage,
- *                        datasets, one tool call, artifacts, provenance,
- *                        remediation plans.
- * - `api/settings.ts`  — settings, approval policy, instructions file,
+ *                        datasets, one tool call, artifacts, provenance.
+ * - `api/settings.ts`  — settings, instructions file,
  *                        skills, trace export, MCP bridge status.
  * - `api/providers.ts` — model + cloud providers and their inline probes.
  *

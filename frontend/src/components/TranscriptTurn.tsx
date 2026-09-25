@@ -5,7 +5,6 @@ import { useI18n } from "../i18n";
 import { isMostlyError, parseS3Error } from "../lib/s3error";
 import { segmentsOf, type TurnItem } from "../lib/turnItems";
 import { fmtElapsed, useElapsed } from "../hooks/useElapsed";
-import type { ApprovalResolution, ApprovalScope } from "./ApprovalCard";
 import { Markdown } from "./Markdown";
 import { S3ErrorArtifact } from "./S3ErrorArtifact";
 import { TranscriptItems } from "./TranscriptItems";
@@ -67,7 +66,7 @@ export function answerGist(text: string, limit = 160): string {
 export type AnswerMode = "full" | "folded" | "above";
 
 /**
- * One Agent turn: items (commentary · worked group · approval) then the
+ * One Agent turn: items (commentary · worked group · steer) then the
  * answer as Markdown on the reading measure. `live` renders the same shape
  * from the run store while the execution is still going.
  */
@@ -75,13 +74,10 @@ export const AgentTurn = memo(function AgentTurn({
   items,
   answer,
   live = false,
-  waiting = false,
   stoppedLabel = null,
   startedAt = null,
   taskId,
   figures,
-  onResolve,
-  resolvingId = null,
   findActive = false,
   answerMode = "full",
   conclusion = null,
@@ -95,14 +91,11 @@ export const AgentTurn = memo(function AgentTurn({
   /** Rendered before the answer (the live conclusion, v2.0). */
   head?: ReactNode;
   live?: boolean;
-  waiting?: boolean;
   /** Rendered as a tag on the last segment after the user pressed Stop. */
   stoppedLabel?: string | null;
   startedAt?: number | null;
   taskId?: string | null;
   figures?: ReactNode;
-  onResolve?: (decisionId: string, resolution: ApprovalResolution, scope: ApprovalScope) => void;
-  resolvingId?: string | null;
   /** Find holds a runnable query: unfold groups so hits exist in the DOM. */
   findActive?: boolean;
 }) {
@@ -111,20 +104,17 @@ export const AgentTurn = memo(function AgentTurn({
   const segments = useMemo(() => segmentsOf(items), [items]);
   const last = segments[segments.length - 1];
   const elapsed = useElapsed(startedAt, live && !answer);
-  // Something is visibly in progress: a live commentary caret, a growing
-  // worked group, or a pending approval. Otherwise the shimmer row says so.
+  // Something is visibly in progress: a live commentary caret or a growing
+  // worked group. Otherwise the shimmer row says so.
   const inProgress = Boolean(last && (
     (last.kind === "commentary" && last.live)
     || last.kind === "worked"
-    || (last.kind === "approval" && last.status === "pending")
   ));
   const showWorking = live && !stoppedLabel && !text.trim() && !inProgress;
   // v1.13 — long-run reassurance: past 90 s of live work, say the turn is
   // still going (and steer/stop are available) instead of a bare shimmer.
-  const longRunning = live && !stoppedLabel && !waiting && elapsed != null && elapsed >= 90_000;
-  const workingLabel = waiting
-    ? t("turn.waitingApproval")
-    : elapsed != null && elapsed >= 1000
+  const longRunning = live && !stoppedLabel && elapsed != null && elapsed >= 90_000;
+  const workingLabel = elapsed != null && elapsed >= 1000
       ? t("turn.workingFor", { t: fmtElapsed(elapsed) ?? "" })
       : t("turn.working");
 
@@ -143,8 +133,6 @@ export const AgentTurn = memo(function AgentTurn({
         live={live}
         taskId={taskId}
         startedAt={startedAt}
-        onResolve={onResolve}
-        resolvingId={resolvingId}
         findActive={findActive}
       />
       {showWorking ? <WorkingRow label={workingLabel} /> : null}

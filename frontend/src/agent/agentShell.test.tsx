@@ -49,7 +49,7 @@ describe("Agent shell: one task document; detail rows expand in place (v2.0)", (
   });
 
   it("closes explicitly", () => {
-    const open = agentShellReducer(initialAgentShellState("task-1"), { type: "artifacts.open", kind: "plan", id: "p1" });
+    const open = agentShellReducer(initialAgentShellState("task-1"), { type: "artifacts.open", kind: "execution", id: "e1" });
     expect(agentShellReducer(open, { type: "artifacts.close" })).toEqual({ artifactsOpen: false, selection: null, taskId: "task-1" });
   });
 });

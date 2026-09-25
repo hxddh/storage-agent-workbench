@@ -50,7 +50,7 @@ async function openExecutionDetail(page: Page) {
 test.describe("Execution detail from the durable log", () => {
   test.describe.configure({ timeout: 120_000 });
 
-  test("a seeded execution opens with its plan, timed rows and Work Result, and requests nothing under /runs", async ({ page }) => {
+  test("a seeded execution opens with its timed rows and Work Result, and requests nothing under /runs", async ({ page }) => {
     const { id, title } = seedSession(1, `execution log ${Date.now()}`, "short");
     const executionId = seedExecutionLog(id);
     const runs = watchRuns(page);
@@ -65,10 +65,10 @@ test.describe("Execution detail from the durable log", () => {
     await expect(page.getByTestId("execution-status")).toContainText("Completed");
     await expect(body.getByRole("heading", { level: 1 })).toContainText("Review acme-logs");
 
-    // Rows from the durable log: the plan, the commentary, one worked group
-    // timed by wall-clock (2s → 14s = 12s), never a sum (3s + 6s + 5s).
-    await expect(body.getByTestId("plan-card")).toBeVisible();
-    await expect(body.getByTestId("plan-card")).toHaveAttribute("data-done", "2");
+    // Rows from the durable log: the commentary and one worked group timed by
+    // wall-clock (2s → 14s = 12s), never a sum (3s + 6s + 5s). The log's
+    // pre-2.1 `plan.updated` frames paint nothing.
+    await expect(body.getByTestId("plan-card")).toHaveCount(0);
     await expect(body.getByTestId("turn-commentary")).toContainText("Reading the bucket configuration first.");
     const group = body.getByTestId("worked-group");
     await expect(group).toBeVisible();
