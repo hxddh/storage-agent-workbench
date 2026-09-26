@@ -4,6 +4,7 @@ import type { ModelProvider, ReasoningEffort } from "../types";
 import { useI18n } from "../i18n";
 import { pushOverlay } from "../lib/overlayStack";
 import { Icon } from "./icons";
+import { StatusDot } from "./ui";
 import { ContextMeter } from "./ContextMeter";
 
 const EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
@@ -27,11 +28,14 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
   const { t } = useI18n();
   // v1.16 — chip copy lives in the i18n dict.
   const copy = {
-    none: t("chip.none"), setUp: t("chip.setUp"), title: t("chip.title"),
+    none: t("chip.none"), setUp: t("chip.setUp"), title: t("chip.title"), offline: t("chip.offline"),
     settings: t("chip.settings"), switching: t("chip.switching"), effort: t("chip.effort"),
     effortDefault: t("chip.effortDefault"), low: t("chip.low"), medium: t("chip.medium"), high: t("chip.high"),
   };
   const [providers, setProviders] = useState<ModelProvider[] | null>(null);
+  // v3.1 — a failed read is the runtime being unreachable, not "no model":
+  // the chip says so instead of sending the user to Settings.
+  const [unreachable, setUnreachable] = useState(false);
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   // v1.14 — keyboard position in the provider list (listbox pattern).
@@ -47,7 +51,9 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
 
   useEffect(() => {
     let alive = true;
-    listModelProviders().then((items) => { if (alive) setProviders(items); }).catch(() => { if (alive) setProviders([]); });
+    listModelProviders()
+      .then((items) => { if (alive) { setProviders(items); setUnreachable(false); } })
+      .catch(() => { if (alive) { setProviders([]); setUnreachable(true); } });
     return () => { alive = false; };
   }, [refreshKey, open]);
 
@@ -90,6 +96,15 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
   };
 
   if (providers === null) return <span className="native-model-chip" aria-hidden><span className="skeleton h-3 w-16" /></span>;
+
+  if (unreachable) {
+    return (
+      <span className="native-model-chip" data-offline="true" data-testid="model-chip" title={copy.offline} role="status">
+        <StatusDot tone="danger" />
+        <span>{copy.offline}</span>
+      </span>
+    );
+  }
 
   if (missing) {
     return (

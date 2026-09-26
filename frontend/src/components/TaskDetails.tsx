@@ -242,7 +242,7 @@ export function TaskInspector({ hasResult }: { hasResult: boolean }) {
                       <strong>{executionTitle(execution) || c.execution.kinds[execution.kind] || execution.kind}</strong>
                       <small>{[c.execution.statuses[execution.status] ?? execution.status, execution.kind !== "direction" ? c.execution.kinds[execution.kind] ?? null : null].filter(Boolean).join(" · ")} · {when(execution.created_at)}</small>
                     </span>
-                    <Icon name="chevron" size={14} className="text-gray-500" />
+                    <Icon name="chevron" size={14} className="agent-run-chevron" />
                   </button>
                 ))}
               </div>

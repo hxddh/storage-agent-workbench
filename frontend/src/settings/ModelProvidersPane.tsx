@@ -9,7 +9,7 @@ import {
   type ModelProviderInput,
 } from "../api";
 import type { ModelProvider, ReasoningEffort } from "../types";
-import { Button, Field, Select, TextInput } from "../components/ui";
+import { Button, Field, Select, StatusDot, TextInput } from "../components/ui";
 import { Icon } from "../components/icons";
 import { useI18n } from "../i18n";
 import { pushOverlay } from "../lib/overlayStack";
@@ -197,7 +197,7 @@ export function ModelProvidersPanel() {
         <div className="native-settings-editor" data-testid="model-editor">
           <div className="native-settings-editor-head">
             <strong>{editing ? t("prov.edit") : (creating?.label ?? t("prov.addModel"))}</strong>
-            {editing ? <span className="text-gray-500">{editing.provider_type}</span> : null}
+            {editing ? <span className="settings-pane-muted">{editing.provider_type}</span> : null}
           </div>
           <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
             <Field label={t("prov.fName")}>
@@ -260,24 +260,25 @@ export function ModelProvidersPanel() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="native-settings-dot" data-on={provider.active ? "true" : "false"} aria-hidden />
-                  <span className="truncate text-sm text-gray-100">{provider.name}</span>
+                  <span className="settings-pane-name truncate">{provider.name}</span>
                   {provider.active ? <span className="native-settings-tag" data-testid="active-model-badge">{t("prov.active")}</span> : null}
                 </div>
-                <div className="mt-0.5 truncate text-xs text-gray-500">
+                <div className="settings-pane-meta truncate">
                   {provider.model || "—"} · {provider.base_url || modelPresetFor(provider.provider_type)?.baseUrl || "—"}
                 </div>
-                <div className="mt-0.5 text-xs text-gray-500">
+                <div className="settings-pane-meta">
                   {isLocalProvider(provider.provider_type) && !provider.has_api_key
                     ? t("prov.localActive")
                     : `${t("prov.apiKeyLabel")}: ${provider.has_api_key ? t("prov.savedKeychain") : t("prov.notSet")}`}
                   {provider.reasoning_capable && provider.reasoning_effort ? ` · ${t("prov.fEffort")}: ${provider.reasoning_effort}` : ""}
                 </div>
                 {test && test !== "running" ? (
-                  <div className="mt-1 text-xs" data-testid="model-test-status" data-tone={test.tone}>
-                    <span className={test.tone === "ok" ? "text-success" : test.tone === "warn" ? "text-warn" : "text-danger"}>{test.msg}</span>
+                  <div className="settings-pane-issue mt-1" data-testid="model-test-status" data-tone={test.tone}>
+                    <StatusDot tone={test.tone === "ok" ? "success" : test.tone === "warn" ? "warn" : "danger"} />
+                    <span>{test.msg}</span>
                   </div>
                 ) : test === "running" ? (
-                  <div className="mt-1 text-xs text-gray-500" data-testid="model-test-status" data-tone="running">{t("prov.testing")}</div>
+                  <div className="settings-pane-issue mt-1" data-testid="model-test-status" data-tone="running"><StatusDot pulse />{t("prov.testing")}</div>
                 ) : null}
               </div>
               <div className="native-settings-actions">

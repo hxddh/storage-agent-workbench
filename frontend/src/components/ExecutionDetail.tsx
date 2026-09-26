@@ -363,7 +363,7 @@ function ExecutionDocument({
                   <span className="native-execution-doc-severity">{severityLabel(finding.severity)}</span>
                   <span>
                     <strong>{finding.title}</strong>
-                    {finding.interpretation ? <span className="text-gray-500"> — {finding.interpretation}</span> : null}
+                    {finding.interpretation ? <span className="native-execution-doc-aside"> — {finding.interpretation}</span> : null}
                   </span>
                 </li>
               ))}

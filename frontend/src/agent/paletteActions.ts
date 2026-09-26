@@ -4,8 +4,6 @@ export type PaletteActions = {
   stop?: () => void;
   resume?: () => void;
   focusComposer?: () => void;
-  /** Fill the Composer with template text and focus it (v1.16 engines). */
-  prefill?: (text: string) => void;
   find?: () => void;
   review?: () => void;
   shortcuts?: () => void;

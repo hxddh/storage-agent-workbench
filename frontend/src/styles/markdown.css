@@ -1,0 +1,167 @@
+/* v3.1 — markdown surfaces on design system v3 tokens (see agent/native-components.css).
+ *
+ * The Agent's answer as a document (components/Markdown.tsx). Layout and the
+ * rules shared with other prose (outline card, blockquote rail, inline code
+ * fill, tables) live in agent/native-document.css under `.agent-prose`; this
+ * file owns only the colour and type of the renderer's own elements.
+ */
+
+/* The reading column: 15px on the prose leading. */
+.md-root {
+  color: var(--gray-200);
+  font-size: var(--text-prose);
+  line-height: var(--leading-prose);
+  letter-spacing: -0.006em;
+}
+
+/* ---------- Outline ---------- */
+.md-outline-label {
+  margin-bottom: var(--space-1);
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: var(--leading-2xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.md-outline-link {
+  color: var(--gray-500);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.md-outline-link:hover { color: var(--accent-text); }
+
+/* ---------- Headings ----------
+ * Size and ink only; margins stay on the element (the column's own rhythm in
+ * native-document.css decides them), weight and tracking come from
+ * `.agent-prose h1–h3`. */
+.md-heading { scroll-margin-top: var(--space-4); color: var(--gray-100); }
+.md-h1 { font-size: var(--text-xl); line-height: 1.25; }
+.md-h2,
+.md-h3 { font-size: var(--text-prose); line-height: 1.375; }
+.md-h4,
+.md-h5,
+.md-h6 { font-size: var(--text-sm); line-height: var(--leading-sm); }
+.md-h5 { color: var(--gray-300); }
+.md-h6 { color: var(--gray-400); letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* ---------- Blocks ---------- */
+.md-rule { border: 0; border-top: 1px solid var(--edge); }
+.md-quote { font-size: var(--text-prose); line-height: var(--leading-prose); }
+
+/* ---------- Lists ---------- */
+.md-marker {
+  flex-shrink: 0;
+  color: var(--gray-400);
+  line-height: 1.75;
+  user-select: none;
+}
+.md-marker[data-ordered="true"] {
+  min-width: 1.35rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.md-marker[data-ordered="false"] { width: 0.7rem; text-align: center; }
+.md-marker[data-ordered="false"]::before { content: "\2022"; }
+
+.md-task {
+  display: flex;
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-top: var(--space-1);
+  border: 1px solid var(--edge-strong);
+  border-radius: 3px;
+}
+.md-task[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+/* ---------- Code block ---------- */
+.md-code {
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  background: var(--code-bg);
+}
+.md-code-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
+  padding: 6px var(--space-3);
+}
+.md-code-lang {
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-2xs);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+.md-code-copy,
+.md-table-copy {
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-2xs);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.md-code-copy:hover,
+.md-table-copy:hover { color: var(--gray-200); }
+.md-code-copy {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.md-code-body {
+  overflow: auto;
+  padding: var(--space-3) 14px;
+  color: var(--gray-300);
+  font-size: var(--text-sm);
+  line-height: 1.625;
+}
+
+/* ---------- Table toolbar (the grid itself: native-document.css) ---------- */
+.md-table-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-2xs);
+}
+.md-table-copy { border-radius: var(--radius-md); padding: 2px var(--space-1); }
+
+/* ---------- Inline ---------- */
+.md-code-inline {
+  border: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
+  border-radius: var(--radius-md);
+  padding: 0.1em 0.3em;
+  background: var(--elevated);
+  color: var(--gray-200);
+}
+.md-strong { color: var(--gray-100); font-weight: 600; }
+.md-em { color: var(--gray-200); font-style: italic; }
+.md-del { color: var(--gray-500); text-decoration: line-through; }
+.md-link {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent-text) 40%, transparent);
+  text-underline-offset: 2px;
+  transition: text-decoration-color var(--duration-fast) var(--ease-out);
+}
+.md-link:hover { text-decoration-color: var(--accent-text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .md-outline-link,
+  .md-code-copy,
+  .md-table-copy,
+  .md-link { transition: none; }
+}

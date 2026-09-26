@@ -1,0 +1,205 @@
+/* v3.1 — artifacts surfaces on design system v3 tokens (see agent/native-components.css).
+ *
+ * Tool rows, a tool call's input/output, S3 error cards, error triage, the Task
+ * report and Execution detail. Cards sit on --panel with a hairline --edge and
+ * --radius-lg; UI text is 13px, meta labels 11px in --gray-500; code is mono on
+ * --code-bg. Status is a dot or a badge, never coloured prose.
+ */
+
+/* ---------- Shared: the 11px eyebrow used inside artifact cards ---------- */
+.s3-error-label,
+.call-payload-label {
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+:lang(zh) .s3-error-label,
+:lang(zh) .call-payload-label { letter-spacing: 0.02em; }
+
+/* ---------- S3 error card (a pasted S3-compatible error in a Direction) ---------- */
+.s3-error-card {
+  width: 100%;
+  max-width: 46rem;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+.s3-error-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 0; }
+.s3-error-code {
+  color: var(--gray-100);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.s3-error-message {
+  margin: 0;
+  padding: 4px 14px 0;
+  color: var(--gray-200);
+  font-size: var(--text-prose);
+  line-height: 1.6;
+}
+.s3-error-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 10px 0 0;
+  padding: 0 14px 4px;
+  font-size: var(--text-sm);
+}
+.s3-error-facts dt { color: var(--gray-500); font-size: var(--text-2xs); line-height: 20px; }
+.s3-error-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--gray-300);
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.s3-error-facts dd[data-mono="true"] { font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); }
+.s3-error-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  border-top: 1px solid var(--edge);
+  padding: 4px 6px;
+}
+.s3-error-raw {
+  max-height: 16rem;
+  margin: 0;
+  overflow: auto;
+  border-top: 1px solid var(--edge);
+  padding: 10px 14px;
+  background: var(--code-bg);
+  color: var(--gray-300);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  line-height: 1.65;
+}
+
+/* ---------- Call detail: one tool call's input and output ---------- */
+.call-payload {
+  min-width: 0;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  padding: 8px 10px 10px;
+  background: var(--panel);
+}
+.call-payload-head { display: flex; height: 22px; align-items: center; gap: 8px; margin-bottom: 6px; }
+.call-payload-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  border-radius: var(--radius-md);
+  padding: 2px 6px;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  opacity: 0;
+  transition: color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
+}
+.call-payload:hover .call-payload-copy,
+.call-payload-copy:focus-visible { opacity: 1; }
+.call-payload-copy:hover { background: var(--hover); color: var(--gray-100); }
+.call-payload-body {
+  max-height: 18rem;
+  margin: 0;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  background: var(--code-bg);
+  color: var(--gray-300);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+}
+.call-payload-clipped { margin-top: 4px; color: var(--gray-500); font-size: var(--text-2xs); }
+.call-detail-note {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  padding: 0 10px;
+  background: var(--panel);
+  color: var(--gray-400);
+  font-size: var(--text-sm);
+}
+
+/* ---------- Tool result card ---------- */
+.tool-result-card {
+  margin-top: 8px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  background: var(--panel);
+  font-size: var(--text-sm);
+}
+.tool-result-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.tool-result-title { min-width: 0; color: var(--gray-100); font-weight: 500; }
+.tool-result-rows { display: grid; gap: 4px; margin: 0; }
+.tool-result-rows > div { display: flex; justify-content: space-between; gap: 16px; }
+.tool-result-rows dt { flex: none; color: var(--gray-500); font-size: var(--text-2xs); line-height: 20px; }
+.tool-result-rows dd { min-width: 0; margin: 0; overflow: hidden; color: var(--gray-300); line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.tool-result-error {
+  margin-top: 8px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  background: var(--danger-bg);
+  color: var(--gray-200);
+}
+.tool-result-error-code { font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); }
+.tool-result-error-code + div { margin-top: 2px; }
+
+/* ---------- Error triage (offline, deterministic) ---------- */
+.triage-head { display: flex; align-items: center; gap: 8px; color: var(--gray-500); font-size: var(--text-2xs); font-weight: 500; }
+.triage-summary { color: var(--gray-100); font-size: var(--text-prose); line-height: 1.6; }
+.triage-causes { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.triage-causes li { display: flex; align-items: baseline; gap: 12px; font-size: var(--text-sm); line-height: 1.55; }
+.triage-confidence {
+  width: 56px;
+  flex: none;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.triage-confidence[data-confidence="high"] { color: var(--gray-100); }
+.triage-confidence[data-confidence="medium"] { color: var(--warn-fg); }
+:lang(zh) .triage-confidence { letter-spacing: 0.02em; }
+.triage-cause-title { color: var(--gray-200); }
+.triage-next { color: var(--gray-500); }
+
+/* ---------- Task report (side pane) ---------- */
+.report-actions { display: flex; align-items: center; gap: 4px; margin: 0 0 16px -9px; }
+
+/* ---------- Worked group / tool rows ---------- */
+.working-row { display: flex; min-height: 24px; align-items: center; gap: 8px; font-size: var(--text-sm); }
+.worked-count { color: var(--gray-500); font-variant-numeric: tabular-nums; }
+.native-tool-row.native-tool-fold {
+  width: 100%;
+  color: var(--gray-500);
+  text-align: left;
+  transition: color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
+}
+.native-tool-row.native-tool-fold:hover { background: var(--hover); color: var(--gray-300); }
+.native-tool-audit { display: inline-flex; flex: none; color: var(--warn-fg); }
+
+/* ---------- Execution detail ---------- */
+.native-execution-doc-aside { color: var(--gray-500); }
+
+@media (prefers-reduced-motion: reduce) {
+  .call-payload-copy,
+  .native-tool-row.native-tool-fold { transition: none; }
+}

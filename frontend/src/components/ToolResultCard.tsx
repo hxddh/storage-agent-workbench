@@ -1,4 +1,5 @@
 import { useI18n } from "../i18n";
+import { Badge, StatusDot } from "./ui";
 
 interface Row {
   label: string;
@@ -24,30 +25,30 @@ export function ToolResultCard({
 }) {
   const { t } = useI18n();
   return (
-    <div className="mt-2 rounded-md border border-edge bg-canvas p-3 text-xs" data-testid="tool-result-card">
-      <div className="mb-2 flex items-center gap-2">
-        <span className={`h-2 w-2 rounded-full ${success ? "bg-success" : "bg-danger"}`} aria-hidden />
-        <span className="font-medium text-gray-200">{title}</span>
-        <span className={success ? "text-success" : "text-danger"}>
+    <div className="tool-result-card" data-testid="tool-result-card">
+      <div className="tool-result-head">
+        <StatusDot tone={success ? "success" : "danger"} />
+        <span className="tool-result-title">{title}</span>
+        <Badge tone={success ? "success" : "danger"}>
           {success ? t("tool.success") : t("tool.failed")}
-        </span>
+        </Badge>
       </div>
 
       {rows.length > 0 && (
-        <dl className="space-y-1">
+        <dl className="tool-result-rows">
           {rows.map((r) => (
-            <div key={r.label} className="flex justify-between gap-4">
-              <dt className="text-gray-500">{r.label}</dt>
-              <dd className="truncate text-gray-300" title={r.value}>{r.value}</dd>
+            <div key={r.label}>
+              <dt>{r.label}</dt>
+              <dd title={r.value}>{r.value}</dd>
             </div>
           ))}
         </dl>
       )}
 
       {!success && (errorCode || errorMessage) && (
-        <div className="mt-2 rounded border border-danger-border bg-danger-bg p-2 text-danger">
-          {errorCode && <div className="font-mono">{errorCode}</div>}
-          {errorMessage && <div className="mt-0.5">{errorMessage}</div>}
+        <div className="tool-result-error">
+          {errorCode && <div className="tool-result-error-code">{errorCode}</div>}
+          {errorMessage && <div>{errorMessage}</div>}
         </div>
       )}
     </div>

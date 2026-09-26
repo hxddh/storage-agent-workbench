@@ -175,11 +175,14 @@
   --accent-dim: rgba(79, 70, 229, 0.09);
   --accent-fg: #ffffff;
   --accent-text: #4338ca;
+  /* v3.1 — orange, aqua, gold and magenta stepped darker (same hues) so every
+   * series clears 3:1 on the white and panel surfaces; CVD separation and
+   * the normal-vision floor re-validated. */
   --viz-1: #4f46e5;
-  --viz-2: #eb6834;
-  --viz-3: #1baf7a;
-  --viz-4: #eda100;
-  --viz-5: #e87ba4;
+  --viz-2: #e05a26;
+  --viz-3: #11906a;
+  --viz-4: #ad7d00;
+  --viz-5: #d24e86;
   --viz-6: #2a78d6;
   --gray-100: #18181b;
   --gray-200: #3f3f46;

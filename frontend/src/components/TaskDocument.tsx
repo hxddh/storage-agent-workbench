@@ -354,7 +354,7 @@ export function TaskDocument({
                 ) : null}
                 {!hideLiveWorkResult ? (
                   stalled ? (
-                    <div className="flex items-center gap-2 text-xs text-gray-400" data-testid="task-reconnecting" role="status">
+                    <div className="task-quiet-line" data-testid="task-reconnecting" role="status">
                       <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
                       {t("task.reconnecting")}
                     </div>
@@ -375,7 +375,7 @@ export function TaskDocument({
             ) : null}
 
             {!pending && remoteExecution?.running ? (
-              <div data-testid="remote-execution" className="flex items-center gap-2 text-xs text-gray-400">
+              <div data-testid="remote-execution" className="task-quiet-line">
                 <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
                 {copy.remoteExecution(fmtElapsed(remoteExecution.age_ms ?? null) ?? "—")}
               </div>

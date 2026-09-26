@@ -187,7 +187,7 @@ export function CloudProvidersPanel() {
         <div className="native-settings-editor" data-testid="cloud-editor">
           <div className="native-settings-editor-head">
             <strong>{editing ? editing.name : t("prov.addCloud")}</strong>
-            {editing ? <span className="text-gray-500">{editing.provider_type}</span> : null}
+            {editing ? <span className="settings-pane-muted">{editing.provider_type}</span> : null}
           </div>
           {!editing ? (
             <Field label={t("prov.fProvider")}>
@@ -265,7 +265,7 @@ export function CloudProvidersPanel() {
                 <TextInput type="password" autoComplete="off" value={form.session_token} onChange={(e) => setForm({ ...form, session_token: e.target.value })} placeholder={editing?.has_session_token ? t("prov.savedPlaceholder") : ""} />
               </Field>
               {editing?.has_session_token && !form.session_token.trim() ? (
-                <label className="-mt-2 mb-3 flex items-center gap-2 text-xs text-gray-400">
+                <label className="settings-pane-check">
                   <input type="checkbox" checked={form.clear_session_token} onChange={(e) => setForm({ ...form, clear_session_token: e.target.checked })} />
                   {t("prov.clearToken")}
                 </label>
@@ -283,7 +283,7 @@ export function CloudProvidersPanel() {
             <Button variant="primary" onClick={submit}>{editing ? t("prov.save") : t("prov.addProvider")}</Button>
             <Button variant="ghost" onClick={close}>{t("prov.cancel")}</Button>
           </div>
-          <p className="mt-2 text-2xs text-gray-500">{t("prov.footerKeys")}</p>
+          <p className="settings-pane-footnote">{t("prov.footerKeys")}</p>
         </div>
       ) : null}
 
@@ -293,13 +293,13 @@ export function CloudProvidersPanel() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="native-settings-dot" data-on={provider.has_access_key && provider.has_secret_key ? "true" : "false"} aria-hidden />
-                <span className="truncate text-sm text-gray-100">{provider.name}</span>
+                <span className="settings-pane-name truncate">{provider.name}</span>
                 <span className="native-settings-tag" data-tone={provider.mode === "readonly" ? "ok" : "warn"}>{provider.mode}</span>
               </div>
-              <div className="mt-0.5 truncate text-xs text-gray-500">
+              <div className="settings-pane-meta truncate">
                 {provider.provider_type} · {provider.region || "—"} · {provider.endpoint_url || "—"}
               </div>
-              <div className="mt-0.5 text-xs text-gray-500">
+              <div className="settings-pane-meta">
                 {t("prov.accessKeyLabel")}: {provider.has_access_key ? t("prov.savedKeychain") : t("prov.notSet")} · {t("prov.secretKeyLabel")}: {provider.has_secret_key ? t("prov.savedKeychain") : t("prov.notSet")}
                 {provider.allowed_buckets.length > 0 || provider.allowed_prefixes.length > 0
                   ? ` · ${t("prov.bucketsLabel")}: ${provider.allowed_buckets.join(", ") || "—"} · ${t("prov.prefixesLabel")}: ${provider.allowed_prefixes.join(", ") || "—"}`

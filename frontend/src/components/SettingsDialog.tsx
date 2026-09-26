@@ -86,7 +86,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   return (
     <div className="fixed inset-0 z-drawer flex items-center justify-center p-6" onClick={onClose}>
       {/* The scrim fades as a sibling: an opaque dialog must never inherit a fade. */}
-      <div className="absolute inset-0 bg-scrim animate-fade-in" aria-hidden />
+      <div className="ui-scrim" aria-hidden />
       <div
         ref={trapRef}
         role="dialog"

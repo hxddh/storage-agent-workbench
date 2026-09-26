@@ -59,7 +59,7 @@ describe("v1.16 discoverability without painted hints (v3.0 palette)", () => {
   ] as unknown as Parameters<typeof CommandPalette>[0]["tasks"];
 
   it("lists recent tasks, then actions and the shortcuts sheet — no engine catalog", () => {
-    publishPaletteActions({ prefill: () => {}, focusComposer: () => {}, find: () => {}, hasTask: true, busy: false });
+    publishPaletteActions({ focusComposer: () => {}, find: () => {}, hasTask: true, busy: false });
     publishBasePaletteActions({ shortcuts: () => {} });
     render(createElement(ThemeProvider, null, createElement(I18nProvider, null, createElement(CommandPalette, {
         open: true,
