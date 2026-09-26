@@ -37,7 +37,7 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v3.0 documentation contract", () => {
+describe("v3.1 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
@@ -52,14 +52,15 @@ describe("v3.0 documentation contract", () => {
     expect(readRepo("docs/README.md")).toContain("v2.1.0");
     expect(readRepo("docs/README.md")).toContain("v2.2.0");
     expect(readRepo("docs/README.md")).toContain("v3.0.0");
+    expect(readRepo("docs/README.md")).toContain("v3.1.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.16.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.19.0");
     expect(readRepo("CLAUDE.md")).toContain("v2.0.0");
     expect(readRepo("CLAUDE.md")).toContain("v2.1.0");
-    expect(readRepo("CLAUDE.md")).toContain("Implementation contract for Storage Agent v3.0.0");
+    expect(readRepo("CLAUDE.md")).toContain("Implementation contract for Storage Agent v3.1.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
-    expect(readRepo("docs/product.md")).toContain("v3.0.0");
-    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v3\.0\.0/);
+    expect(readRepo("docs/product.md")).toContain("v3.1.0");
+    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v3\.1\.0/);
     expect(readRepo("docs/architecture.md")).toContain("Migration head **031**");
     expect(readRepo("docs/architecture.md")).not.toMatch(/Current architecture baseline: Storage Agent v1\.10\.0/);
     expect(readRepo("docs/architecture.md")).not.toMatch(/Migration head \*\*028\*\*/);
@@ -180,6 +181,12 @@ describe("v3.0 documentation contract", () => {
     expect(readRepo("docs/roadmap.md")).toContain("v3.0.0");
     expect(readRepo("docs/roadmap.md")).toContain("Design system v3");
     expect(readRepo("docs/releases/3.0.0.md")).toContain("Design system v3");
+    expect(readRepo("docs/roadmap.md")).toContain("v3.1.0");
+    expect(readRepo("docs/releases/3.1.0.md")).toContain("Outputs made real");
+    // v3.1 — the report leads with the recorded conclusion and follows the
+    // reader's language; one findings list feeds the Result and Evidence.
+    expect(readRepo("docs/api.md")).toContain("lang");
+    expect(readRepo("CLAUDE.md")).toContain("one findings list");
     expect(readRepo("docs/tools.md")).toContain("tool.progress");
     expect(readRepo("docs/api.md")).toContain("direction.recorded");
     expect(readRepo("docs/releases/1.13.0.md")).toContain("Honesty and completeness");

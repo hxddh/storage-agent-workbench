@@ -111,20 +111,13 @@
   --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
   --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
   /* Type: five sizes, each with one job. 11 label · 13 interface ·
-     15 reading · 20 conclusion · 28 page title. The older names stay as
-     aliases so nothing silently loses its size. */
+     15 reading · 20 conclusion · 28 page title. Five sizes, five names. */
   --text-2xs: 0.6875rem;
   --leading-2xs: 1rem;
-  --text-xs: 0.8125rem;
-  --leading-xs: 1.25rem;
   --text-sm: 0.8125rem;
   --leading-sm: 1.25rem;
-  --text-base: 0.8125rem;
-  --leading-base: 1.25rem;
   --text-prose: 0.9375rem;
   --leading-prose: 1.7;
-  --text-lg: 0.9375rem;
-  --leading-lg: 1.5rem;
   --text-xl: 1.25rem;
   --leading-xl: 1.75rem;
   --text-2xl: 1.75rem;
@@ -175,11 +168,14 @@
   --accent-dim: rgba(79, 70, 229, 0.09);
   --accent-fg: #ffffff;
   --accent-text: #4338ca;
+  /* v3.1 — orange, aqua, gold and magenta stepped darker (same hues) so every
+   * series clears 3:1 on the white and panel surfaces; CVD separation and
+   * the normal-vision floor re-validated. */
   --viz-1: #4f46e5;
-  --viz-2: #eb6834;
-  --viz-3: #1baf7a;
-  --viz-4: #eda100;
-  --viz-5: #e87ba4;
+  --viz-2: #e05a26;
+  --viz-3: #11906a;
+  --viz-4: #ad7d00;
+  --viz-5: #d24e86;
   --viz-6: #2a78d6;
   --gray-100: #18181b;
   --gray-200: #3f3f46;

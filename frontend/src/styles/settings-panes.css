@@ -1,0 +1,113 @@
+/* v3.1 — settings-panes surfaces on design system v3 tokens (see agent/native-components.css).
+ *
+ * The Model Providers, Cloud Providers and Skills & bridges panes compose the
+ * `.native-settings-*` shell classes (agent/native-shell.css) and these few
+ * text roles, so every pane reads as one system: a 20px pane title + hint,
+ * 15px section sub-headings, 13px row names, 11px muted key/value lines.
+ * Status colour lives only in a StatusDot / tag, never in the prose. */
+
+/* A section sub-heading inside a pane (Skills · Instructions · Observability · MCP). */
+.settings-pane-subtitle {
+  margin: 0;
+  color: var(--gray-100);
+  font-size: var(--text-prose);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* A row's name: 13px strongest ink. */
+.settings-pane-name {
+  color: var(--gray-100);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+/* A row's description: 13px muted reading text. */
+.settings-pane-desc {
+  margin: 2px 0 0;
+  color: var(--gray-500);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* Key/value detail lines under a row name: 11px muted. */
+.settings-pane-meta {
+  margin: 2px 0 0;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+}
+
+/* Quiet body text for empty/unavailable states. */
+.settings-pane-empty-text {
+  color: var(--gray-500);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* An inline muted fragment (provider type beside the editor title, a count). */
+.settings-pane-muted { color: var(--gray-500); }
+
+/* A file-system path: mono, 11px, muted. */
+.settings-pane-path {
+  color: var(--gray-500);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  overflow-wrap: anywhere;
+}
+
+/* A one-line status statement (instructions loaded / missing). */
+.settings-pane-status {
+  margin: 8px 0 0;
+  color: var(--gray-300);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* A status line whose tone is a dot, not coloured prose (test results, errors). */
+.settings-pane-issue {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--gray-300);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+}
+.settings-pane-issue > .ui-dot { flex-shrink: 0; transform: translateY(-1px); }
+.settings-pane-issue[data-size="sm"] { font-size: var(--text-sm); }
+
+/* The MCP card's head line: dot · state · tool count. */
+.settings-pane-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gray-100);
+  font-size: var(--text-sm);
+}
+
+/* A checkbox row inside the editor. */
+.settings-pane-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -8px 0 12px;
+  color: var(--gray-400);
+  font-size: var(--text-sm);
+}
+
+/* The editor's closing footnote. */
+.settings-pane-footnote {
+  margin: 8px 0 0;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+}
+
+/* The read-only connection tester under a cloud provider row. */
+.settings-pane-tester {
+  margin-top: 12px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: var(--canvas);
+}

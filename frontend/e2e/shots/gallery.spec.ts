@@ -121,6 +121,19 @@ for (const theme of THEMES) {
       await shoot(page, "04-artifacts", theme, lang);
     });
 
+    test("Evidence — the one findings list, beside the Result", async ({ page }) => {
+      const title = `Evidence review ${theme} ${lang}`;
+      seedTask(2, title, "short", true);
+      await openAgent(page, theme, lang);
+      await openTask(page, title);
+      await page.getByTestId("task-detail-toggle-evidence").click();
+      await expect(page.getByTestId("task-sidepane")).toHaveAttribute("data-kind", "evidence");
+      // The Evidence count and the Result's findings are one list (v3.1).
+      const count = await page.getByTestId("result-finding").count();
+      await expect(page.getByTestId("evidence-findings").locator("li")).toHaveCount(count);
+      await shoot(page, "04b-evidence", theme, lang);
+    });
+
     test("Task navigation — task list, not a console", async ({ page }) => {
       const title = `Active storage task ${theme} ${lang}`;
       seedTask(2, title, "short");

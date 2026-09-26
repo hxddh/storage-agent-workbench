@@ -6,7 +6,7 @@ import type {
   HeadBucketResult,
   ListObjectsResult,
 } from "../types";
-import { Button, TextInput } from "./ui";
+import { Button, StatusDot, TextInput } from "./ui";
 import { ToolResultCard } from "./ToolResultCard";
 import { useI18n } from "../i18n";
 
@@ -42,12 +42,12 @@ export function CloudProviderTester({ provider }: { provider: CloudProvider }) {
   };
 
   return (
-    <div className="mt-3 rounded-md border border-edge/70 bg-canvas/60 p-3">
+    <div className="settings-pane-tester">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Button onClick={() => run("cred", async () => setCred(await testCloudProvider(provider.id)))} disabled={busy !== null}>
           {busy === "cred" ? t("tester.testing") : t("tester.testConnection")}
         </Button>
-        <span className="text-xs text-gray-500">{t("tester.readonly")}</span>
+        <span className="settings-pane-meta">{t("tester.readonly")}</span>
       </div>
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -73,7 +73,7 @@ export function CloudProviderTester({ provider }: { provider: CloudProvider }) {
         </Button>
       </div>
 
-      {error && <p className="text-xs text-danger">{error}</p>}
+      {error && <p className="settings-pane-issue" role="alert"><StatusDot tone="danger" />{error}</p>}
 
       {cred && (
         <ToolResultCard

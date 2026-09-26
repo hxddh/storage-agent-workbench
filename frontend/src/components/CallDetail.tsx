@@ -3,6 +3,7 @@ import { getTaskCall } from "../api";
 import { useCopy } from "../hooks/useCopy";
 import { useI18n } from "../i18n";
 import type { TaskCallRecord } from "../types";
+import { StatusDot } from "./ui";
 
 /** Pretty-print a sanitized payload for reading, not for round-tripping. */
 function present(value: unknown): string {
@@ -29,15 +30,15 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
   const visible = clipped ? `${text.slice(0, MAX_RENDER)}\n…` : text;
 
   return (
-    <section className="group/payload min-w-0 rounded-lg bg-elevated/65 px-2.5 py-2" data-testid="call-payload">
-      <div className="mb-1.5 flex h-5 items-center gap-2">
-        <div className="text-2xs font-semibold uppercase tracking-[0.08em] text-gray-500">
+    <section className="call-payload" data-testid="call-payload">
+      <div className="call-payload-head">
+        <div className="call-payload-label">
           {label}
         </div>
         <button
           type="button"
           onClick={() => copy(text)}
-          className="ml-auto inline-flex items-center gap-1 rounded px-1 py-0.5 text-2xs text-gray-500 opacity-0 transition-[color,opacity] hover:text-gray-200 group-hover/payload:opacity-100 focus:opacity-100"
+          className="call-payload-copy"
         >
           {copied ? (
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden>
@@ -52,11 +53,11 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
           {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
-      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-gray-400 [scrollbar-gutter:stable]">
+      <pre className="call-payload-body">
         {visible}
       </pre>
       {clipped && (
-        <div className="mt-1 text-2xs text-gray-500">
+        <div className="call-payload-clipped">
           {t("call.clipped", { n: text.length - MAX_RENDER })}
         </div>
       )}
@@ -92,10 +93,11 @@ export function CallDetail({ taskId, callId }: { taskId: string; callId: string 
   if (error) {
     return (
       <div
-        className="mt-1 rounded-lg bg-danger-bg px-2.5 py-2 text-xs text-danger"
+        className="call-detail-note"
         data-testid="call-detail-error"
         title={error}
       >
+        <StatusDot tone="danger" />
         {t("call.unavailable")}
       </div>
     );
@@ -104,10 +106,10 @@ export function CallDetail({ taskId, callId }: { taskId: string; callId: string 
   if (!row) {
     return (
       <div
-        className="mt-1 flex min-h-9 items-center gap-2 rounded-lg bg-panel/45 px-2.5 text-xs text-gray-500"
+        className="call-detail-note"
         data-testid="call-detail-loading"
       >
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
+        <StatusDot tone="accent" pulse />
         {t("call.loading")}
       </div>
     );

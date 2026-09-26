@@ -1203,7 +1203,7 @@ describe("v1.16.0 true native agent, finished", () => {
   it("discovers engines and shortcuts through live palette actions", () => {
     const palette = source("../components/CommandPalette.tsx");
     const actions = source("./paletteActions.ts");
-    expect(actions).toContain("prefill?: (text: string) => void");
+    expect(actions).not.toContain("prefill");
     expect(actions).toContain("shortcuts?: () => void");
     expect(actions).toContain("publishBasePaletteActions");
     expect(palette).not.toContain("live.prefill");

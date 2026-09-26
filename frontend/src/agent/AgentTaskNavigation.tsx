@@ -139,8 +139,8 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
         <div className="native-confirm" onClick={(event) => event.stopPropagation()}>
           <div>{copy.deleteConfirm}</div>
           <div className="mt-2 flex justify-end gap-1.5">
-            <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); }} className="rounded-md px-2.5 py-1 text-xs text-gray-300 hover:bg-hover hover:text-gray-100">{copy.cancel}</button>
-            <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); actions.onDelete(task); }} className="rounded-md bg-danger px-2.5 py-1 text-xs font-medium text-white">{copy.delete}</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); }} className="ui-btn" data-variant="ghost" data-size="sm">{copy.cancel}</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); actions.onDelete(task); }} className="ui-btn" data-variant="danger-solid" data-size="sm">{copy.delete}</button>
           </div>
         </div>
       ) : null}

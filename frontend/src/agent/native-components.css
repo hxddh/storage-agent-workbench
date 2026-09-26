@@ -255,3 +255,8 @@ select.ui-input { padding-right: 28px; }
   .ui-activity::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
   .ui-btn:active:not(:disabled) { transform: none; }
 }
+
+/* ---------- Scrim (v3.1) — fades as a sibling of the opaque sheet ---------- */
+.ui-scrim { position: absolute; inset: 0; background: var(--scrim); animation: ui-fade-in var(--duration-base) var(--ease-out); }
+@keyframes ui-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ui-scrim { animation: none; } }

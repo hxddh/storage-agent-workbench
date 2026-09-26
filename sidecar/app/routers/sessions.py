@@ -382,7 +382,8 @@ def refresh_summary(session_id: str, conn: sqlite3.Connection = Depends(get_conn
 
 
 @router.get("/{session_id}/report")
-def get_session_report(session_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+def get_session_report(session_id: str, lang: str | None = None,
+                       conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
     row = repo.get_row(conn, session_id)
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
@@ -403,7 +404,8 @@ def get_session_report(session_id: str, conn: sqlite3.Connection = Depends(get_c
         usage=overview.get("usage"),
         turn_metrics=overview.get("turns"),
         audit_events=session_activity.list_audit(conn, session_id)["items"],
-        attached_files=_attached_files(conn, session_id))
+        attached_files=_attached_files(conn, session_id),
+        lang=lang)
     # Rule 17: report generation is an auditable event.
     audit.record(conn, "session.report",
                  {"session_id": session_id, "bytes": len(content)}, run_id=None,

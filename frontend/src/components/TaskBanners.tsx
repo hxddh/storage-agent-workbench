@@ -86,7 +86,7 @@ export function TaskBanners({
         // nothing failed. Settings sits beside Resume because the usual reason
         // it could not continue on its own is that no model was usable.
         <div data-testid="task-resume" className="native-banner" data-tone="warn" data-quiet="true">
-          <span className="font-medium text-gray-100">{copy.resumeTitle}</span>
+          <span className="native-banner-title">{copy.resumeTitle}</span>
           <p>{copy.resumeBody}</p>
           <div className="native-banner-actions">
             <Button data-testid="task-resume-action" variant="default" size="sm" onClick={() => onResume(lastExecution.id)}>

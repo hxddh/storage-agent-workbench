@@ -7,6 +7,7 @@ import {
 } from "../api";
 import type { TaskRecord } from "../types";
 import type { ArtifactSelection } from "./model";
+import { useI18n } from "../i18n";
 
 export type ArtifactsProjection = {
   detail: TaskRecord | null;
@@ -30,6 +31,7 @@ export function useAgentTaskProjection(
   selection: ArtifactSelection | null,
   reloadKey = 0,
 ): ArtifactsProjection {
+  const { lang } = useI18n();
   const [detail, setDetail] = useState<TaskRecord | null>(null);
   const [executions, setExecutions] = useState<TaskExecution[]>([]);
   const [report, setReport] = useState<string | null>(null);
@@ -62,7 +64,7 @@ export function useAgentTaskProjection(
     if (!taskId || !wantsReport) return;
     let cancelled = false;
     setReportLoading(true);
-    void getTaskReport(taskId)
+    void getTaskReport(taskId, lang)
       .then((next) => { if (!cancelled) { setReport(next.content); setError(null); } })
       .catch((reason) => {
         if (!cancelled) {
@@ -72,7 +74,7 @@ export function useAgentTaskProjection(
       })
       .finally(() => { if (!cancelled) setReportLoading(false); });
     return () => { cancelled = true; };
-  }, [taskId, wantsReport, reloadKey]);
+  }, [taskId, wantsReport, reloadKey, lang]);
 
   return { detail, executions, report, reportLoading, error };
 }

@@ -87,7 +87,7 @@ export function progressLabel(p: ToolProgress, t: (key: string, vars?: Record<st
 /** The Agent is working but has not emitted the first item yet. */
 export function WorkingRow({ label }: { label: string }) {
   return (
-    <div className="flex min-h-6 items-center gap-2 text-xs" data-testid="working-row">
+    <div className="working-row" data-testid="working-row">
       <span className="working-mark" data-testid="trace-running" aria-hidden />
       <span className="working-shimmer min-w-0 truncate" data-contrast-exempt>{label}</span>
     </div>
@@ -159,7 +159,7 @@ export function WorkedGroup({
             <span className="flex items-center gap-2">
               <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
               <span className="working-shimmer" data-contrast-exempt data-testid="worked-elapsed">{liveLabel}</span>
-              {done > 0 ? <span className="text-gray-500">· {done}</span> : null}
+              {done > 0 ? <span className="worked-count">· {done}</span> : null}
             </span>
           ) : (
             <span>{doneLabel}</span>
@@ -173,7 +173,7 @@ export function WorkedGroup({
                 type="button"
                 onClick={() => setShowAll(true)}
                 data-testid="trace-fold"
-                className="native-tool-row text-gray-500 hover:text-gray-300"
+                className="native-tool-row native-tool-fold"
               >
                 {t("trace.showEarlier", { n: hiddenCount })}
               </button>
@@ -221,7 +221,7 @@ export function WorkedGroup({
                     {args ? <span className="native-tool-target font-mono" data-testid="trace-args" title={args}>{args}</span> : null}
                     {a.audit_error && !isRunning ? (
                       <span
-                        className="shrink-0 text-warn-fg"
+                        className="native-tool-audit"
                         data-testid="trace-audit-gap"
                         title={t("trace.auditGap", { reason: a.audit_error })}
                         aria-label={t("trace.auditGap", { reason: a.audit_error })}

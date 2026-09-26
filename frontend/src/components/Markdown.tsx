@@ -10,7 +10,7 @@ const MarkdownBlocks = memo(function MarkdownBlocks({ text }: { text: string }) 
   const blocks = useMemo(() => parseBlocks(text || ""), [text]);
   const outline = useMemo(() => outlineOf(blocks), [blocks]);
   return (
-    <div className="agent-result-prose min-w-0 break-words text-prose text-gray-200">
+    <div className="agent-result-prose md-root min-w-0 break-words">
       {outline.length > 0 && <Outline entries={outline} />}
       <Blocks blocks={blocks} />
     </div>
@@ -30,8 +30,8 @@ export function outlineOf(blocks: Block[]): Array<{ id: string; text: string; le
 function Outline({ entries }: { entries: Array<{ id: string; text: string; level: number }> }) {
   const { t } = useI18n();
   return (
-    <nav aria-label={t("result.outline")} data-testid="result-outline" className="rounded-lg border border-edge bg-panel px-3 py-2">
-      <div className="mb-1 text-2xs font-medium uppercase tracking-wider text-gray-500">{t("result.outline")}</div>
+    <nav aria-label={t("result.outline")} data-testid="result-outline">
+      <div className="md-outline-label">{t("result.outline")}</div>
       <ul className="space-y-0.5">
         {entries.map((e) => (
           <li key={e.id} className={e.level === 2 ? "pl-3" : ""}>
@@ -43,7 +43,7 @@ function Outline({ entries }: { entries: Array<{ id: string; text: string; level
                 event.preventDefault();
                 revealInScroller(document.getElementById(e.id), "start");
               }}
-              className="text-xs text-gray-500 transition-colors hover:text-accent-text"
+              className="md-outline-link"
             >
               {e.text}
             </a>
@@ -65,7 +65,7 @@ function Blocks({ blocks }: { blocks: Block[] }) {
             const cls = HEADING_CLASS[b.level] ?? HEADING_CLASS[6];
             const Tag = `h${Math.min(Math.max(b.level, 1), 6)}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
             return (
-              <Tag key={i} id={b.id} data-heading-level={b.level} className={`scroll-mt-4 text-gray-100 first:mt-0 ${cls}`}>
+              <Tag key={i} id={b.id} data-heading-level={b.level} className={`md-heading first:mt-0 ${cls}`}>
                 {inline(b.text)}
               </Tag>
             );
@@ -73,10 +73,10 @@ function Blocks({ blocks }: { blocks: Block[] }) {
           case "table":
             return <TableBlock key={i} headers={b.headers} aligns={b.aligns} rows={b.rows} />;
           case "hr":
-            return <hr key={i} className="border-0 border-t border-edge" />;
+            return <hr key={i} className="md-rule" />;
           case "quote":
             return (
-              <blockquote key={i} className="border-l-2 border-edge-strong pl-4 text-prose text-gray-300">
+              <blockquote key={i} className="md-quote">
                 <div className="space-y-1.5"><Blocks blocks={parseBlocks(b.lines.join("\n"))} /></div>
               </blockquote>
             );
@@ -102,13 +102,14 @@ export function headingId(text: string): string {
 
 // v1.14 — display headings carry weight through size and tracking, not
 // boldness: h1/h2 read as editorial voice, h3+ stay semibold working heads.
+// Size and ink live in styles/markdown.css (`md-h*`); the margins stay here.
 const HEADING_CLASS: Record<number, string> = {
-  1: "mt-5 mb-0.5 text-xl font-normal leading-tight tracking-[-0.01em]",
-  2: "mt-5 mb-0.5 text-lg font-medium leading-snug tracking-[-0.01em]",
-  3: "mt-4 mb-0 text-prose font-semibold leading-snug",
-  4: "mt-4 mb-0 text-sm font-semibold",
-  5: "mt-3 mb-0 text-sm font-semibold text-gray-300",
-  6: "mt-3 mb-0 text-xs font-semibold uppercase tracking-[0.06em] text-gray-400",
+  1: "md-h1 mt-5 mb-0.5 font-normal",
+  2: "md-h2 mt-5 mb-0.5 font-medium",
+  3: "md-h3 mt-4 mb-0 font-semibold",
+  4: "md-h4 mt-4 mb-0 font-semibold",
+  5: "md-h5 mt-3 mb-0 font-semibold",
+  6: "md-h6 mt-3 mb-0 font-semibold",
 };
 
 function ListBlock({ block }: { block: ListBlockT }) {
@@ -123,7 +124,7 @@ function ListBlock({ block }: { block: ListBlockT }) {
               aria-checked={it.task}
               aria-disabled
               data-testid="task-marker"
-              className={`mt-1 flex h-[11px] w-[11px] shrink-0 items-center justify-center rounded-sm border ${it.task ? "border-accent bg-accent text-accent-fg" : "border-edge-strong"}`}
+              className="md-task"
             >
               {it.task && (
                 <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" aria-hidden>
@@ -133,7 +134,8 @@ function ListBlock({ block }: { block: ListBlockT }) {
             </span>
           ) : (
             <span
-              className={`select-none leading-[1.75] ${block.ordered ? "min-w-[1.35rem] shrink-0 text-right font-medium tabular-nums text-gray-400" : "w-[0.7rem] shrink-0 text-center text-gray-400 marker-dot"}`}
+              className={block.ordered ? "md-marker" : "md-marker marker-dot"}
+              data-ordered={block.ordered ? "true" : "false"}
               aria-hidden
             >
               {block.ordered ? `${block.start + j}.` : ""}
@@ -154,10 +156,10 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
   const { copied, copy } = useCopy();
   const toks = useMemo(() => highlight(content, lang), [content, lang]);
   return (
-    <div className="group/code overflow-hidden rounded-lg border border-edge bg-code">
-      <div className="flex items-center gap-2 border-b border-edge/70 px-3 py-1.5">
-        <span className="font-mono text-2xs uppercase tracking-wide text-gray-500">{lang || "code"}</span>
-        <button onClick={() => copy(content)} className="ml-auto flex items-center gap-1 text-2xs text-gray-500 transition-colors hover:text-gray-200">
+    <div className="md-code">
+      <div className="md-code-head">
+        <span className="md-code-lang font-mono">{lang || "code"}</span>
+        <button type="button" onClick={() => copy(content)} className="md-code-copy">
           {copied ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
           ) : (
@@ -166,7 +168,7 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
           {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
-      <pre data-testid="code-block" data-highlighted={toks ? "true" : "false"} className="overflow-auto px-3.5 py-3 font-mono text-xs leading-relaxed text-gray-300">
+      <pre data-testid="code-block" data-highlighted={toks ? "true" : "false"} className="md-code-body font-mono">
         {toks
           ? toks.map((tok, i) => tok.c === "plain" ? <Fragment key={i}>{tok.text}</Fragment> : <span key={i} className={TOK_CLASS[tok.c]}>{tok.text}</span>)
           : content}
@@ -242,13 +244,13 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
 
   return (
     <div className="agent-table my-1" data-folded={folded ? "true" : "false"}>
-      <div className="mb-1 flex items-center gap-2 text-2xs text-gray-500">
+      <div className="md-table-meta">
         <span data-testid="table-size">{t("table.size", { rows: rows.length, cols: headers.length })}</span>
         <button
           type="button"
           onClick={copyTsv}
           data-testid="table-copy"
-          className="rounded px-1 py-0.5 transition-colors hover:text-gray-200"
+          className="md-table-copy"
           aria-label={t("common.copy")}
         >
           {copied ? t("common.copied") : t("common.copy")}
@@ -504,13 +506,13 @@ function inline(text: string): ReactNode {
     let tok = m[0];
     let trailing = "";
     if (tok.startsWith("`")) {
-      nodes.push(<code key={k++} className="rounded border border-edge/70 bg-elevated px-[0.3em] py-[0.1em] font-mono text-gray-200">{tok.slice(1, -1)}</code>);
+      nodes.push(<code key={k++} className="md-code-inline font-mono">{tok.slice(1, -1)}</code>);
     } else if (tok.startsWith("***")) {
-      nodes.push(<em key={k++} className="italic"><strong className="font-semibold text-gray-100">{tok.slice(3, -3)}</strong></em>);
+      nodes.push(<em key={k++} className="italic"><strong className="md-strong">{tok.slice(3, -3)}</strong></em>);
     } else if (tok.startsWith("**")) {
-      nodes.push(<strong key={k++} className="font-semibold text-gray-100">{tok.slice(2, -2)}</strong>);
+      nodes.push(<strong key={k++} className="md-strong">{tok.slice(2, -2)}</strong>);
     } else if (tok.startsWith("~~")) {
-      nodes.push(<del key={k++} className="text-gray-500 line-through">{tok.slice(2, -2)}</del>);
+      nodes.push(<del key={k++} className="md-del">{tok.slice(2, -2)}</del>);
     } else if (tok.startsWith("[")) {
       const mm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tok);
       if (mm) nodes.push(link(mm[2], mm[1], k++));
@@ -529,7 +531,7 @@ function inline(text: string): ReactNode {
     } else if (tok.startsWith("_") && (WORDISH.test(text[m.index - 1] ?? "") || WORDISH.test(text[m.index + tok.length] ?? ""))) {
       nodes.push(<Fragment key={k++}>{tok}</Fragment>);
     } else {
-      nodes.push(<em key={k++} className="italic text-gray-200">{tok.slice(1, -1)}</em>);
+      nodes.push(<em key={k++} className="md-em">{tok.slice(1, -1)}</em>);
     }
     if (trailing) nodes.push(<Fragment key={k++}>{trailing}</Fragment>);
     last = m.index + tok.length;
@@ -550,7 +552,7 @@ function link(href: string, label: string, key: number): ReactNode {
         void openExternal(href).then((handled) => void handled);
         if (tauriInvoke()) e.preventDefault();
       }}
-      className="text-accent-text underline decoration-accent-text/40 underline-offset-2 hover:decoration-accent-text"
+      className="md-link"
     >
       {label}
     </a>

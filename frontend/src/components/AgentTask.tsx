@@ -7,7 +7,7 @@ import { useCompactContext } from "../hooks/useCompactContext";
 import { useTaskViewport } from "../hooks/useTaskViewport";
 import { useDirectionStepping } from "../hooks/useDirectionStepping";
 import { turnItemsOf, type TurnItem } from "../lib/turnItems";
-import { openAgentReview } from "../agent/commands";
+import { openAgentReview, toggleAgentArtifacts } from "../agent/commands";
 import { publishPaletteActions } from "../agent/paletteActions";
 import { Button } from "./ui";
 import { useI18n } from "../i18n";
@@ -20,6 +20,7 @@ import {
 } from "../lib/pendingDirection";
 import { TaskBanners } from "./TaskBanners";
 import { useTaskDetails } from "../agent/taskDetails";
+import { asConclusion } from "../lib/conclusion";
 import { TaskStart } from "./TaskStart";
 import { TaskComposerHost, useComposerActions, useTaskComposer } from "./TaskComposerHost";
 import { TaskDocument, lastWorkResult, useTaskItems } from "./TaskDocument";
@@ -85,7 +86,9 @@ export function AgentTask({
       if (!matches(event, "review")) return;
       if (settingsOpen || !localId.current) return;
       event.preventDefault();
-      openAgentReview("evidence");
+      // ⌘I shows or hides the side pane (it opens on the first output the
+      // task has).
+      toggleAgentArtifacts();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -160,8 +163,9 @@ export function AgentTask({
   const isEmpty = items.length === 0 && !pending && !loadError && !loadingTask;
   const lastResult = useMemo(() => lastWorkResult(items), [items]);
   // v3.0 — the inspector (in the shell) offers the Report only with a Result.
-  const { setHasResult } = useTaskDetails();
+  const { setHasResult, setConclusion } = useTaskDetails();
   useEffect(() => { setHasResult(Boolean(lastResult)); }, [lastResult, setHasResult]);
+  useEffect(() => { setConclusion(asConclusion(lastResult?.message.conclusion)); }, [lastResult, setConclusion]);
 
   const lastExec = taskRuntime?.last_execution;
   const offline = sidecarStatus === "disconnected" || sidecarStatus === "error";
@@ -177,7 +181,6 @@ export function AgentTask({
     stop: () => runner.stop(),
     resume: showResume && lastExec ? () => { void runner.resume(lastExec.id); } : undefined,
     focusComposer: composer.focus,
-    prefill: (text: string) => { composer.setText(text); composer.focus(); },
     find: () => setFindOpen(true),
     review: taskId ? () => openAgentReview("evidence") : undefined,
     compact: taskId && !busy ? () => { void compactContext(); } : undefined,
@@ -244,9 +247,9 @@ export function AgentTask({
       ref={workspaceRef}
       data-testid="agent-workspace"
       aria-label="Agent task workspace"
-      className="agent-workspace relative flex h-full min-w-0 flex-1 bg-canvas"
+      className="agent-workspace relative flex h-full min-w-0 flex-1"
     >
-    <main aria-label={taskCopy.workspace} className="flex h-full min-w-0 flex-1 flex-col bg-canvas">
+    <main aria-label={taskCopy.workspace} className="native-task-main flex h-full min-w-0 flex-1 flex-col">
       {loadError ? (
         <div className="flex flex-1 items-center justify-center px-6 py-10">
           <div className="native-banner w-full max-w-md" data-tone="danger">

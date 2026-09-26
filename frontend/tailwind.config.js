@@ -88,16 +88,12 @@ export default {
       // without them is most of the way to still looking unset.
       fontSize: {
         // v3.0 — five sizes, each with one job: 11 label · 13 interface ·
-        // 15 reading · 20 conclusion · 28 page title. `xs`, `sm` and `base`
-        // are one size (13, the interface) and `lg` is the reading size set
-        // as a title (weight does the rest): hierarchy comes from the text
-        // ladder and weight, never from 1px steps nobody can see.
+        // 15 reading · 20 conclusion · 28 page title. v3.1 dropped the
+        // `xs` / `base` / `lg` aliases: five sizes, five names. Hierarchy
+        // comes from the text ladder and weight, never from 1px steps.
         "2xs": ["0.6875rem", { lineHeight: "1rem", letterSpacing: "0.01em" }],     // 11px — labels, meta, badges, keycaps
-        xs: ["0.8125rem", { lineHeight: "1.25rem", letterSpacing: "-0.003em" }],   // 13px — interface
         sm: ["0.8125rem", { lineHeight: "1.25rem", letterSpacing: "-0.003em" }],   // 13px — interface
-        base: ["0.8125rem", { lineHeight: "1.25rem", letterSpacing: "-0.003em" }], // 13px — interface
         prose: ["0.9375rem", { lineHeight: "1.7", letterSpacing: "-0.006em" }],    // 15px — reading
-        lg: ["0.9375rem", { lineHeight: "1.5rem", letterSpacing: "-0.008em" }],    // 15px — titles in the reading size
         xl: ["1.25rem", { lineHeight: "1.75rem", letterSpacing: "-0.014em" }],     // 20px — the conclusion
         "2xl": ["1.75rem", { lineHeight: "2.125rem", letterSpacing: "-0.022em" }], // 28px — page titles, the greeting
       },

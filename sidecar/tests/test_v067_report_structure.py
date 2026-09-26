@@ -96,7 +96,18 @@ def test_the_headings_are_exactly_the_ones_this_module_writes():
         runs=[], triage_cases=[], agent_memory=[], messages=[], activity=[],
         audit_events=[], attached_files=[],
     )
-    assert _headings(_render()) == _headings(clean)
+    # v3.1 — sections with nothing behind them are not written, so compare
+    # against the module's own vocabulary: every heading is one it authors,
+    # and none appears twice.
+    from app.sessions.session_report import _COPY
+    own = {f"## {v}" for k, v in _COPY["en"].items()
+           if k in {"goal", "conclusion", "findings", "next_steps", "investigation", "coverage",
+                    "facts", "tools", "analyses", "attached", "triage", "actions", "cost",
+                    "audit", "safety"}}
+    headings = _headings(_render())
+    assert set(headings) <= own, set(headings) - own
+    assert len(headings) == len(set(headings)), headings
+    assert set(_headings(clean)) <= set(headings)
 
 
 @pytest.mark.parametrize("field,payload", [
@@ -163,7 +174,7 @@ def test_an_ordinary_multi_line_finding_still_reads_as_one_bullet():
                        "text": "Bucket acme-logs is publicly readable.\nThe policy grants "
                                "s3:GetObject to *.\nRemediation: scope the principal."}],
     )
-    body = md.split("## Agent-recorded findings")[1].split("## ")[0]
+    body = md.split("## Findings")[1].split("## ")[0]
     bullets = [ln for ln in body.splitlines() if ln.startswith("- ")]
     assert len(bullets) == 1, bullets
     assert "Remediation: scope the principal." in bullets[0]

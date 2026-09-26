@@ -205,12 +205,14 @@ These link deterministic/auditable executions to a Task. The existence of these 
 ### Task Evidence / Report / action handoff
 
 ```text
-GET  /sessions/{session_id}/report
+GET  /sessions/{session_id}/report?lang=en|zh
 POST /sessions/{session_id}/datasets/upload
 GET  /sessions/{session_id}/error-triage
 ```
 
-- report generation/fetch produces a durable Markdown Artifact (since v2.2 in Task vocabulary: *Task report*, *Goal*, *Analyses*, Directions; no linked-runs appendix);
+- report generation/fetch produces a durable Markdown Artifact (since v2.2 in Task vocabulary: *Task report*, *Goal*, *Analyses*, Directions; no linked-runs appendix), returned as `{session_id, format: "markdown", content}`, audited as `session.report` and indexed once per task in `task_artifacts`;
+- `lang` (v3.1, optional query parameter) selects the language of the words the report authors — `en` (default) or `zh` (any value starting with `zh`); the frontend passes the UI language (`api/tasks.ts getTaskReport(id, lang)`). The Agent's own words (Directions, answers, conclusions, findings) are reproduced as recorded, never translated;
+- since v3.1 the report reads conclusion first: title + one meta line (Directions · tool calls · when) → Goal (the task goal, else the first Direction) → Conclusion (the latest recorded `record_conclusion` answer; without one a note plus the latest answer excerpt; with no Work Result *No Work Result yet*) → Findings (one list: the conclusion's, then those the Agent recorded while working, then the analyses', deduplicated on text, most severe first, severity words localized) → Next steps (the conclusion's) → Investigation (per Direction) → Coverage and gaps (grounded in · not verified · left open · limitations, derived from the tool trace and memory) → What the Agent established → Tools run → Analyses → Attached evidence → Error triage → Rule-derived suggestions → Usage → Audit trail → Safety (always). A section with nothing behind it is not written. The content stays redacted, bounded and one-line-sanitized: no raw rows, secrets or chain-of-thought;
 - `POST …/actions/prepare` is removed in v1.12 (there are no next-action proposals);
 - dataset upload attaches local evidence to the Task for bounded local analysis;
 - error-triage cases can be associated with the Task.

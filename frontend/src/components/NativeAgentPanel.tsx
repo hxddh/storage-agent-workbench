@@ -4,7 +4,7 @@ import { saveTextFile } from "../config";
 import { isNativeShell, openNativeFolder } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
-import { Button } from "./ui";
+import { Button, StatusDot } from "./ui";
 import { Icon } from "./icons";
 
 const MCP_ENV = "STORAGE_AGENT_ENABLE_MCP=1";
@@ -121,8 +121,8 @@ export function NativeAgentPanel() {
       <section>
         <div className="mb-3 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-100">{t("prov.skillsTitle")}</h2>
-            <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("prov.skillsHint")}</p>
+            <h2 className="settings-pane-subtitle">{t("prov.skillsTitle")}</h2>
+            <p className="native-settings-hint">{t("prov.skillsHint")}</p>
           </div>
           <Button onClick={() => void openFolder()} data-testid="skills-open-folder">
             <Icon name="file" size={14} /> {copy.openFolder}
@@ -131,33 +131,33 @@ export function NativeAgentPanel() {
         {skillsLoading ? (
           <div className="skeleton h-16 w-full" aria-hidden />
         ) : skills.length === 0 ? (
-          <p className="text-xs text-gray-500">{copy.noSkills}</p>
+          <p className="settings-pane-empty-text">{copy.noSkills}</p>
         ) : (
           <ul className="native-settings-list" data-testid="skills-list">
             {skills.map((skill) => (
               <li key={skill.name}>
                 <div className="min-w-0">
-                  <div className="truncate text-sm text-gray-100">{skill.name}</div>
-                  <div className="text-xs leading-relaxed text-gray-500">{skill.description}</div>
+                  <div className="settings-pane-name truncate">{skill.name}</div>
+                  <div className="settings-pane-desc">{skill.description}</div>
                 </div>
                 <span className="native-settings-tag">{skill.source === "user" ? copy.user : copy.bundled}</span>
               </li>
             ))}
           </ul>
         )}
-        {userDir && !isNativeShell() ? <p className="mt-2 font-mono text-2xs text-gray-500">{userDir}</p> : null}
+        {userDir && !isNativeShell() ? <p className="settings-pane-path mt-2">{userDir}</p> : null}
       </section>
 
       <section data-testid="settings-instructions">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-gray-100">{t("settings.instructions")}</h2>
-            <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("settings.instructionsHint")}</p>
+            <h2 className="settings-pane-subtitle">{t("settings.instructions")}</h2>
+            <p className="native-settings-hint">{t("settings.instructionsHint")}</p>
             {instructions ? (
-              <p className="mt-2 text-xs text-gray-300" data-testid="instructions-status" data-loaded={instructions.loaded ? "true" : "false"}>
+              <p className="settings-pane-status" data-testid="instructions-status" data-loaded={instructions.loaded ? "true" : "false"}>
                 {instructions.loaded ? t("settings.instructionsLoaded", { chars: instructions.chars }) : t("settings.instructionsMissing")}
-                {instructions.path ? <span className="ml-2 font-mono text-2xs text-gray-500">{instructions.path}</span> : null}
-                {instructions.error ? <span className="ml-2 text-warn-fg">{instructions.error}</span> : null}
+                {instructions.path ? <span className="settings-pane-path ml-2">{instructions.path}</span> : null}
+                {instructions.error ? <span className="settings-pane-issue ml-2"><StatusDot tone="warn" />{instructions.error}</span> : null}
               </p>
             ) : null}
           </div>
@@ -170,8 +170,8 @@ export function NativeAgentPanel() {
       <section>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-100">{t("prov.observability")}</h2>
-            <p className="mt-1 text-xs leading-relaxed text-gray-500">{copy.exportHint}</p>
+            <h2 className="settings-pane-subtitle">{t("prov.observability")}</h2>
+            <p className="native-settings-hint">{copy.exportHint}</p>
           </div>
           <Button onClick={() => void exportTrace()} disabled={exporting} data-testid="observability-export">
             {exporting ? copy.exporting : copy.exportTrace}
@@ -180,20 +180,20 @@ export function NativeAgentPanel() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold text-gray-100">{t("prov.mcpTitle")}</h2>
-        <p className="mt-1 mb-3 text-xs leading-relaxed text-gray-500">{t("prov.mcpHint")}</p>
+        <h2 className="settings-pane-subtitle">{t("prov.mcpTitle")}</h2>
+        <p className="native-settings-hint">{t("prov.mcpHint")}</p>
         {mcp ? (
-          <div className="native-settings-card" data-enabled={mcp.enabled ? "true" : "false"} data-testid="mcp-status">
-            <div className="flex items-center gap-2 text-sm text-gray-100">
+          <div className="native-settings-card mt-3" data-enabled={mcp.enabled ? "true" : "false"} data-testid="mcp-status">
+            <div className="settings-pane-card-head">
               <span className="native-settings-dot" aria-hidden />
               {mcp.enabled ? copy.enabled : copy.disabled}
-              <span className="text-gray-500">· {mcp.allowed_tools.length} {copy.tools}</span>
+              <span className="settings-pane-muted">· {mcp.allowed_tools.length} {copy.tools}</span>
             </div>
-            <p className="mt-1 text-xs leading-relaxed text-gray-500">{mcp.note}</p>
+            <p className="settings-pane-desc">{mcp.note}</p>
             {!mcp.enabled ? (
               <div className="mt-3">
-                <div className="mb-1.5 text-xs text-gray-500">{copy.mcpHow}</div>
-                <div className="flex items-center gap-2">
+                <div className="settings-pane-meta">{copy.mcpHow}</div>
+                <div className="mt-1.5 flex items-center gap-2">
                   <code className="native-settings-code">{MCP_ENV}</code>
                   <button type="button" className="native-ghost-action" onClick={copyEnv} aria-label={t("common.copy")} data-testid="mcp-copy-env">
                     <Icon name="copy" size={14} /> {t("common.copy")}
@@ -203,7 +203,7 @@ export function NativeAgentPanel() {
             ) : null}
           </div>
         ) : (
-          <p className="text-xs text-gray-500">{copy.unavailable}</p>
+          <p className="settings-pane-empty-text mt-3">{copy.unavailable}</p>
         )}
       </section>
     </div>

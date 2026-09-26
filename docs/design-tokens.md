@@ -1,6 +1,6 @@
 # Design tokens
 
-> **Storage Agent v3.0.0 — Design system v3.** Presentation contract for the
+> **Storage Agent v3.1.0 — Design system v3, finished.** Presentation contract for the
 > native Agent Task window. Tokens do not invent runtime state, progress, or
 > capabilities.
 
@@ -12,6 +12,12 @@ introduce ad-hoc px font sizes, corner radii, z-index numbers, or
 `transition-all`; controls come from the component library instead of being
 restyled per surface.
 
+v3.1 finishes the system: no component (`*.tsx`) carries a raw colour or type
+utility any more (guarded by `frontend/src/components/v310.test.tsx`);
+surfaces compose `components/ui.tsx` and semantic classes defined in the
+stylesheets below; the type aliases are gone (five sizes, five names); and
+`.ui-scrim` is the one scrim.
+
 ## Source of truth
 
 | Layer | File |
@@ -22,8 +28,9 @@ restyled per surface.
 | Component styles (`ui-*` only), menus, the activity bar, the `ui-rise-in` / `ui-pop-in` keyframes | `frontend/src/agent/native-components.css` |
 | Window, sidebar, title bar, side pane, Settings | `frontend/src/agent/native-shell.css` |
 | Result, outputs bar, Work log turns, tool rows, tables, figures, Composer, banners, empty start, the `reveal-in` keyframe | `frontend/src/agent/native-document.css` |
+| Surface stylesheets (v3.1), imported after `agent/native-*.css`: rendered Markdown · Settings panes · side-pane outputs · palette and sheets | `frontend/src/styles/markdown.css` · `settings-panes.css` · `artifacts.css` · `overlays.css` |
 | Figures (`ChartFrame`, marks, legend, tooltip) | `frontend/src/viz/marks.tsx` |
-| Enforcement | `frontend/src/design-tokens.test.ts`, `frontend/src/theme.tokens.test.ts`, `frontend/src/agent/architecture.test.ts`, `e2e/contrast.spec.ts` |
+| Enforcement | `frontend/src/design-tokens.test.ts`, `frontend/src/theme.tokens.test.ts`, `frontend/src/agent/architecture.test.ts`, `frontend/src/components/v310.test.tsx`, `e2e/contrast.spec.ts` |
 
 Both themes are first-class. Dark is the default; light is not an inversion of
 foregrounds on a white page. Every text step (`--gray-100` … `--gray-500`)
@@ -62,7 +69,9 @@ never for decoration, headings or status.
 `--danger` / `--warn` / `--success` with matching `-bg` and `-border`;
 `--warn-fg` for warning text; `--danger-bg-strong` for an error slab. Status
 is carried by a dot (`StatusDot`) or a badge (`Badge` tone) — never coloured
-prose or a coloured number. Severity badges read High / Medium / Low / Info.
+prose or a coloured number (v3.1 carries this into settings test results, the
+cloud tester, S3 error cards, call detail and tool results: a dot or badge
+beside neutral text). Severity badges read High / Medium / Low / Info.
 *Needs attention* is a warn dot. Status colours are never series colours.
 
 ### Figures
@@ -70,8 +79,13 @@ prose or a coloured number. Severity badges read High / Medium / Low / Info.
 `--viz-1` … `--viz-6` is a categorical order — indigo, orange, aqua, gold,
 magenta, blue — validated for CVD and normal-vision separation in both themes
 (dark `#6c6af2 #d95926 #199e70 #c98500 #d55181 #3987e5`; light
-`#4f46e5 #eb6834 #1baf7a #eda100 #e87ba4 #2a78d6`). Series take them in order;
-text in figures uses ink tokens, never a series colour.
+`#4f46e5 #e05a26 #11906a #ad7d00 #d24e86 #2a78d6`). In v3.1 the light theme's
+orange, aqua, gold and magenta (`--viz-2…5`, formerly
+`#eb6834 #1baf7a #eda100 #e87ba4`) were stepped darker in the same hues so
+every series clears 3:1 on white and on the panel surfaces; CVD separation and
+the normal-vision floor were re-validated and all hard checks pass in both
+themes. Series take them in order; text in figures uses ink tokens, never a
+series colour. Inventory ranked bars align to the top of their column.
 
 ### Code
 
@@ -82,14 +96,17 @@ Never use a raw palette step (`red-950` or similar). Meaning is a token.
 
 ## Type
 
-Five sizes, each with one job. Older token names remain as aliases so nothing
-silently loses its size.
+Five sizes, each with one job, and (since v3.1) five names. The v3.0 aliases
+`--text-xs`, `--text-base` and `--text-lg` (and the Tailwind `xs` / `base` /
+`lg` sizes) are removed; use the names below (Tailwind `text-2xs` · `text-sm`
+· `text-prose` · `text-xl` · `text-2xl`, inside stylesheets rather than
+component class lists).
 
 | Token | Size / leading | Use |
 | --- | --- | --- |
 | `--text-2xs` | 11px / 16px | labels (`SectionLabel`), meta, key caps, badges |
-| `--text-xs` (= `--text-sm`, `--text-base`) | 13px / 20px | interface: sidebar rows, title bar, controls, tool rows, Composer |
-| `--text-prose` (= `--text-lg`) | 15px / 1.7 | reading: Work Result, Evidence, Report |
+| `--text-sm` | 13px / 20px | interface: sidebar rows, title bar, controls, tool rows, Composer |
+| `--text-prose` | 15px / 1.7 | reading: Work Result, Evidence, Report |
 | `--text-xl` | 20px / 28px | the conclusion's answer, the Result's focal point |
 | `--text-2xl` | 28px / 34px | page title: the empty-start greeting (the page's one `<h1>`) |
 
@@ -158,7 +175,9 @@ Easing: `--ease-out` `cubic-bezier(0.2, 0.8, 0.2, 1)`, `--ease-emphasized`
 Things that open in place — finding details, folded answers, worked rows, new
 live items — ease in with the `reveal-in` keyframe. Menus pop in
 (`ui-pop-in`). **Sheets rise without fading** (`ui-rise-in`): an opaque
-surface never shows what is behind it.
+surface never shows what is behind it. `.ui-scrim` (`--scrim`) is the one
+scrim: it fades in as a sibling of the opaque sheet, never as its parent, so
+the sheet itself does not fade.
 
 `prefers-reduced-motion` zeros animation and transition durations, stops the
 pulsing dot and the activity bar, and replaces skeletons and shimmer with

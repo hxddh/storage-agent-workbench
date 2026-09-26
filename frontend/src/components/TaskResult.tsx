@@ -1,5 +1,7 @@
 import { memo, useState, type ReactNode } from "react";
-import type { Conclusion, ConclusionFinding, TaskMessage } from "../types";
+import type { Conclusion, TaskMessage } from "../types";
+import { unifyFindings, type UnifiedFinding } from "../lib/findings";
+import { ProvenanceLink } from "../viz/ProvenanceMark";
 import { useCopy } from "../hooks/useCopy";
 import { useI18n } from "../i18n";
 import { asConclusion } from "../lib/conclusion";
@@ -11,12 +13,13 @@ import { Badge, SectionLabel, type Tone } from "./ui";
 
 const SEVERITY_TONE: Record<string, Tone> = { high: "danger", medium: "warn", low: "neutral", info: "outline" };
 
-function FindingRow({ finding }: { finding: ConclusionFinding }) {
+function FindingRow({ finding }: { finding: UnifiedFinding }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const label = severityLabel(finding.severity, t);
   // v3.0 — severity is a labelled badge (colour carries it, the word says
-  // it), the title is the row; detail opens in place.
+  // it), the title is the row; detail opens in place. v3.1 — the finding's
+  // evidence link sits at the row's end when the work recorded one.
   const head = (
     <>
       <Badge tone={SEVERITY_TONE[finding.severity] ?? "neutral"} className="result-finding-badge" data-severity={finding.severity}>{label}</Badge>
@@ -24,17 +27,41 @@ function FindingRow({ finding }: { finding: ConclusionFinding }) {
     </>
   );
   return (
-    <li className="result-finding" data-severity={finding.severity} data-testid="result-finding">
-      {finding.detail ? (
-        <button type="button" className="result-finding-head" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-          {head}
-          <span className="result-finding-chevron" aria-hidden><Icon name="chevron" size={14} /></span>
-        </button>
-      ) : (
-        <div className="result-finding-head">{head}</div>
-      )}
+    <li className="result-finding" data-severity={finding.severity} data-source={finding.source} data-testid="result-finding">
+      <div className="result-finding-row">
+        {finding.detail ? (
+          <button type="button" className="result-finding-head" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+            {head}
+            <span className="result-finding-chevron" aria-hidden><Icon name="chevron" size={14} /></span>
+          </button>
+        ) : (
+          <div className="result-finding-head">{head}</div>
+        )}
+        {finding.provenance ? (
+          <ProvenanceLink finding={finding.provenance} />
+        ) : finding.provenance === undefined ? null : (
+          // Nothing recorded behind it: say so, rather than leave a blank
+          // that reads like a missing control.
+          <span className="provenance-none" data-testid="finding-no-evidence">{t("findings.noChainShort")}</span>
+        )}
+      </div>
       {open && finding.detail ? <p className="result-finding-detail">{finding.detail}</p> : null}
     </li>
+  );
+}
+
+/** The one findings list (v3.1): the conclusion's findings joined by those
+ * the work recorded, most severe first. */
+export function FindingsBlock({ findings }: { findings: UnifiedFinding[] }) {
+  const { t } = useI18n();
+  if (findings.length === 0) return null;
+  return (
+    <div className="result-block">
+      <SectionLabel count={findings.length}>{t("result.findings")}</SectionLabel>
+      <ul className="result-findings" data-testid="result-findings">
+        {findings.map((finding) => <FindingRow key={finding.id} finding={finding} />)}
+      </ul>
+    </div>
   );
 }
 
@@ -46,23 +73,19 @@ function FindingRow({ finding }: { finding: ConclusionFinding }) {
  */
 export function ConclusionView({
   conclusion,
+  findings,
   onNextStep,
 }: {
   conclusion: Conclusion;
+  /** The unified list; defaults to the conclusion's own findings. */
+  findings?: UnifiedFinding[];
   onNextStep?: (text: string) => void;
 }) {
   const { t } = useI18n();
   return (
     <div className="result-conclusion" data-testid="result-conclusion">
       <p className="result-answer" data-testid="result-answer">{conclusion.answer}</p>
-      {conclusion.findings.length > 0 ? (
-        <div className="result-block">
-          <SectionLabel count={conclusion.findings.length}>{t("result.findings")}</SectionLabel>
-          <ul className="result-findings" data-testid="result-findings">
-            {conclusion.findings.map((finding, index) => <FindingRow key={index} finding={finding} />)}
-          </ul>
-        </div>
-      ) : null}
+      <FindingsBlock findings={findings ?? unifyFindings(conclusion, [])} />
       {conclusion.next_steps.length > 0 ? (
         <div className="result-block">
           <SectionLabel>{t("result.nextSteps")}</SectionLabel>
@@ -122,11 +145,14 @@ export const TaskResult = memo(function TaskResult({
   direction,
   figures,
   details,
+  findings,
   onNextStep,
 }: {
   message: TaskMessage;
   direction: string | null;
   figures?: ReactNode;
+  /** v3.1 — the unified findings (conclusion + work). */
+  findings?: UnifiedFinding[];
   details?: ReactNode;
   onNextStep?: (text: string) => void;
 }) {
@@ -147,13 +173,18 @@ export const TaskResult = memo(function TaskResult({
           <span className="task-result-meta" data-testid="result-grounding">{grounding.join(" · ")}</span>
         ) : null}
       </header>
-      {conclusion ? <ConclusionView conclusion={conclusion} onNextStep={onNextStep} /> : null}
+      {conclusion ? <ConclusionView conclusion={conclusion} findings={findings} onNextStep={onNextStep} /> : null}
       {text.trim() ? (
         <article className="turn-agent" data-testid="work-result" data-work-result="true" data-streaming="false" aria-label={t("turn.answerLabel")}>
           {conclusion ? <div className="result-full-label"><SectionLabel>{t("result.fullAnswer")}</SectionLabel></div> : null}
           <div className="turn-answer" data-testid="turn-answer">
             <Markdown text={text} />
           </div>
+          {/* No recorded conclusion: the answer stands alone, and what the
+              work recorded follows it — records, never guesses. */}
+          {!conclusion && findings?.length ? (
+            <div className="result-recorded-findings" data-testid="result-recorded-findings"><FindingsBlock findings={findings} /></div>
+          ) : null}
           {figures}
           <div className="native-row-actions">
             <CopyResult text={text} />

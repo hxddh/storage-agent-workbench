@@ -211,7 +211,7 @@ export function CommandPalette({
   return (
     <div className="fixed inset-0 z-palette flex items-start justify-center pt-[16vh]" onClick={onClose}>
       {/* The scrim fades as a sibling: an opaque sheet must never inherit a fade. */}
-      <div className="absolute inset-0 bg-scrim animate-fade-in" aria-hidden />
+      <div className="ui-scrim" aria-hidden />
       <div
         ref={trapRef}
         role="dialog"

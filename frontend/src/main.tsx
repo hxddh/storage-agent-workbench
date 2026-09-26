@@ -9,6 +9,10 @@ import "./index.css";
 import "./agent/native-components.css";
 import "./agent/native-shell.css";
 import "./agent/native-document.css";
+import "./styles/markdown.css";
+import "./styles/settings-panes.css";
+import "./styles/artifacts.css";
+import "./styles/overlays.css";
 
 applyTheme(initialTheme());
 

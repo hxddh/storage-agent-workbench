@@ -270,6 +270,9 @@ test.describe("Escape with two overlays open", () => {
 
     await page.keyboard.press("Control+i");
     await expect(pane).toBeVisible();
+    // One keystroke can arrive twice (keydown + native menu); the window
+    // collapses repeats inside 250 ms, so a second, deliberate press waits.
+    await page.waitForTimeout(300);
     await page.keyboard.press("Control+i");
     await expect(pane).toHaveCount(0);
     await expect(page.getByTestId("agent-composer")).toBeVisible();

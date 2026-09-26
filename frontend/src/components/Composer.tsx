@@ -266,7 +266,7 @@ export function Composer({
           <Icon name="file" size={14} />
           <strong>{attached.name}</strong>
           {uploading ? (
-            <span className="ml-auto flex items-center gap-2 text-gray-500">
+            <span className="native-composer-aside">
               <span className="skeleton h-3 w-10" aria-hidden />
               {copy.uploading(attached.name)}
             </span>

@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import type { TaskProvenance } from "../viz/types";
+import type { Conclusion } from "../types";
 import type { ArtifactKind, ArtifactSelection } from "./model";
 import type { ArtifactsProjection } from "./useAgentTaskProjection";
 
@@ -21,6 +22,10 @@ export type TaskDetailsState = {
   /** The document has a Work Result (so the task has a Report). */
   hasResult: boolean;
   setHasResult: (value: boolean) => void;
+  /** v3.1 — the latest recorded conclusion, so the Evidence pane lists the
+   * same findings the Result does. */
+  conclusion: Conclusion | null;
+  setConclusion: (value: Conclusion | null) => void;
 };
 
 const EMPTY_PROJECTION: ArtifactsProjection = {
@@ -37,6 +42,8 @@ export const TaskDetailsContext = createContext<TaskDetailsState>({
   close: () => undefined,
   hasResult: false,
   setHasResult: () => undefined,
+  conclusion: null,
+  setConclusion: () => undefined,
 });
 
 export function useTaskDetails(): TaskDetailsState {

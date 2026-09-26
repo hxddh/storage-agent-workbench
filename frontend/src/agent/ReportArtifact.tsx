@@ -3,6 +3,7 @@ import { Markdown } from "../components/Markdown";
 import { saveTextFile } from "../config";
 import { useI18n } from "../i18n";
 import { useAgentCopy } from "./agentCopy";
+import { Button } from "../components/ui";
 
 function browserDownload(content: string) {
   const blob = new Blob([content], { type: "text/markdown" });
@@ -54,14 +55,14 @@ export function ReportArtifact({
   return (
     <article className="agent-review-artifact" data-testid="report-artifact">
       {report && !loading && !error ? (
-        <div className="mb-4 flex items-center gap-2" aria-label={copy.report.actions}>
+        <div className="report-actions" aria-label={copy.report.actions}>
           <strong className="sr-only" data-testid="report-artifact-title">{copy.report.title}</strong>
-          <button type="button" className="text-2xs text-gray-400 hover:text-gray-100" onClick={() => void copyReport()} data-testid="report-copy">
+          <Button variant="ghost" size="sm" icon="copy" onClick={() => void copyReport()} data-testid="report-copy">
             {copied ? copy.report.copied : t("common.copy")}
-          </button>
-          <button type="button" className="text-2xs text-gray-400 hover:text-gray-100" onClick={() => void save()} data-testid="report-save" title={savedPath ?? undefined}>
+          </Button>
+          <Button variant="ghost" size="sm" icon="download" onClick={() => void save()} data-testid="report-save" title={savedPath ?? undefined}>
             {savedPath ? copy.report.savedTo(savedPath) : copy.report.download}
-          </button>
+          </Button>
         </div>
       ) : (
         <strong className="sr-only" data-testid="report-artifact-title">{copy.report.title}</strong>

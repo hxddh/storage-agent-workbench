@@ -4,11 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
-## [Unreleased]
+## [3.1.0] - 2026-09-26
+
+_Outputs made real — the report, the findings and the side pane now say what the Task actually recorded, and the design system is finished. No migration (head stays **031**); the runtime, the security floor and the single submit path are unchanged._ See `docs/releases/3.1.0.md`.
+
+### Changed
+
+- **Task report rebuilt** (`sidecar/app/sessions/session_report.py`) — conclusion first: title + one meta line (Directions · tool calls · when) → Goal → Conclusion (the latest recorded `record_conclusion` answer; otherwise a note plus the latest answer excerpt; *No Work Result yet* when there is none) → one Findings list (the conclusion's, then those recorded while working, then the analyses', deduplicated on text, most severe first) → Next steps → Investigation (per Direction) → Coverage and gaps → What the Agent established → Tools run → Analyses → Attached evidence → Error triage → Rule-derived suggestions → Usage → Audit trail → Safety (always). A section with nothing behind it is not written. Still redacted, bounded and one-line-sanitized.
+- **Report language** — `GET /sessions/{session_id}/report?lang=en|zh` (optional, English by default); the frontend passes the UI language (`api/tasks.ts getTaskReport(id, lang)`). Only the words the report authors are localized; the Agent's own words are reproduced as recorded.
+- **One findings list** (`frontend/src/lib/findings.ts unifyFindings`) — the Result and the Evidence tab read the recorded conclusion's findings joined by those recorded while the Agent worked, deduplicated on their words, most severe first; a conclusion finding the work also recorded takes that record's id. Each finding ends in an **Evidence** link when a chain was recorded (hover previews the source call, click opens the side pane on it), else *No direct evidence*. A Result without a recorded conclusion shows the answer, then the recorded findings. The Evidence count equals the list (+ attached files); the tab reads Findings → Current understanding → Attached evidence.
+- **⌘I toggles the side pane**, opening on the first output the Task has; a selection with nothing behind it settles on the output the pane shows, so the Report loads.
+- **Truthful chrome** — the model chip reads **Runtime offline** (danger dot, not clickable) when the runtime cannot be reached, instead of *Set up a model…*.
+- **Design system finished** — no component (`*.tsx`) carries a raw colour or type utility (guard in `components/v310.test.tsx`); surface stylesheets live in `frontend/src/styles/` (`markdown.css`, `settings-panes.css`, `artifacts.css`, `overlays.css`), imported after `agent/native-*.css`; `.ui-scrim` is the one scrim; status reads as a dot or badge beside neutral text in settings test results, the cloud tester, S3 error cards, call detail and tool results.
+- **Figures** — the light theme's `--viz-2 #e05a26`, `--viz-3 #11906a`, `--viz-4 #ad7d00`, `--viz-5 #d24e86` are stepped darker in the same hues so every series clears 3:1 on white and panel surfaces; CVD and normal-vision checks re-validated in both themes. Inventory ranked bars align to the top of their column.
+
+### Removed
+
+- The type aliases `--text-xs`, `--text-base`, `--text-lg` (and Tailwind `xs` / `base` / `lg`): five sizes, five names.
+- The separate list of provenance marks under the figures (each finding carries its own Evidence link).
+- The v1.16 palette `prefill` action (unused since v3.0).
 
 ### Fixed
 
-- **macOS release packaging** — `scripts/sign-macos-app-bundle.sh` retries `hdiutil create` / `attach` with backoff (detaching a stale volume between attempts): hosted macOS runners intermittently answer "Resource busy" while `diskimages-helper` still holds the image Tauri just built.
+- ⌘I on a Task without Evidence showed *No report has been generated*.
+
+### Tests
+
+- `sidecar/tests/test_v310_report.py`; `frontend/src/components/v310.test.tsx`; the documentation contract moves to v3.1.0.
 
 ## [3.0.0] - 2026-09-25
 
@@ -30,6 +52,10 @@ _Design system v3 / Refined native — a full UI redesign on an unchanged runtim
 
 - The palette's engine catalog (*Ask the Agent to…*, v1.16).
 - Detail rows that expanded in place under the Result (now the side pane).
+
+### Fixed
+
+- **macOS release packaging** — `scripts/sign-macos-app-bundle.sh` retries `hdiutil create` / `attach` with backoff (detaching a stale volume between attempts): hosted macOS runners intermittently answer "Resource busy" while `diskimages-helper` still holds the image Tauri just built.
 
 ## [2.2.0] - 2026-09-25
 

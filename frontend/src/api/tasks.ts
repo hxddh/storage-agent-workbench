@@ -43,8 +43,11 @@ export const updateTask = (
 export const deleteTask = (id: string) =>
   request<void>(`/sessions/${id}`, { method: "DELETE" });
 
-export const getTaskReport = (id: string) =>
-  request<{ session_id: string; format: string; content: string }>(`/sessions/${id}/report`);
+/** v3.1 — the report is written in the reader's language (`en` | `zh`). */
+export const getTaskReport = (id: string, lang?: string) =>
+  request<{ session_id: string; format: string; content: string }>(
+    `/sessions/${id}/report${lang ? `?lang=${encodeURIComponent(lang)}` : ""}`,
+  );
 
 /** One page of Task messages, oldest-first, ending just before `before`.
  * Omit `before` for the newest page. `has_more` reports whether older messages

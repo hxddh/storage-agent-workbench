@@ -10,11 +10,10 @@ import { fmtElapsed } from "../hooks/useElapsed";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
 import type { useTaskViewport } from "../hooks/useTaskViewport";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
-import { ProvenanceMark } from "../viz/ProvenanceMark";
 import { AgentTurn, UserTurn } from "./TranscriptTurn";
 import { TriageCard } from "./AgentRuntimeArtifacts";
 import { FindBar } from "./FindBar";
-import { TaskDetails } from "./TaskDetails";
+import { TaskDetails, taskFindings } from "./TaskDetails";
 import { ConclusionView, TaskResult } from "./TaskResult";
 import { asConclusion } from "../lib/conclusion";
 import { useTaskCopy } from "./taskCopy";
@@ -162,18 +161,19 @@ export function TaskDocument({
   const items = useMemo(() => (liveRow ? allItems.filter((item) => item !== liveRow) : allItems), [allItems, liveRow]);
   const lastResult = useMemo(() => lastWorkResult(items), [items]);
   const figuresFor = (item: Extract<TaskItem, { kind: "message" }>) =>
-    item.id === lastResult?.id && (hasFigures || provenance?.findings.length) ? (
+    item.id === lastResult?.id && hasFigures ? (
       <section className="task-analysis-figures" data-testid="task-analysis-figures">
-        {hasFigures ? <AnalysisFigures provenance={provenance} /> : null}
-        {provenance?.findings.length ? (
-          <div className={hasFigures ? "mt-4 space-y-1" : "space-y-1"}>
-            {provenance.findings.slice(0, 8).map((finding) => (
-              <ProvenanceMark key={finding.id} finding={finding} />
-            ))}
-          </div>
-        ) : null}
+        <AnalysisFigures provenance={provenance} />
       </section>
     ) : undefined;
+  // v3.1 — one findings list for the Result: the recorded conclusion joined
+  // by what the work recorded, each with its evidence link.
+  const details = useTaskDetails();
+  const resultConclusion = useMemo(() => asConclusion(lastResult?.message.conclusion), [lastResult]);
+  const resultFindings = useMemo(
+    () => taskFindings({ ...details, conclusion: resultConclusion }),
+    [details, resultConclusion],
+  );
 
   // --- Find (⌘F) over the reading column ---
   const [findQuery, setFindQuery] = useState("");
@@ -355,7 +355,7 @@ export function TaskDocument({
                 ) : null}
                 {!hideLiveWorkResult ? (
                   stalled ? (
-                    <div className="flex items-center gap-2 text-xs text-gray-400" data-testid="task-reconnecting" role="status">
+                    <div className="task-quiet-line" data-testid="task-reconnecting" role="status">
                       <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
                       {t("task.reconnecting")}
                     </div>
@@ -376,7 +376,7 @@ export function TaskDocument({
             ) : null}
 
             {!pending && remoteExecution?.running ? (
-              <div data-testid="remote-execution" className="flex items-center gap-2 text-xs text-gray-400">
+              <div data-testid="remote-execution" className="task-quiet-line">
                 <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
                 {copy.remoteExecution(fmtElapsed(remoteExecution.age_ms ?? null) ?? "—")}
               </div>
@@ -387,6 +387,7 @@ export function TaskDocument({
                 message={lastResult.message}
                 direction={resultDirection}
                 figures={figuresFor(lastResult)}
+                findings={resultFindings}
                 details={
                   singleTurn && !findOpen ? (
                     <>
