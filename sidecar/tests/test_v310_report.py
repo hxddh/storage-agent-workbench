@@ -114,7 +114,7 @@ def test_the_report_speaks_chinese_when_asked():
     _seed(conn)
     md = _render(conn, lang="zh-CN")
     assert md.startswith("# 任务报告：acme-logs 403")
-    for heading in ("## 目标", "## 结论", "## 发现", "## 下一步", "## 调查过程", "## 覆盖与缺口", "## 安全"):
+    for heading in ("## 目标", "## 结论", "## 发现", "## 下一步", "## 工作过程", "## 覆盖与缺口", "## 安全"):
         assert heading in md, heading
     assert "- **高** — Bucket policy omits s3:ListBucket" in md
     # The Agent's own words are reproduced as recorded, never translated.

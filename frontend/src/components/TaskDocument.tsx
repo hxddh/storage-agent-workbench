@@ -10,7 +10,7 @@ import { fmtElapsed } from "../hooks/useElapsed";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
 import type { useTaskViewport } from "../hooks/useTaskViewport";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
-import { ProvenanceMark } from "../viz/ProvenanceMark";
+import { unifyFindings } from "../lib/findings";
 import { AgentTurn, UserTurn } from "./TranscriptTurn";
 import { TriageCard } from "./AgentRuntimeArtifacts";
 import { FindBar } from "./FindBar";
@@ -162,18 +162,17 @@ export function TaskDocument({
   const items = useMemo(() => (liveRow ? allItems.filter((item) => item !== liveRow) : allItems), [allItems, liveRow]);
   const lastResult = useMemo(() => lastWorkResult(items), [items]);
   const figuresFor = (item: Extract<TaskItem, { kind: "message" }>) =>
-    item.id === lastResult?.id && (hasFigures || provenance?.findings.length) ? (
+    item.id === lastResult?.id && hasFigures ? (
       <section className="task-analysis-figures" data-testid="task-analysis-figures">
-        {hasFigures ? <AnalysisFigures provenance={provenance} /> : null}
-        {provenance?.findings.length ? (
-          <div className={hasFigures ? "mt-4 space-y-1" : "space-y-1"}>
-            {provenance.findings.slice(0, 8).map((finding) => (
-              <ProvenanceMark key={finding.id} finding={finding} />
-            ))}
-          </div>
-        ) : null}
+        <AnalysisFigures provenance={provenance} />
       </section>
     ) : undefined;
+  // v3.1 — one findings list for the Result: the recorded conclusion joined
+  // by what the work recorded, each with its evidence link.
+  const resultFindings = useMemo(
+    () => unifyFindings(asConclusion(lastResult?.message.conclusion), provenance?.findings, provenance?.findings),
+    [lastResult, provenance],
+  );
 
   // --- Find (⌘F) over the reading column ---
   const [findQuery, setFindQuery] = useState("");
@@ -387,6 +386,7 @@ export function TaskDocument({
                 message={lastResult.message}
                 direction={resultDirection}
                 figures={figuresFor(lastResult)}
+                findings={resultFindings}
                 details={
                   singleTurn && !findOpen ? (
                     <>

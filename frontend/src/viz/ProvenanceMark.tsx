@@ -3,6 +3,7 @@ import { openAgentReview } from "../agent/commands";
 import { useI18n, type TFunc } from "../i18n";
 import type { ProvenanceChain, ProvenanceFinding } from "./types";
 import { humanizeTool } from "../lib/format";
+import { Icon } from "../components/icons";
 
 function preview(chain: ProvenanceChain | null, gap: string | null, t: TFunc) {
   if (gap === "no_direct_evidence" || !chain) {
@@ -17,56 +18,47 @@ function preview(chain: ProvenanceChain | null, gap: string | null, t: TFunc) {
   return { title: humanizeTool(chain.tool) || chain.kind, body: bits.join(" · ") || chain.kind };
 }
 
-export function ProvenanceMark({
-  finding,
-}: {
-  finding: Pick<ProvenanceFinding, "id" | "title" | "interpretation" | "severity" | "chain" | "gap" | "source_run_id">;
-}) {
+/**
+ * v3.1 — a finding's evidence link, inside its row: hover (or focus) previews
+ * what the finding stands on; a click opens it in the side pane. A finding the
+ * work linked to no call says so rather than pretending.
+ */
+export function ProvenanceLink({ finding }: { finding: Pick<ProvenanceFinding, "id" | "chain" | "gap"> }) {
   const [open, setOpen] = useState(false);
   const { t } = useI18n();
   const card = preview(finding.chain, finding.gap, t);
   const go = () => {
     const chain = finding.chain;
     // A chain names the deterministic run behind a finding; the Execution
-    // section lists the durable Executions that ran it (v1.12 — the detail
+    // tab lists the durable Executions that ran it (v1.12 — the detail
     // document is keyed by execution id, never by run id).
-    if (chain?.review === "execution") {
-      openAgentReview("execution");
-      return;
-    }
-    if (chain?.review === "report") {
-      openAgentReview("report");
-      return;
-    }
+    if (chain?.review === "execution") { openAgentReview("execution"); return; }
+    if (chain?.review === "report") { openAgentReview("report"); return; }
     openAgentReview("evidence", finding.id);
   };
   return (
-    <div className="relative min-w-0">
+    <span className="provenance-link-wrap">
       <button
         type="button"
+        className="provenance-link"
         data-testid={`finding-provenance-${finding.id}`}
+        data-gap={finding.gap ?? undefined}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
-        onClick={go}
-        className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-hover"
+        onClick={(event) => { event.stopPropagation(); go(); }}
+        aria-label={t("findings.evidenceFor")}
       >
-        <span className="agent-review-list-dot mt-1.5 shrink-0" data-severity={finding.severity ?? "info"} aria-hidden />
-        <span className="min-w-0">
-          <span className="block text-sm text-gray-100">{finding.title}</span>
-          {finding.interpretation ? <span className="mt-0.5 block text-2xs leading-relaxed text-gray-500">{finding.interpretation}</span> : null}
-        </span>
+        <Icon name="evidence" size={14} />
+        <span>{finding.gap === "no_direct_evidence" ? t("findings.noChainShort") : t("findings.evidence")}</span>
       </button>
       {open ? (
-        <div
-          data-testid="provenance-preview"
-          className="absolute left-0 top-full z-floating mt-1 w-72 max-w-[70vw] rounded-lg border border-edge bg-elevated px-3 py-2 text-2xs shadow-elev"
-        >
-          <div className="font-medium text-gray-200">{card.title}</div>
-          <p className="mt-0.5 leading-relaxed text-gray-400">{card.body}</p>
-        </div>
+        <span data-testid="provenance-preview" className="provenance-preview" role="tooltip">
+          <strong>{card.title}</strong>
+          <span>{card.body}</span>
+        </span>
       ) : null}
-    </div>
+    </span>
   );
 }

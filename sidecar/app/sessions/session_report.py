@@ -408,10 +408,10 @@ _COPY: dict[str, dict[str, str]] = {
         "conclusion_none": "_本轮未记录结论，以下为最新回答。_",
         "no_result": "_尚无工作结果。_",
         "findings": "发现",
-        "findings_note": "_按严重程度排序：Agent 在结论中记录的发现，以及调查过程中记录的发现。_",
+        "findings_note": "_按严重程度排序：Agent 在结论中记录的发现，以及工作过程中记录的发现。_",
         "next_steps": "下一步",
         "next_steps_note": "_Agent 建议的后续请求，仅为建议，均未执行。_",
-        "investigation": "调查过程",
+        "investigation": "工作过程",
         "investigation_note": "_每条指令的提问与回答，以及由工具调用记录得出的依据。回答为节选，不含模型推理过程。_",
         "coverage": "覆盖与缺口",
         "grounded": "依据",
@@ -573,7 +573,7 @@ def render_session_report(
     tool_count = len(activity or [])
     latest = _latest_answer(messages)
     conclusion = (latest or {}).get("conclusion") or None
-    when = _oneline((latest or {}).get("created_at") or session.get("updated_at") or "", 40)[:16] or "—"
+    when = _oneline((latest or {}).get("created_at") or session.get("updated_at") or "", 40)[:16].replace("T", " ") or "—"
 
     goal = _oneline(session.get("goal")) or _oneline(_first_direction(messages), 300)
 

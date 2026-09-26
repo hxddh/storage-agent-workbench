@@ -11,6 +11,7 @@ import { useNavigationCopy } from "../agent/navigationCopy";
 import { ExecutionDetail } from "./ExecutionDetail";
 import { Icon, type IconName } from "./icons";
 import { IconButton } from "./ui";
+import { unifyFindings } from "../lib/findings";
 
 /** The first line of the Direction, bounded, as an execution's name. */
 function executionTitle(execution: TaskExecution): string {
@@ -22,10 +23,15 @@ const KIND_ICON: Record<ArtifactKind, IconName> = { evidence: "evidence", report
 
 /** Which outputs this task actually has — a tab or a button exists only when
  * something is behind it (no empty placeholders). */
+/** v3.1 — the one findings list the Result shows, for the Evidence tab. */
+export function taskFindings(details: TaskDetailsState) {
+  return unifyFindings(details.conclusion, details.projection.detail?.findings, details.provenance?.findings);
+}
+
 export function availableKinds(details: TaskDetailsState, hasResult: boolean): ArtifactKind[] {
   const { detail, executions } = details.projection;
   const kinds: ArtifactKind[] = [];
-  if ((detail?.findings?.length ?? 0) > 0 || (detail?.attached_files?.length ?? 0) > 0) kinds.push("evidence");
+  if (taskFindings(details).length > 0 || (detail?.attached_files?.length ?? 0) > 0) kinds.push("evidence");
   if (hasResult) kinds.push("report");
   if (executions.length > 0) kinds.push("execution");
   return kinds;
@@ -47,7 +53,7 @@ function useKindLabels() {
 
 function kindCount(details: TaskDetailsState, kind: ArtifactKind): number | null {
   const { detail, executions } = details.projection;
-  if (kind === "evidence") return (detail?.findings?.length ?? 0) + (detail?.attached_files?.length ?? 0) || null;
+  if (kind === "evidence") return taskFindings(details).length + (detail?.attached_files?.length ?? 0) || null;
   if (kind === "execution") return executions.length || null;
   return null;
 }
@@ -116,7 +122,7 @@ export function TaskInspector({ hasResult }: { hasResult: boolean }) {
   const { t } = useI18n();
   const labels = useKindLabels();
   const c = copy.artifacts;
-  const { taskId, selection, projection, provenance, open, back, close } = details;
+  const { taskId, selection, projection, open, back, close } = details;
   const [width, setWidth] = useState<number | null>(storedInspectorWidth);
   const panelRef = useRef<HTMLElement | null>(null);
   const kinds = availableKinds(details, hasResult);
@@ -201,7 +207,7 @@ export function TaskInspector({ hasResult }: { hasResult: boolean }) {
           <p className="native-sidepane-empty">{c.execution.statuses.queued}</p>
         ) : kind === "evidence" ? (
           <div data-testid="task-detail-evidence" data-open="true">
-            <EvidenceReview detail={detail} taskId={taskId} selectedFindingId={selection.findingId ?? selection.id} provenance={provenance} />
+            <EvidenceReview detail={detail} findings={taskFindings(details)} selectedFindingId={selection.findingId ?? selection.id} />
           </div>
         ) : kind === "report" ? (
           <div data-testid="task-detail-report" data-open="true">

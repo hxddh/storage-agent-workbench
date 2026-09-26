@@ -181,6 +181,11 @@ const en: Dict = {
   // v1.11 transcript
   "result.kicker": "Result",
   "result.findings": "Findings",
+  "findings.evidence": "Evidence",
+  "findings.evidenceFor": "Open the evidence for this finding",
+  "findings.noChainShort": "No direct evidence",
+  "findings.inConclusion": "In the conclusion",
+  "findings.recorded": "Recorded while working",
   "result.nextSteps": "Next steps",
   "result.askNext": "Put this in the Composer",
   "result.fullAnswer": "Full answer",
@@ -542,6 +547,11 @@ const zh: Dict = {
   // v1.11 transcript
   "result.kicker": "结论",
   "result.findings": "发现",
+  "findings.evidence": "证据",
+  "findings.evidenceFor": "查看该发现的证据",
+  "findings.noChainShort": "无直接证据",
+  "findings.inConclusion": "来自结论",
+  "findings.recorded": "工作过程中记录",
   "result.nextSteps": "下一步",
   "result.askNext": "填入输入框",
   "result.fullAnswer": "完整回答",

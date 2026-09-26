@@ -8,6 +8,7 @@ import { useLiveTask } from "../liveTasks";
 import { publishInspectorOpen } from "./commands";
 import { TaskInspector } from "../components/TaskDetails";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
+import type { Conclusion } from "../types";
 
 /**
  * The active task environment (v3.0): one Task document and, when an output
@@ -26,6 +27,7 @@ export function AgentShell({
   const run = useLiveTask(taskId ?? "");
   const [reloadKey, setReloadKey] = useState(0);
   const [hasResult, setHasResult] = useState(false);
+  const [conclusion, setConclusion] = useState<Conclusion | null>(null);
   const expanded = state.artifactsOpen && Boolean(taskId);
   // The rows list what exists, so they load with the task, not on demand.
   const projection = useAgentTaskProjection(taskId, Boolean(taskId), expanded ? state.selection : null, reloadKey);
@@ -56,7 +58,9 @@ export function AgentShell({
     close: () => dispatch({ type: "artifacts.close" }),
     hasResult,
     setHasResult,
-  }), [taskId, expanded, state.selection, projection, provenance, hasResult]);
+    conclusion,
+    setConclusion,
+  }), [taskId, expanded, state.selection, projection, provenance, hasResult, conclusion]);
 
   return (
     <div
