@@ -111,20 +111,13 @@
   --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
   --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
   /* Type: five sizes, each with one job. 11 label · 13 interface ·
-     15 reading · 20 conclusion · 28 page title. The older names stay as
-     aliases so nothing silently loses its size. */
+     15 reading · 20 conclusion · 28 page title. Five sizes, five names. */
   --text-2xs: 0.6875rem;
   --leading-2xs: 1rem;
-  --text-xs: 0.8125rem;
-  --leading-xs: 1.25rem;
   --text-sm: 0.8125rem;
   --leading-sm: 1.25rem;
-  --text-base: 0.8125rem;
-  --leading-base: 1.25rem;
   --text-prose: 0.9375rem;
   --leading-prose: 1.7;
-  --text-lg: 0.9375rem;
-  --leading-lg: 1.5rem;
   --text-xl: 1.25rem;
   --leading-xl: 1.75rem;
   --text-2xl: 1.75rem;

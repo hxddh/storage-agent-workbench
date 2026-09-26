@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { I18nProvider } from "../i18n";
 import { unifyFindings } from "../lib/findings";
 import type { Conclusion, TaskFinding } from "../types";
 import type { ProvenanceFinding } from "../viz/types";
