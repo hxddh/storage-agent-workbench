@@ -1,1 +1,121 @@
-/* v3.1 — overlays surfaces on design system v3 tokens (see agent/native-components.css). */
+/* v3.1 — overlays surfaces on design system v3 tokens (see agent/native-components.css).
+ *
+ * Floating surfaces that sit above the Task: toasts, the keyboard sheet and
+ * the find bar. Real elevation (`--shadow-pop`) only here; motion comes from
+ * the `animate-*` utilities and is removed under `prefers-reduced-motion`.
+ */
+
+/* ---------- Toast ---------- */
+.toast-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius-lg);
+  padding: 10px 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+  pointer-events: auto;
+}
+.toast-card[data-kind="error"] { border-color: var(--danger-border); }
+.toast-card[data-kind="success"] { border-color: var(--success-border); }
+.toast-icon { flex-shrink: 0; margin-top: 3px; color: var(--gray-200); }
+.toast-card[data-kind="error"] .toast-icon { color: var(--danger); }
+.toast-card[data-kind="success"] .toast-icon { color: var(--success); }
+.toast-message {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: break-word;
+  color: var(--gray-200);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.toast-action {
+  flex-shrink: 0;
+  color: var(--gray-100);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-sm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.toast-action:hover { color: var(--gray-300); }
+.toast-card .ui-icon-btn { margin: -2px -6px -2px 0; }
+
+/* ---------- Keyboard sheet ---------- */
+.shortcuts-scrim { background: var(--scrim); }
+.shortcuts-sheet {
+  width: min(480px, 94vw);
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-2xl);
+  background: var(--canvas);
+  box-shadow: var(--shadow-pop);
+}
+.shortcuts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--edge);
+  padding: var(--space-3) var(--space-5);
+}
+.shortcuts-title {
+  color: var(--gray-100);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-sm);
+}
+.shortcuts-group-title {
+  margin-bottom: 6px;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: var(--leading-2xs);
+}
+.shortcuts-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--gray-200);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Find bar ---------- */
+.find-bar {
+  display: flex;
+  width: 100%;
+  max-width: var(--doc-measure);
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 auto var(--space-3);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  padding: 6px var(--space-3);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+}
+.find-input {
+  min-width: 0;
+  flex: 1;
+  outline: none;
+  background: transparent;
+  color: var(--gray-100);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.find-input::placeholder { color: var(--gray-500); }
+.find-status {
+  flex-shrink: 0;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-action { transition: none; }
+}

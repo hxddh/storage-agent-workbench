@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { IconButton } from "./ui";
 
 /**
  * One notification surface for the whole app.
@@ -95,34 +96,23 @@ export function useToast(): ToastApi {
   return api;
 }
 
-const TONE: Record<ToastKind, { border: string; icon: ReactNode; text: string }> = {
-  error: {
-    border: "border-danger-border",
-    text: "text-danger",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-        <circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="13" /><line x1="12" y1="16.5" x2="12" y2="16.5" />
-      </svg>
-    ),
-  },
-  success: {
-    border: "border-success-border",
-    text: "text-success",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <polyline points="20 6 9 17 4 12" />
-      </svg>
-    ),
-  },
-  info: {
-    border: "border-edge-strong",
-    text: "text-gray-200",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-        <circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="7.5" x2="12" y2="7.5" />
-      </svg>
-    ),
-  },
+/** One glyph per kind; the tone (border and icon ink) is `data-kind` in styles/overlays.css. */
+const ICON: Record<ToastKind, ReactNode> = {
+  error: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="13" /><line x1="12" y1="16.5" x2="12" y2="16.5" />
+    </svg>
+  ),
+  success: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  ),
+  info: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="7.5" x2="12" y2="7.5" />
+    </svg>
+  ),
 };
 
 function ToastViewport({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
@@ -136,35 +126,22 @@ function ToastViewport({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id:
       data-testid="toast-viewport"
       className="pointer-events-none fixed bottom-4 right-4 z-toast flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2"
     >
-      {toasts.map((t) => {
-        const tone = TONE[t.kind];
-        return (
-          <div
-            key={t.id}
-            className={`pointer-events-auto flex items-start gap-2.5 rounded-xl border ${tone.border} bg-panel px-3.5 py-2.5 shadow-pop animate-scale-in`}
-          >
-            <span className={`mt-px shrink-0 ${tone.text}`}>{tone.icon}</span>
-            <span className="min-w-0 flex-1 break-words text-xs leading-relaxed text-gray-200">{t.message}</span>
-            {t.action && (
-              <button
-                onClick={() => { t.action?.run(); onDismiss(t.id); }}
-                className="shrink-0 text-xs font-medium text-gray-100 underline underline-offset-2 transition-[color] duration-fast hover:text-gray-300"
-              >
-                {t.action.label}
-              </button>
-            )}
+      {toasts.map((t) => (
+        <div key={t.id} data-kind={t.kind} className="toast-card animate-scale-in">
+          <span className="toast-icon">{ICON[t.kind]}</span>
+          <span className="toast-message">{t.message}</span>
+          {t.action && (
             <button
-              onClick={() => onDismiss(t.id)}
-              aria-label="Dismiss"
-              className="-mr-1 shrink-0 rounded p-0.5 text-gray-500 transition-[color] duration-fast hover:text-gray-200"
+              type="button"
+              onClick={() => { t.action?.run(); onDismiss(t.id); }}
+              className="toast-action"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
+              {t.action.label}
             </button>
-          </div>
-        );
-      })}
+          )}
+          <IconButton icon="close" label="Dismiss" size="sm" onClick={() => onDismiss(t.id)} />
+        </div>
+      ))}
     </div>
   );
 }

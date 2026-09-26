@@ -2,16 +2,13 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import { useI18n } from "../i18n";
 import { shortcutsIn, type Shortcut } from "../shortcuts";
-import { Icon } from "./icons";
+import { IconButton } from "./ui";
 
 const GROUPS = ["global", "task"] as const;
 
+/** One key cap. The v3 cap (`ui-kbd`), but read aloud: here the keys are the content. */
 function Key({ children }: { children: string }) {
-  return (
-    <kbd className="min-w-6 rounded-md bg-elevated px-1.5 py-0.5 text-center font-sans text-2xs font-medium text-gray-200">
-      {children}
-    </kbd>
-  );
+  return <kbd className="ui-kbd">{children}</kbd>;
 }
 
 /** Keyboard reference for the window and the active task. Opened with `?`. */
@@ -28,7 +25,7 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-shortcuts flex items-center justify-center bg-scrim p-4 animate-fade-in" onClick={onClose}>
+    <div className="shortcuts-scrim fixed inset-0 z-shortcuts flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
       <div
         ref={trapRef}
         role="dialog"
@@ -37,22 +34,20 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
         aria-label={title}
         data-testid="shortcuts-sheet"
         onClick={(event) => event.stopPropagation()}
-        className="w-[min(480px,94vw)] overflow-hidden rounded-2xl border border-edge bg-canvas shadow-pop animate-scale-in"
+        className="shortcuts-sheet animate-rise-in"
       >
-        <div className="flex items-center justify-between border-b border-edge px-5 py-3">
-          <span className="text-sm font-medium text-gray-100">{title}</span>
-          <button onClick={onClose} aria-label={t("common.close")} className="native-icon-button">
-            <Icon name="close" size={16} />
-          </button>
+        <div className="shortcuts-head">
+          <span className="shortcuts-title">{title}</span>
+          <IconButton icon="close" label={t("common.close")} onClick={onClose} />
         </div>
         <div className="max-h-[70vh] space-y-5 overflow-auto px-5 py-4">
           {GROUPS.map((group) => (
             <div key={group}>
-              <div className="mb-1.5 text-2xs font-medium text-gray-500">{groupTitle(group)}</div>
+              <div className="shortcuts-group-title">{groupTitle(group)}</div>
               <ul className="space-y-1">
                 {shortcutsIn(group).map((shortcut: Shortcut) => (
                   <li key={shortcut.id} className="flex items-center gap-3 py-0.5">
-                    <span className="min-w-0 flex-1 truncate text-sm text-gray-200">{shortcut.label[lang]}</span>
+                    <span className="shortcuts-label">{shortcut.label[lang]}</span>
                     <span className="flex shrink-0 items-center gap-1">
                       {shortcut.keys.map((key) => <Key key={key}>{key}</Key>)}
                     </span>

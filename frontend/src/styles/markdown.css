@@ -64,7 +64,6 @@
   text-align: right;
 }
 .md-marker[data-ordered="false"] { width: 0.7rem; text-align: center; }
-.md-marker[data-ordered="false"]::before { content: "\2022"; }
 
 .md-task {
   display: flex;

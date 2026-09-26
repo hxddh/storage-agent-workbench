@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { I18nProvider } from "../i18n";
 import { unifyFindings } from "../lib/findings";
 import type { Conclusion, TaskFinding } from "../types";
@@ -106,7 +105,7 @@ describe("v3.1 figures", () => {
 
 describe("v3.1 design system, finished", () => {
   const RAW = /\b(text-gray-[0-9]+|text-(?:2xs|xs|sm|base|lg|xl|prose)|bg-(?:panel|canvas|elevated|hover|sidebar|code|scrim|danger[a-z-]*|warn[a-z-]*|success[a-z-]*|accent[a-z-]*)|border-(?:edge|edge-strong|danger[a-z-]*|warn[a-z-]*)|text-(?:danger|warn[a-z-]*|success|accent[a-z-]*))\b/g;
-  const root = fileURLToPath(new URL("..", import.meta.url));
+  const root = join(process.cwd(), "src");
   const walk = (dir: string, out: string[] = []): string[] => {
     for (const name of readdirSync(dir)) {
       const path = join(dir, name);
