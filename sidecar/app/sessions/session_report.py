@@ -32,6 +32,12 @@ MAX_AUDIT_ROWS = 30     # audit events listed
 _MAX_MEMORY_ROWS = 50   # agent-memory items per kind, and attached files
 
 
+def _w(lang: str, en: str, zh: str) -> str:
+    """The module's own words in the reader's language (v3.1). Only strings
+    this module authors pass through here; recorded text never does."""
+    return zh if lang == "zh" else en
+
+
 def _excerpt(text: str | None, limit: int = ANSWER_EXCERPT) -> str:
     """Trim to a readable excerpt, marking the cut rather than hiding it."""
     t = " ".join((text or "").split())
@@ -89,7 +95,8 @@ def _fmt_ms(ms: Any) -> str:
 
 
 def _investigation_md(messages: list[dict[str, Any]] | None,
-                      metrics_by_message: dict[str, dict[str, Any]] | None) -> str:
+                      metrics_by_message: dict[str, dict[str, Any]] | None,
+                      lang: str = "en") -> str:
     """The conversation as an investigation record: question → answer → grounding.
 
     Pairs each user question with the answer that followed it. Only completed
@@ -107,42 +114,43 @@ def _investigation_md(messages: list[dict[str, Any]] | None,
             pending = None
 
     if not turns:
-        return "_No Directions recorded._"
+        return _w(lang, "_No Directions recorded._", "_没有记录的指令。_")
 
     shown = turns[-MAX_TURNS:]
     out: list[str] = []
     if len(turns) > len(shown):
-        out.append(f"_Showing the most recent {len(shown)} of {len(turns)} Directions._")
+        out.append(_w(lang, f"_Showing the most recent {len(shown)} of {len(turns)} Directions._",
+                      f"_显示最近 {len(shown)} 条指令（共 {len(turns)} 条）。_"))
         out.append("")
 
     for i, (q, a) in enumerate(shown, start=len(turns) - len(shown) + 1):
-        out.append(f"### Direction {i}")
+        out.append(_w(lang, f"### Direction {i}", f"### 指令 {i}"))
         out.append("")
-        out.append(f"**Asked:** {_excerpt(q.get('content'), 300)}")
+        out.append(f"**{_w(lang, 'Asked', '提问')}:** {_excerpt(q.get('content'), 300)}")
         out.append("")
-        out.append(f"**Answered:** {_excerpt(a.get('content'))}")
+        out.append(f"**{_w(lang, 'Answered', '回答')}:** {_excerpt(a.get('content'))}")
 
         grounding = a.get("grounding") or {}
         used = grounding.get("evidence_used") or []
         gaps = grounding.get("evidence_gaps") or []
         if used:
             out.append("")
-            out.append("Grounded in:")
+            out.append(_w(lang, "Grounded in:", "依据："))
             out.extend(f"- {_oneline(u)}" for u in used[:8])
         if gaps:
             out.append("")
-            out.append("Not verified:")
+            out.append(_w(lang, "Not verified:", "未核实："))
             out.extend(f"- {_oneline(g)}" for g in gaps[:8])
 
         tools = [t for t in (a.get("tool_activity") or []) if t.get("status") != "started"]
         met = by_msg.get(str(a.get("id")))
         bits: list[str] = []
         if tools:
-            bits.append(f"{len(tools)} tool call(s)")
+            bits.append(_w(lang, f"{len(tools)} tool call(s)", f"{len(tools)} 次工具调用"))
         if met and met.get("duration_ms"):
             bits.append(_fmt_ms(met.get("duration_ms")))
         if met and met.get("total_tokens"):
-            bits.append(f"{met['total_tokens']} tokens")
+            bits.append(_w(lang, f"{met['total_tokens']} tokens", f"{met['total_tokens']} 个 Token"))
         if bits:
             out.append("")
             out.append(f"_{' · '.join(bits)}_")
@@ -150,11 +158,11 @@ def _investigation_md(messages: list[dict[str, Any]] | None,
     return "\n".join(out).rstrip()
 
 
-def _tools_md(activity: list[dict[str, Any]] | None) -> str:
+def _tools_md(activity: list[dict[str, Any]] | None, lang: str = "en") -> str:
     """Which read-only tools the investigation actually ran, and how they fared."""
     rows = activity or []
     if not rows:
-        return "_No tool calls recorded for this Task._"
+        return _w(lang, "_No tool calls recorded for this Task._", "_本任务没有记录的工具调用。_")
     agg: dict[str, dict[str, Any]] = {}
     for r in rows:
         name = r.get("tool_name") or "?"
@@ -167,12 +175,13 @@ def _tools_md(activity: list[dict[str, Any]] | None) -> str:
         except (TypeError, ValueError):
             pass
     ordered = sorted(agg.items(), key=lambda kv: (-kv[1]["n"], kv[0]))
-    out = ["| Tool | Calls | Failed | Time |", "| --- | ---: | ---: | ---: |"]
+    out = [_w(lang, "| Tool | Calls | Failed | Time |", "| 工具 | 调用 | 失败 | 耗时 |"), "| --- | ---: | ---: | ---: |"]
     for name, v in ordered[:MAX_TOOL_ROWS]:
         out.append(f"| `{_code(name)}` | {v['n']} | {v['errors'] or '—'} | {_fmt_ms(v['ms'])} |")
     if len(ordered) > MAX_TOOL_ROWS:
         out.append("")
-        out.append(f"_{len(ordered) - MAX_TOOL_ROWS} further tool(s) omitted._")
+        out.append(_w(lang, f"_{len(ordered) - MAX_TOOL_ROWS} further tool(s) omitted._",
+                      f"_另有 {len(ordered) - MAX_TOOL_ROWS} 个工具未列出。_"))
     return "\n".join(out)
 
 
@@ -202,11 +211,11 @@ def _cost_md(rollup: dict[str, Any] | None, lang: str = "en") -> str:
     return "\n".join(lines)
 
 
-def _audit_md(events: list[dict[str, Any]] | None) -> str:
+def _audit_md(events: list[dict[str, Any]] | None, lang: str = "en") -> str:
     """Rule 17's trail for this session, summarised then listed."""
     rows = events or []
     if not rows:
-        return "_No audit events recorded for this Task._"
+        return _w(lang, "_No audit events recorded for this Task._", "_本任务没有审计事件。_")
     counts: dict[str, int] = {}
     for e in rows:
         # Normalize on the way IN: the summary line joins these keys, so a raw
@@ -214,20 +223,21 @@ def _audit_md(events: list[dict[str, Any]] | None) -> str:
         k = _oneline(e.get("event_type"), 80) or "?"
         counts[k] = counts.get(k, 0) + 1
     summary = ", ".join(f"{k} ×{v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
-    out = [f"{len(rows)} event(s): {summary}", ""]
+    out = [_w(lang, f"{len(rows)} event(s): {summary}", f"{len(rows)} 个事件：{summary}"), ""]
     for e in rows[-MAX_AUDIT_ROWS:]:
         out.append(f"- `{_code(e.get('created_at'))}` {_oneline(e.get('event_type'), 80)}")
     if len(rows) > MAX_AUDIT_ROWS:
         out.append("")
-        out.append(f"_Showing the most recent {MAX_AUDIT_ROWS} of {len(rows)}._")
+        out.append(_w(lang, f"_Showing the most recent {MAX_AUDIT_ROWS} of {len(rows)}._",
+                      f"_显示最近 {MAX_AUDIT_ROWS} 个（共 {len(rows)} 个）。_"))
     return "\n".join(out)
 
 
-def _facts_md(facts: list[dict[str, Any]]) -> str:
+def _facts_md(facts: list[dict[str, Any]], lang: str = "en") -> str:
     if not facts:
         return "- —"
     return "\n".join(
-        f"- {_oneline(f.get('text'))} _(run {str(f.get('source_run_id') or '')[:8]}, "
+        f"- {_oneline(f.get('text'))} _({_w(lang, 'run', '分析')} {str(f.get('source_run_id') or '')[:8]}, "
         f"{_oneline(f.get('confidence'), 40)})_"
         for f in facts
     )
@@ -244,7 +254,7 @@ def _findings_md(findings: list[dict[str, Any]]) -> str:
     )
 
 
-def _actions_md(actions: list[dict[str, Any]]) -> str:
+def _actions_md(actions: list[dict[str, Any]], lang: str = "en") -> str:
     if not actions:
         return "- —"
     return "\n".join(
@@ -258,9 +268,9 @@ def _bullets(items: list[str]) -> str:
     return "\n".join(f"- {_oneline(x)}" for x in items) if items else "- —"
 
 
-def _timeline_md(runs: list[dict[str, Any]]) -> str:
+def _timeline_md(runs: list[dict[str, Any]], lang: str = "en") -> str:
     if not runs:
-        return "- No analyses yet."
+        return _w(lang, "- No analyses yet.", "- 尚无分析。")
     # Only terminal runs carry a result worth reporting; an in-flight run would
     # render as "(running) — —". Count the in-progress ones instead of listing
     # empty lines for them.
@@ -273,13 +283,14 @@ def _timeline_md(runs: list[dict[str, Any]]) -> str:
         for r in done
     ]
     if in_flight:
-        lines.append(f"- {in_flight} analysis(es) still in progress (not included in this report).")
-    return "\n".join(lines) if lines else "- No completed analyses yet."
+        lines.append(_w(lang, f"- {in_flight} analysis(es) still in progress (not included in this report).",
+                        f"- 还有 {in_flight} 项分析在进行中（未计入本报告）。"))
+    return "\n".join(lines) if lines else _w(lang, "- No completed analyses yet.", "- 尚无已完成的分析。")
 
 
-def _triage_md(cases: list[dict[str, Any]]) -> str:
+def _triage_md(cases: list[dict[str, Any]], lang: str = "en") -> str:
     if not cases:
-        return "- No error-triage cases."
+        return _w(lang, "- No error-triage cases.", "- 没有错误分诊记录。")
     lines: list[str] = []
     for c in cases:
         parsed = c.get("parsed", {}) or {}
@@ -290,13 +301,13 @@ def _triage_md(cases: list[dict[str, Any]]) -> str:
         for cc in (c.get("candidate_causes") or [])[:3]:
             checks = "; ".join((cc.get("next_checks") or [])[:3])
             lines.append(f"    - _{_oneline(cc.get('confidence'), 40)}_ {_oneline(cc.get('title'))}"
-                         + (f" — next checks: {_oneline(checks)}" if checks else ""))
+                         + (f" — {_w(lang, 'next checks', '下一步检查')}: {_oneline(checks)}" if checks else ""))
         # Lightly absorb skill-grounded Agent output if it was recorded.
         agent = parsed.get("_agent", {}) or {}
         if agent.get("skills_used"):
-            lines.append(f"    - Methods (skills): {_oneline(', '.join(agent['skills_used'][:3]))}")
+            lines.append(f"    - {_w(lang, 'Methods (skills)', '方法（技能）')}: {_oneline(', '.join(agent['skills_used'][:3]))}")
         if agent.get("evidence_gaps"):
-            lines.append(f"    - Missing evidence: {_oneline('; '.join(agent['evidence_gaps'][:3]))}")
+            lines.append(f"    - {_w(lang, 'Missing evidence', '缺少证据')}: {_oneline('; '.join(agent['evidence_gaps'][:3]))}")
     return "\n".join(lines)
 
 
@@ -311,16 +322,18 @@ def _agent_findings_md(memory: list[dict[str, Any]]) -> str:
     return "\n".join(out)
 
 
-def _memory_truncation(rendered: int, total: int | None, noun: str) -> str:
+def _memory_truncation(rendered: int, total: int | None, noun: str, lang: str = "en") -> str:
     """State what was left out, or nothing. The count comes from the DB, not
     from the (already tail-capped) list — otherwise a session with 60 facts
     renders 50 and claims completeness."""
     if total is None or total <= rendered:
         return ""
-    return f"\n\n_Truncated: {total - rendered} more {noun} recorded._"
+    zh_noun = {"facts": "条事实", "questions": "个问题", "findings": "条发现"}.get(noun, noun)
+    return _w(lang, f"\n\n_Truncated: {total - rendered} more {noun} recorded._",
+              f"\n\n_已截断：另有 {total - rendered} {zh_noun}未列出。_")
 
 
-def _agent_facts_md(memory: list[dict[str, Any]], total: int | None = None) -> str:
+def _agent_facts_md(memory: list[dict[str, Any]], total: int | None = None, lang: str = "en") -> str:
     """The facts the agent established and then reasoned FROM.
 
     Before v0.51.0 this section did not exist: of the three kinds of memory the
@@ -333,8 +346,8 @@ def _agent_facts_md(memory: list[dict[str, Any]], total: int | None = None) -> s
     out = []
     for m in shown:
         conf = str(m.get("confidence") or "medium")
-        out.append(f"- {_oneline(m.get('text'))} _(confidence: {_oneline(conf, 40)})_")
-    return "\n".join(out) + _memory_truncation(len(shown), total, "facts")
+        out.append(f"- {_oneline(m.get('text'))} _({_w(lang, 'confidence', '置信度')}: {_oneline(conf, 40)})_")
+    return "\n".join(out) + _memory_truncation(len(shown), total, "facts", lang)
 
 
 def _agent_questions_md(memory: list[dict[str, Any]], total: int | None = None) -> str:
@@ -347,11 +360,11 @@ def _agent_questions_md(memory: list[dict[str, Any]], total: int | None = None) 
         len(shown), total, "questions")
 
 
-def _attached_files_md(files: list[dict[str, Any]] | None) -> str:
+def _attached_files_md(files: list[dict[str, Any]] | None, lang: str = "en") -> str:
     """The evidence the user attached, so a reader knows what the analysis had."""
     rows = files or []
     if not rows:
-        return "_None attached._"
+        return _w(lang, "_None attached._", "_没有附件。_")
     out = []
     for f in rows[:_MAX_MEMORY_ROWS]:
         rc = f.get("row_count")
@@ -359,7 +372,7 @@ def _attached_files_md(files: list[dict[str, Any]] | None) -> str:
         if f.get("detected_format"):
             bits.append(_oneline(f["detected_format"], 60))
         if rc:
-            bits.append(f"{int(rc):,} rows")
+            bits.append(_w(lang, f"{int(rc):,} rows", f"{int(rc):,} 行"))
         out.append(f"- `{_code(f.get('source_filename') or '(unnamed)')}` — {' · '.join(bits)}")
     return "\n".join(out)
 
@@ -485,18 +498,21 @@ def _merged_findings(conclusion: dict[str, Any] | None,
     for f in summary_findings or []:
         add(f.get("title"), f.get("severity"), f.get("interpretation"), "analysis")
     out.sort(key=lambda f: _SEV_ORDER.get(f["severity"], 3))
-    return out[:_MAX_MEMORY_ROWS]
+    return out
 
 
 def _merged_findings_md(rows: list[dict[str, str]], c: dict[str, str]) -> str:
     lines = []
-    for f in rows:
+    for f in rows[:_MAX_MEMORY_ROWS]:
         sev = c.get(f"sev.{'high' if f['severity'] == 'critical' else 'medium' if f['severity'] == 'warning' else f['severity']}", c["severity_unknown"])
         line = f"- **{sev}** — {_oneline(f['title'])}"
         if f["detail"]:
             line += f" — {_oneline(f['detail'])}"
         lines.append(line)
-    return "\n".join(lines)
+    body = "\n".join(lines)
+    # Truncation is never silent: an exported report that drops findings
+    # without saying so would read as complete.
+    return body + _memory_truncation(_MAX_MEMORY_ROWS, len(rows), "findings", "zh" if c is _COPY["zh"] else "en")
 
 
 def _coverage_md(messages: list[dict[str, Any]] | None, open_q: list[str],
@@ -526,7 +542,7 @@ def _coverage_md(messages: list[dict[str, Any]] | None, open_q: list[str],
         parts.append(f"**{label}**\n\n" + "\n".join(f"- {_oneline(i)}" for i in shown))
     total_q = (memory_totals or {}).get("open_question")
     if parts and total_q and total_q > _MAX_MEMORY_ROWS:
-        parts.append(_memory_truncation(_MAX_MEMORY_ROWS, total_q, "questions").strip())
+        parts.append(_memory_truncation(_MAX_MEMORY_ROWS, total_q, "questions", "zh" if c is _COPY["zh"] else "en").strip())
     return "\n\n".join(parts)
 
 
@@ -589,9 +605,9 @@ def render_session_report(
 
     fact_lines: list[str] = []
     if any(m.get("kind") == "fact" for m in memory):
-        fact_lines.append(_agent_facts_md(memory, (memory_totals or {}).get("fact")))
+        fact_lines.append(_agent_facts_md(memory, (memory_totals or {}).get("fact"), _lang(lang)))
     if facts:
-        fact_lines.append(_facts_md(facts))
+        fact_lines.append(_facts_md(facts, _lang(lang)))
 
     content = (
         f"# {c['title']}{_oneline(session.get('title'), 200)}\n\n"
@@ -601,17 +617,17 @@ def render_session_report(
         + _section(c["findings"], _merged_findings_md(merged, c), c["findings_note"])
         + _section(c["next_steps"], "\n".join(f"- {_oneline(s)}" for s in steps), c["next_steps_note"])
         + _section(c["investigation"],
-                   _investigation_md(messages, by_message) if turn_count else "",
+                   _investigation_md(messages, by_message, _lang(lang)) if turn_count else "",
                    c["investigation_note"])
         + _section(c["coverage"], _coverage_md(messages, open_q, limitations, memory, memory_totals, c))
         + _section(c["facts"], "\n".join(fact_lines))
-        + _section(c["tools"], _tools_md(activity) if tool_count else "", c["tools_note"])
-        + _section(c["analyses"], _timeline_md(runs) if runs else "")
-        + _section(c["attached"], _attached_files_md(attached_files) if attached_files else "")
-        + _section(c["triage"], _triage_md(triage_cases or []) if triage_cases else "")
-        + _section(c["actions"], _actions_md(actions) if actions else "", c["actions_note"])
+        + _section(c["tools"], _tools_md(activity, _lang(lang)) if tool_count else "", c["tools_note"])
+        + _section(c["analyses"], _timeline_md(runs, _lang(lang)) if runs else "")
+        + _section(c["attached"], _attached_files_md(attached_files, _lang(lang)) if attached_files else "")
+        + _section(c["triage"], _triage_md(triage_cases or [], _lang(lang)) if triage_cases else "")
+        + _section(c["actions"], _actions_md(actions, _lang(lang)) if actions else "", c["actions_note"])
         + _section(c["cost"], _cost_md(usage, _lang(lang)) if usage and usage.get("turns") else "")
-        + _section(c["audit"], _audit_md(audit_events) if audit_events else "")
+        + _section(c["audit"], _audit_md(audit_events, _lang(lang)) if audit_events else "")
         + f"## {c['safety']}\n\n{c['safety_body']}\n"
     )
     return redact_text(content)

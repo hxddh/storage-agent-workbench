@@ -47,6 +47,14 @@ describe("v3.1 one findings model", () => {
     expect(merged[2].id).toBe("conclusion-0");
   });
 
+  it("says 'No direct evidence' only when the chains were read and none backs the finding", () => {
+    const read = unifyFindings(conclusion, [], []);
+    expect(read.every((f) => f.provenance === null)).toBe(true);
+    const live = unifyFindings(conclusion, []);
+    expect(live.every((f) => f.provenance === undefined)).toBe(true);
+    expect(source("./TaskResult.tsx")).toContain('data-testid="finding-no-evidence"');
+  });
+
   it("keeps each finding's evidence chain when one was recorded", () => {
     const chain = { id: "f2", title: "No AbortIncompleteMultipartUpload rule", severity: "medium", gap: null } as unknown as ProvenanceFinding;
     const merged = unifyFindings(null, [chain], [chain]);
@@ -54,7 +62,11 @@ describe("v3.1 one findings model", () => {
   });
 
   it("is the one list both surfaces read, and the Evidence count follows it", () => {
-    expect(source("./TaskDocument.tsx")).toContain("unifyFindings(asConclusion(lastResult?.message.conclusion)");
+    // The Result and the pane call the same function over the task's complete
+    // recorded findings (the provenance projection is capped; it only joins
+    // chains by id).
+    expect(source("./TaskDocument.tsx")).toContain("taskFindings({ ...details, conclusion: resultConclusion })");
+    expect(source("./TaskDetails.tsx")).toContain("details.projection.detail?.findings ?? details.provenance?.findings");
     const details = source("./TaskDetails.tsx");
     expect(details).toContain("export function taskFindings(");
     expect(details).toContain('if (kind === "evidence") return taskFindings(details).length');

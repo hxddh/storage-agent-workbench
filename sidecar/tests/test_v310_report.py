@@ -43,7 +43,7 @@ def _render(conn, lang: str | None = None) -> str:
     return session_report.render_session_report(
         dict(conn.execute("SELECT * FROM sessions WHERE id='s1'").fetchone()),
         {}, [],
-        agent_memory=repo.list_agent_memory(conn, "s1"),
+        agent_memory=repo.list_agent_memory(conn, "s1", limit=500),
         messages=repo.list_messages(conn, "s1"),
         lang=lang,
     )
@@ -127,3 +127,25 @@ def test_the_route_takes_the_reader_language(client):
     en = client.get(f"/sessions/{sid}/report").json()
     assert zh["content"].startswith("# 任务报告：")
     assert en["content"].startswith("# Task report: ")
+
+
+def test_a_chinese_report_carries_no_english_the_module_authored():
+    conn = _db()
+    _seed(conn)
+    md = _render(conn, lang="zh")
+    body = md.split("\n## 工作过程")[1].split("\n## ")[0]
+    for english in ("Direction ", "Asked", "Answered", "Grounded in", "Not verified", "tool call(s)"):
+        assert english not in body, english
+    assert "**提问:**" in body and "**回答:**" in body and "依据：" in md
+
+
+def test_findings_past_the_bound_are_counted_not_dropped_silently():
+    conn = _db()
+    _seed(conn)
+    for i in range(60):
+        repo.add_agent_memory(conn, "s1", kind="finding", text=f"finding number {i}", severity="low")
+    conn.commit()
+    body = _render(conn).split("\n## Findings")[1].split("\n## ")[0]
+    assert "_Truncated: 12 more findings recorded._" in body
+    zh = _render(conn, lang="zh").split("\n## 发现")[1].split("\n## ")[0]
+    assert "另有 12 条发现未列出" in zh

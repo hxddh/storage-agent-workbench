@@ -61,7 +61,9 @@ export function unifyFindings(
       detail: finding.detail,
       source: "conclusion",
       confidence: match?.confidence ?? null,
-      provenance: match ? chains.get(match.id) ?? null : null,
+      // `null` = the chains were read and none backs this finding;
+      // `undefined` = no chains were supplied (a live head), nothing to say.
+      provenance: match ? chains.get(match.id) ?? null : provenance ? null : undefined,
     });
   });
   for (const item of recorded ?? []) {

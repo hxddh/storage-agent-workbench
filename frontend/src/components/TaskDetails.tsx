@@ -23,9 +23,16 @@ const KIND_ICON: Record<ArtifactKind, IconName> = { evidence: "evidence", report
 
 /** Which outputs this task actually has — a tab or a button exists only when
  * something is behind it (no empty placeholders). */
-/** v3.1 — the one findings list the Result shows, for the Evidence tab. */
+/** v3.1 — the one findings list, read by the Result AND the Evidence tab:
+ * the recorded conclusion joined by the task's complete recorded findings
+ * (the provenance projection is capped, so it only supplies chains, joined
+ * by id — it is the recorded set only until the task record has loaded). */
 export function taskFindings(details: TaskDetailsState) {
-  return unifyFindings(details.conclusion, details.projection.detail?.findings, details.provenance?.findings);
+  return unifyFindings(
+    details.conclusion,
+    details.projection.detail?.findings ?? details.provenance?.findings,
+    details.provenance?.findings,
+  );
 }
 
 export function availableKinds(details: TaskDetailsState, hasResult: boolean): ArtifactKind[] {

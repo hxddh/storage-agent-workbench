@@ -37,7 +37,13 @@ function FindingRow({ finding }: { finding: UnifiedFinding }) {
         ) : (
           <div className="result-finding-head">{head}</div>
         )}
-        {finding.provenance ? <ProvenanceLink finding={finding.provenance} /> : null}
+        {finding.provenance ? (
+          <ProvenanceLink finding={finding.provenance} />
+        ) : finding.provenance === undefined ? null : (
+          // Nothing recorded behind it: say so, rather than leave a blank
+          // that reads like a missing control.
+          <span className="provenance-none" data-testid="finding-no-evidence">{t("findings.noChainShort")}</span>
+        )}
       </div>
       {open && finding.detail ? <p className="result-finding-detail">{finding.detail}</p> : null}
     </li>

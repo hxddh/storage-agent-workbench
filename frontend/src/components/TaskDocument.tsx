@@ -10,11 +10,10 @@ import { fmtElapsed } from "../hooks/useElapsed";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
 import type { useTaskViewport } from "../hooks/useTaskViewport";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
-import { unifyFindings } from "../lib/findings";
 import { AgentTurn, UserTurn } from "./TranscriptTurn";
 import { TriageCard } from "./AgentRuntimeArtifacts";
 import { FindBar } from "./FindBar";
-import { TaskDetails } from "./TaskDetails";
+import { TaskDetails, taskFindings } from "./TaskDetails";
 import { ConclusionView, TaskResult } from "./TaskResult";
 import { asConclusion } from "../lib/conclusion";
 import { useTaskCopy } from "./taskCopy";
@@ -169,9 +168,11 @@ export function TaskDocument({
     ) : undefined;
   // v3.1 — one findings list for the Result: the recorded conclusion joined
   // by what the work recorded, each with its evidence link.
+  const details = useTaskDetails();
+  const resultConclusion = useMemo(() => asConclusion(lastResult?.message.conclusion), [lastResult]);
   const resultFindings = useMemo(
-    () => unifyFindings(asConclusion(lastResult?.message.conclusion), provenance?.findings, provenance?.findings),
-    [lastResult, provenance],
+    () => taskFindings({ ...details, conclusion: resultConclusion }),
+    [details, resultConclusion],
   );
 
   // --- Find (⌘F) over the reading column ---

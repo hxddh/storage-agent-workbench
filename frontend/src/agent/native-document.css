@@ -1060,3 +1060,4 @@ button.result-finding-head:hover { background: var(--hover); }
 .native-banner-title { color: var(--gray-100); font-weight: 500; }
 .native-composer-aside { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--gray-500); }
 .native-model-chip[data-offline="true"] { color: var(--gray-400); cursor: default; }
+.provenance-none { flex: none; padding: 0 16px 0 8px; color: var(--gray-500); font-size: var(--text-2xs); }
