@@ -130,8 +130,10 @@ def test_the_report_covers_all_three_kinds_of_memory(client, conn):
     assert "path-style only" in content
     assert "no lifecycle rule" in content
     assert "replication intentional" in content
-    assert "## What the agent established" in content
-    assert "## What the agent left open" in content
+    # v3.1 — facts under "What the Agent established"; open questions under
+    # "Coverage and gaps" (with the gaps the tool trace derived).
+    assert "## What the Agent established" in content
+    assert "**Left open**" in content.split("## Coverage and gaps")[1]
 
 
 def test_report_bounds_a_runaway_memory_and_says_so(client, conn):
