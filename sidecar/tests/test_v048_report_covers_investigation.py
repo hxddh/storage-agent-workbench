@@ -177,16 +177,17 @@ def test_the_empty_session_renders_without_pretending():
     conn = _db()
     conn.commit()
     md = _render(conn)
-    assert "No Directions recorded" in md
-    assert "No tool calls recorded" in md
+    # v3.1 — an empty Task says so once and writes no empty sections.
+    assert "No Work Result yet" in md
+    assert "## Investigation" not in md and "## Tools run" not in md
     # Rendering must not raise on a session that has done nothing yet.
     assert md.startswith("# Task report:")
 
 
 @pytest.mark.parametrize("section", [
-    "## Investigation", "## Tools run", "## Cost", "## Audit trail", "## Safety",
+    "## Conclusion", "## Investigation", "## Coverage and gaps", "## Safety",
 ])
-def test_every_new_section_is_present(section):
+def test_every_section_with_something_behind_it_is_present(section):
     conn = _db()
     _turn(conn, 0)
     conn.commit()
@@ -202,4 +203,4 @@ def test_the_old_positional_signature_still_renders():
         dict(conn.execute("SELECT * FROM sessions WHERE id='s1'").fetchone()),
         repo.get_summary(conn, "s1") or {}, repo.list_runs(conn, "s1"), [], [])
     assert md.startswith("# Task report:")
-    assert "No Directions recorded" in md
+    assert "## Safety" in md

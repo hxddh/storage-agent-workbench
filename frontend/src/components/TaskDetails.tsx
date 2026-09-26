@@ -122,6 +122,13 @@ export function TaskInspector({ hasResult }: { hasResult: boolean }) {
   const kinds = availableKinds(details, hasResult);
   const kind = shownKind(selection?.kind ?? null, kinds);
 
+  // A selection with nothing behind it (⌘I asks for Evidence on a task that
+  // has none) settles on the output the pane actually shows, so that output
+  // is the one that loads.
+  useEffect(() => {
+    if (selection && kind && kind !== selection.kind) open(kind);
+  }, [selection?.kind, kind]);
+
   // Focus lands in the panel when it opens, so the keyboard follows the eye.
   useEffect(() => {
     if (selection) panelRef.current?.focus({ preventScroll: true });

@@ -1,4 +1,4 @@
-"""Session-level Markdown report.
+"""Task report (Markdown) — v3.1: conclusion first, bilingual, no empty sections.
 
 The artifact you hand to someone else. Built from the deterministic, sanitized
 session summary, linked-run metadata, AND — since v0.48.0 — the investigation
@@ -176,21 +176,29 @@ def _tools_md(activity: list[dict[str, Any]] | None) -> str:
     return "\n".join(out)
 
 
-def _cost_md(rollup: dict[str, Any] | None) -> str:
+_COST_COPY = {
+    "en": ("Turns", "Wall-clock in turns", "Tokens", "in", "out",
+           " _(partial — only some turns reported)_", "_not reported by the model provider_"),
+    "zh": ("轮次", "轮次耗时", "Token", "输入", "输出",
+           " _（部分轮次未上报）_", "_模型服务未上报_"),
+}
+
+
+def _cost_md(rollup: dict[str, Any] | None, lang: str = "en") -> str:
     """What the investigation cost. Token counts appear only when the provider
     reported them — an estimate here would be a false claim about spend."""
+    turns_l, wall_l, tok_l, in_l, out_l, partial_l, none_l = _COST_COPY["zh" if lang == "zh" else "en"]
     r = rollup or {}
-    lines = [
-        f"- Turns: {r.get('turns', 0)}",
-        f"- Wall-clock in turns: {_fmt_ms(r.get('duration_ms'))}",
-    ]
+    lines = [f"- {turns_l}: {r.get('turns', 0)}"]
+    if _fmt_ms(r.get("duration_ms")) != "—":
+        lines.append(f"- {wall_l}: {_fmt_ms(r.get('duration_ms'))}")
     if r.get("available"):
-        partial = " _(partial — only some turns reported)_" if r.get("partial") else ""
+        partial = partial_l if r.get("partial") else ""
         lines.append(
-            f"- Tokens: {r.get('input_tokens', 0)} in / {r.get('output_tokens', 0)} out{partial}"
+            f"- {tok_l}: {r.get('input_tokens', 0)} {in_l} / {r.get('output_tokens', 0)} {out_l}{partial}"
         )
     else:
-        lines.append("- Tokens: _not reported by the model provider_")
+        lines.append(f"- {tok_l}: {none_l}")
     return "\n".join(lines)
 
 
@@ -356,6 +364,179 @@ def _attached_files_md(files: list[dict[str, Any]] | None) -> str:
     return "\n".join(out)
 
 
+# v3.1 — the report speaks the reader's language. Only the words this module
+# authors are translated; the Agent's own text is reproduced as recorded.
+_COPY: dict[str, dict[str, str]] = {
+    "en": {
+        "title": "Task report: ",
+        "meta": "{d} Direction(s) · {t} tool call(s) · {w}",
+        "goal": "Goal",
+        "conclusion": "Conclusion",
+        "conclusion_none": "_No conclusion was recorded; the latest answer follows._",
+        "no_result": "_No Work Result yet._",
+        "findings": "Findings",
+        "findings_note": "_Most severe first. Findings the Agent recorded in its conclusion, joined by those it recorded during the investigation._",
+        "next_steps": "Next steps",
+        "next_steps_note": "_The Agent's suggested asks. Each is a suggestion only; nothing here was run._",
+        "investigation": "Investigation",
+        "investigation_note": "_What was asked and answered, with the grounding derived from the tool trace. Answers are excerpted; nothing here is model reasoning._",
+        "coverage": "Coverage and gaps",
+        "grounded": "Grounded in",
+        "not_verified": "Not verified",
+        "open": "Left open",
+        "limits": "Limitations",
+        "facts": "What the Agent established",
+        "tools": "Tools run",
+        "tools_note": "_Read-only tool calls made during this Task, as recorded in the audit trail._",
+        "analyses": "Analyses",
+        "attached": "Attached evidence",
+        "triage": "Error triage",
+        "actions": "Rule-derived suggestions",
+        "actions_note": "_Deterministic suggestions from the analyses — not the Agent's own next steps. Each is a suggestion only._",
+        "cost": "Usage",
+        "audit": "Audit trail",
+        "safety": "Safety",
+        "safety_body": "- Built from the Task's own recorded Directions, Work Results and conclusions, its tool trace, sanitized analysis summaries and its audit trail.\n- Contains no raw logs, no raw inventory rows, no evidence file content, no credentials, and no model reasoning. Suggestions are proposals only.\n- Every section is bounded and states when it has truncated.",
+        "sev.high": "High", "sev.medium": "Medium", "sev.low": "Low", "sev.info": "Info",
+        "severity_unknown": "Info",
+    },
+    "zh": {
+        "title": "任务报告：",
+        "meta": "{d} 条指令 · {t} 次工具调用 · {w}",
+        "goal": "目标",
+        "conclusion": "结论",
+        "conclusion_none": "_本轮未记录结论，以下为最新回答。_",
+        "no_result": "_尚无工作结果。_",
+        "findings": "发现",
+        "findings_note": "_按严重程度排序：Agent 在结论中记录的发现，以及调查过程中记录的发现。_",
+        "next_steps": "下一步",
+        "next_steps_note": "_Agent 建议的后续请求，仅为建议，均未执行。_",
+        "investigation": "调查过程",
+        "investigation_note": "_每条指令的提问与回答，以及由工具调用记录得出的依据。回答为节选，不含模型推理过程。_",
+        "coverage": "覆盖与缺口",
+        "grounded": "依据",
+        "not_verified": "未核实",
+        "open": "尚未解决",
+        "limits": "局限",
+        "facts": "已确认的事实",
+        "tools": "工具调用",
+        "tools_note": "_本任务中的只读工具调用，取自审计记录。_",
+        "analyses": "分析",
+        "attached": "附带证据",
+        "triage": "错误分诊",
+        "actions": "规则建议",
+        "actions_note": "_由确定性分析得出的建议，并非 Agent 的下一步；仅为建议。_",
+        "cost": "用量",
+        "audit": "审计记录",
+        "safety": "安全",
+        "safety_body": "- 内容取自本任务记录的指令、工作结果与结论、工具调用记录、经脱敏的分析摘要和审计记录。\n- 不含原始日志、原始清单行、证据文件内容、凭据或模型推理过程。所有建议仅为提议。\n- 每个部分都有上限，截断时会注明。",
+        "sev.high": "高", "sev.medium": "中", "sev.low": "低", "sev.info": "信息",
+        "severity_unknown": "信息",
+    },
+}
+
+_SEV_ORDER = {"high": 0, "critical": 0, "medium": 1, "warning": 1, "low": 2, "info": 3}
+
+
+def _lang(lang: str | None) -> str:
+    return "zh" if str(lang or "").lower().startswith("zh") else "en"
+
+
+def _norm(text: Any) -> str:
+    return " ".join(str(text or "").lower().split())
+
+
+def _latest_answer(messages: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    for m in reversed(messages or []):
+        if m.get("role") == "assistant" and (m.get("content") or m.get("conclusion")):
+            return m
+    return None
+
+
+def _first_direction(messages: list[dict[str, Any]] | None) -> str:
+    for m in messages or []:
+        if m.get("role") == "user" and (m.get("content") or "").strip():
+            return str(m.get("content"))
+    return ""
+
+
+def _merged_findings(conclusion: dict[str, Any] | None,
+                     memory: list[dict[str, Any]] | None,
+                     summary_findings: list[dict[str, Any]] | None) -> list[dict[str, str]]:
+    """One findings list: the recorded conclusion's findings first, then the
+    ones the Agent recorded while investigating and the analyses' findings,
+    deduplicated on their text and ordered most severe first."""
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(title: Any, severity: Any, detail: Any, source: str) -> None:
+        key = _norm(title)
+        if not key or key in seen:
+            return
+        seen.add(key)
+        out.append({"title": str(title), "severity": str(severity or "info").lower(),
+                    "detail": str(detail or ""), "source": source})
+
+    for f in (conclusion or {}).get("findings") or []:
+        add(f.get("title"), f.get("severity"), f.get("detail"), "conclusion")
+    for m in memory or []:
+        if m.get("kind") == "finding":
+            add(m.get("text"), m.get("severity"), "", "memory")
+    for f in summary_findings or []:
+        add(f.get("title"), f.get("severity"), f.get("interpretation"), "analysis")
+    out.sort(key=lambda f: _SEV_ORDER.get(f["severity"], 3))
+    return out[:_MAX_MEMORY_ROWS]
+
+
+def _merged_findings_md(rows: list[dict[str, str]], c: dict[str, str]) -> str:
+    lines = []
+    for f in rows:
+        sev = c.get(f"sev.{'high' if f['severity'] == 'critical' else 'medium' if f['severity'] == 'warning' else f['severity']}", c["severity_unknown"])
+        line = f"- **{sev}** — {_oneline(f['title'])}"
+        if f["detail"]:
+            line += f" — {_oneline(f['detail'])}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _coverage_md(messages: list[dict[str, Any]] | None, open_q: list[str],
+                 limitations: list[str], memory: list[dict[str, Any]] | None,
+                 memory_totals: dict[str, int] | None, c: dict[str, str]) -> str:
+    used: list[str] = []
+    gaps: list[str] = []
+    for m in messages or []:
+        g = m.get("grounding") or {}
+        for u in g.get("evidence_used") or []:
+            if _oneline(u) and _oneline(u) not in used:
+                used.append(_oneline(u))
+        for x in g.get("evidence_gaps") or []:
+            if _oneline(x) and _oneline(x) not in gaps:
+                gaps.append(_oneline(x))
+    questions = [str(q) for q in open_q if _oneline(q)]
+    for m in memory or []:
+        if m.get("kind") == "open_question" and _oneline(m.get("text")) not in [_oneline(q) for q in questions]:
+            questions.append(str(m.get("text")))
+    parts: list[str] = []
+    for label, items in ((c["grounded"], used), (c["not_verified"], gaps),
+                         (c["open"], questions), (c["limits"], [str(x) for x in limitations])):
+        items = [i for i in items if _oneline(i)]
+        if not items:
+            continue
+        shown = items[:_MAX_MEMORY_ROWS]
+        parts.append(f"**{label}**\n\n" + "\n".join(f"- {_oneline(i)}" for i in shown))
+    total_q = (memory_totals or {}).get("open_question")
+    if parts and total_q and total_q > _MAX_MEMORY_ROWS:
+        parts.append(_memory_truncation(_MAX_MEMORY_ROWS, total_q, "questions").strip())
+    return "\n\n".join(parts)
+
+
+def _section(heading: str, body: str, note: str = "") -> str:
+    body = (body or "").strip()
+    if not body:
+        return ""
+    return f"## {heading}\n\n" + (f"{note}\n\n" if note else "") + body + "\n\n"
+
+
 def render_session_report(
     session: dict[str, Any],
     summary: dict[str, Any],
@@ -370,127 +551,67 @@ def render_session_report(
     audit_events: list[dict[str, Any]] | None = None,
     attached_files: list[dict[str, Any]] | None = None,
     memory_totals: dict[str, int] | None = None,
+    lang: str | None = None,
 ) -> str:
-    """Render the report. The keyword inputs are the investigation itself; they
-    default to empty so an older caller still produces the historical document
-    rather than raising."""
+    """Render the report (v3.1): conclusion first, one findings list, the
+    Agent's next steps, the investigation, coverage and gaps, then the record
+    (tools, analyses, usage, audit). A section with nothing behind it is not
+    written. The keyword inputs default to empty so an older caller still
+    renders."""
+    c = _COPY[_lang(lang)]
     facts = summary.get("known_facts", []) or []
     findings = summary.get("findings", []) or []
     actions = summary.get("next_actions", []) or []
     open_q = summary.get("open_questions", []) or []
     limitations = summary.get("limitations", []) or []
+    memory = agent_memory or []
 
     by_message = {
         str(m.get("message_id")): m for m in (turn_metrics or []) if m.get("message_id")
     }
     turn_count = sum(1 for m in (messages or []) if m.get("role") == "assistant")
     tool_count = len(activity or [])
-    # The summary now counts the work that actually happened. Before v0.48.0 it
-    # counted only linked runs, which for an agent-driven session is always zero.
-    exec_summary = (
-        f"This Task pursued the goal: \"{_oneline(session.get('goal')) or '—'}\". "
-        f"{turn_count} Direction(s) ran {tool_count} read-only tool call(s); "
-        f"{len(runs)} deterministic analysis(es) ran; {len(findings)} finding(s) and "
-        f"{len(facts)} fact(s) were collected."
+    latest = _latest_answer(messages)
+    conclusion = (latest or {}).get("conclusion") or None
+    when = _oneline((latest or {}).get("created_at") or session.get("updated_at") or "", 40)[:16] or "—"
+
+    goal = _oneline(session.get("goal")) or _oneline(_first_direction(messages), 300)
+
+    if conclusion and conclusion.get("answer"):
+        conclusion_body = _oneline(conclusion.get("answer"), 600)
+    elif latest:
+        conclusion_body = f"{c['conclusion_none']}\n\n{_excerpt(latest.get('content'))}"
+    else:
+        conclusion_body = c["no_result"]
+
+    merged = _merged_findings(conclusion, memory, findings)
+    steps = [s for s in ((conclusion or {}).get("next_steps") or []) if _oneline(s)]
+
+    fact_lines: list[str] = []
+    if any(m.get("kind") == "fact" for m in memory):
+        fact_lines.append(_agent_facts_md(memory, (memory_totals or {}).get("fact")))
+    if facts:
+        fact_lines.append(_facts_md(facts))
+
+    content = (
+        f"# {c['title']}{_oneline(session.get('title'), 200)}\n\n"
+        f"_{c['meta'].format(d=turn_count, t=tool_count, w=when)}_\n\n"
+        + _section(c["goal"], goal)
+        + _section(c["conclusion"], conclusion_body)
+        + _section(c["findings"], _merged_findings_md(merged, c), c["findings_note"])
+        + _section(c["next_steps"], "\n".join(f"- {_oneline(s)}" for s in steps), c["next_steps_note"])
+        + _section(c["investigation"],
+                   _investigation_md(messages, by_message) if turn_count else "",
+                   c["investigation_note"])
+        + _section(c["coverage"], _coverage_md(messages, open_q, limitations, memory, memory_totals, c))
+        + _section(c["facts"], "\n".join(fact_lines))
+        + _section(c["tools"], _tools_md(activity) if tool_count else "", c["tools_note"])
+        + _section(c["analyses"], _timeline_md(runs) if runs else "")
+        + _section(c["attached"], _attached_files_md(attached_files) if attached_files else "")
+        + _section(c["triage"], _triage_md(triage_cases or []) if triage_cases else "")
+        + _section(c["actions"], _actions_md(actions) if actions else "", c["actions_note"])
+        + _section(c["cost"], _cost_md(usage, _lang(lang)) if usage and usage.get("turns") else "")
+        + _section(c["audit"], _audit_md(audit_events) if audit_events else "")
+        + f"## {c['safety']}\n\n{c['safety_body']}\n"
     )
-
-    content = f"""# Task report: {_oneline(session.get('title'), 200)}
-
-## Goal
-
-{_oneline(session.get('goal')) or '—'}
-
-## Executive summary
-
-{exec_summary}
-
-## Investigation
-
-_What was asked and answered, with the grounding the agent claimed for each
-answer. Answers are excerpted; nothing here is model reasoning._
-
-{_investigation_md(messages, by_message)}
-
-## Tools run
-
-_Read-only tool calls made during this Task, as recorded in the audit trail._
-
-{_tools_md(activity)}
-
-## Cost
-
-{_cost_md(usage)}
-
-## Evidence used
-
-{_facts_md(facts)}
-
-## Analyses
-
-{_timeline_md(runs)}
-
-## Key findings
-
-{_findings_md(findings)}
-
-## Agent-recorded findings
-
-_Findings the conversational agent explicitly recorded during its investigation
-(provenance: agent-recorded, grounded in read-only tool output). Critical facts
-like "bucket X became public since the last survey" live here — previously they
-existed only in chat prose and never reached this report._
-
-{_agent_findings_md(agent_memory or [])}
-
-## What the agent established
-
-_The facts the agent recorded and then reasoned FROM — the premises behind every
-conclusion above. Replayed into each later turn, so they steer the whole
-investigation._
-
-{_agent_facts_md(agent_memory or [], (memory_totals or {}).get("fact"))}
-
-## What the agent left open
-
-{_agent_questions_md(agent_memory or [], (memory_totals or {}).get("open_question"))}
-
-## Attached evidence
-
-{_attached_files_md(attached_files)}
-
-## Error triage
-
-{_triage_md(triage_cases or [])}
-
-## Audit trail
-
-_Rule 17: every tool call, approval, import and report generation is recorded._
-
-{_audit_md(audit_events)}
-
-## Confidence / limitations
-
-Open questions:
-
-{_bullets(open_q)}
-
-Limitations:
-
-{_bullets(limitations)}
-
-## Recommended next actions
-
-_Deterministic, rule-derived suggestions from the analyses — not the Agent's
-own next steps (those appear in the Result). Each is a suggestion only._
-
-{_actions_md(actions)}
-
-## Safety
-
-- This report is built from deterministic, sanitized run summaries, findings, and
-  the Task's own recorded Directions, Work Results, tool trace and audit trail.
-- It contains no raw logs, no raw inventory rows, no evidence file content, no
-  credentials, and no model reasoning. Next actions are proposals only.
-- Every section is bounded and states when it has truncated.
-"""
     return redact_text(content)
