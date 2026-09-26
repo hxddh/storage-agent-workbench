@@ -26,7 +26,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] The product identity is **Storage Agent** in the window/release-facing UI.
 - [ ] A fresh install exposes the greeting (the page's one heading), one sub line, a **Composer**, and three starters (v3.0) — not a wizard. A starter only fills the Composer; nothing is sent until the user delegates.
 - [ ] The window is sidebar · title bar · document, plus the side pane only while an output is open (v3.0). There is no activity bar, status bar, or permanent inspector column.
-- [ ] The Composer shows the active model as a chip backed by the real provider list; switching it activates that provider.
+- [ ] The Composer shows the active model as a chip backed by the real provider list; switching it activates that provider. With the Sidecar unreachable the chip reads **Runtime offline** (danger dot, not clickable), never *Set up a model…*.
 - [ ] The Composer does not paint a persistent keyboard legend (`⏎ Delegate` / `⇧⏎`).
 - [ ] Global navigation is a single chronological Agent Task title list in the sidebar; collapsing it moves the toggle and New task into the title bar.
 - [ ] The New task button is labelled **New task**; ⌘N / Ctrl+N still works and is not painted on the button.
@@ -64,7 +64,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar centres name + state as one group between the sidebar toggle and the side-pane toggle; Find (⌘F) and the palette (⌘K) are keyboard. The palette lists Recent tasks and Actions only (no engine catalog).
 - [ ] Cost-review numbers in a Work Result are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
 - [ ] Cost / inventory / Drift / access-log figures render from runtime artifacts with coverage and Estimate; unconfirmed prices withhold the cost axis; missing series are gap states, never interpolated.
-- [ ] A finding with a provenance chain opens Evidence anchored to that finding; a missing chain is labelled, not implied.
+- [ ] A finding with a provenance chain ends in an **Evidence** link: hover previews the source call, click opens the side pane on Evidence anchored to that finding; a finding without a chain reads *No direct evidence*, never an implied source. There is no separate list of provenance marks under the figures.
 - [ ] A Direction queued behind a running Execution is visible in the Task and can be cancelled.
 
 ### Durable task switching / concurrent state
@@ -87,16 +87,17 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] Kill the Sidecar during a running Execution and relaunch: the interrupted work continues on its own as a new execution (`kind=resume`) without a click; the Direction in the document reads exactly as the user wrote it (no `[resume]` note), and the continuation does not repeat calls that already completed.
 - [ ] If that continuation is itself interrupted, it is not continued again (no crash loop); with no usable model the Task shows **Needs attention** and the manual **Resume** banner.
 
-### Result and side pane (v2.0; side pane v3.0)
+### Result and side pane (v2.0; side pane v3.0; one findings list v3.1)
 
 - [ ] A Task opens at its top, on the latest **Result**: an accent *Result* badge and one meta line (*when · Evidence n · Gaps n · Tool calls n*), then, after an investigative Direction, the recorded conclusion (the answer at 20px, findings most severe first with severity badges, next steps as suggestion cards).
+- [ ] The Result's findings and the Evidence tab show the same list (the conclusion's findings joined by those recorded while working, deduplicated, most severe first); the Evidence count equals that list plus attached files; the Evidence tab reads Findings → Current understanding → Attached evidence, and each finding expands to its detail and source. A Result without a recorded conclusion shows the answer, then the recorded findings.
 - [ ] A next step fills the Composer and is not sent until the user delegates it.
-- [ ] Evidence / Report / Execution are buttons in the outputs bar under the Result (each only when something is behind it) and open in **one side pane** on the right (⌘I or the title-bar toggle) with a tab per output; the close button, Esc and ⌘I close it; dragging its left edge resizes it (352–880px, double-click resets, the width survives reload); below ~1100px it overlays the document. There are no Plans / Baselines entries and no overlay dialog.
+- [ ] Evidence / Report / Execution are buttons in the outputs bar under the Result (each only when something is behind it) and open in **one side pane** on the right (⌘I or the title-bar toggle) with a tab per output; ⌘I toggles it (opening on the first output the Task has; on a Task without Evidence it shows the Report, never *No report has been generated*); the close button and Esc close it; dragging its left edge resizes it (352–880px, double-click resets, the width survives reload); below ~1100px it overlays the document. There are no Plans / Baselines entries and no overlay dialog.
 - [ ] The one Composer remains logically owned by the active Task while the side pane is open, and stays docked: opening the pane never moves the window or the Composer. Execution detail opens inside the pane with one Back.
 - [ ] A one-Direction Task has no Work log: its commentary and *Worked for …* line sit under the Result above the outputs bar. While a newer Direction works, the previous Result stays in place.
 - [ ] Execution detail shows no empty *no findings* section and no kind label for an ordinary Direction.
 - [ ] Evidence/Execution details display persisted sanitized truth.
-- [ ] Markdown Report is a durable Task Artifact and survives reload.
+- [ ] Markdown Report is a durable Task Artifact and survives reload. It reads in the UI language (EN/ZH) and conclusion first — Goal · Conclusion · Findings · Next steps · the per-Direction record · Coverage and gaps · the record · Safety — with no empty sections; the Agent's own words are not translated.
 
 ### Task paging/search/navigation
 

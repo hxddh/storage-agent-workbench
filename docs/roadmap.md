@@ -1,6 +1,12 @@
 # Roadmap
 
-> **Status: delivered in v3.0.0 — Design system v3 / Refined native.** A full
+> **Status: delivered in v3.1.0 — Outputs made real.** The Task report is
+> rebuilt conclusion-first in the reader's language; the Result and the
+> Evidence tab read one findings list with an Evidence link per finding; ⌘I
+> toggles the side pane; the model chip says *Runtime offline* when the
+> runtime cannot be reached; and the design system is finished — no raw colour
+> or type utility in a component (`docs/releases/3.1.0.md`). Before it, v3.0.0
+> — Design system v3 / Refined native. A full
 > UI redesign on an unchanged runtime: a five-step type scale, a calibrated
 > neutral ladder, one restrained indigo accent, one component library, the
 > Task's durable outputs in a resizable, closable side pane, an empty start
@@ -24,9 +30,22 @@
 > "native, simple, elegant, not a chat tool" and rebuilt the turn as a
 > document section (`docs/releases/1.19.0.md`).
 
-> **Baseline: Storage Agent v3.0.0.** The product invariant is unchanged:
+> **Baseline: Storage Agent v3.1.0.** The product invariant is unchanged:
 > **the Agent Task is the application.** The window is sidebar · title bar ·
 > one Task document · one Composer, plus one closable side pane for outputs.
+
+## Outputs made real (shipped in v3.1.0)
+
+| Surface | v3.1 |
+| --- | --- |
+| Task report | conclusion first: title + meta · Goal · Conclusion · one Findings list · Next steps · per-Direction record · Coverage and gaps · the record (tools, analyses, attached evidence, triage, rule-derived suggestions, usage, audit) · Safety; empty sections not written; `?lang=en\|zh` localizes only the module's own words |
+| Findings | one list for the Result and the Evidence tab (`lib/findings.ts`): the conclusion's findings + those recorded while working, deduplicated, most severe first; an Evidence link per finding or *No direct evidence*; the provenance-mark list under figures removed |
+| Side pane | ⌘I toggles it; a selection with nothing behind it settles on the output shown, so the Report loads; Evidence reads Findings → Current understanding → Attached evidence |
+| Chrome | the model chip reads *Runtime offline* when the runtime cannot be reached |
+| Design system | no raw colour or type utility in a component; `frontend/src/styles/`; five sizes, five names; `.ui-scrim` the one scrim; status as dot/badge beside neutral text |
+| Figures | light `--viz-2…5` stepped darker in the same hues (every series ≥ 3:1); ranked bars top-aligned |
+
+No migration (head stays **031**); runtime, security floor and the single submit path unchanged.
 
 ## Design system v3 (shipped in v3.0.0)
 
@@ -152,5 +171,6 @@ catalog, the historical Review sheet, artifact chips, a grey Direction block,
 Next Actions, a metrics footer, table pagination, a second Agent, a Settings
 price-table UI, a Verify control, a second side pane or an overlay dialog for
 artifacts, a conclusion guessed from prose, an approval pause, or a plan card.
-The figure hover layer shipped in v3.0 (a tooltip per column). Migration head
+The figure hover layer shipped in v3.0 (a tooltip per column); the light-theme
+series contrast gap closed in v3.1. Migration head
 **031**.
