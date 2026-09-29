@@ -17,8 +17,7 @@ from __future__ import annotations
 import sqlite3
 
 
-from app import config
-from app.migrations import MIGRATIONS, apply_migrations
+from app.migrations import apply_migrations
 
 
 def _fresh_db(path) -> sqlite3.Connection:

@@ -19,7 +19,6 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from app import config
-from app.s3 import client_factory
 from app.s3 import config_tools as ct
 from app.s3 import tools as s3
 

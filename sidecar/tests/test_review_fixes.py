@@ -6,7 +6,6 @@ regress. Grouped by area; see the PR/commit for the full finding list.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 
 import pytest

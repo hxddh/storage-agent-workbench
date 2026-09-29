@@ -37,7 +37,6 @@ import io
 import os
 import sqlite3
 
-from app import config
 
 
 # --- SEC3: prefix scope path-boundary matching -------------------------------

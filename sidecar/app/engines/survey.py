@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import fnmatch
 import threading
-import time
 from collections import Counter
 from collections.abc import Callable
 from typing import Any

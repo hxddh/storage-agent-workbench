@@ -26,6 +26,7 @@ def _reset_singletons() -> None:
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("SAW_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("STORAGE_AGENT_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("SAW_DB_PATH", str(tmp_path / "db" / "storage-agent.db"))
     _reset_singletons()
     from app.db import init_db

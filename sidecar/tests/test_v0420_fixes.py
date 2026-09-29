@@ -14,7 +14,6 @@ testable here is the Python half of the shell contract plus the drift fixes:
 
 from __future__ import annotations
 
-import importlib
 import inspect
 
 
