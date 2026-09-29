@@ -20,7 +20,7 @@ from pathlib import Path
 # pinning them would make routine tooling upgrades a lockfile conflict.
 ROOTS = ["fastapi", "uvicorn", "keyring", "cryptography", "boto3", "botocore",
          "duckdb", "pyarrow", "pandas", "python-multipart", "openai",
-         "openai-agents", "pyyaml"]
+         "openai-agents", "pyyaml", "sse-starlette", "mcp", "httpx2"]
 
 HEADER = """\
 # Pinned runtime closure for the sidecar. GENERATED — see scripts/lock-sidecar-deps.py.

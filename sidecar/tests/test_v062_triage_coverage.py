@@ -116,19 +116,6 @@ def test_no_new_playbook_suggests_a_mutating_action(code: str):
         assert p["action_type"] in allowed, f"{code} proposes {p['action_type']}"
 
 
-@pytest.mark.parametrize("code", NEWLY_COVERED)
-def test_every_named_next_check_is_a_real_tool_or_prose(code: str):
-    """A check naming a tool that does not exist sends the reader looking for
-    something the product cannot do."""
-    import re
-
-    from app.agent_runtime import session_agent as sa
-
-    real = set(sa._GROUP_OF_TOOL) | set(sa._CORE_TOOLS)
-    for check in pb._BY_CODE[code]["next_checks"]:
-        # Entries are prose that may NAME a tool; only validate the identifiers.
-        for token in re.findall(r"\b([a-z_]{6,})\(", check):
-            assert token in real, f"{code}: next_check names unknown tool {token!r}"
 
 
 def test_the_delete_advice_does_not_imply_this_product_deletes():

@@ -136,18 +136,20 @@ def check_direct_sidecar_smoke(sidecar: Path) -> bool:
 
 
 def check_no_user_data_in_install(install_root: Path) -> bool:
-    # Precise check: the app would create app.db / runs / *.duckdb at the data
+    # Precise check: the app would create storage-agent.db / tasks / *.duckdb at the data
     # dir. We look ONLY at the install root's top level and a .app's Resources —
     # NOT a deep rglob (a cargo target/ tree contains unrelated dep dirs named
     # "data", which would be false positives).
     candidates = [
         install_root / "app.db",
+        install_root / "storage-agent.db",
         install_root / "runs",
         install_root / "data",
         install_root / ".env",
         install_root / "Contents" / "Resources" / "runs",
         install_root / "Contents" / "Resources" / "data",
         install_root / "Contents" / "Resources" / "app.db",
+        install_root / "Contents" / "Resources" / "storage-agent.db",
     ]
     bad = [c for c in candidates if c.exists()]
     if install_root.exists():

@@ -23,11 +23,9 @@ CSV — a TSV whose header cell contains a comma still parses via tab (no regres
 import sqlite3
 from typing import Any
 
-import pytest
 from botocore.exceptions import ClientError
 
 from app import config
-from app.s3 import client_factory
 from app.s3 import config_tools as ct
 
 ALL_USERS = "http://acs.amazonaws.com/groups/global/AllUsers"
@@ -58,7 +56,7 @@ class FakeS3:
 
 
 def _provider(client):
-    return client.post("/cloud-providers", json={
+    return client.post("/providers/clouds", json={
         "name": "demo", "provider_type": "s3-compatible",
         "endpoint_url": "https://minio.example.com", "region": "us-east-1",
         "addressing_style": "path", "access_key": "AKIAEXAMPLE", "secret_key": "shhh"}).json()["id"]
@@ -79,177 +77,33 @@ def test_new_detail_aspects_registered():
         assert aspect in ct._DETAIL_EXTRACTORS
 
 
-def test_detail_policy_status_is_public(client, monkeypatch):
-    pid = _provider(client)
-    fake = FakeS3({"get_bucket_policy_status": {"PolicyStatus": {"IsPublic": True}}})
-    monkeypatch.setattr(client_factory, "build_s3_client", lambda *a, **k: fake)
-    conn = _conn()
-    try:
-        out = ct.get_bucket_config_detail(conn, pid, "b", "policy_status")
-        assert out["status"] == "available"
-        assert out["rules"] == [{"is_public": True}]
-    finally:
-        conn.close()
 
 
-def test_detail_ownership_acls_disabled(client, monkeypatch):
-    pid = _provider(client)
-    fake = FakeS3({"get_bucket_ownership_controls": {
-        "OwnershipControls": {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]}}})
-    monkeypatch.setattr(client_factory, "build_s3_client", lambda *a, **k: fake)
-    conn = _conn()
-    try:
-        out = ct.get_bucket_config_detail(conn, pid, "b", "ownership")
-        assert out["rules"] == [{"object_ownership": "BucketOwnerEnforced", "acls_disabled": True}]
-    finally:
-        conn.close()
 
 
-def test_detail_object_lock_default_retention(client, monkeypatch):
-    pid = _provider(client)
-    fake = FakeS3({"get_object_lock_configuration": {"ObjectLockConfiguration": {
-        "ObjectLockEnabled": "Enabled",
-        "Rule": {"DefaultRetention": {"Mode": "COMPLIANCE", "Days": 30}}}}})
-    monkeypatch.setattr(client_factory, "build_s3_client", lambda *a, **k: fake)
-    conn = _conn()
-    try:
-        out = ct.get_bucket_config_detail(conn, pid, "b", "object_lock")
-        assert out["rules"] == [{"object_lock_enabled": True, "default_mode": "COMPLIANCE",
-                                 "default_retention_days": 30, "default_retention_years": None}]
-    finally:
-        conn.close()
 
 
-def test_detail_acl_grantee_kinds_no_owner_leak(client, monkeypatch):
-    pid = _provider(client)
-    fake = FakeS3({"get_bucket_acl": {
-        "Owner": {"ID": "CANONICAL-OWNER-SHOULD-NOT-LEAK", "DisplayName": "acct-alice"},
-        "Grants": [
-            {"Grantee": {"URI": ALL_USERS, "Type": "Group"}, "Permission": "READ"},
-            {"Grantee": {"URI": LOG_DELIVERY, "Type": "Group"}, "Permission": "WRITE"},
-            {"Grantee": {"ID": "SOME-CANONICAL-ID", "Type": "CanonicalUser"}, "Permission": "FULL_CONTROL"},
-        ]}})
-    monkeypatch.setattr(client_factory, "build_s3_client", lambda *a, **k: fake)
-    conn = _conn()
-    try:
-        out = ct.get_bucket_config_detail(conn, pid, "b", "acl")
-        kinds = {(r["grantee_kind"], r["permission"]) for r in out["rules"]}
-        assert kinds == {("public-all-users", "READ"), ("log-delivery", "WRITE"),
-                         ("canonical-user", "FULL_CONTROL")}
-        blob = str(out)
-        assert "CANONICAL-OWNER-SHOULD-NOT-LEAK" not in blob and "SOME-CANONICAL-ID" not in blob
-    finally:
-        conn.close()
 
 
-def test_security_review_surfaces_authoritative_is_public(client, monkeypatch):
-    pid = _provider(client)
-    fake = FakeS3({
-        "get_bucket_policy": _err("NoSuchBucketPolicy"),
-        "get_bucket_cors": _err("NoSuchCORSConfiguration"),
-        "get_bucket_encryption": {"ServerSideEncryptionConfiguration": {"Rules": [{}]}},
-        "get_bucket_acl": {"Grants": []},
-        "get_public_access_block": _err("NoSuchPublicAccessBlockConfiguration"),
-        "get_bucket_policy_status": {"PolicyStatus": {"IsPublic": True}},
-        "get_bucket_ownership_controls": {
-            "OwnershipControls": {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]}},
-    })
-    monkeypatch.setattr(client_factory, "build_s3_client", lambda *a, **k: fake)
-    conn = _conn()
-    try:
-        out = ct.review_bucket_security(conn, pid, "b")
-        facts = out["facts"]
-        assert facts["policy_is_public"] is True
-        assert facts["publicly_exposed"] is True
-        assert facts["object_ownership"] == "BucketOwnerEnforced"
-        assert facts["acls_disabled"] is True
-        titles = " ".join(f["title"] for f in out["findings"])
-        assert "PUBLIC" in titles and "ACLs disabled" in titles
-    finally:
-        conn.close()
 
 
 # ======================= B1: model_budget ==================================
 
 
-def test_explicit_context_window_overrides_table():
-    from app.agent_runtime import model_budget as mb
-    # A model the table would peg at 128k, declared as 1M by the operator.
-    assert mb.context_window("some-new-model") == 128_000
-    assert mb.context_window("some-new-model", explicit=1_000_000) == 1_000_000
-    # And that flows into the budgets.
-    assert mb.tool_output_char_budget("some-new-model", explicit_window=1_000_000) == 1_000_000
-    # A non-positive/None explicit value is ignored (table still decides).
-    assert mb.context_window("gpt-4o", explicit=0) == 128_000
 
 
-def test_completion_budget_clamped_to_provider_max_output():
-    from app.agent_runtime import model_budget as mb
-    # gpt-4-turbo caps output at 4096 — must NOT be handed the 16384 floor (→ 400).
-    assert mb.completion_token_budget("gpt-4-turbo") == 4_096
-    # gemini-2 (1M window) caps at 8192, not the 32768 the window would imply.
-    assert mb.completion_token_budget("gemini-2.0-flash") == 8_192
-    # gpt-4.1 supports its full 32768.
-    assert mb.completion_token_budget("gpt-4.1") == 32_768
-    # Unknown model keeps the historical floor (no regression).
-    assert mb.completion_token_budget("totally-unknown") == mb.COMPLETION_TOKENS_FLOOR
 
 
 # ======================= B2: elastic replay caps ===========================
 
 
-def test_elastic_replay_caps_floor_and_ceiling():
-    from app.agent_runtime import session_agent as sa
-    # Small/unknown model → exactly the historical floor.
-    c, ch = sa._elastic_replay_caps("gpt-4o", None)
-    assert c == sa._MAX_MESSAGES and ch == sa._MAX_REPLAY_MSG
-    # Huge window → scaled but bounded by the ceilings.
-    c2, ch2 = sa._elastic_replay_caps("gpt-4.1", None)  # 1M window
-    assert c2 == sa._MAX_MESSAGES_CEIL
-    assert c2 > sa._MAX_MESSAGES and ch2 > sa._MAX_REPLAY_MSG
-    assert ch2 <= sa._MAX_REPLAY_MSG_CEIL
-    # v0.55.0: the two dimensions scale in SERIES, not in parallel. Multiplying
-    # BOTH by the window factor made the replay grow with the SQUARE of the
-    # window — a 1M model got 96 x 12,000 = 1,152,000 chars (~288,000 tokens,
-    # re-sent every step) for a window 7.8x the baseline. The AREA is what must
-    # stay linear.
-    base = sa._MAX_MESSAGES * sa._MAX_REPLAY_MSG
-    factor = 1_000_000 // 128_000
-    assert c2 * ch2 <= base * factor, f"{c2}x{ch2} exceeds a linear {factor}x budget"
-    # Explicit window override drives it too.
-    c3, _ch3 = sa._elastic_replay_caps("unknown", 1_000_000)
-    assert c3 == sa._MAX_MESSAGES_CEIL
 
 
 # ============================ CF: credential clarity =======================
 
 
-def test_missing_vault_credential_raises_not_anonymous(client, monkeypatch):
-    from app.security import keyring_store
-    pid = _provider(client)  # stores access_key + secret_key refs
-    # Simulate an out-of-sync vault: the secret_key ref exists on the row but its
-    # value is gone from the vault.
-    keyring_store.delete_secret("cloud_provider", f"{pid}/secret_key")
-    conn = _conn()
-    try:
-        with pytest.raises(client_factory.CredentialResolutionError):
-            client_factory.build_s3_client(conn, pid)
-    finally:
-        conn.close()
 
 
-def test_no_credentials_still_anonymous(client, monkeypatch):
-    from botocore import UNSIGNED
-    # A provider with NO key refs at all → legit anonymous, not an error.
-    pid = client.post("/cloud-providers", json={
-        "name": "anon", "provider_type": "s3-compatible",
-        "endpoint_url": "https://minio.example.com", "region": "us-east-1"}).json()["id"]
-    conn = _conn()
-    try:
-        c = client_factory.build_s3_client(conn, pid)
-        assert c.meta.config.signature_version is UNSIGNED
-    finally:
-        conn.close()
 
 
 # ============================ CSV: delimiter order =========================

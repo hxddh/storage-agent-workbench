@@ -1,4 +1,4 @@
-/** Runtime analysis documents as projected by GET /agent-tasks/{id}/provenance. */
+/** Analysis documents the figures read, projected from a turn's deterministic tool outputs (store/derive.ts). */
 
 export type Coverage = {
   object_count?: number | null;

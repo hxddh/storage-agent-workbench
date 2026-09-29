@@ -1,22 +1,32 @@
 import { expect, test } from "@playwright/test";
+import { boot, reset } from "./app";
 
-/**
- * Empty start is the Composer. Missing model is a banner + Settings, not a
- * first-run wizard, SKU menu, or stacked card.
- */
-test.describe("empty Agent start", () => {
-  test("a fresh window is the Composer, not a configuration wizard", async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem("saw.lang", "en");
-      localStorage.removeItem("saw.onboarded");
-    });
-    await page.goto("/");
-    await expect(page.getByTestId("agent-composer")).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId("agent-first-run")).toHaveCount(0);
-    await expect(page.getByTestId("first-run-resume")).toHaveCount(0);
-    await expect(page.getByTestId("agent-composer").getByRole("textbox")).toHaveAttribute(
-      "placeholder",
-      /Describe the storage work to delegate/,
-    );
-  });
+test.beforeEach(reset);
+
+test("a fresh install says what is missing and starts nothing on its own", async ({ page }) => {
+  await boot(page);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("What should we look after today?");
+  const ready = page.getByTestId("readiness");
+  await expect(ready).toContainText("Add a model");
+  await expect(ready).toContainText("Add a storage account");
+  await expect(page.getByTestId("model-chip")).toHaveText("Set up a model…");
+  // A starter only fills the Composer.
+  await page.getByRole("button", { name: "Diagnose an access error" }).click();
+  await expect(page.getByTestId("composer-input")).toHaveValue(/I get an error when accessing my bucket/);
+  await expect(page.getByTestId("task-list")).toContainText("No tasks yet");
+  // The survey starter needs a storage account and says so.
+  await expect(page.getByRole("button", { name: /Survey my storage account/ })).toBeDisabled();
+  // The readiness card opens the right Settings pane.
+  await ready.getByRole("button", { name: /Add a model/ }).click();
+  await expect(page.getByTestId("settings")).toBeVisible();
+  await expect(page.getByTestId("model-editor")).toBeVisible();
+});
+
+test("without a model the task says why it could not start and where to fix it", async ({ page }) => {
+  await boot(page);
+  await page.getByTestId("composer-input").fill("Why is my bucket slow?");
+  await page.getByTestId("composer-send").click();
+  await expect(page.getByTestId("attention")).toContainText("No model is configured");
+  await page.getByTestId("attention").getByRole("button", { name: "Open Settings" }).click();
+  await expect(page.getByTestId("settings")).toBeVisible();
 });

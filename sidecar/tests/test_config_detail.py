@@ -202,50 +202,29 @@ def test_unknown_aspect_rejected():
     assert out["success"] is False and "unknown aspect" in out["error"]
 
 
-def test_agent_tool_registered_and_scope_enforced(client):
-    from app.agent_runtime import session_tools
+def _scoped(client, **scope):
+    return client.post("/providers/clouds", json={
+        "name": "scoped", "provider_type": "s3-compatible", "endpoint_url": "https://minio.example.com",
+        "region": "us-east-1", "addressing_style": "path", "access_key": "AKIAIOSFODNN7EXAMPLE",
+        "secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", **scope}).json()["id"]
 
-    pid = client.post("/cloud-providers", json={
-        "name": "scoped", "provider_type": "s3-compatible",
-        "endpoint_url": "https://minio.example.com", "region": "us-east-1",
-        "addressing_style": "path", "access_key": "AKIAIOSFODNN7EXAMPLE",
-        "secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-        "allowed_buckets": ["only-this"],
-    }).json()["id"]
-    conn = sqlite3.connect(str(__import__("app.config", fromlist=["config"]).db_path()))
-    conn.row_factory = sqlite3.Row
-    try:
-        tools = {t.name: t for t in session_tools.build(conn, _FT(), [])}
-        assert "get_bucket_config_detail" in tools
-        # out-of-scope bucket is denied before any S3 call
-        out = json.loads(tools["get_bucket_config_detail"](pid, "other-bucket", "cors"))
-        assert out.get("error")
-    finally:
-        conn.close()
+
+def test_agent_tool_registered_and_scope_enforced(client):
+    from app.agent.tools import registry
+    pid = _scoped(client, allowed_buckets=["only-this"])
+    assert "get_bucket_config_detail" in registry.REGISTRY
+    out = registry.call_direct("get_bucket_config_detail", {"provider_id": pid, "bucket": "other-bucket",
+                                                            "aspect": "cors"},
+                               actor="test", allowed=frozenset({"get_bucket_config_detail"}))
+    assert out["error"].startswith("Refused")
 
 
 def test_performance_profile_honors_allowed_prefixes(client):
-    """review_bucket_performance_profile LISTS objects, so a prefix-scoped
-    provider must not have the bucket root sampled out of scope (S1 fix)."""
-    from app.agent_runtime import session_tools
-
-    pid = client.post("/cloud-providers", json={
-        "name": "pfx", "provider_type": "s3-compatible",
-        "endpoint_url": "https://minio.example.com", "region": "us-east-1",
-        "addressing_style": "path", "access_key": "AKIAIOSFODNN7EXAMPLE",
-        "secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-        "allowed_buckets": ["only-this"], "allowed_prefixes": ["team-a/"],
-    }).json()["id"]
-    conn = sqlite3.connect(str(__import__("app.config", fromlist=["config"]).db_path()))
-    conn.row_factory = sqlite3.Row
-    try:
-        tools = {t.name: t for t in session_tools.build(conn, _FT(), [])}
-        assert "review_bucket_performance_profile" in tools
-        # Root listing (no prefix) is denied before any S3 call.
-        out = json.loads(tools["review_bucket_performance_profile"](pid, "only-this", ""))
-        assert out.get("error") and "prefix" in out["error"].lower()
-        # An out-of-prefix key is denied too.
-        out2 = json.loads(tools["review_bucket_performance_profile"](pid, "only-this", "team-b/"))
-        assert out2.get("error")
-    finally:
-        conn.close()
+    """review_bucket_performance_profile LISTS objects, so a prefix-scoped provider
+    must not have the bucket root sampled out of scope."""
+    from app.agent.tools import registry
+    pid = _scoped(client, allowed_buckets=["only-this"], allowed_prefixes=["team-a/"])
+    out = registry.call_direct("review_bucket_performance_profile", {"provider_id": pid, "bucket": "only-this",
+                                                                     "prefix": ""},
+                               actor="test", allowed=frozenset({"review_bucket_performance_profile"}))
+    assert out["error"].startswith("Refused")

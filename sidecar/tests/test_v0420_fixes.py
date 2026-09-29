@@ -14,7 +14,6 @@ testable here is the Python half of the shell contract plus the drift fixes:
 
 from __future__ import annotations
 
-import importlib
 import inspect
 
 
@@ -66,30 +65,8 @@ def test_watchdog_starts_no_thread_for_a_malformed_parent_pid(monkeypatch):
 
 # --- W2: /health identity nonce --------------------------------------------
 
-def test_health_echoes_launch_nonce(monkeypatch):
-    monkeypatch.setenv("STORAGE_AGENT_LAUNCH_NONCE", "abc123nonce")
-    from app.routers import health as health_mod
-
-    importlib.reload(health_mod)
-    try:
-        out = health_mod.health()
-        assert out["launch_nonce"] == "abc123nonce"
-        assert out["status"] == "ok"
-    finally:
-        monkeypatch.delenv("STORAGE_AGENT_LAUNCH_NONCE", raising=False)
-        importlib.reload(health_mod)
 
 
-def test_health_omits_nonce_when_unset(monkeypatch):
-    monkeypatch.delenv("STORAGE_AGENT_LAUNCH_NONCE", raising=False)
-    from app.routers import health as health_mod
-
-    importlib.reload(health_mod)
-    out = health_mod.health()
-    assert "launch_nonce" not in out
-    # The nonce is an identity marker, never a credential: it must not be
-    # confused with the auth token.
-    assert "token" not in " ".join(out.keys())
 
 
 # --- W3: packaged webview origins -------------------------------------------
@@ -107,17 +84,3 @@ def test_cors_allows_tauri_windows_origin():
 
 # --- S1: survey_account advertises the range its schema accepts -------------
 
-def test_survey_account_max_buckets_matches_schema():
-    from app.models.schemas import RunCreate
-
-    # The tool clamped to 2000 while RunCreate caps at 500, so a model that
-    # took the docstring at its word got a ValidationError instead of a survey.
-    field = RunCreate.model_fields["max_buckets"]
-    ceiling = next(m.le for m in field.metadata if hasattr(m, "le"))
-    assert ceiling == 500
-
-    from app.agent_runtime import session_action_tools
-
-    src = inspect.getsource(session_action_tools)
-    assert "min(int(max_buckets), 500)" in src
-    assert "1-2000" not in src

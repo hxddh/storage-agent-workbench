@@ -55,6 +55,11 @@ def db_path() -> Path:
     override = os.environ.get("SAW_DB_PATH")
     if override:
         return Path(override)
+    return data_dir() / "storage-agent.db"
+
+
+def legacy_db_path() -> Path:
+    """The v4 database. Never written: the one-shot importer only reads it."""
     return data_dir() / "app.db"
 
 
@@ -80,7 +85,7 @@ def rel_path(path: str | Path) -> str:
 
 def scrub_paths(text: str) -> str:
     """Collapse the app data dir and the OS home dir (which carry the username and
-    the exact ``app.db`` location ``rel_path`` exists to keep out of persistence)
+    the exact database location ``rel_path`` exists to keep out of persistence)
     out of a free-text string — e.g. an error message surfaced to the client / SSE.
 
     Deliberately narrow: only these two known prefixes are stripped, so object

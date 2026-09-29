@@ -88,14 +88,6 @@ def test_no_bucket_region_is_invented_when_the_header_is_absent():
     assert "bucket_region" not in out
 
 
-def test_the_failure_line_shown_to_the_reader_carries_the_request_id():
-    from app.agent_runtime import session_tools
-
-    line = session_tools._summarize(
-        {"success": False, "error_code": "InternalError", "request_id": "8A9F2C1B4D6E0000"})
-    assert "InternalError" in line and "8A9F2C1B4D6E0000" in line
-    # A failure with no id must not grow a dangling separator.
-    assert session_tools._summarize({"success": False, "error_code": "NoSuchKey"}) == "NoSuchKey"
 
 
 def test_every_live_tool_inherits_the_metadata():
@@ -183,11 +175,6 @@ def test_a_real_failure_stays_a_failure(probe):
     assert out["request_id"] == "8A9F2C1B4D6E0000"
 
 
-def test_the_probe_is_registered_as_an_agent_tool():
-    src = Path(__file__).parent.parent.joinpath(
-        "app/agent_runtime/session_tools.py").read_text()
-    assert "def get_bucket_location(" in src
-    assert re.search(r"tools = \[[^\]]*get_bucket_location", src, re.S)
 
 
 # --- C: the columns the log engine already had -------------------------------

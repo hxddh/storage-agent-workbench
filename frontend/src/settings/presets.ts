@@ -1,3 +1,5 @@
+import type { ModelKind } from "../api/types";
+
 /**
  * One-pick presets for the provider panes. A preset pre-fills type, endpoint
  * and addressing so the user only enters what is theirs (key, region, model).
@@ -8,17 +10,17 @@
 export type ModelPreset = {
   id: string;
   label: string;
-  providerType: string;
+  providerType: ModelKind;
   baseUrl: string;
   modelPlaceholder: string;
   local: boolean;
 };
 
 export const MODEL_PRESETS: ModelPreset[] = [
-  { id: "openai", label: "OpenAI", providerType: "openai", baseUrl: "https://api.openai.com/v1", modelPlaceholder: "gpt-4.1", local: false },
+  { id: "openai", label: "OpenAI", providerType: "openai", baseUrl: "https://api.openai.com/v1", modelPlaceholder: "gpt-5", local: false },
   { id: "anthropic", label: "Anthropic (OpenAI-compatible)", providerType: "anthropic", baseUrl: "https://api.anthropic.com/v1", modelPlaceholder: "claude-sonnet-4-5", local: false },
   { id: "deepseek", label: "DeepSeek", providerType: "deepseek", baseUrl: "https://api.deepseek.com/v1", modelPlaceholder: "deepseek-reasoner", local: false },
-  { id: "openrouter", label: "OpenRouter", providerType: "openrouter", baseUrl: "https://openrouter.ai/api/v1", modelPlaceholder: "openai/gpt-4.1", local: false },
+  { id: "openrouter", label: "OpenRouter", providerType: "openrouter", baseUrl: "https://openrouter.ai/api/v1", modelPlaceholder: "openai/gpt-5", local: false },
   { id: "ollama", label: "Ollama", providerType: "ollama", baseUrl: "http://127.0.0.1:11434/v1", modelPlaceholder: "llama3.1", local: true },
   { id: "lmstudio", label: "LM Studio", providerType: "lmstudio", baseUrl: "http://127.0.0.1:1234/v1", modelPlaceholder: "loaded-model", local: true },
   { id: "vllm", label: "vLLM", providerType: "vllm", baseUrl: "http://127.0.0.1:8000/v1", modelPlaceholder: "served-model-name", local: true },

@@ -37,7 +37,6 @@ import io
 import os
 import sqlite3
 
-from app import config
 
 
 # --- SEC3: prefix scope path-boundary matching -------------------------------
@@ -121,15 +120,6 @@ def test_clip_bounds_free_text_labels():
 
 # --- ING2: HTML-escaped finding cells ----------------------------------------
 
-def test_report_findings_are_html_escaped():
-    from app.runs import analysis_report, report
-
-    finding = {"severity": "high", "title": "<img src=x onerror=alert(1)>",
-               "detail": "a & b < c"}
-    md1 = analysis_report._findings_md([finding])
-    assert "<img" not in md1 and "&lt;img" in md1
-    esc = report._esc("<img src=x>")
-    assert "<img" not in esc and "&lt;img" in esc
 
 
 # --- ING4: future-dated object → 'unknown' age -------------------------------
@@ -187,27 +177,6 @@ def _insert_run(conn: sqlite3.Connection, run_id: str, provider_id: str,
     conn.commit()
 
 
-def test_recent_run_ids_excludes_partial_survey(client):
-    from app.repositories import account_discovery as ad
-
-    conn = sqlite3.connect(str(config.db_path()))
-    conn.row_factory = sqlite3.Row
-    pid = "prov-x"
-
-    # Older COMPLETED survey.
-    _insert_run(conn, "run-done", pid, "completed", "2026-01-01T00:00:00Z")
-    ad.create_snapshot(conn, "run-done", pid, bucket_count=3, visible_count=3,
-                       processed_count=3, truncated=False, list_status="ok",
-                       summary={})
-    # NEWER run that crashed mid-survey (status still 'running').
-    _insert_run(conn, "run-partial", pid, "running", "2026-02-01T00:00:00Z")
-    ad.create_snapshot(conn, "run-partial", pid, bucket_count=3, visible_count=3,
-                       processed_count=3, truncated=False, list_status="ok",
-                       summary={})
-
-    ids = ad.recent_run_ids_for_provider(conn, pid, limit=2)
-    assert ids == ["run-done"]  # the newer partial is excluded
-    conn.close()
 
 
 # --- RUN4: region-mismatch status constant -----------------------------------

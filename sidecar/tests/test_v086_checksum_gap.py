@@ -40,7 +40,7 @@ def _db() -> sqlite3.Connection:
 
 @pytest.fixture()
 def provider(client) -> str:
-    return client.post("/cloud-providers", json={
+    return client.post("/providers/clouds", json={
         "name": "checksum-gap", "provider_type": "s3-compatible",
         "endpoint_url": "https://gw.example.com", "region": "us-east-1",
         "addressing_style": "path", "access_key": "AKIAIOSFODNN7EXAMPLE",

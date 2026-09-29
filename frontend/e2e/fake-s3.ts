@@ -242,11 +242,11 @@ const SIDECAR = `http://127.0.0.1:${process.env.E2E_SIDECAR_PORT || 8799}`;
 
 /** Delete a cloud provider, so the next spec still sees a fresh install. */
 export async function dropCloudProvider(id: string): Promise<void> {
-  await fetch(`${SIDECAR}/cloud-providers/${id}`, { method: "DELETE" }).catch(() => undefined);
+  await fetch(`${SIDECAR}/providers/clouds/${id}`, { method: "DELETE" }).catch(() => undefined);
 }
 
 /** Every cloud provider currently configured, for cleanup by name. */
 export async function listCloudProviders(): Promise<Array<{ id: string; name: string }>> {
-  const res = await fetch(`${SIDECAR}/cloud-providers`);
+  const res = await fetch(`${SIDECAR}/providers/clouds`);
   return (await res.json()) as Array<{ id: string; name: string }>;
 }

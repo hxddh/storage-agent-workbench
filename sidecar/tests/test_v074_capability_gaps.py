@@ -43,7 +43,7 @@ BUCKET = "bucket-alpha"
 
 @pytest.fixture()
 def cloud_id(client):
-    return client.post("/cloud-providers", json={
+    return client.post("/providers/clouds", json={
         "name": "gateway-fronted", "provider_type": "s3-compatible",
         "endpoint_url": "https://minio.example.com", "region": "us-east-1",
         "addressing_style": "path", "access_key": "AKIAIOSFODNN7EXAMPLE",

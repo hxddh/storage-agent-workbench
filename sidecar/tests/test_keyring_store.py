@@ -150,7 +150,7 @@ def test_vault_status_flags_unreadable(client):
     assert status["backup_present"] is True
 
     # And it's exposed over the API for the settings drawer.
-    body = client.get("/settings/secret-vault").json()
+    body = client.get("/settings").json()["vault"]
     assert set(body) == {"unreadable", "backup_present"}
 
 

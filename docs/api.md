@@ -1,439 +1,359 @@
-# Sidecar API
+# Sidecar HTTP API
 
-> **Storage Agent v2.2.0 API reference.** (v2.2 adds the durable `direction.recorded` and `tool.progress` events, stores resume/retry Directions as written, and adds no route or migration. v2.1 removes the approval surface: the approval-policy settings route, the decision resolve route, `pending_decisions` from task state and `task.status`, `requires_decision` from the task list, and the `approval.*` / `decision.resolved` / `plan.updated` events; Decisions are read-only history. v2.0 adds the `conclusion.recorded` event and a `conclusion` on assistant messages and Work Results — migration 031. v1.18 removes the `/runs` submit/message/events/upload routes and the `/evidence-imports` plan/confirm/run routes.) One protocol: the durable Execution
-> API under `/agent-tasks` is the ONLY way work is submitted, followed, steered,
-> stopped, and resumed. The pre-v0.94 message/turn endpoints under `/sessions`
-> (`POST …/messages`, `POST …/messages/stream`, `POST …/turns/{id}/cancel`,
-> `GET …/turn`, `POST …/actions/prepare`) are removed. The execution stream is
-> push-driven (no Sidecar poll loop) and carries `task.status`,
-> `conclusion.recorded` and `context.compacted`. New in v1.13: per-execution JSON event pages
-> (`GET .../executions/{eid}/events-page`), strict execution `kind` (unknown
-> kinds are 422), OTel span projection on the export, real MCP dispatch
-> (`POST /mcp/tools/call` executes), and `GET /mcp/client/status`.
-> Migration **031** (v2.0; v1.13–v1.19, v2.1 and v2.2 added none). Engine endpoints such as
-> `/settings/price-table` and `/evidence-imports` remain; they are not product
-destinations.
->
-> The public product model is Agent Task / Direction / Execution / Work Result / Artifact (Decision is read-only history since v2.1). Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
+The Sidecar is a local FastAPI service that the desktop shell starts on
+`127.0.0.1`. It is the only process that holds secrets, runs the Agent and
+talks to storage. This document describes every route it serves.
 
-The Python Sidecar binds to localhost on a port selected by the Tauri launcher. In development it defaults to `http://127.0.0.1:8765` unless `VITE_SIDECAR_URL` overrides the frontend target.
+Sources of truth: `sidecar/app/main.py` and `sidecar/app/api/`
+(`tasks.py`, `estate.py`, `providers.py`, `settings.py`, `health.py`,
+`mcp.py`).
 
-Request/response schema definitions live in `sidecar/app/models/schemas.py`; routers live under `sidecar/app/routers/`.
+## Conventions
 
-## Local authorization
+### Authentication
 
-When `STORAGE_AGENT_AUTH_TOKEN` is set by the packaged Tauri launcher, every non-exempt request must present the per-launch shared secret:
+When the launcher sets `STORAGE_AGENT_AUTH_TOKEN`, every request must present
+that token, either as the `X-Sidecar-Token` header or as a `?token=` query
+parameter. The query parameter exists for `EventSource`, which cannot set
+headers. The comparison is constant-time (`hmac.compare_digest`).
 
-- normal HTTP: `X-Sidecar-Token: <token>`;
-- header-less `EventSource`: `?token=<token>`.
+- A missing or wrong token gets `401 {"detail": "unauthorized"}`.
+- Exempt: `GET /health` and every `OPTIONS` (CORS preflight) request.
+- `GET /health/selfcheck`, the SSE streams and `/mcp` all require the token.
+- When `STORAGE_AGENT_AUTH_TOKEN` is unset (dev and tests), no token is
+  checked.
 
-Exempt:
+### CORS
 
-- `GET /health`;
-- CORS preflight `OPTIONS`.
+The allowed origins are:
 
-The comparison is constant-time. Packaged uvicorn access logging is disabled so an SSE query token is not written to access logs. In plain development/tests, when the environment variable is absent, this auth layer is open.
+| Origin | Used by |
+| --- | --- |
+| `http://localhost:1420`, `http://127.0.0.1:1420` | Tauri dev server |
+| `http://localhost:5173`, `http://127.0.0.1:5173` | Vite dev server |
+| `tauri://localhost` | Packaged app on macOS |
+| `http://tauri.localhost`, `https://tauri.localhost` | Packaged app on Windows (WebView2) |
 
-Binding to `127.0.0.1` is network isolation, not local-process authorization; the token is the packaged local-process gate.
+Allowed methods: `GET POST PUT PATCH DELETE OPTIONS`. All headers are allowed,
+and credentials are not. CORS is not the security boundary. The token gate is.
 
-## Product-level Agent Task projection
+### Errors
 
-### `GET /agent-tasks`
-
-Returns the global task-navigation projection.
-
-Query:
-
-- optional `q` for task search.
-
-The endpoint adapts durable `sessions` rows into product-level Task summaries and adds:
-
-- `task_status` — the durable task lifecycle (`ready` / `working` / `needs_attention` / `archived`; `needs_decision` is never derived since v2.1 and survives only as a legacy value);
-- `active_execution_id` — the durable execution currently queued or running, if any.
-
-The lookup is batched for the task list. v2.1 dropped `requires_decision`: nothing raises a Decision any more.
-
-This endpoint exists specifically so global Task state remains truthful after reload/restart without making the browser reconstruct durable state from every full Task document.
-
-## Agent Task runtime API (v0.94)
-
-Prefix: `/agent-tasks/{task_id}`
-
-The durable task runtime surface. An Execution is a durable object owned by the Sidecar's background execution supervisor: HTTP clients submit, steer, stop, resume, and OBSERVE — closing a stream never interrupts work.
-
-```text
-GET  /agent-tasks/{task_id}/state
-POST /agent-tasks/{task_id}/executions
-GET  /agent-tasks/{task_id}/executions
-GET  /agent-tasks/{task_id}/executions/{execution_id}
-GET  /agent-tasks/{task_id}/executions/{execution_id}/events   (SSE)
-GET  /agent-tasks/{task_id}/executions/{execution_id}/events-page   (JSON, v1.13)
-PATCH /agent-tasks/{task_id}/executions/{execution_id}   (queued only, v1.14)
-POST /agent-tasks/{task_id}/executions/{execution_id}/stop
-POST /agent-tasks/{task_id}/executions/{execution_id}/resume
-POST /agent-tasks/{task_id}/verify
-POST /agent-tasks/{task_id}/compact
-POST /agent-tasks/{task_id}/steer
-GET  /agent-tasks/{task_id}/events
-GET  /agent-tasks/{task_id}/decisions   (read-only history)
-GET  /agent-tasks/{task_id}/work-results
-GET  /agent-tasks/{task_id}/artifacts
-GET  /agent-tasks/{task_id}/provenance
-GET  /agent-tasks/{task_id}/context
-GET  /agent-tasks/{task_id}/remediation-plans
-GET  /agent-tasks/{task_id}/baselines
-GET  /agent-tasks/{task_id}/revisit
-PUT  /agent-tasks/{task_id}/revisit
-```
-
-- `state` returns everything a client needs to (re)attach after reload, task switch, or Sidecar restart: durable status, active execution + last event sequence, `last_execution`, `queued_executions`, context version (`pending_decisions` was removed in v2.1).
-- `POST executions` delegates a Direction. `kind` is `direction` (default), `verify`, or `revisit` — any other value is 422 (v1.13: unknown kinds are a client bug, never silently downgraded). Idempotent on `(task, turn_id)` via a unique index — a duplicate submit attaches (`created: false`) instead of re-running. A submission while another execution runs is QUEUED durably and runs after it.
-- `PATCH .../executions/{eid}` (v1.14) rewrites a QUEUED execution's Direction — queued work is editable, not just cancellable. 404 when unknown; 409 once it left the queue (steer it instead).
-- `POST .../verify` submits a Verify Execution through that same path when a Remediation Plan exists (`kind=verify`). 404 when the Task has no plan.
-- `GET/PUT .../revisit` reads or sets the optional per-task revisit interval. Due revisits are submitted by the Sidecar's own revisit clock and at startup via `runtime.submit(kind=revisit)` — never by a read, never a second runner. Catch-up Directions are labelled. Revisits are read-only.
-- The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `direction.recorded` (`{message_id, continued?}` — the Direction's `session_messages` row was written when the execution started, v2.2; `continued: true` when a resume/retry answers under the original Direction row), `direction.withdrawn` (`{message_id}` — a FAILED execution took back the unanswered Direction row it wrote; the execution row keeps the words), `tool.started`, `tool.progress` (`{id, tool, done, total, unit}` — `id` is the tool call id, `unit` is `buckets` or `files`; real counts from `survey_account` and `import_evidence`, throttled to at most one per call per second plus the final one and at most 120 per call, v2.2; never a percentage from time, never row data), `tool.completed` (since v1.12 with `started_at` / `finished_at` / `duration_ms` when the tool path stamped them), `message.completed` (a closed commentary segment, or the answer when `final: true`), `conclusion.recorded` (`{answer, findings[{title, severity, detail?}], next_steps[]}` — the model's `record_conclusion` tool, v2.0; the last one of an execution is the Work Result's conclusion), `steer.received`, `steer.applied`, `context.compacted` (`{before_tokens, after_tokens, summary_chars}`, v1.12), `work_result.recorded`, `artifact.recorded`, `context.updated`, `task.titled`, `task.status` (`{status, active_execution_id, queued, last_execution}` whenever the task's derived state or queue changes, v1.12 — a follower needs no `/state` poll), `execution.events_truncated`, transient `delta`, terminal `end`. Frontend recovery is this sequence reconnect only. Since v1.12 the Sidecar follower is woken by the in-process hub (no SQLite poll loop); an idle stream sends a heartbeat comment every 15 s. Since v2.1 the runtime no longer emits `plan.updated`, `approval.opened`, `approval.granted` or `decision.resolved`; logs written before v2.1 may still contain them and clients ignore them.
-- `POST .../compact` (v1.12) runs the context compaction step on demand for a task with no live execution: one tool-less model call summarises the replayed turns into a bounded, redacted continuation summary stored on the typed context (`task_context_versions.summary_sanitized`), and `context.compacted` is appended to the task's event log with an empty `execution_id`; the next execution re-emits it on its own stream (and starts its turn with the `compacted` item) so the transcript shows the marker where work resumed. Returns `{compacted, before_tokens, after_tokens, summary_chars}` or `{compacted: false, reason}`; 409 while an execution is active; 422 without a model. The runtime runs the same step automatically before an execution's model loop when the last turn's reported input usage crossed 80 % of the model's context window.
-- `steer` acts ON the current execution: the text is injected into the running model loop at its next tool boundary; a steer the loop could no longer take is carried into an automatic follow-up execution. The target is the running (else queued) execution; it is never silently re-submitted as a queued follow-up. (v1.14–v2.0: a steer raised while an approval was open lands on the waiting execution; since v2.1 nothing waits.) 409 only when nothing is executing at all.
-- `stop` cancels durably; the partial Work Result persists with `stopped: true`.
-- `resume` turns an `interrupted` / `failed` / `cancelled` execution into a NEW execution carrying the same Direction (history is never rewritten). A cancelled resume is labelled `kind=retry` (v1.13), not `resume`. Since v2.2 the stored Direction is the user's text exactly as written (no `[resume]` / `[retry]` note); the continuation note and a bounded digest of calls already completed go only into the model's copy (`task_runtime/continuation.py`), and a continuation whose original Direction row is still the task's latest message answers under it. Since v2.1 the Sidecar calls the same `runtime.resume` itself after a restart: each execution the restart stamped `interrupted` gets one `kind=resume` continuation, never for an execution that was itself such a continuation, and none while no model is usable — the client only needs this route when that was not possible.
-- `GET .../executions/{eid}/events-page` (v1.13) pages ONE execution's durable events as JSON (`after`/`limit`, same global sequence numbers as the SSE). Execution detail reads here instead of scanning the whole task log.
-- `decisions` lists the task's Decisions as **read-only history** (pre-2.1 approvals, each with its projected `impact`). v2.1 removed the decision resolve route and `runtime.request_approval`: `import_evidence` runs inside the Execution without a Decision, bounded server-side (see Managed Evidence Import). Restart recovery withdraws any Decision still pending (`superseded`, note "withdrawn: approvals were removed in v2.1").
-- `context` returns the latest TYPED, versioned Storage Task Context (machine state derived from durable rows — recovery never replays messages). The same snapshot is injected into the Agent prompt's stable half.
-- `GET .../provenance` is a **read-only projection** of existing `session_findings`, `tool_calls`, `task_artifacts`, and `runs`. It returns the latest cost / inventory / access-log / drift analysis documents plus per-finding evidence chains (tool, time, coverage, Review target). A missing link is `gap: "no_direct_evidence"` — never a fabricated source. No new tables.
-
-## Storage estate (v4.0)
-
-The estate is what the deterministic engines established about the user's
-accounts, remembered across tasks. Issues are opened, resolved and marked
-recurred only by deterministic observations (survey posture, config review,
-read-only verify) — never by model prose. No route here submits Agent work.
-
-| Method | Path | Behaviour |
+| Status | Body | When |
 | --- | --- | --- |
-| `GET` | `/estate?lang=en\|zh` | per provider: known buckets, last checked, open issues by severity, watch state; plus the issues that need care (≤ 20, most severe first) |
-| `GET` | `/issues?status=active\|all\|<status>&provider_id=&lang=` | issues, most severe first (≤ 500) |
-| `GET` | `/issues/{id}` | one issue with its lifecycle events |
-| `POST` | `/issues/{id}/fix` | generate the deterministic fix (text the user applies; storage stays read-only); an open issue becomes `fix_proposed`; 409 when the rule has no generated fix |
-| `POST` | `/issues/{id}/verify` | read-only re-check (`review_bucket_security` / `review_bucket_lifecycle`, recorded as tool calls, scope-checked); `result` = `still_present` \| `resolved` \| `inconclusive` (a blind read decides nothing) |
-| `POST` | `/issues/{id}/accept` | `{accepted}` — accept the risk (leaves the home list) or reopen |
-| `GET` | `/estate/watch/{provider_id}` | the provider's watch (`enabled`, `interval_hours`, next/last run, last status `found`\|`clear`\|`failed`\|`running`, last summary, last task, `running`) |
-| `PUT` | `/estate/watch/{provider_id}` | `{enabled, interval_hours}` — opt-in (off by default); interval clamped to 1–168 h; turning it on schedules the first sweep for the next tick |
-| `POST` | `/estate/watch/{provider_id}/run` | 202 `{started}` — Check now: one read-only sweep in the background, one at a time per provider |
+| `401` | `{"detail": "unauthorized"}` | Token missing or wrong. |
+| `404` / `409` / `413` / `422` | `{"detail": "<message>"}` | Raised by a route (listed per route below). |
+| `422` (validation) | `{"detail": [{"type", "loc", "msg", ...}]}` | Pydantic validation failed. Each error's `input` is dropped and `msg` is redacted, so a rejected body never echoes a submitted secret. |
+| `500` | `{"detail": "internal error (<ExceptionType>)"}` | Unhandled fault. Only the exception type is returned, never its message. `Access-Control-Allow-Origin` is set when the request came from an allowed origin. |
 
-A sweep (Sidecar clock, `STORAGE_AGENT_WATCH_TICK_SECONDS`, default 60 s) runs the survey engine (≤ 500 buckets), re-checks what posture cannot decide (≤ 25 buckets) and, only when a high/medium Issue was opened or came back, opens one Agent Task through `runtime.submit` with the evidence in its Direction. No model configured → no task; the Issues stay on the home.
+Timestamps are ISO-8601 UTC strings. IDs are 32-character hex strings.
 
 ## Health
 
-```text
-GET /health
+| Method | Path | Response |
+| --- | --- | --- |
+| `GET` | `/health` | `{"status": "ok", "service": "storage-agent-sidecar", "version": str, "launch_nonce"?: str}`. `launch_nonce` echoes `STORAGE_AGENT_LAUNCH_NONCE` when it is set. The launcher uses it to confirm it is talking to its own Sidecar. No token is required. |
+| `GET` | `/health/selfcheck` | `{"status": "ok" \| "degraded", "service": str, "checks": {"agents_sdk", "s3_client", "analysis_engine", "vault_crypto": "ok" \| "error: <Type>: <redacted, path-scrubbed message>"}}`. The check runs offline: it imports the Agents SDK, builds a boto3 S3 client, round-trips DuckDB, PyArrow and Parquet, and round-trips AES-GCM. |
+
+## Tasks
+
+Router prefix `/tasks`. A Task is a tree of Turns, and the page reads one
+branch (see [data-model.md](data-model.md)). Every route that creates work
+goes through the runtime (`RUNTIME.submit`). There is no other submit path.
+
+### Request models
+
+| Model | Field | Type and limits |
+| --- | --- | --- |
+| `TaskIn` | `direction` | `str \| null`, max 16 000 chars |
+| | `title` | `str \| null`, max 120 chars |
+| | `origin` | `"user"` (default) or `"quick_ask"` |
+| `TaskPatch` | `title` | `str`, 1–120 chars |
+| `TurnIn` | `direction` | `str`, 1–16 000 chars (required) |
+| | `parent_turn_id` | `str \| null`. Omitted or `null`: continue from the head. A turn ID: fork after that turn. `""`: a new first Direction (a fork at the root). |
+| | `attachments` | `list[str]` of dataset IDs, max 20 items, default `[]` |
+| `SteerIn` | `text` | `str`, 1–16 000 chars |
+| `HeadIn` | `turn_id` | `str` |
+
+### The task snapshot
+
+`GET /tasks/{id}`, `POST /tasks` and `PUT /tasks/{id}/head` return the
+snapshot of the task's current branch:
+
+```jsonc
+{
+  "task": { "id", "title", "title_source", "head_turn_id", "origin", "created_at", "updated_at" },
+  "state": "working" | "queued" | "needs_attention" | "ready",
+  "running_turn_id": "…" | null,
+  "queued": [ { "turn_id", "direction", "created_at" } ],
+  "turns": [ { "id", "parent_turn_id", "kind", "direction", "status", "error",
+               "created_at", "started_at", "finished_at", "resumed_from", "usage" } ],   // the branch, root first
+  "items": [ /* public items of those turns, by seq */ ],
+  "forks": { "<parent turn id or ''>": ["<child turn id>", …] },   // only parents with more than one child
+  "live": { "turn_id", "segment_id", "text" } | null,              // the text segment being streamed now
+  "files": [ /* file objects, see Files */ ],
+  "artifacts": [ { "id", "kind", "title", "turn_id", "provider_id", "created_at" } ],
+  "last_seq": 0                                                   // highest item seq of the task
+}
 ```
 
-Returns Sidecar liveness/service identity. It is intentionally auth-exempt.
+- `state` is derived from the task's turns: a running turn gives `working`, a
+  queued turn gives `queued`, and a latest turn that is `failed` or
+  `interrupted` gives `needs_attention`. Anything else is `ready`.
+- `usage` is the turn's recorded usage
+  (`{requests, input_tokens, output_tokens, cached_tokens, reasoning_tokens}`)
+  or `null`.
+- `forks` is built from turns with `kind != 'resume'`. The key `""` stands for
+  the root.
+- An item is `{seq, id, task_id, turn_id, type, payload, created_at}`.
+  `payload.model_output` is removed from every item served over HTTP or SSE.
+  That field holds the text the model read; the UI reads `detail` instead.
 
-## Model providers
+### Routes
 
-Prefix: `/model-providers`
+| Method | Path | Body | Success | Errors |
+| --- | --- | --- | --- | --- |
+| `GET` | `/tasks?q=` | — | `200 {"tasks": [{id, title, title_source, origin, state, created_at, updated_at}]}`. Newest `updated_at` first, at most 500. `q` (max 200 chars) filters titles with `LIKE %q%`. | `422` |
+| `POST` | `/tasks` | `TaskIn` | `201` snapshot. Title: `title`, or the first 60 chars of the Direction (whitespace collapsed, `…` appended when cut), or `"New task"`. With a non-empty `direction`, the first turn is submitted at once. Publishes a global `task` event `{task_id, state: "ready", title, created: true}`. | `422` |
+| `GET` | `/tasks/{id}` | — | `200` snapshot | `404 task not found` |
+| `PATCH` | `/tasks/{id}` | `TaskPatch` | `200` task row. Sets `title_source = 'user'`, writes the audit row `task.rename` and publishes `task {task_id, title}`. | `404`, `422` |
+| `DELETE` | `/tasks/{id}` | — | `204`. Stops any running turn, deletes the task (turns, items, artifacts and datasets cascade), removes `<data>/tasks/<id>/`, writes the audit row `task.delete` and publishes `task {task_id, deleted: true}`. | `404` |
+| `POST` | `/tasks/{id}/turns` | `TurnIn` | `202 {"turn_id", "status"}`. The Direction is recorded as a `user_message` item at once. The turn waits in the queue behind any running turn. | `404`; `422 unknown parent turn` (the parent is not in this task); `422 unknown attachment for this task` |
+| `POST` | `/tasks/{id}/steer` | `SteerIn` | `200 {"steered": bool, "turn_id"}`. With a turn running, the text is recorded as a `steer` item and injected into the running model loop before its next model call (`steered: true`). With nothing running, it becomes a new Direction (`steered: false`, `turn_id` is the new turn). | `404`, `422` |
+| `POST` | `/tasks/{id}/stop` | — | `200 {"stopping": bool}`. `false` when nothing is running. Stop sets the turn's cancel flag and cancels the streamed run. The turn ends `cancelled` and keeps what it recorded. | `404` |
+| `DELETE` | `/tasks/{id}/turns/{turn_id}` | — | `200 {"cancelled": true}`. Withdraws a queued Direction: status becomes `cancelled`, a `notice {event: "cancelled", queued: true}` is recorded, and the head moves back to the turn's parent when the turn was the head. | `404`; `409 only a queued Direction can be withdrawn` |
+| `POST` | `/tasks/{id}/turns/{turn_id}/resume` | — | `202 {"turn_id", "status"}`. Continues an `interrupted`, `failed` or `cancelled` turn as a new `kind = resume` turn whose parent is that turn. | `404`; `409 the task is working`; `409 nothing to resume` |
+| `PUT` | `/tasks/{id}/head` | `HeadIn` | `200` snapshot. Moves the head to the newest descendant (`leaf_of`) of `turn_id`, which is how the UI reads another version of a Direction. | `404 task not found`; `404 turn not found` |
 
-```text
-GET    /model-providers
-POST   /model-providers
-PUT    /model-providers/{provider_id}
-DELETE /model-providers/{provider_id}
-POST   /model-providers/{provider_id}/activate
-POST   /model-providers/{provider_id}/test
+### Files
+
+| Method | Path | Body | Success | Errors |
+| --- | --- | --- | --- | --- |
+| `POST` | `/tasks/{id}/files` | `multipart/form-data`: `file` (required), `dataset_type` = `auto` (default) \| `access_log` \| `inventory` | `201` file object. `auto` decides from the file name and the first 64 KiB. Streamed to disk in 1 MiB chunks. Writes the audit row `file.upload` with detail `{type, bytes}`. | `404`; `422 dataset_type must be auto, access_log or inventory`; `413 file is larger than 2 GiB`; `422` for other save errors |
+| `GET` | `/tasks/{id}/files` | — | `200 {"files": [file object]}` | `404` |
+
+A file object is
+`{id, origin: "upload" | "import", type, filename, size_bytes, rows, status, bucket, created_at}`.
+`rows` is `null` until the file is analyzed. `status` is `ready` or `analyzed`.
+
+### Outputs
+
+| Method | Path | Success | Errors |
+| --- | --- | --- | --- |
+| `GET` | `/tasks/{id}/artifacts/{artifact_id}` | `200 {id, kind, title, turn_id, provider_id, created_at, payload}` | `404 artifact not found` (also when the artifact belongs to another task) |
+| `GET` | `/tasks/{id}/report?lang=en\|zh` | `200 text/plain`: the task report in Markdown, projected from the current branch's items. `lang` defaults to `en`. Only the report's own headings are localized. | `404`; `422` for any other `lang` |
+| `GET` | `/tasks/{id}/trace` | `200` OTLP-shaped JSON: `{"resourceSpans": [{"resource": {"attributes": {"service.name": "storage-agent", "storage_agent.task_id"}}, "scopeSpans": [{"scope": {"name": "openai-agents"}, "spans": [{traceId, spanId, parentSpanId, name, kind, startTime, endTime, status: {code: "OK" \| "ERROR", message?}, attributes: {"storage_agent.turn_id", …}}]}]}]}`. Built from the local `spans` table, so it holds names, timings and sizes only. | `404` |
+
+## Live streams (SSE)
+
+Both streams use `sse-starlette` with a comment ping every 15 seconds. An
+`EventSource` passes the token as `?token=`.
+
+### `GET /tasks/{id}/events?after=<seq>`
+
+`after` is an integer ≥ 0 and defaults to `0`. An unknown task gets `404`
+before the stream opens.
+
+The stream does the following, in order:
+
+1. Subscribes to the task's in-process hub first, then replays, so no item can
+   land in the gap between the two.
+2. **Replays** the durable items with `seq > after`, as `item` events, in
+   `seq` order. The replay query returns at most 2 000 items; any remainder
+   arrives through the resync described in step 4.
+3. Sends one `live` event: the text segment the model is writing now, or
+   `null`.
+4. **Follows**: forwards hub events as they happen. Items are de-duplicated
+   by `seq`: an item with `seq <= last` is dropped. When a new item arrives
+   with the queue otherwise empty, any gap below it is filled from the table
+   first. After 10 seconds without an event, the stream replays from the table
+   (`items_after(last)`). A follower whose queue overflowed (2 048 events)
+   therefore catches up from durable storage.
+
+| Event | `id:` | `data` |
+| --- | --- | --- |
+| `item` | the item's `seq` | the public item `{seq, id, task_id, turn_id, type, payload, created_at}`, with `payload.model_output` removed |
+| `delta` | — | `{turn_id, segment_id, text}`: sanitized live text for the open segment. Deltas are ephemeral. The closed segment later arrives as an `agent_message` item whose `id` equals `segment_id`. |
+| `state` | — | `{state, running_turn_id, queued_turn_ids}`, published whenever a turn is queued, starts, finishes or is withdrawn |
+| `live` | — | `{turn_id, segment_id, text}` or `null`. Sent once, after the replay. |
+
+The stream is resumable. A client that reconnects with
+`after=<last id it saw>` receives exactly the items it missed. `id` values are
+global item sequence numbers, so they increase but have gaps within one task.
+
+### `GET /events`
+
+This is the global feed that the sidebar and the tray follow. It has no replay
+and no `after` parameter.
+
+| Event | `data` |
+| --- | --- |
+| `hello` | `{"ok": true}`. Sent once, on connect. |
+| `task` | One of:<br>`{task_id, state: "ready", title, created: true}` (task created)<br>`{task_id, state, running_turn_id, queued_turn_ids}` (state change)<br>`{task_id, title}` (renamed by the user or titled by the Agent)<br>`{task_id, deleted: true}` |
+
+## Estate
+
+Router without a prefix. `lang` is optional on every route. A value starting
+with `zh` selects Chinese issue titles. Anything else selects English.
+
+| Method | Path | Body / query | Success | Errors |
+| --- | --- | --- | --- | --- |
+| `GET` | `/estate` | `lang` | `200` overview: `{providers: [{provider_id, name, provider_type, bucket_count, last_checked_at, open_issues: {high, medium, low}, watch: {…watch, running}}], bucket_count, open_issue_count, issues: [issue] (the 20 most severe needing care), last_watch_at}` | — |
+| `GET` | `/issues` | `status` (default `active`), `provider_id`, `limit` 1–500 (default 200), `lang` | `200 [issue]`, ordered high → medium → low → info, then by newest `last_seen_at` | `422 unknown status` |
+| `GET` | `/issues/{id}` | `lang` | `200` issue plus `events: [{kind, source, at, detail}]` (newest first, at most 50) | `404 issue not found` |
+| `POST` | `/issues/{id}/fix` | `lang` | `200` issue. Generates and stores the deterministic fix text. An `open` or `recurred` issue moves to `fix_proposed`. | `404`; `409 no generated fix for this issue` |
+| `POST` | `/issues/{id}/verify` | `lang` | `200 {"result": "still_present" \| "resolved" \| "inconclusive", "issue"}`. Re-runs the rule's read-only review (`review_bucket_security` or `review_bucket_lifecycle`). The bucket is scope-checked, the call is audited as `tool.review_bucket_<check>` (actor `user`), and the verdict goes through the issue lifecycle (source `verify`). | `404`; `409` with the reason (the storage account is gone, the bucket is out of scope, or the rule has no read-only check) |
+| `POST` | `/issues/{id}/accept` | `{"accepted": bool = true}`, `lang` | `200` issue. `true` moves an `open`, `fix_proposed` or `recurred` issue to `accepted`. `false` moves an `accepted` issue back to `open`. Any other combination leaves the status unchanged. | `404` |
+
+`status` for `GET /issues` accepts `active` (open, fix_proposed, recurred,
+accepted), `care` (open, fix_proposed, recurred), `all`, or one status:
+`open`, `fix_proposed`, `resolved`, `recurred`, `accepted`.
+
+An **issue** is:
+
+```jsonc
+{ "id", "provider_id", "provider_name", "bucket", "code", "title", "severity", "status", "detail",
+  "first_seen_at", "last_seen_at", "resolved_at", "resolved_by",
+  "source_task_id",            // null when that task no longer exists
+  "fix": { "kind", "document", "command", "notes": [] } | null,
+  "fixable": bool,             // a deterministic fix exists for this code
+  "last_verified_at", "last_verify_result" }
 ```
 
-Secret API keys are accepted on create/update and written to the encrypted local vault. Responses expose metadata/reference/presence state, not plaintext secrets.
+No estate route writes to storage. A fix is text for the user to apply.
 
-Model provider configuration can include optional operator-declared context-window and maximum-output-token limits supported by current persistence/runtime code.
+### Watch
 
-Since v1.10.0 a provider also carries `reasoning_effort` (`low` | `medium` | `high` | `null`; send `""` on update to clear) and the response projects `reasoning_capable` — whether the configured model is known to accept an effort. The runtime forwards the effort only for reasoning-capable models.
+A watch is opt-in per storage account and is off by default.
 
-## Cloud providers
+| Method | Path | Body | Success | Errors |
+| --- | --- | --- | --- | --- |
+| `GET` | `/estate/watch/{provider_id}` | — | `200 {enabled, interval_hours, next_run_at, last_run_at, last_status, last_summary, last_task_id, running}`. Defaults when never set: disabled, 24 h. | `404 cloud provider not found` |
+| `PUT` | `/estate/watch/{provider_id}` | `{"enabled": bool, "interval_hours": int = 24}` | `200` watch object. `interval_hours` is clamped to 1–168. Enabling makes the watch due now, unless it was already enabled with a pending `next_run_at`. Disabling clears `next_run_at`. Writes the audit row `watch.set`. | `404`, `422` |
+| `POST` | `/estate/watch/{provider_id}/run` | — | `202 {"started": bool}`. Starts one background sweep now, even when the watch is off. `false` when a sweep for this provider is already running. | `404` |
 
-Prefix: `/cloud-providers`
+The Sidecar's clock (`STORAGE_AGENT_WATCH_TICK_SECONDS`, default 60, minimum
+5) runs due sweeps. A sweep surveys up to 500 buckets, then re-checks up to 25
+buckets whose active issues posture cannot decide. It opens one Agent Task
+(`origin = watch`, turn `kind = watch`) through `RUNTIME.submit` only when a
+high or medium issue opened or recurred and a model is configured. A scheduled
+sweep stops between phases once its watch is turned off. `last_status` is one
+of `running`, `found`, `clear` or `failed`.
 
-```text
-GET    /cloud-providers
-POST   /cloud-providers
-PUT    /cloud-providers/{provider_id}
-DELETE /cloud-providers/{provider_id}
-POST   /cloud-providers/{provider_id}/test
-```
+## Providers
 
-Cloud credentials are vault-backed. Provider bucket/prefix scope is enforced server-side in Agent tools, direct tool endpoints, and deterministic executors.
+Router prefix `/providers`. Secrets go in and never come out: responses carry
+`has_*` booleans only.
 
-## Durable Agent Task compatibility API
+### Model endpoints
 
-Prefix: `/sessions`
+| Method | Path | Body | Success | Errors |
+| --- | --- | --- | --- | --- |
+| `GET` | `/providers/models` | — | `200 [model provider]`, oldest first | — |
+| `POST` | `/providers/models` | `ModelProviderIn` | `201` model provider. Audit row `model_provider.create`. | `422` |
+| `PATCH` | `/providers/models/{id}` | `ModelProviderPatch` | `200` model provider. Audit row `model_provider.update`. | `404 model provider not found`, `422` |
+| `DELETE` | `/providers/models/{id}` | — | `204`. Also deletes the vault secret. Audit row `model_provider.delete`. | `404` |
+| `POST` | `/providers/models/{id}/activate` | — | `200` model provider. Exactly one provider is active. | `404` |
+| `POST` | `/providers/models/{id}/test` | — | `200 {"ok": bool, "api_key_verified": bool \| null, "detail": str}`. Sends one `GET {base_url}/models` with a 5-second timeout; the response body is never echoed. `401`/`403` → `ok: false, api_key_verified: false`. `5xx` or a network error → `ok: false`. `200` → `ok: true, api_key_verified: true`. Any other status → `ok: true, api_key_verified: null`. A non-failing result also clears remembered endpoint refusals (parallel tool calls, streamed usage). A missing key → `ok: false` with the reason. | `404` |
 
-These paths are the durable task/message/runtime API retained for compatibility. In product code, adapt them to Agent Task semantics.
+`ModelProviderIn`:
 
-Session summaries (and the `/agent-tasks` list) carry `title_source` since v1.10.0: `null` for the deterministic seed title, `agent` once the runtime titled the task after its first Work Result, `user` after a `PATCH` rename (which wins forever). The execution event stream emits `task.titled {title}` before the terminal `execution.status`.
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | `str`, 1–120 | required |
+| `kind` | `openai` (default) \| `anthropic` \| `deepseek` \| `openrouter` \| `ollama` \| `lmstudio` \| `vllm` \| `llamacpp` \| `openai-compatible` | |
+| `base_url` | `str \| null` | Default per kind (local kinds use localhost). `openai` with no URL uses the official endpoint. |
+| `model` | `str`, 1–200 | required |
+| `api_key` | `str \| null` | Stored in the vault. Local kinds work without one. |
+| `api_style` | `responses` \| `chat` \| `null` | Default: `responses` only for `kind = openai` on `api.openai.com` (or no base URL). Otherwise `chat`. |
+| `context_window` | `int ≥ 0 \| null` | `0` or `null`: derived from the model name |
+| `max_output_tokens` | `int ≥ 0 \| null` | |
+| `reasoning_effort` | `low` \| `medium` \| `high` \| `""` \| `null` | Sent only to models recognized as reasoning models. |
 
-### Task lifecycle
+`ModelProviderPatch` has the same fields, all optional. A field that is left
+out or `null` keeps its value. `""` or `0` clears it. A non-empty `api_key`
+replaces the stored key; a key cannot be cleared through PATCH. When `kind` or
+`base_url` changes and `api_style` is not given, the style is derived again.
 
-```text
-POST   /sessions
-GET    /sessions
-GET    /sessions/{session_id}
-PATCH  /sessions/{session_id}
-DELETE /sessions/{session_id}
-POST   /sessions/{session_id}/fork
-```
+A model provider is:
+`{id, name, kind, base_url, model, api_style, has_api_key, context_window, max_output_tokens, reasoning_effort, reasoning_capable, active, created_at, updated_at}`.
 
-Current behaviors include create/list/detail, rename/pin/archive, deletion, duplication, and branching from a specific message where supplied.
+### Storage accounts
 
-A branch from `from_message_id` includes content through that point and excludes later work. An unknown branch point is an error, not a silent whole-task duplicate.
+| Method | Path | Body | Success | Errors |
+| --- | --- | --- | --- | --- |
+| `GET` | `/providers/clouds` | — | `200 [cloud provider + {"watch": {…watch, running}}]`, oldest first | — |
+| `POST` | `/providers/clouds` | `CloudIn` | `201` cloud provider. Audit row `cloud_provider.create`. | `422` |
+| `PATCH` | `/providers/clouds/{id}` | `CloudPatch` | `200` cloud provider. Invalidates cached S3 clients. Audit row `cloud_provider.update`. | `404 cloud provider not found`, `422` |
+| `DELETE` | `/providers/clouds/{id}` | — | `204`. Deletes the vault secrets. The account's estate buckets, issues and watch cascade. Audit row `cloud_provider.delete`. | `404` |
+| `POST` | `/providers/clouds/{id}/test` | — | `200`: the redacted result of the read-only `test_credentials` engine call, audited as `tool.test_credentials` with actor `user` (see `run_direct` in [tools.md](tools.md)) | `404` |
 
-### Direction / turn execution — removed in v1.12
+`CloudIn`: `name` (1–120, required), `provider_type` (1–40, required),
+`endpoint_url`, `region`, `addressing_style` (default `"virtual"`),
+`signature_version` (default `"s3v4"`), `access_key`, `secret_key`,
+`session_token` (all stored in the vault), `allowed_buckets: list[str]`,
+`allowed_prefixes: list[str]` (both default `[]`, which means unrestricted).
 
-There are no message or turn endpoints under `/sessions`. `POST …/messages`, `POST …/messages/stream`, `POST …/turns/{turn_id}/cancel`, `GET …/turn` and the `legacy_frames` translation are gone. Submitting, following, steering, stopping and resuming work happens only through `/agent-tasks/{id}/executions…` (above). `GET /sessions/{id}/messages` (the paged document) stays.
+`CloudPatch` has the same fields, all optional. `null` keeps a field. `""`
+clears `endpoint_url`, `region`, `addressing_style` or `signature_version`.
+A non-empty secret replaces the stored one. `session_token: ""` deletes the
+session token. A list replaces the scope list.
 
-Executions survive the HTTP request entirely; after a Sidecar restart, recovery stamps orphaned executions `interrupted` (an explicit durable state with a resume affordance) instead of silently reporting nothing.
-
-### Durable task document and paging
-
-```text
-GET /sessions/{session_id}/messages
-GET /sessions/{session_id}
-```
-
-Task detail returns a recent tail rather than unbounded history. Earlier durable content is fetched through paged `/messages` using `limit` and an opaque `before` cursor.
-
-Do not remove paging merely because the UI calls the object an Agent Task instead of a session. Long-task scalability is a persistence contract.
-
-### Task summary, memory, findings context
-
-```text
-GET   /sessions/{session_id}/summary
-POST  /sessions/{session_id}/refresh-summary
-PATCH /sessions/{session_id}/memory/{id}
-POST  /sessions/{session_id}/memory/{id}/resolve
-```
-
-Task detail also exposes the durable Agent memory/attachment/context metadata needed by current UI and runtime. Memory edits/resolution are audited and redaction-passed.
-
-### Task Execution links / compatibility runs
-
-```text
-POST /sessions/{session_id}/runs/{run_id}
-GET  /sessions/{session_id}/runs
-```
-
-These link deterministic/auditable executions to a Task. The existence of these endpoints does not make Runs a top-level product destination.
-
-### Task Evidence / Report / action handoff
-
-```text
-GET  /sessions/{session_id}/report?lang=en|zh
-POST /sessions/{session_id}/datasets/upload
-GET  /sessions/{session_id}/error-triage
-```
-
-- report generation/fetch produces a durable Markdown Artifact (since v2.2 in Task vocabulary: *Task report*, *Goal*, *Analyses*, Directions; no linked-runs appendix), returned as `{session_id, format: "markdown", content}`, audited as `session.report` and indexed once per task in `task_artifacts`;
-- `lang` (v3.1, optional query parameter) selects the language of the words the report authors — `en` (default) or `zh` (any value starting with `zh`); the frontend passes the UI language (`api/tasks.ts getTaskReport(id, lang)`). The Agent's own words (Directions, answers, conclusions, findings) are reproduced as recorded, never translated;
-- since v3.1 the report reads conclusion first: title + one meta line (Directions · tool calls · when) → Goal (the task goal, else the first Direction) → Conclusion (the latest recorded `record_conclusion` answer; without one a note plus the latest answer excerpt; with no Work Result *No Work Result yet*) → Findings (one list: the conclusion's, then those the Agent recorded while working, then the analyses', deduplicated on text, most severe first, severity words localized) → Next steps (the conclusion's) → Investigation (per Direction) → Coverage and gaps (grounded in · not verified · left open · limitations, derived from the tool trace and memory) → What the Agent established → Tools run → Analyses → Attached evidence → Error triage → Rule-derived suggestions → Usage → Audit trail → Safety (always). A section with nothing behind it is not written. The content stays redacted, bounded and one-line-sanitized: no raw rows, secrets or chain-of-thought;
-- `POST …/actions/prepare` is removed in v1.12 (there are no next-action proposals);
-- dataset upload attaches local evidence to the Task for bounded local analysis;
-- error-triage cases can be associated with the Task.
-
-### Task observability / review data
-
-```text
-GET /sessions/{session_id}/activity
-GET /sessions/{session_id}/activity/{call_id}
-GET /sessions/{session_id}/audit
-GET /sessions/{session_id}/overview
-```
-
-- `activity` and `audit` are bounded/paged and return truncation metadata;
-- `activity/{call_id}` returns one sanitized Tool-call row scoped to the Task/session;
-- `overview` provides durable counts and turn-usage/metrics rollups.
-
-Missing provider token usage remains unavailable/NULL, not a fabricated zero.
-
-Per-turn metrics additionally carry `budget_tokens` / `repeat_calls_avoided` when the turn had them, and `context_window_source` (`declared` when the operator configured the window, else `inferred` from the model table) beside `context_window` (v1.16, additive).
-
-## Session/Task stream events
-
-The only stream is the execution event stream (`GET /agent-tasks/{id}/executions/{eid}/events`, above). The legacy `delta`/`tool`/`done`/`error` vocabulary and the `legacy_frames` translation are gone (v1.12).
-
-Persisted message grounding and `turn_items` survive reload and are not only transient SSE state. `turn_items` are the ordered items the turn produced before its answer: `message` (commentary), `tool` (a reference to the `tool_activity` record by id), a leading `compacted` (`{before_tokens, after_tokens}` when the runtime compacted the context before this turn, v1.12), and `steer` (`{text}` — a redacted Steer the running model loop received at that point, v1.18; the live counterpart is the `steer.applied` event, never a tool row). `proposed_actions` is no longer projected. The v1.12 `plan` item was removed in v2.1; stored pre-2.1 `plan` items are dropped on read in `GET /sessions/{id}` messages.
-
-Since v2.0 an assistant message also carries `conclusion` — `{answer, findings[{title, severity: high|medium|low|info, detail?}], next_steps[]}` recorded by the model's `record_conclusion` tool (bounded, redacted), or `null` when none was recorded. `GET /agent-tasks/{task_id}/work-results` returns the same `conclusion` on each Work Result. A `null` conclusion is honest: clients show the answer alone and never derive a head from prose.
-
-Tool activity records may carry stable Tool-call ids, exact success state, and measured duration. Older persisted history can legitimately lack fields added by later versions; clients must treat absence as unknown rather than false/zero.
-
-## Deterministic Execution compatibility API
-
-Prefix: `/runs`
-
-```text
-GET    /runs
-GET    /runs/{run_id}
-GET    /runs/{run_id}/account-profile
-DELETE /runs/{run_id}
-```
-
-Read-only (plus delete) records of deterministic engine work. **No HTTP route creates, starts, messages or streams a run** (v1.18 removed `POST /runs`, `POST /runs/{id}/message`, `GET /runs/{id}/events` and the in-memory event bus behind it). Engines run only inside an Agent Execution, through `run_service.run_sync`; their progress is the Execution's own `tool.*` events and the persisted `tool_calls` trace. The deterministic run layer does not contain a second model planner/narrator.
-
-## Reports
-
-```text
-GET /reports/{run_id}
-```
-
-Fetches a run-associated Markdown report. Task-level Report Review may aggregate broader durable Task context through the session/task report endpoint above.
-
-## Deterministic datasets
-
-```text
-POST /sessions/{task_id}/datasets/upload
-GET  /datasets
-GET  /datasets/{dataset_id}
-```
-
-A file reaches the Agent as a per-task upload (the Composer attachment); the per-run upload was removed in v1.18. Uploads are streamed to disk and bounded by explicit size limits. Dataset metadata includes persisted truncation/ingest-cap truth in current schema.
-
-## Managed Evidence Import
-
-Prefix: `/evidence-imports`
-
-Read-only records of imports the Agent performed:
-
-```text
-GET  /evidence-imports/{import_id}
-GET  /evidence-imports/{import_id}/files
-```
-
-Cloud data movement (`evidence/import_service`: plan → confirm → run) is reachable **only** through the `import_evidence` tool inside a running Execution (`agent_runtime/import_tools.py`). Since v2.1 there is no Decision: the tool plans, the plan is confirmed and audited as `approved_by="agent"` (`approval_events` + `audit_logs`), and the import runs — inside hard server-side bounds: the source must be an evidence source the task's account survey discovered; each call is clamped to at most 500 files / 256 MiB (`AGENT_MAX_FILES` / `AGENT_MAX_BYTES`) and the result says when coverage is partial; the call is refused with nothing downloaded when the data directory would keep less than 1 GiB free; Stop is checked before downloading and, since v2.2, before each file (the tool answers `status: stopped` and nothing is kept); each downloaded file is reported as a `tool.progress` event. v1.18 removed `POST /evidence-imports/plan`, `/{id}/confirm` and `/{id}/run`. A plan downloads nothing; the Sidecar remains authoritative for bounds/state.
-
-## Error triage
-
-```text
-POST /error-triage
-GET  /error-triage/{case_id}
-GET  /sessions/{session_id}/error-triage
-```
-
-Supported storage-error triage is deterministic and can operate without a configured model provider.
+A cloud provider is:
+`{id, name, provider_type, endpoint_url, region, addressing_style, signature_version, allowed_buckets, allowed_prefixes, has_access_key, has_secret_key, has_session_token, created_at, updated_at}`.
 
 ## Settings
 
-Prefix: `/settings`
+| Method | Path | Body | Success | Errors |
+| --- | --- | --- | --- | --- |
+| `GET` | `/settings` | — | `200 {language: "en" \| "zh", theme: "system" \| "light" \| "dark", vault: {unreadable, backup_present}, instructions: {loaded, path, chars, truncated, error}}`. `instructions` reports on the standing instructions file (`AGENTS.md`) but never returns its text. | — |
+| `PATCH` | `/settings` | `{language?: str, theme?: str}` | `200`, the same shape as `GET` | `422 <key> must be one of …` |
+| `GET` | `/settings/price-table` | — | `200 {id: "default", confirmed, example, note, rates, updated_at}`. Returns the example schedule (`confirmed: false`, `example: true`) until the user saves a table. | — |
+| `PUT` | `/settings/price-table` | `{confirmed?: bool, rates?: object, note?: str (≤ 800)}` | `200` price table. Omitted fields keep their value. Audit row `settings.price_table`. | `422` |
+| `GET` | `/skills` | — | `200 {skills: [{name, description, domains, user}], dirs: [str]}`. `user` is true for a user-supplied skill. `dirs` are the user skill directories. | — |
+| `GET` | `/skills/{name}` | — | `200 {name, body}` | `400 invalid skill name` (the name must match `^[a-zA-Z][a-zA-Z0-9_-]{1,64}$`); `404 skill not found` |
 
-Current settings API includes secret-vault health/status endpoints as implemented by the router. It never returns vault plaintext.
+## MCP server
 
-```text
-GET  /settings/secret-vault
-GET  /settings/price-table
-PUT  /settings/price-table
-GET  /settings/instructions
-```
+An opt-in, read-only MCP server. It exists only when the Sidecar starts with
+`STORAGE_AGENT_ENABLE_MCP=1`.
 
-- The v1.12 approval-policy route was removed in v2.1 (there is no approval to answer).
-- `instructions` (v1.12) reports whether an `AGENTS.md` instructions file is loaded (`{loaded, path, chars, truncated, error}`) — from `STORAGE_AGENT_DATA_DIR/AGENTS.md` or the `STORAGE_AGENT_INSTRUCTIONS` path. The text itself is never an API payload; it is injected, bounded (8 000 chars) and redacted, into the stable half of the Agent prompt.
+- It is built with the official MCP Python SDK (`mcp.server.mcpserver.MCPServer`,
+  named `storage-agent`) and served over **Streamable HTTP**, **stateless**,
+  with **JSON responses** (not SSE). It is mounted at `/mcp`. The endpoint is
+  `/mcp/`, and a request to `/mcp` redirects there with `307`.
+- The token gate applies, as it does to every route. The SDK's transport also
+  rejects requests whose `Host` is not local with `421`.
+- The session manager runs inside the Sidecar's lifespan.
 
-The price table is ordinary local configuration used by the cost simulator: per-storage-class GB-month rates plus request/retrieval rates. It ships as an example schedule. Dollar simulation remains a gap until `confirmed` is true. The table is not a secret store and must never contain credentials. **Settings UI does not edit it** — if the Agent needs prices it asks in the Task or reports a gap.
+The server exposes `list_providers` plus a subset of the Agent's tool registry
+(`exposed()` in `sidecar/app/api/mcp.py`):
 
-There is no product autonomy toggle: read-only Agent investigation is the default capability model, and the one data-moving tool runs inside hard server-side bounds (v2.1) rather than stopping for a Decision.
+- every tool in the `probes`, `objects` and `config` groups, except
+  `review_bucket_config` (that tool saves a task artifact);
+- plus `list_buckets`, `head_bucket`, `read_skill`, `query_estate` and
+  `triage_error`.
 
-## Skills
+`list_providers` returns
+`[{id, name, provider_type, region, allowed_buckets, allowed_prefixes}]` and
+never returns credentials. It is annotated read-only and closed-world. Every
+other tool is annotated `readOnlyHint = true`, `destructiveHint = false`,
+`openWorldHint = true`.
 
-Prefix: `/skills` — additive, same auth, same redaction. Lists bundled + user
-skills discovered from `STORAGE_AGENT_DATA_DIR/skills/*/SKILL.md` and
-`STORAGE_AGENT_SKILLS_DIR`.
+The 31 exposed tools are: `list_providers`, `diagnose_presigned_url`,
+`get_bucket_config_detail`, `get_bucket_config_summary`,
+`get_bucket_location`, `get_object_acl`, `get_object_attributes`,
+`get_object_lock_status`, `get_object_tagging`, `head_bucket`, `head_object`,
+`inspect_endpoint_tls`, `list_buckets`, `list_multipart_uploads`,
+`list_object_versions`, `list_objects`, `list_upload_parts`,
+`measure_request_latency`, `preview_object`, `query_estate`, `read_skill`,
+`review_bucket_cost_optimization`, `review_bucket_lifecycle`,
+`review_bucket_observability`, `review_bucket_performance_profile`,
+`review_bucket_security`, `test_addressing_style`, `test_conditional_get`,
+`test_credentials`, `test_range_get`, `triage_error`.
 
-```text
-GET  /skills                 — merged catalog (name, description, maturity, path)
-GET  /skills/{name}          — frontmatter-stripped SKILL.md body (bounded)
-GET  /skills/_dirs/info      — where user skills are discovered (for UI help)
-```
-
-User skills shadow bundled ones by name; no code is executed, only guidance
-text is returned via `read_skill`.
-
-## Observability export
-
-Bounded, sanitized projection of already-persisted rows — no new tables.
-
-```text
-GET  /agent-tasks/{task_id}/export/otel?include_audit=&limit_events=
-GET  /observability/export
-```
-
-Per-task export includes the durable `execution_events` log (with
-`events_truncated`), `tool_calls`, `turn_metrics`, and `task_artifacts` — plus
-a derived `spans` projection (v1.13): one parent span per execution and one
-child span per event, with deterministic `trace_id`/`span_id` and a W3C
-`traceparent` per span, importable into Jaeger/Tempo. Span ids are derived,
-not stored (no migration). Since v2.1 the span event vocabulary includes
-`conclusion.recorded` and no approval, plan or decision events; since v2.2 it
-also carries `direction.recorded` and `tool.progress`. The global export lists recent tasks/executions
-and sanitized provider presence. All are auth-gated and capped
-(`MAX_EVENTS=500`, `MAX_TOOL_CALLS=200`).
-
-## MCP bridge (opt-in, read-only)
-
-Disabled by default; set `STORAGE_AGENT_ENABLE_MCP=1` on the Sidecar to
-enable. Re-exports the whitelisted read-only storage tools with the same
-scope enforcement, bounds, and redaction as the agent. No shell, no raw
-boto3, no filesystem escape.
-
-```text
-GET  /mcp/status             — enabled flag + allowlist
-GET  /mcp/tools              — MCP-style tool definitions for the allowlist
-POST /mcp/tools/call         — EXECUTES one allowlisted tool (v1.13)
-GET  /mcp/client/status      — consuming-client non-goal report (v1.13)
-```
-
-When disabled every `/mcp/*` route is 404.
-
-Since v1.13 `POST /mcp/tools/call` executes through the same S3 layer as the
-Agent (provider scope enforced, inputs clamped, result recorded via `run_tool`
-so every call leaves a sanitized `tool_calls` + audit row). The allowlist is
-stateless tools only: session-bound survey/profile/upload tools are not
-exposed — they need a Task's runs to answer. Unknown tools are 403; a
-provider-requiring tool without `provider_id` (or without `bucket`/`key` it
-needs) returns a structured error, never a crash. `GET /mcp/client/status`
-reports the consuming side as disabled-by-design with the threat-model pointer
-(`docs/security.md`); it has no execution path.
-
-## Direct Tool HTTP endpoints
-
-Prefix: `/tools`
-
-Only the intentionally retained direct endpoints are exposed over HTTP:
-
-```text
-POST /tools/head-bucket
-POST /tools/list-objects-v2
-```
-
-Most Agent tools are in-process runtime tools rather than one HTTP route per capability. Do not expose the entire internal S3 layer as a raw HTTP/tool surface.
-
-## Secret/error-response contract
-
-FastAPI validation and unhandled-error paths are sanitized so request bodies or exception messages cannot echo provider credentials into UI-visible responses.
-
-API code must preserve:
-
-- no plaintext secrets in response payloads;
-- no credentials in model context;
-- no raw Authorization/cookie/signature leakage;
-- Sidecar token handling described above;
-- relative/non-sensitive file metadata where possible.
-
-See `security.md`.
-
-## API evolution rule
-
-When adding or changing an endpoint:
-
-1. decide whether it is product-level or compatibility-level;
-2. update schemas/router tests;
-3. update this document;
-4. update `data-model.md` if persistence changes;
-5. update `product.md`/`architecture.md` only when product semantics or ownership actually change;
-6. never rename product concepts merely to match historical route/table names.
+Each registry tool runs through `registry.call_direct(..., actor="mcp")`. It
+gets the same argument clamping, scope check and redaction as inside a turn,
+and one audit row with actor `mcp` (a refusal is audited with `ok = 0`). Tools
+that belong to a task (surveys, files, imports, the conclusion) are not
+exposed.

@@ -1,6 +1,6 @@
 [package]
 name = "storage-agent-workbench"
-version = "4.0.0"
+version = "5.0.0"
 description = "Local-first agent for object storage operations, analytics, and management on S3-compatible systems"
 edition = "2021"
 rust-version = "1.77.2"
@@ -14,7 +14,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# tray-icon: the menu-bar / system-tray item (Open · Quick Ask · Quit).
+tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # OS CSPRNG for the per-launch sidecar auth token. Tracks the current release

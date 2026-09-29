@@ -4,14 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "storage-agent-sidecar"
-version = "4.0.0"
+version = "5.0.0"
 description = "Local FastAPI sidecar for Storage Agent Workbench"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 dependencies = [
-    "fastapi>=0.110",
-    "uvicorn[standard]>=0.27",
+    "fastapi>=0.140",
+    "uvicorn[standard]>=0.50",
+    # The task stream (Server-Sent Events, resumable by item seq).
+    "sse-starlette>=3.4",
+    # The opt-in read-only MCP server is built on the official SDK (2.x).
+    "mcp>=2.2,<3",
     "cryptography>=42",
     "boto3>=1.34",
     "botocore>=1.34",
@@ -35,24 +39,22 @@ dependencies = [
     # allow all of them and only guard the 1.0 boundary (a pre-1.0 SDK's 1.0 is
     # typically a rewrite → worth a human-reviewed bump); the openai floor is what
     # keeps the resolver on an agents line that agrees with it.
-    "openai>=3.0",
-    "openai-agents>=0.17,<1",
+    "openai>=3.20",
+    # 0.22: hosted tool search + deferred namespaces, ToolOutputTrimmer, per-tool
+    # timeouts and input guardrails, server-side compaction settings, model retry.
+    "openai-agents>=0.22.3,<1",
     # NOTE: the ranges above say what the code SUPPORTS. What was actually
     # VERIFIED is pinned in requirements.lock, which CI and packaging install
     # with `-c`. Before that file existed these ranges resolved at install time,
     # so v0.55.0 was developed against openai-agents 0.17.8 while CI validated it
     # against 0.19.4 — see scripts/lock-sidecar-deps.py.
     "pyyaml>=6.0",
-    # `typing_extensions.TypedDict` in tool schemas: pydantic rejects the
-    # stdlib one below Python 3.12 (requires-python is >=3.10).
-    "typing_extensions>=4.6",
 ]
 
-# NOTE: Adds the OpenAI Agents SDK (openai-agents) + openai for the conversational
-# session agent. These are imported LAZILY inside agent_runtime so the sidecar
-# (and the deterministic run executors) runs even if they are absent or no model
-# API key is configured. The agent only calls existing whitelisted, read-only
-# tools; it never sees credentials.
+# NOTE: the OpenAI Agents SDK is imported lazily inside app/agent (runtime.py,
+# models.py) so the Sidecar starts and serves the estate even without a model.
+# The Agent only calls the registry's whitelisted, read-only tools; it never
+# sees credentials.
 
 [project.optional-dependencies]
 dev = [

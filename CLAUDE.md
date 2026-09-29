@@ -1,319 +1,148 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v4.0.0.**
+> **Implementation contract for Storage Agent v5.0.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
-> `docs/architecture.md`, and `docs/security.md`. Current code and executable
-> architecture tests are authoritative when historical docs or names disagree.
+> `docs/architecture.md` and `docs/security.md`. Current code and the
+> executable contracts (`frontend/src/contracts.test.ts`, `sidecar/tests/test_v500_*.py`)
+> are authoritative. v5 is a clean rewrite: do not reconstruct earlier
+> information architecture, tables or routes from git history or release notes.
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v4.0.0 product invariant is:
+The product invariant:
 
-> **The estate is the object; Agent Tasks are how work is done.**
+> **The estate is the object; Agent Tasks are how work is done. One item stream is the truth.**
 
-(v4.0 replaces the v0.94–v3.1 invariant "the Agent Task is the application".) What the Agent learns about the user's storage — accounts, buckets, their posture, and the Issues found there — outlives the Task that learned it. The canonical work model is:
+What the Agent learns about the user's storage — accounts, buckets, their posture, and the Issues found there — outlives the Task that learned it. Everything that happens in a Task is one ordered, append-only stream of **items**; the page, the report, the audit and the trace are projections of it.
 
-> **Direction → Execution → Work Result → Artifact**, and beneath it **Estate → Issue → fix → verify**
+## 1. The model
 
-The user delegates work to one durable Agent Task, sees real runtime Execution as it happens, can Steer or Stop that same task, and reviews durable Evidence/Execution/Report artifacts without leaving the Task. Since v2.1 nothing pauses for approval and the model keeps no plan: the one data-moving tool is bounded server-side, and Stop is the user's brake.
-
-## 1. Never regress the v4.0.0 native, result-first Agent window
-
-The window is **sidebar · title bar · one Task document · one Composer**, plus (v3.0) one closable **side pane** on the right for the Task's durable outputs. There is no activity bar, no status bar, no permanent inspector column, and no marketing copy in chrome. New product/frontend work must preserve these boundaries:
-
-- **Agent Task** is the primary application object and primary work area.
-- **AgentTaskNavigation** is the sidebar: window chrome row, a raised **New task** button with its key caps, an in-place title search (filters the list; Esc clears), one quiet chronological title list grouped by day (the selected row in the accent tint), **Settings**. Rename and Delete only (from the row's More control or the native Task menu). State is a row mark (Ready paints nothing). ↑/↓ move between tasks. Collapsed, its toggle and New task move into the title bar. Titles are seeded from the first Direction and replaced by the runtime after the first Work Result unless the user renamed the task (`title_source`).
-- **AgentShell** owns the active task environment and which output the side pane shows (`TaskDetailsContext`). The title bar above it is a three-column grid: sidebar toggle · the task name and its real state pill, centred together as one group · the side-pane toggle (`titlebar-sidepane`); while work is live a thin indeterminate progress hairline runs under it. There is no task header inside the document, no live execution strip, and no second presentation mode.
-- **AgentTask** is the public task boundary; persistence compatibility names stay behind adapters.
-- **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active. It is a docked, bordered card with an accent focus ring. Attach (paperclip button or a dropped file; attachments are per-task) + textarea + the **model chip** (backed by the real provider list; it reads *Set up a model…* when none is configured; switching activates a provider server-side; shows `model · effort` and a reasoning-effort control only when the active model is known-reasoning; since v3.1, when the runtime cannot be reached it reads **Runtime offline** with a danger dot and is not clickable — never *Set up a model…*) + those actions. No ContextMeter on the bar (usage lives in the model menu and Execution detail). A file while busy labels the send control Delegate, never Steer. No persistent keyboard legend, no painted mode/approval chips. Find (⌘F) and the palette (⌘K) are keyboard; they are not painted on the title bar. The palette (a combobox/listbox) lists **Recent** tasks (up to 8 at rest) and **Actions** under one fuzzy ranking with matched letters marked and a key-hint footer; since v3.0 it has no engine catalog (*Ask the Agent to…*) — starters and the Composer are where work is worded.
-- **Direction** is user intent/steering input. Copy is the only Direction chrome.
-- **The Task page is result-first** (v2.0). From the top: banners (queued Directions, Resume when automatic continuation was not possible, errors), the **work in progress** (its Direction, the live Execution — commentary and every tool row kept open until the turn settles — and, as soon as it is recorded, its conclusion), the latest **Result**, then the **Work log**. A Task opens at its top; nothing scrolls the reader to the end and there is no *Jump to latest*. A new Direction brings the reader back up to the work in progress.
-- **Result** is the latest Work Result, conclusion first: an accent *Result* badge with one quiet meta line (*when · evidence · gaps · tool calls*, derived from the tool trace; a calendar date after a week), the **conclusion** the model recorded with the `record_conclusion` tool (the answer at 20px as the page's focal point, findings most severe first as a bordered list with a severity badge each — High / Medium / Low / Info, up to four next steps as suggestion cards that fill the Composer — never sent on their own), then the **full answer** (Markdown) under a section label, figures, and the **outputs bar**. A turn without a recorded conclusion shows the answer, then the recorded findings (records, never guesses) — the UI never guesses a head from prose. (v3.1) The Result and the Evidence tab read **one findings list** (`lib/findings.ts unifyFindings`): the recorded conclusion's findings joined by the findings recorded while the Agent worked (`session_findings`, via the provenance projection), deduplicated on their words, most severe first; a conclusion finding the work also recorded takes that record's id. A finding with a recorded evidence chain ends in an **Evidence** link (hover previews the source call; click opens the side pane on that finding); one without says *No direct evidence*. There is no separate list of provenance marks under the figures.
-- **Side pane** (v3.0, replaces the v2.0 detail rows that expanded in place). Under the Result an **outputs bar** (Evidence · Report · Execution, each with its count, each only when something is behind it — no empty placeholders) opens one **side pane** on the right with a tab per output the Task has (`TaskDetails` / `TaskInspector` in `components/TaskDetails.tsx`; selection in `agent/model.ts` + `AgentShell`'s `TaskDetailsContext`). The title-bar toggle, tool rows, a finding's Evidence link and the palette open it on the matching output; ⌘I toggles it (opening on the first output the Task has); the close button and Esc close it. A selection with nothing behind it settles on the output the pane shows (v3.1), so the Report loads. The Evidence tab's count equals the one findings list (+ attached files); its order is Findings (each expands to detail + source: in the conclusion / recorded while working · confidence · tool · time · gap) → Current understanding → Attached evidence. It is resizable (drag its left edge, 352–880px; double-click resets; the width is remembered per device) and below ~1100px it overlays the document instead of narrowing it. Execution detail opens inside it with one Back and is a document: header · *Worked for …* rows · findings · result — built from `task_executions`, the durable `execution_events` log and one sanitized `tool_calls` row on demand; never a `/runs` stream. There is no overlay dialog and no tabbed destination for artifacts outside the pane. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules exist as Sidecar engines; they have no product UI entry (v2.1 removed their rows) — the Agent narrates what they return.
-- **Work log** is every turn in order below the Result: each turn is one **document section** (not a message exchange): the user's **Direction** as the section's left-aligned heading one step below the Result's lead (no bubble; later turns open with a hairline), the model's short **commentary segments** in order, one collapsed **Worked for …** group of tool rows between segments (wall-clock of the group, live while running), a one-line **Context compacted** marker when the runtime compacted before the turn, then its answer — folded to one line (the conclusion's answer, else the answer's first line) for older turns, and a pointer up to the Result for the latest. A Task with **one** Direction has no Work log (v2.2): that turn's work (commentary + the collapsed *Worked for …* line) sits under the Result just above the outputs bar, and ⌘F still renders the ordinary log. The Direction is durable from the moment its execution starts; while it runs it heads the work in progress, and the latest Result stays in place above the log. A **tool row** reads as what the Agent did (a localized verb such as *Checked bucket*, the target quiet in mono, the result as a muted note, status in the glyph); the raw tool name stays on the row (`data-tool`, tooltip). A running survey/import row shows the real progress the engine reports (*120 of 500 buckets* and a hairline meter, v2.2) — counts only, never a guessed percentage. Never invent plans, steps, workers, or capabilities the runtime does not expose.
-- **No approval, no plan** (v2.1, native agent). Nothing pauses an Execution for the user. `import_evidence` runs inside the Execution within a hard server-side envelope (a discovered source only; ≤ 500 files / 256 MiB per call, clamped; refused without 1 GiB disk headroom; audited as `approved_by=agent`); `survey_account` runs up to its 500-bucket hard cap and reports coverage. There is no approval card, no approval policy, no *Waiting for approval* state, no plan card and no `update_plan` tool. Stop is the brake. Model prose never raises anything; there is no `next_action_proposals` list, no metadata JSON block, and no separate import dialog.
-- **Work Result** is the answer at the end of the turn: plain Markdown on the 46rem measure. Long tables (more than 12 rows) preview their first 8 rows and expand in place; column headers sort (numbers and sizes numerically); folded rows stay in the DOM so ⌘F finds them (an open Find shows every row) — never an inner scroller, never pagination. Figures and (v3.1) each finding's Evidence link render in the Result. No data track, no artifact chip row, no metrics footer, no grey Direction block. Working copy is Agent-native, not chat-era "still running" language. The Direction is a heading in the user's own words, never a bubble; the *Worked for …* head is wall-clock only. Things that open in place (finding details, folded answers, worked rows, new live items) ease in with one short reveal, and sheets and the side pane rise without fading (opaque surfaces never show what is behind them); `prefers-reduced-motion` removes the motion. Live work shows a pulsing status dot and a live elapsed timer.
-- Production UI must not teach a chat *application*: no `New chat` titles, no `thread.*` copy keys, no leftover `.thread-prose` layout layer. The transcript turn is the Agent's work record, not a chat product.
-
-Do not reconstruct earlier chat/investigation/workbench information architecture from old release notes, database names, API names, or git history. Historical `session` and `run` terminology is compatibility vocabulary, not a reason to change current product semantics.
-
-The executable frontend guards under `frontend/src/agent/` and the Sidecar contracts `tests/test_v111_native_turns.py` / `tests/test_v112_native_protocol.py` are part of this contract. If an intentional architecture replacement is needed, change the code, tests, and canonical docs together in one PR.
+- A **Task** is a tree of **Turns**. A Turn is one **Direction** and the work it caused. `turns.parent_turn_id` links a branch; `tasks.head_turn_id` is the branch being read. Editing a Direction submits a new Turn with the same parent — a **fork** — and the reader can switch between versions (`‹ 1 of 2 ›`).
+- **Items** (`items`, global monotonic `seq`) are the only record of work: `user_message`, `agent_message`, `tool_call`, `tool_progress`, `tool_output`, `conclusion`, `steer`, `compaction`, `notice`, `error`. Turn lifecycle is `notice` items (`started`, `completed`, `failed`, `cancelled`, `interrupted`, `resumed`, `stopped`, `finalized`, `compacted`, `titled`, `imported`). Nothing else is a source of truth for what happened.
+- The model's history for a Turn is the item chain from that Turn to the root of its branch, converted to model input by `agent/session.py:to_input` (completed tool calls and outputs included; a dangling call gets an "interrupted" output; the latest `compaction` stands in for the Turns it folded).
+- The **estate** sits beside tasks: `estate_buckets`, `issues` + `issue_events`, `watch_schedules`. Issues are opened, resolved and marked `recurred` only by deterministic observations (`estate/rules.py`) — never by model prose. A read that could not see something decides nothing.
 
 ## 2. Runtime architecture
 
-The shipped desktop stack is fixed unless explicitly changed:
-
-- Desktop shell: **Tauri v2**.
-- Frontend: **React 19 + Vite + TypeScript + Tailwind CSS**.
+- Desktop shell: **Tauri v2** (menu bar, tray, Quick Ask window, deep links, notifications, global shortcuts).
+- Frontend: **React 19 + Vite + TypeScript + Tailwind CSS v4**.
 - Local backend: **Python + FastAPI + Uvicorn** Sidecar.
-- Agent runtime: **OpenAI Agents SDK for Python**.
-- S3-compatible access: **boto3 / botocore**.
-- Analytical compute: **DuckDB + PyArrow + pandas**.
-- Application metadata: **SQLite** with append-only migrations.
-- Secret storage: **AES-256-GCM encrypted local vault** through `security/keyring_store`.
-- Streaming: **Server-Sent Events (SSE)**.
+- Agent runtime: **OpenAI Agents SDK for Python** (0.22.x) — the thin layer only: `Runner.run_streamed`, `FunctionTool` with input guardrails and timeouts, `RunConfig.call_model_input_filter`, `ToolOutputTrimmer`, model retry, tracing processors; on the Responses backend `tool_namespace` + `defer_loading` + `ToolSearchTool` and server-side compaction.
+- Model backends: **Responses API** for the official OpenAI endpoint (`api_style = responses`), **Chat Completions** for every other OpenAI-compatible endpoint (hosted or local).
+- S3-compatible access: **boto3 / botocore**. Analytics: **DuckDB + PyArrow + pandas**.
+- Metadata: **SQLite** (`storage-agent.db`, WAL), append-only migrations (head **1**).
+- Secrets: **AES-256-GCM encrypted local vault** through `security/keyring_store`.
+- Streaming: **Server-Sent Events** via `sse-starlette`, resumable by item `seq`.
+- MCP: the **official MCP Python SDK** (2.x) serves an opt-in read-only bridge.
 - Packaging: **PyInstaller one-dir Sidecar** embedded as a Tauri resource.
 
-Topology:
-
 ```text
-Tauri desktop shell
-        │
-React Agent UI
-        │ localhost HTTP / SSE + per-launch auth token
-Python Sidecar
-        │
-        ├── model endpoint configured by the user
-        └── S3-compatible storage configured by the user
+Tauri shell ── React window (main) · Quick Ask window · tray
+        │ localhost HTTP / SSE + per-launch token
+Python Sidecar ── one Agent runtime ── model endpoint configured by the user
+        │                            └─ S3-compatible storage configured by the user
+        └── SQLite items stream · estate · vault
 ```
 
 The frontend never receives cloud/model secret values. The Sidecar resolves secret references server-side.
 
-## 3. One real Agent, deterministic compute beneath it
+## 3. One Agent, one submit path
 
-There is one model-driven Agent runtime: the durable task/session Agent implemented under `sidecar/app/agent_runtime/` (`session_agent.py` is the entry; `prompt`, `limits`, `guards`, `steer`, `usage`, `finalize`, `stream`, `gated_tools` split it by responsibility).
+There is one model-driven Agent: `sidecar/app/agent/runtime.py` (`RUNTIME`). It runs on its own event-loop thread; each task has one worker that drains its queued Turns in order.
 
-It may invoke explicit read-only storage tools, StorageOps skills, bounded file-analysis tools, deterministic account/config analysis, and report/evidence workflows. The model drives the investigation; deterministic engines remain the security/reproducibility floor for operations that should not expose raw analytical rows to the model.
+- **Submit** (`POST /tasks`, `POST /tasks/{id}/turns`) creates a Turn and records the Direction as a `user_message` item at once; a Direction submitted while another runs is **queued** durably and can be withdrawn (`DELETE /tasks/{id}/turns/{turn_id}`). There is no other submit path; the watch opens its task through `RUNTIME.submit` too.
+- **Steer** (`POST /tasks/{id}/steer`) records a `steer` item and is injected into the running loop by the model-input filter (re-inserted at a stable position on every model call). With nothing running, a steer is a new Direction.
+- **Stop** (`POST /tasks/{id}/stop`) sets the Turn's cancel event and cancels the SDK run; tools check it between units of work; the partial work is kept (`cancelled`).
+- **Recovery**: on start, Turns left `running` are stamped `interrupted` and continued **once** as a `resume` Turn on the same branch (never a crash loop); without a usable model the task offers **Resume**.
+- **Finalize**: when the step budget (60) runs out or a recoverable provider error ends the loop, one tool-less call writes the answer from the work so far (`finalized`).
+- **Compaction**: before a Turn, when the branch history nears 80 % of the context window, one tool-less summary step folds the older Turns into a `compaction` item (the two latest Turns stay verbatim). The Responses backend also compacts server-side inside a long Turn.
+- **Title**: after a task's first answer, one tool-less step names it (≤ 8 words); a user rename wins forever (`title_source`).
+- **Conclusion**: the model records a turn's conclusion with the typed tool `record_conclusion` (answer ≤ 400 chars, ≤ 8 findings with severity `high|medium|low|info`, ≤ 4 next steps). It becomes a `conclusion` item, never a tool row. A turn without it has no conclusion; nothing is guessed from prose.
+- **Tracing**: a local trace processor writes safe span attributes (names, durations — never payloads) to `spans`; `GET /tasks/{id}/trace` exports OTel-shaped spans.
 
-Do not add a second planner/narrator Agent, hidden orchestration Agent, or simulated multi-agent UI. If the runtime does not implement a capability, the UI must not pretend it exists.
+Do not add a second planner/narrator Agent, hidden orchestration, handoffs, or a simulated multi-agent UI. If the runtime does not implement a capability, the UI must not pretend it exists.
 
-Historical persistence still stores task work in `sessions`, `session_messages`, `runs`, `tool_calls`, evidence tables, and report artifacts. Product adapters project those records into Agent Task / Direction / Execution / Work Result / Artifact semantics.
+## 4. Tools
 
-## 4. Task state and execution truth
+Tools are declared once with `@tool(group=…, scope=Scope(…), bounds=…, timeout=…)` in `sidecar/app/agent/tools/` and registered in `registry.REGISTRY`. Groups: `core`, `probes`, `objects`, `config`, `account`, `files`, `advice`. Every call:
 
-Task state must be derived from real runtime and durable state, not visual guesses.
+1. is scope-checked by an SDK input guardrail before it runs (provider bucket/prefix scope; a refusal is a `tool_output` the model reads);
+2. has its integer arguments clamped to `bounds` and runs with a timeout in a worker thread, reading its context through `registry.current()` (connection, progress, per-turn budgets, cancel);
+3. is recorded as `tool_call` → (`tool_progress`…) → `tool_output` items and one `audit` row;
+4. returns a redacted result, bounded for the model (≤ 60 000 chars) and the UI (≤ 24 000 chars), inside the untrusted-data envelope.
 
-Current product states include:
+Storage tools are read-only. `import_evidence` is the only data-moving tool: a survey-discovered inventory or access-log source only, ≤ 500 files / 256 MiB per call (clamped), refused without 1 GiB free disk after the download, audited `approved_by=agent`, stoppable between files. `survey_account` is capped at 500 buckets and reports coverage. `docs/tools.md` must agree with the registry.
 
-- **Ready to delegate** — no active Task.
-- **Ready** — durable Task available for another Direction.
-- **Working** — real execution is active.
-- **Needs attention** — execution/provider/runtime requires user intervention.
-- upload/preparation state where applicable.
+## 5. Sidecar API
 
-Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned by the Sidecar's task runtime (`sidecar/app/task_runtime/`):
+- `/tasks` — list/create/rename/delete; `POST …/turns` (submit, `parent_turn_id` forks), `…/steer`, `…/stop`, `DELETE …/turns/{id}` (withdraw queued), `…/turns/{id}/resume`, `PUT …/head` (switch branch), `…/files` (upload an access log or inventory), `…/artifacts/{id}`, `…/report?lang=en|zh`, `…/trace`.
+- `GET /tasks/{id}` — the snapshot (task, branch turns, items, forks, live segment, files, artifacts, `last_seq`); `GET /tasks/{id}/events?after=<seq>` — SSE: durable `item` events (id = seq), live `delta`, `state`, `live`. `GET /events` — the global task feed for the sidebar. Items served to the UI never carry `model_output`.
+- `/estate`, `/issues` (list · one · `fix` · `verify` · `accept`), `/estate/watch/{provider_id}` (`GET` / `PUT {enabled, interval_hours}` / `POST …/run`).
+- `/providers/models` (+ `activate`, `test`), `/providers/clouds` (+ `test`).
+- `/settings` (language, theme, vault status, standing-instructions status), `/settings/price-table`, `/skills`, `/health`, `/health/selfcheck`.
+- `/mcp` — only with `STORAGE_AGENT_ENABLE_MCP=1`: Streamable HTTP (stateless) over the registry's stateless read-only subset + `list_providers`, audited as `actor=mcp`.
 
-- an Execution is a `task_executions` row with lifecycle `queued` / `running` / `waiting` / `completed` / `failed` / `cancelled` / `interrupted`, driven by a background execution supervisor keyed by durable task identity — never by an HTTP request;
-- execution progress is the append-only structured `execution_events` log (status, direction recorded, tool started/progress/completed, steer received/applied, decision opened/resolved (history), work result recorded), replayable by sequence number; never inferred from assistant prose;
-- Steer acts ON the current execution (injected into the running model loop), never cancel-and-rerun; Stop persists the partial Work Result durably;
-- UI disconnect, task switching, and reload never interrupt an execution; a Sidecar restart stamps in-flight executions `interrupted` and (v2.1) **continues each one automatically** — one continuation per chain (a new `kind=resume` Execution; never a crash loop); only when that is impossible (no usable model) does the Task present an explicit **Resume** action (a quiet note beside Settings, v2.2) that starts a new Execution and follows its event stream. (v2.2) A continuation stores the user's Direction unchanged; its note and a bounded digest of the calls that already completed (`task_runtime/continuation.py`, from durable `tool.completed` events) reach only the model's copy, and it answers under the original Direction row when that is still the latest message;
-- a Direction submitted while another Execution is running is **queued durably** and must be visible/cancellable in the Task;
-- dropped event streams reconnect with `after=<last seq>` only — never a blocking `/sessions` POST or assistant-id poll;
-- Decision (`task_decisions`), Work Result (`work_results`), Artifact (`task_artifacts`), and the typed versioned Storage Task Context (`task_context_versions`) are first-class durable rows;
-- the latest typed context version is injected into the Agent prompt's stable half so restart grounding matches the pre-restart snapshot;
-- deterministic cross-evidence correlation produces bounded findings through existing summary/findings/memory channels;
-- deterministic cost/lifecycle simulation, Remediation Plans, baselines/Drift, and per-task revisits remain Sidecar engines on this same runtime — never a second Agent, a second submit path, or a Settings/Artifacts destination;
-- Verify (`kind=verify`) and scheduled revisits (`kind=revisit`) remain runtime paths; the UI does not paint a Verify control or a revisit scheduler. The user asks in Composer. Revisits are read-only and never auto-resolve a Decision;
-- `execution_events` retention is a periodic SQL-set prune (terminal executions only, dual cap, explicit `execution.events_truncated` marker; `0` disables). Active and waiting logs are never touched;
-- (v1.11–v2.0, removed in v2.1) Decisions were raised by gated tools inside the running Execution and resolved through `decisions/{id}/resolve`. Since v2.1 nothing raises or resolves a Decision: `task_decisions` rows are read-only history, restart recovery withdraws any left pending, and no task is ever *needs decision*. Grounding (`skills_used`, `evidence_used`, `evidence_gaps`) is derived from the tool trace, never claimed by the model; the model's commentary segments and tool rows persist as `session_messages.turn_items`, the answer as `content`;
-- after a task's **first** Work Result the runtime runs one bounded, tool-less **title step** (`task_runtime/titling.py`): Direction + Work Result text only, redacted, ≤ 8 words, stored with `sessions.title_source = 'agent'` and logged as `task.titled`; a user rename sets `'user'` and wins forever; an unavailable or empty answer keeps the seed title; the step never fails a turn and is not a second Agent;
-- a provider's `reasoning_effort` (`low | medium | high | NULL`) is forwarded to the model call only when `model_budget.is_reasoning_model` recognises the model; endpoints that cannot take it never receive it;
-- (v1.12) the follower is **push-driven**: the in-process hub wakes each open event stream on every delta and durable append (no SQLite poll loop), and `task.status` rides the running execution's log whenever the derived status or queue changes;
-- (v1.12–v2.0, removed in v2.1) the model's `update_plan` tool and the approval policy; pre-2.1 `plan` turn items and `plan.updated` / `approval.*` frames are ignored on read and replay;
-- (v1.12) **compaction** (`agent_runtime/compaction.py`): when the last turn's reported input usage reaches 80 % of the model's context window, the runtime runs one tool-less, bounded, redacted summary step before the model loop, stores it on the typed context (`summary_sanitized` / `summary_through_seq`, migration 030), appends `context.compacted`, and the prompt replays only later messages with the summary in its stable half; `POST /agent-tasks/{id}/compact` runs it on demand for an idle task. Never a second Agent; never raw rows; never chain-of-thought;
-- (v1.12) `AGENTS.md` in the data directory (or `STORAGE_AGENT_INSTRUCTIONS`) is bounded (8 000 chars), redacted Markdown injected after the skills catalog in the stable prompt half; never executed, never above the safety rules.
-- (v1.13) restart recovery stamps `waiting` executions `interrupted` too (v2.1: and withdraws their pending Decisions, then continues the work automatically);
-- (v1.13) `POST /agent-tasks/{id}/executions` rejects unknown `kind` with 422 (no silent downgrade to `direction`); resuming a user-cancelled execution submits `kind=retry` (`[retry]` note) instead of `[resume]`;
-- (v1.13) the read-only MCP bridge (`STORAGE_AGENT_ENABLE_MCP=1`) executes the stateless allowlist through the S3 layer with the same scope/redaction/bounds, recorded via `run_tool`; session-bound tools are not exposed (stateless bridge by design); `GET /mcp/client/status` reports the consuming-client non-goal with its threat-model pointer;
-- (v1.13) the OTel export carries derived OTel spans (`trace_id`/`span_id`/W3C `traceparent`, deterministic, no migration) alongside the raw events; `GET .../executions/{eid}/events-page` serves one execution's JSON pages so Execution detail never scans the whole task log;
-- (v1.13) compaction triggers on a character estimate when the endpoint reports no usage, estimates CJK-weighted tokens, and chains (each step folds the prior summary); `AGENTS.md` reads are mtime-cached 5 s;
-- (v1.13) endpoint capability refusals clear on a green `POST /model-providers/{id}/test`; redaction covers plural secret keys; Composer history drops key-material entries and masks credential values; `@` completes Task files (model resolves via `list_uploaded_files`); the large-scan approval card shows buckets + estimated calls; the palette fuzzy-ranks tasks; a 90 s+ live turn says so; the survey result carries `fanout_workers` (bounded single-agent fanout, `_PROBE_WORKERS=4` pinned);
-- (v1.13) golden evals (`sidecar/tests/test_v113_eval_golden.py`, see `docs/evals.md`) pin grounded/confident-safe/honest-coverage behaviour; `scripts/stamp-version.py` wires the Tauri updater from `TAURI_UPDATER_PUBKEY`/`TAURI_UPDATER_ENDPOINTS` (both-or-neither, else loud fail); CI packaging smoke is required on `release/*`.
-- (v1.14) `PATCH .../executions/{eid}` rewrites a queued Direction (409 past the queue), audited; (v2.1) `runtime.steerable_execution` is the running (else queued) execution — nothing waits;
-- (v1.14) Execution detail matches the Work Result to `turn_metrics` and renders reported usage only; figures/evidence/triage read localized (EN/ZH) with one `SeverityMark`; times read relative (`lib/time.ts`, DST-safe) with UTC on hover; Composer input is bounded where the server bounds it (counter past 75 %, refuse past 100 %); renames cap at 120 chars;
-- (v1.14) collapsed sidebar is `inert`, the overlay Artifacts panel traps focus, the model menu is a keyboard listbox; outlines start at two sections with smooth in-scroller jumps and unique heading ids; tables size with TSV copy; baselines render findings with folded raw JSON; yaml/toml/ini highlight; one clipboard path (`hooks/useCopy.ts`).
-- (v1.15) the empty start is one static greeting line plus the Composer (no `Try:/试试：` hint; discoverability is the painted palette);
-- (v1.16.0) palette/chip/triage/shortcuts/day-label copy lives in dictionaries; the palette lists engine asks (Composer prefill) and shortcuts; usage renders `budget_tokens` + `repeat_calls_avoided` with a labeled window source (`context_window_source`); approvals disambiguate session policy vs per-task grants with localized gate names; Escape is per-layer; view errors dismiss; reconnects back off; the boundary follows the theme. the Composer delegates in work language; the sidebar footer is Settings alone; stalled streams heal with a quiet reconnecting line (no Resync); CJK single-char search; usage renders from one vocabulary (`lib/usage.ts`: cached-as-subset, `~` floors, named silence, estimated compaction); Execution/Find/Skills copy lives in the i18n dict; Settings stacks with strict CJK breaks. v1.16.1 made tables whole (no pagination).
-- (v1.17) Codex window: ContextMeter lives in the model menu, not the Composer bar; the title bar is name + state (Find/palette are keyboard); the empty start is greeting + Composer with no glyph; the user bubble is a quiet fill; approval is sentence-case hairline *Waiting for approval*; *Worked for {t}* carries no tool-call count on the head; attachments are per-task; a file while busy is labeled Delegate; copy is Direction / Execution / Work Result. No migration (head stays **030**).
-- (v1.18.0) native core: one submit path (the `/runs` POST/message/events/upload routes and `app/events.py` are gone), no Decision-less data movement (the `/evidence-imports` plan/confirm/run routes are gone), reads never submit work (`GET /agent-tasks` no longer ticks revisits; the Sidecar's own revisit scheduler does, `STORAGE_AGENT_REVISIT_TICK_SECONDS`, default 60 s), the title step runs outside the finish transaction, and a Steer is a `steer` turn item (never a `user_steer` tool row). Frontend product code speaks Task: `AgentTask` is the one composition root (no `*Implementation` wrappers), `liveTasks.ts` / `useTaskDocument` / `taskId`, and the `api/` adapters export Task names over unchanged URLs. No migration (head stays **030**).
-- (v1.19.0) Document-native window: a turn is a document section headed by its Direction (no bubble, no speaker alternation); the platform's own UI face first (SF / Segoe UI, Inter fallback); status lives in one dot (title bar, banners, model chip, Execution detail, figures) — never coloured prose or a coloured number; tool rows never repeat their target; approval scope and sizes render localized and humanized; the palette is an opaque sheet with key caps; sidebar rows carry no time (day groups do); figures are ink-first with legends; Execution detail has one Back and sentence-case status. No migration (head stays **030**).
-- (v2.0.0) Result-first Task: the model states each investigative turn's conclusion with the budget-exempt core tool `record_conclusion` (answer ≤ 400 chars; ≤ 8 findings with severity `high|medium|low|info`; ≤ 4 next steps; redacted, chain-of-thought stripped, last call wins, never a tool row); the runtime appends `conclusion.recorded` and persists it on the assistant message (`session_messages.conclusion`) and the durable Work Result (`work_results.conclusion_json_sanitized`) — migration **031**. Evidence and gaps stay derived from the tool trace. A turn without the call has no conclusion; the UI never guesses one. The Task page opens on the Result (conclusion · full answer · figures · detail rows), then the Work log; the Artifacts side panel and *Jump to latest* are gone; long tables preview and sort in place.
-- (v2.1.0) Native agent: no approval and no plan. `import_evidence` is bounded, not gated (≤ 500 files / 256 MiB per call, disk headroom, audited `approved_by=agent`); a survey runs up to its 500-bucket hard cap; `runtime.request_approval`, the approval policy (`/settings/approval-policy`), `POST .../decisions/{id}/resolve`, `pending_decisions` in task state/status/context, the `needs_decision` derivation, `update_plan`, `plan.updated` and `plan` turn items are gone. Restart recovery continues interrupted work automatically (once per chain). Frontend: no approval card, plan card, Safety pane or Plans/Baselines rows; tool rows read as localized verbs; the Result has one meta line and a lead-paragraph answer; next steps are a list of asks; live groups stay open until the turn settles; title and state are one centred group; reveals honour `prefers-reduced-motion`. No migration (head stays **031**).
-- (v2.2.0) Native agent depth: every tool is callable from the first step — the `load_tools` group gate applies only when the resolved context window is ≤ 16k tokens (`limits.tools_gated`, `prompt.INSTRUCTIONS_GATED`), decided by the runtime. The Direction's user row is written when its execution starts (`direction.recorded`), never only at finish; a failed execution takes back an unanswered row it wrote (`direction.withdrawn`). Continuations carry the note + completed-call digest to the model only. The survey (per bucket) and the evidence import (per file) report real progress through `app/progress.py` as durable, throttled `tool.progress` events (≤ 1/s per call + the final one, ≤ 120 per call; counts only); Stop ends an import between files. The Task report reads in Task vocabulary. Frontend: progress on running rows; one-Direction Tasks have no Work log; `lib/scroll.ts revealInScroller` replaces `scrollIntoView` and the window columns are `overflow: clip` (they can never be scrolled, so the Composer never floats); Execution detail paints no empty sections and no default kind; the Resume banner is a quiet note. The v2.x runtime contracts run on the streamed path (`sidecar/tests/test_v220_streamed_agent.py`, fake OpenAI-compatible endpoint), not the `SESSION_LOOP` seam. No migration (head stays **031**).
-- (v3.0.0) Design system v3 / Refined native (frontend only; runtime, API, security floor unchanged): a five-step type scale (11 label · 13 UI · 15 reading · 20 conclusion · 28 page title, `--text-2xs … --text-2xl`); a calibrated cool-neutral ladder whose every text step clears AA on the worst surface (`--hover`); one restrained indigo accent (`--accent` fill, `--accent-text` ink, `--accent-dim` selection tint, `--accent-fg` label on fill) for the primary action, selection, focus, links and live progress — status (danger/warn/success) stays a separate palette; a 4px spacing grid, three radii (6 / 10 / 14), two shadows (`--shadow-elev`, `--shadow-pop`), 16px icons at 1.5 stroke, motion 120/200/280ms honouring `prefers-reduced-motion`. The component library `components/ui.tsx` (Button primary/secondary/ghost/selected/danger, IconButton, Kbd, Badge, StatusDot, SectionLabel, Segmented, Field/TextInput/Select) is styled only in `agent/native-components.css` (`ui-*`). The window gains the resizable, closable **side pane** for Evidence · Report · Execution (replacing detail rows that expanded in place) and a title-bar side-pane toggle + working hairline; the empty start is the greeting as the page's one `<h1>`, one sub line, the Composer and three starters that only fill the Composer; the Result leads with an accent badge and a 20px answer, findings carry severity badges and next steps are suggestion cards; figures are full-width cards with a Chart/Table toggle, y-axis ticks, tooltips and the categorical `--viz-1…6` palette; the palette is Recent · Actions with no engine catalog; Settings panes are compact and the safety floor reads as three points. No migration (head stays **031**).
-- (v3.1.0) Outputs made real (no migration, head stays **031**; security floor, runtime and the single submit path unchanged): the Task report (`sessions/session_report.py`, `GET /sessions/{id}/report?lang=en|zh`, `lang` optional, English by default; the frontend passes the UI language) leads with title + one meta line, Goal, the recorded Conclusion, one Findings list (conclusion · recorded while working · analyses; deduplicated on text; most severe first), the conclusion's Next steps, then the per-Direction record, Coverage and gaps (from the tool trace and memory), facts, tools, analyses, attached evidence, triage, rule-derived suggestions, usage, audit and an always-present Safety section; a section with nothing behind it is not written; only the module's own words are localized (EN/ZH), the Agent's words are reproduced as recorded; still redacted, bounded, no raw rows/secrets/chain-of-thought (`sidecar/tests/test_v310_report.py`). The Result and the Evidence tab read **one findings list** (`lib/findings.ts unifyFindings`) with an Evidence link per finding; ⌘I toggles the side pane and a selection with nothing behind it settles on the output shown; the model chip reads **Runtime offline** when the runtime cannot be reached; no component carries a raw colour or type utility (`components/v310.test.tsx`), surface stylesheets live in `frontend/src/styles/` (`markdown.css`, `settings-panes.css`, `artifacts.css`, `overlays.css`, imported after `agent/native-*.css`), the `--text-xs` / `--text-base` / `--text-lg` aliases are gone (five sizes, five names), `.ui-scrim` is the one scrim, status reads as a dot/badge beside neutral text; the light theme's `--viz-2…5` are stepped darker in the same hues so every series clears 3:1; the unused v1.16 palette `prefill` action is removed.
-- (v4.0.0) **The resident Agent for the storage estate** (migration **032**; storage stays read-only; one Agent and one submit path unchanged). The estate (`sidecar/app/estate/`): after an account survey or a bucket config review **completes**, `run_service.run_sync` projects its persisted, sanitized output onto `estate_buckets` (per provider + bucket: region, a posture projection of status enums/booleans only, `last_checked_at`) and **Issues** (`issues`, one per provider + bucket + rule `code` — the fingerprint; `issue_events` is the append-only lifecycle). Issues are opened, resolved and marked `recurred` only by deterministic observations (`estate/rules.py`: survey posture, `review_bucket_security` / `review_bucket_lifecycle` findings, read-only verify) — never by model prose; a read that could not see something decides nothing (silence never resolves an Issue). Status `open` → `fix_proposed` → `resolved` (by survey / review / verify / watch) → `recurred`; `accepted` is the user accepting a risk. A **fix** is deterministic text the user applies (public access block, default encryption, lifecycle rules; none where the fix depends on intent) — Storage Agent never writes to storage. **Verify** (`POST /issues/{id}/verify`) re-runs the rule's read-only review, scope-checked and recorded as tool calls. The Agent starts every task with a bounded `known_estate` block (providers, known buckets, last checked, ≤ 12 open issues; no posture documents) after `configured_providers`. **Proactive watch** (`estate/watch.py`, `watch_schedules`): opt-in per cloud provider, **off by default**, interval 1 h–7 d; the Sidecar's own clock (`STORAGE_AGENT_WATCH_TICK_SECONDS`, default 60 s) runs a due sweep — the survey engine (≤ 500 buckets) + a read-only re-check of what posture cannot decide (≤ 25 buckets) — and only when something new (high/medium, opened or recurred) turned up opens **one** Agent Task with the evidence in its Direction through `runtime.submit` (no model configured → no task; the Issues stay on the home); turning a watch off stops a scheduled sweep between phases; the last 3 sweep runs per provider are kept. The **home** (`components/TaskStart.tsx` + `EstateHome.tsx`) is "what to care about now": greeting, Composer, starters (those that need storage say so when none is configured), a **readiness** check when a model or storage account is missing, then **Your storage** (accounts · buckets · last checked · last watched) and **Needs care** (open Issues most severe first; each expands to detail, the fix, Verify, Open task — the task that found it — and Accept risk). A watch that found something raises one OS notification (`hooks/useWatchAlerts.ts`). Settings › Cloud Providers carries each provider's watch (Off · 6 h · Daily · Weekly, Check now, last result). The live golden task (`sidecar/tests/test_v400_estate.py`, `test_v400_watch.py`) drives a real Execution (fake OpenAI-compatible model) against a real S3 server (moto, `tests/live_s3.py`, in CI's Sidecar job): survey → review → Issues → the user applies the fix → Verify resolves → the problem returns → recurred.
-
-The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. There are no `/sessions` message endpoints any more. Do not create a second submit path.
-
-## 5. Current Sidecar API boundary
-
-The Sidecar exposes both product projection and compatibility APIs:
-
-- `/agent-tasks` is the product-level task surface: the task list (with durable lifecycle state) plus the runtime API — executions (submit with strict `kind` / steer / stop / resume / edit queued (`PATCH .../executions/{eid}`, 409 past the queue) / SSE event stream resumable by sequence, push-driven, carrying `task.status` so a follower never polls; per-execution JSON pages via `GET .../executions/{eid}/events-page`), Verify (`POST .../verify`, kind=`verify`), on-demand compaction (`POST .../compact`), queued visibility, decisions (read-only history since v2.1; no resolve route), work results (with the recorded `conclusion`, v2.0), artifacts, **read-only provenance** (`GET .../provenance`), remediation plans, baselines, revisit schedule, the typed task context, and the OTel export with derived spans (`GET .../export/otel`). Engine endpoints are not product destinations.
-- `/sessions/...` remains the durable task document/paging/memory/activity compatibility API. Since v1.12 it has **no** message, stream, cancel, turn, or action-prepare endpoints; the durable execution API is the only submit path.
-- `/runs/...` is read-only deterministic execution/report compatibility API (GETs + DELETE) and is not a top-level product surface. Since v1.18 no HTTP route creates, messages or streams a run, and there is no in-memory run event bus: engines run only inside an Agent Execution through `run_service.run_sync`.
-- `/evidence-imports/...` is read-only (`GET` an import and its files). Data movement (plan → confirm → run) is reachable only through the bounded `import_evidence` tool inside a running Execution — since v1.18 there is no HTTP route that plans, confirms or runs an import.
-- `/model-providers` (a green `POST .../{id}/test` also clears remembered endpoint capability refusals), `/cloud-providers`, `/settings` (including the local price-table **engine** API; Settings UI does not edit it; plus the read-only `instructions` status since v1.12; the `approval-policy` route is gone since v2.1), `/tools`, `/mcp` (stateless read-only bridge when `STORAGE_AGENT_ENABLE_MCP=1`; `GET /mcp/client/status` reports the consuming-client non-goal), `/error-triage`, `/reports`, and dataset endpoints keep their existing responsibilities.
-- (v4.0) `/estate` (overview), `/issues` (list · one · `fix` · `verify` · `accept`) and `/estate/watch/{provider_id}` (`GET` / `PUT {enabled, interval_hours}` / `POST .../run`) are the estate surface. None of them submits Agent work except the watch sweep, which opens its task through `runtime.submit` like any other Direction.
-
-Do not rename persistence/API contracts just for cosmetic consistency if that adds migration risk. Adapt them at explicit boundaries instead.
+When `STORAGE_AGENT_AUTH_TOKEN` is set (the packaged app), every route except `/health` requires `X-Sidecar-Token` (or `?token=` for `EventSource`). See `docs/api.md`.
 
 ## 6. Non-negotiable security rules
 
 1. Never place cloud access keys, secret keys, session tokens, model API keys, Authorization headers, cookies, signatures, or presigned credentials in model prompts.
-2. Never persist plaintext secrets in SQLite, logs, reports, traces, screenshots, local JSON/YAML, or frontend state.
-3. Store secrets only through `security/keyring_store`; SQLite stores opaque `keyring://...` references only.
-4. Do not introduce a generic shell, raw subprocess, raw boto3 client, unrestricted filesystem tool, terminal, browser/computer-control tool, or arbitrary SQL tool for the Agent.
-5. Storage operations are read-only in the shipped product. There is no destructive/mutating S3 tool.
-6. Provider bucket/prefix scopes are enforced server-side.
-7. Read-only diagnostic work runs autonomously. Data-moving or materially large/full-scan operations run inside hard server-side bounds instead of a confirmation (v2.1): evidence import only from a discovered source, ≤ 500 files / 256 MiB per call (clamped), refused without disk headroom, audited, and stoppable at any time; a survey never exceeds its 500-bucket hard cap and reports its coverage. (v4.0) A watch sweep is opt-in per provider, off by default, read-only, bounded (≤ 500 buckets surveyed, ≤ 25 re-checked) and stops when its watch is turned off; an Issue's fix is text for the user, never applied.
-8. Tool inputs/outputs, Evidence, audit rows, reports, and model context must be sanitized and bounded.
-9. Raw access-log/inventory rows do not enter model context. Deterministic analysis produces bounded aggregates/findings.
-10. Chain-of-thought is never persisted, exposed, or modeled as an Artifact.
-11. Capability gaps on S3-compatible providers are represented explicitly (`provider_unsupported`) rather than fabricated as success or collapsed into unrelated errors.
-12. Missing Evidence stays a gap/uncertainty. Never manufacture evidence to complete a narrative.
+2. Never persist plaintext secrets in SQLite, items, logs, reports, traces, screenshots, or frontend state.
+3. Store secrets only through `security/keyring_store`; SQLite stores opaque `keyring://…` references only.
+4. No generic shell, raw subprocess, raw boto3 client, unrestricted filesystem, terminal, browser/computer control, or arbitrary SQL for the Agent.
+5. Storage is read-only. There is no destructive/mutating S3 tool. An Issue's fix is text the user applies.
+6. Provider bucket/prefix scopes are enforced server-side (tool guardrail, Verify, MCP bridge).
+7. Data movement runs inside hard server-side bounds (above); a survey never exceeds 500 buckets; the watch is opt-in per provider, off by default, read-only, bounded (≤ 500 buckets surveyed, ≤ 25 re-checked) and stops between phases when turned off.
+8. Tool inputs/outputs, items, audit rows, reports and model context are sanitized and bounded; tool output reaches the model inside the untrusted-data envelope.
+9. Raw access-log/inventory rows never enter model context — deterministic analysis produces bounded aggregates and findings.
+10. Chain-of-thought is never persisted, exposed or modeled as an item.
+11. Capability gaps on S3-compatible providers are explicit (`provider_unsupported`), never fabricated success.
+12. Missing evidence stays a gap. Never manufacture evidence to complete a narrative.
 
-See `docs/security.md` for the full contract.
+See `docs/security.md`.
 
-## 7. Tool contract
+## 7. The window
 
-Agent tools are explicit, typed, whitelisted, bounded, and sanitized. Current capability classes include:
+The main window is **sidebar · title bar · one document · one Composer**, plus one closable, resizable **side pane**.
 
-- credential/reachability/addressing/TLS diagnostics;
-- bucket/object metadata inspection;
-- bounded object listing, versions, multipart and object-lock/ACL/tag/attribute inspection;
-- bounded Range/conditional/preview probes and request-latency measurement;
-- pure presigned-URL diagnosis;
-- account discovery and bucket configuration review;
-- local uploaded inventory/access-log analysis;
-- managed Evidence Import, bounded server-side (no confirmation since v2.1);
-- deterministic cost/lifecycle simulation over bounded inventory aggregates and a local price table (estimates always carry coverage; missing inventory or an unconfirmed price table is an explicit gap);
-- typed Remediation Plan artifacts with read-only Verify executions;
-- versioned baselines and Drift reports;
-- optional per-task read-only revisit schedules submitted through the existing runtime path;
-- task memory/evidence lookup and deterministic report generation.
-- the turn's conclusion (`record_conclusion`) — runtime structure the UI renders, never a tool row. (The model-owned plan, `update_plan`, was removed in v2.1.)
+- **Sidebar**: New task, Home, an in-place title search (Esc clears), one chronological list grouped by day, Settings. State is a mark on the row (Working pulses, Queued, Needs attention; Ready paints nothing; a watch-opened task carries the shield). Rename (double-click / More) and Delete. ↑/↓ move between tasks.
+- **Title bar**: the task name and its real state pill, centred; the side-pane toggle; a thin progress hairline while work is live.
+- **Home** ("what to care about now"): the greeting as the page's one `<h1>`, one sub line, the Composer, three starters that only fill it, a readiness check when a model or storage account is missing, then **Your storage** (accounts · buckets · last checked · watch) and **Needs care** (open Issues most severe first; each expands to detail, the fix, Verify, Open task, Accept risk). Nothing on the home submits work except the Composer.
+- **Task page** (result-first): banners (queued Directions with Withdraw; Resume / Open Settings when the last Turn needs attention), the **work in progress** (its Direction, commentary, live "Working · t" tool groups kept open, the live text, the conclusion as soon as it is recorded), the latest **Result** (accent badge + one meta line; the recorded conclusion's answer at 20px; findings with severity badges; next steps as cards that fill the Composer; the full answer; figures from deterministic analyses; the outputs bar), then the **Work log** — every earlier Direction as a document section (heading = the user's words, commentary, folded "Worked for …" groups, the answer folded to one line). A one-Direction task has no Work log; its work sits in the Result above the outputs. A Direction heading offers Edit (a fork) and the version switcher.
+- **Tool rows** read as what the Agent did (a localized verb, the target in mono, the result as a muted note; the raw tool name on `data-tool`); running survey/import rows show real counts and a hairline meter.
+- **Side pane**: Evidence (the unified findings — every recorded conclusion's findings, deduplicated, most severe first — and attached evidence), Report (the task report in the reader's language), Activity (every tool call; one opens as a document with its arguments and output). ⌘I toggles it; Esc closes it; drag its edge (352–880 px).
+- **Composer** is the only Agent input: Delegate at rest; Steer + Stop while work is live; a file makes the action Delegate (a queued Direction), never Steer. Attach by button or drop; the **model chip** (real provider list; *Set up a model…* with none; *Runtime offline* when the Sidecar cannot be reached; reasoning effort only for known-reasoning models).
+- **Palette** (⌘K): Recent tasks and Actions under one fuzzy ranking. **Settings**: General (theme, language, the safety floor as three points) · Models · Storage accounts (with each account's Watch: Off · 6 h · Daily · Weekly, Check now) · Skills & bridges.
+- **Quick Ask**: a second, small always-on-top window (⌘⇧Space, the tray, the View menu). One question becomes one ordinary task (`origin = quick_ask`) through the same submit path; the answer streams there; *Open in the main window* hands the task over via the deep-link event.
+- **Native shell**: menu bar (App · Edit · Task · View · Window · Help) emitting `menu-command`, `storage-agent://task/<id>` deep links, OS notifications when a followed task settles in the background or the watch opens a task, a tray item (Open · Quick Ask · Quit, tooltip = what needs care), global shortcuts (⌘⇧S summon, ⌘⇧Space Quick Ask). All of it reaches the window through `frontend/src/hooks/useNativeAgent.ts`; a plain browser is a no-op.
 
-Do not infer tool availability from a documentation example. `docs/tools.md` and the registered runtime tool set must agree with code.
+Frontend structure: `api/` (the only module that talks to the Sidecar), `store/task.ts` (one reducer over snapshot + SSE), `store/derive.ts` (pure projections: sections, tool rows, latest Result, unified findings, figures, versions), `shell/`, `home/`, `task/`, `composer/`, `inspector/`, `settings/`, `quick/`.
 
-## 8. Data ownership
+## 8. Design system
 
-SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **032**; never edit a shipped migration, append a new one.
+Tokens live in `frontend/src/index.css` (see `docs/design-tokens.md`): a calibrated cool-neutral ladder, one restrained indigo accent (primary action, selection, focus, links, live progress), a separate status palette, five type sizes (11 · 13 · 15 · 20 · 28), a 4 px grid, three radii, two shadows, motion 120/200/280 ms honouring `prefers-reduced-motion`. Controls come from `components/ui.tsx`, styled in `styles/components.css`; surfaces live in `styles/app.css` and `styles/document.css`. No component carries a raw colour; status reads as a dot or badge beside neutral text. Motion uses CSS and View Transitions; there is no animation library.
 
-DuckDB/local files store analytical data and large inputs/artifacts. User data lives under the application data directory, never the install directory.
+## 9. Data ownership
 
-Product-to-persistence mapping:
+SQLite (`storage-agent.db`) stores application metadata and the items stream; migrations are append-only (never edit a shipped entry). DuckDB/local files hold datasets (`<data>/tasks/<task>/datasets/<id>/`). User data lives under the application data directory, never the install directory. On first start the one-shot importer (`app/importer.py`) copies providers (vault references carry over), the estate, the price table and each v4 task's Directions/answers/conclusions from a sibling `app.db`, which it never modifies. See `docs/data-model.md`.
 
-| Product | Durable runtime (v0.94) | Compatibility persistence/API |
-| --- | --- | --- |
-| Agent Task | `agent_tasks` | `sessions` (+ `title_source`), `/sessions/...`, `/agent-tasks` |
-| Direction | execution direction + steer events | `session_messages` (user rows) |
-| Execution | `task_executions` + `execution_events` | `runs`, `session_runs`, `tool_calls`, turn metrics |
-| Work Result (+ conclusion, v2.0) | `work_results` (+ `conclusion_json_sanitized`) | `session_messages` (assistant rows, + `conclusion`) |
-| Decision (history only since v2.1) | `task_decisions` | persisted proposed actions + approval/evidence-import state |
-| Evidence / Artifact | `task_artifacts` index (`report`, `evidence_import`, `analysis`, `remediation_plan`, `baseline`, `drift_report`) | evidence references/imports, reports, local artifact files |
-| Remediation Plan | `remediation_plans` | indexed via `task_artifacts` |
-| Baseline / Drift | `task_baselines` + `drift_report` artifacts | — |
-| Revisit schedule | `task_revisit_schedules` | submitted as `task_executions.kind=revisit` |
-| Price table | `storage_price_table` (ordinary config, not a secret) | `/settings/price-table` |
-| Estate (v4.0) | `estate_buckets`, `issues` + `issue_events`, `watch_schedules` | `/estate`, `/issues`, `/estate/watch/{provider_id}` |
-| Storage Task Context | `task_context_versions` (+ `summary_sanitized` / `summary_through_seq`) | — |
-| Task memory | — | session summaries/findings/agent memory |
+## 10. Non-goals
 
-See `docs/data-model.md`.
+Multi-agent orchestration (bounded parallel tool calls, ≤ 6, are the alternative), coding projects/worktrees, synthetic plans or checklists, generic terminal/browser/computer control, workflow canvas, LangGraph/LiteLLM/Langfuse/n8n, Postgres/Redis, destructive storage repair or mutation, a page per backend table, multi-user SaaS/RBAC.
 
-## 9. Product and design rules
-
-- Optimize the first viewport for: **what is the Task, what is happening/what was produced, what can the user do now**.
-- The Task is a **result-first document**: one reading column; the latest Result (conclusion first) at the top, the Work log below; figures in the Result; durable outputs (Evidence · Report · Execution) open in the one closable, resizable side pane on the right (v3.0).
-- Composer is the only start surface. An empty window is the greeting as the page's one `<h1>` (28px), one sub line, the Composer, and three real starters (diagnose access · survey the account · analyze an access log) that only fill the Composer — never submit (`components/TaskStart.tsx`). (v4.0) Below them the home says what to care about now: a readiness check when a model or storage account is missing, then the estate and its open Issues (`components/EstateHome.tsx`); nothing on the home submits work. Missing model is a banner plus Settings. The model discovers tools; there is no slash SKU catalog and no first-run wizard.
-- The Task **report** (v3.1) is a document in the reader's language: conclusion first, one findings list, the Agent's next steps, the per-Direction record, coverage and gaps, then the record (tools, analyses, attached evidence, triage, usage, audit) and Safety. Sections with nothing behind them are not written; the Agent's own words are never translated.
-- Settings is a centered dialog of compact preference panes (a nav with accent selection, grouped rows, one pane title style) with sections **General (theme/language, and the read-only safety floor as three points: secrets stay in the vault · storage is read-only · imports are bounded to 500 files / 256 MiB per call, audited, and Stop ends work) · Model Providers · Cloud Providers · Skills & bridges**. Provider sections are native preference panes: one list, a preset menu (OpenAI · Anthropic · DeepSeek · OpenRouter · Ollama · LM Studio · vLLM · llama.cpp · OpenAI-compatible; AWS S3 · Cloudflare R2 · MinIO · OSS · COS · BOS · TOS · B2 · GCS · Custom), one editor with masked keys and inline Test. Skills & bridges offers actions (open skills folder, open the instructions file folder, export trace, copy the MCP env var), never raw endpoint paths. There is no Safety pane, no approval policy and no price-table spreadsheet.
-- Keep settings/provider/model selection secondary to delegated work.
-- Keep technical results readable as documents: prose, tables, code/config, structured errors, tool rows, provenance.
-- Presentation (design system v3, v3.0) is one calibrated cool-neutral surface ladder with hairline depth on the canvas, and **one restrained indigo accent** used only for the primary action, selection, focus, links and live progress (this replaces the v1.09–v2.2 rule "an ink primary; status is the only colour"). Status (danger/warn/success) is a separate palette and never a series colour; figures use the categorical `--viz-1…6`. Type is a five-step scale (11 · 13 · 15 · 20 · 28) on a 4px grid with three radii and two shadows. Controls come from `components/ui.tsx`, styled only in `agent/native-components.css`; surfaces compose them instead of restyling. Since v3.1 the design system is finished: no component carries a raw colour or type utility (guarded by `components/v310.test.tsx`); surface styles live in `frontend/src/styles/` (`markdown.css`, `settings-panes.css`, `artifacts.css`, `overlays.css`); five type sizes have five names (`--text-2xs` · `--text-sm` · `--text-prose` · `--text-xl` · `--text-2xl`, no aliases); `.ui-scrim` is the one scrim; status reads as a dot or badge beside neutral text, never coloured prose. Tokens live in `frontend/src/index.css`; see `docs/design-tokens.md`.
-- Use progressive disclosure for execution detail; do not turn the main Task into a permanent observability wall.
-- Preserve accessibility, contrast, responsive/narrow-window behavior, English/Chinese parity, and real-state visual review.
-- Do not copy another Agent client's chrome without matching runtime semantics.
-
-## 10. Explicit non-goals (with conditional native-agent extensions)
-
-The following remain non-goals until a real runtime and safety contract
-exists. **Additive, gated extensions** that reuse the durable runtime and
-the same security floor are permitted as opt-in and do not require a full
-product/runtime rewrite:
-
-- **Still non-goals:** multi-agent orchestration (single-agent fanout via
-  `_MAX_PARALLEL_TOOLS=6` is the bounded alternative), coding
-  projects/worktrees, synthetic plans/checklists not emitted by the runtime,
-  generic terminal/browser/computer control, workflow canvas,
-  LangGraph/LiteLLM/Langfuse/n8n as new architectural dependencies,
-  Postgres/Redis for the local desktop product, destructive storage repair or
-  mutation, a top-level page for every backend table, multi-user SaaS/RBAC
-  semantics.
-- **Gated extensions (since post-1.02 modern native-agent work):**
-  - `STORAGE_AGENT_DATA_DIR/skills/*/SKILL.md` + `STORAGE_AGENT_SKILLS_DIR`
-    user skills (markdown guidance only, shadows bundled by name, bounded,
-    never executed) — `GET /skills`; and since v1.12 `STORAGE_AGENT_DATA_DIR/AGENTS.md`
-    (+ `STORAGE_AGENT_INSTRUCTIONS`) standing instructions — same rules,
-    `GET /settings/instructions` reports status only;
-  - local model providers (`ollama`, `lmstudio`, `vllm`, `llama.cpp` and
-    `openai-compatible` without a stored key, localhost defaults, dummy
-    `not-needed` bearer) — same probe and budgeting as cloud models;
-  - read-only MCP bridge (`STORAGE_AGENT_ENABLE_MCP=1`,
-    `GET /mcp/tools` + `POST /mcp/tools/call` over the whitelisted read-only
-    tool set, same scope/redaction/bounds);
-  - observability export (`GET /agent-tasks/{id}/export/otel` +
-    `GET /observability/export`, bounded, sanitized, no new tables);
-  - (v4.0) proactive watch — opt-in per cloud provider, off by default: a
-    bounded read-only sweep on the Sidecar's clock that opens one Agent Task
-    through the one runtime path only when something new turned up;
-  - Tauri OS shell (since v1.10.0 a real one): a native menu bar
-    (App · Edit · Task · View · Window · Help) that emits `menu-command`,
-    `storage-agent://task/<id>` deep links (`deep-link-request`), OS
-    notifications when a background Execution settles, a global summon
-    shortcut (`shortcut-event`), and the OS window title. All of it reaches
-    the window through the one bridge `frontend/src/hooks/useNativeAgent.ts`
-    and dispatches through the same command handler as the keyboard and the
-    palette; a plain browser is a no-op. `updater` stays inert until a
-    signing pubkey is configured.
-
-Every extension preserves: read-only storage tools, no generic shell/
-arbitrary subprocess, secrets only in the encrypted vault, server-side
-provider scope, hard server-side bounds for data movement, bounded/sanitized
-context, and no chain-of-thought persistence.
+Gated, opt-in extensions that keep the same floor: user skills (`STORAGE_AGENT_DATA_DIR/skills/*/SKILL.md`, guidance only), standing instructions (`AGENTS.md` / `STORAGE_AGENT_INSTRUCTIONS`, bounded, redacted), local model providers (Ollama, LM Studio, vLLM, llama.cpp, OpenAI-compatible), the read-only MCP server, the proactive watch.
 
 ## 11. Development workflow
 
-Work from `main` in focused PRs. GitHub Issues are not the project workflow unless explicitly requested.
-
-For architecture or behavior changes:
-
-1. Inspect current implementation and regression tests first.
-2. Update the relevant canonical docs in the same PR.
-3. Preserve compatibility adapters unless migration is part of the requested change.
-4. Add or update executable architecture/regression tests for boundaries that matter.
-5. Validate the real rendered/runtime state rather than reasoning only from component code.
+Work in focused PRs. For architecture or behavior changes: inspect the implementation and its tests first; update the canonical docs in the same PR; add or update executable contracts for boundaries that matter; validate the real rendered/runtime state (the E2E suite and the contact sheet run against the real Sidecar), not only component code.
 
 ## 12. Verification expectations
 
-Run the checks relevant to the change and never claim checks you did not execute.
+Run the checks relevant to the change and never claim checks you did not execute. CI gates: frontend typecheck, Vitest (unit + contracts + surfaces), production build; Sidecar `ruff` + `pytest` (including the live golden estate/watch tasks against moto S3 and the fake OpenAI-compatible model); packaged Sidecar smoke; real-Sidecar Playwright E2E and the visual contact sheet; macOS, Linux and Windows desktop builds. Dependency versions actually verified are pinned in `sidecar/requirements.lock` (`scripts/lock-sidecar-deps.py`).
 
-Minimum repository gates represented in CI include:
-
-- frontend TypeScript typecheck/lint;
-- frontend Vitest unit + architecture/documentation contracts;
-- frontend production build;
-- Python Sidecar tests;
-- packaged Sidecar smoke;
-- real-Sidecar Playwright E2E;
-- visual-review capture from asserted real states;
-- macOS Apple Silicon, Linux x64, and Windows x64 desktop build/runtime verification.
-
-For local focused work, at minimum run the directly affected test suites; before release, use the release/smoke documentation and CI matrix.
+When reporting completion include: what changed; what contract it changes or preserves; what checks ran and their result; what was not run; known gaps.
 
 ## 13. Documentation discipline
 
-`docs/README.md` defines documentation precedence. Release notes, CHANGELOG entries, and historical rebuild docs are descriptive history and may contain retired vocabulary. Never use them as the primary architecture specification for current implementation.
-
-When reporting completion include:
-
-- what changed;
-- what contract/behavior it changes or preserves;
-- what checks actually ran and their result;
-- what was not run;
-- known gaps or follow-up work.
-
-Never claim a check passed unless it actually ran.
+`docs/README.md` defines precedence. Release notes and the CHANGELOG are history and may carry retired vocabulary; never use them as the specification.

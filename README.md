@@ -1,159 +1,72 @@
 # Storage Agent
 
-**Current release: v4.0.0**
+**Current release: v5.0.0**
 
-Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. Give it a storage goal or problem; it investigates with real read-only tools, remains steerable and stoppable while it works, keeps its one data-moving tool inside hard server-side bounds, and produces durable results backed by reviewable execution and evidence.
+Storage Agent is a local-first desktop Agent for object storage — AWS S3 and every S3-compatible service. Give it a goal or a problem; it investigates with real, read-only, bounded tools, stays steerable and stoppable while it works, and answers with evidence. What it learns about your storage — accounts, buckets, their posture and the Issues found there — outlives the task that learned it.
 
-The product is organized around one invariant (v4.0):
+> **The estate is the object; Agent Tasks are how work is done. One item stream is the truth.**
 
-> **The estate is the object; Agent Tasks are how work is done.**
+It is not a chatbot wrapped around a storage console, and it never writes to your storage: fixes are text you apply with your own credentials.
 
-What the Agent learns about your storage — accounts, buckets, their posture and the Issues found there — outlives the task that learned it. Issues carry a lifecycle (open → fix proposed → resolved, recurred when they come back); fixes are text you apply (the Agent never writes to storage) and Verify re-checks read-only. An opt-in watch re-checks an account on a schedule and opens one task when something new turns up. The home shows what to care about now.
+## How it works
 
-Canonical work model:
+- **Delegate, Steer, Stop.** One Composer: delegate a Direction at rest; steer the running work; stop it and keep what it found. A Direction sent while the Agent works is queued.
+- **Result-first tasks.** A task opens on its latest Result — the conclusion the Agent recorded (the answer, findings by severity, next steps you can ask for), then the full answer, figures from deterministic analyses, and Evidence · Report · Activity in the side pane. Earlier Directions stay below as a work log.
+- **Forks.** Edit any Direction and the Agent answers the new version on its own branch; switch between versions.
+- **The estate.** Surveys and reviews are remembered per account. The home lists what needs care, most severe first — each Issue with a generated fix to copy, a read-only Verify, and the task that found it. An opt-in watch re-checks an account on a schedule and opens one task when something new turns up.
+- **Quick Ask.** ⌘⇧Space opens a small window for one question; the tray says what needs care.
+- **Your models.** OpenAI (Responses API, with hosted tool search and server-side compaction), Anthropic, DeepSeek, OpenRouter, or local models (Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint).
 
-> **Direction → Execution → Work Result → Artifact**
+## What it can do
 
-Storage Agent is not a chatbot wrapped around a storage console, and it is not a page-per-backend-table admin application.
+- diagnose credentials, reachability, region, addressing, TLS, latency and presigned URLs;
+- inspect buckets and objects: listings, versions, multipart uploads, object lock, ACLs, tags, attributes, range/conditional reads, bounded previews;
+- survey an account (≤ 500 buckets) and review bucket security, lifecycle, observability, cost and performance configuration;
+- analyze attached access logs and inventories locally with DuckDB — raw rows never reach the model;
+- import a discovered inventory or access-log source (≤ 500 files / 256 MiB per call, audited, stoppable);
+- triage pasted S3 errors and simulate storage-class mix and cost under lifecycle rules;
+- write a task report in English or Chinese.
 
-## How the product works
+## Safety
 
-### Storage estate (v4.0)
-
-Completed surveys and config reviews are remembered per account. The home lists open Issues most severe first; each opens the task that found it, shows a generated fix to copy and apply yourself, and can be verified with a read-only re-check. Settings › Cloud Providers turns the watch on per account (off by default).
-
-### Agent Task
-
-A durable Task is the primary unit of work. The window is a sidebar, a title bar, and one Task document: task navigation is one chronological title list with a state mark, not a queue of workbench sections.
-
-### Delegate, Steer, Stop
-
-There is one Agent input.
-
-- At rest: **Delegate** a goal, problem, constraint, or follow-up.
-- While the Task is executing: use the same control to **Steer** the running work.
-- Use **Stop** to cancel the active turn.
-
-Switching to another Task does not destroy the first Task's real in-flight state. Reopening it reconnects to the same durable/live work.
-
-### Direction
-
-User input is durable task direction: the objective, correction, constraint, or steering instruction. It is the heading of its turn in the Task document, not a message bubble.
-
-### Execution
-
-Execution is real runtime/tool activity. Storage Agent shows actual progress and sanitized tool detail — each tool row reads as what the Agent did (*Checked bucket*); it does not invent plans, workers, terminals, browsers, worktrees, or sub-agents that the runtime does not implement.
-
-### Bounded, not paused
-
-Nothing pauses the Execution for approval (v2.1). Read-only investigation proceeds autonomously. The one operation that moves cloud data — the `import_evidence` tool — runs inside the turn within hard server-side bounds: only from an evidence source the account survey discovered, at most 500 files / 256 MiB per call, refused without 1 GiB of free disk, audited, and ended by **Stop**. If the Sidecar restarts mid-work, the interrupted work continues on its own; **Resume** appears only when it cannot.
-
-### Work Result and Review
-
-A Task opens on its **Result**: one meta line (when · evidence · gaps · tool calls), the conclusion the Agent recorded (the answer, findings by severity, next steps you can put in the Composer), then the full answer as Markdown — the durable **Work Result** — with Evidence, the Report and Execution detail as rows that expand in place (⌘I). Below it, the **Work log** keeps every turn: your Direction, the model's short commentary, one *Worked for …* group of real tool rows.
-
-## Storage capabilities
-
-Storage Agent can currently:
-
-- diagnose S3-compatible credentials, reachability, endpoint/region/addressing/TLS behavior;
-- inspect buckets and bounded object metadata with read-only tools;
-- discover accounts and visible buckets;
-- review bucket security, lifecycle, observability, cost, and performance configuration;
-- inspect versions, multipart state, object lock, ACLs, tags, attributes, conditional/range behavior, and bounded content previews where safe;
-- analyze uploaded access logs and inventory locally with DuckDB;
-- run deterministic cost/lifecycle simulation, draft a Remediation Plan, capture baselines, and report Drift **when the Agent invokes those engines** — they are not Settings or Review destinations;
-- import bounded cloud Evidence (discovered source, ≤ 500 files / 256 MiB per call, audited);
-- triage supported storage errors deterministically, including without a configured model provider;
-- preserve task memory, findings, execution history, evidence references, and turn metrics;
-- generate durable Markdown Report artifacts.
-
-## Safety model
-
-Storage Agent deliberately has a narrower action surface than a general-purpose computer-use Agent.
-
-- **Local-first:** application metadata, imported data, and artifacts live in the OS application-data directory.
-- **Encrypted local secret vault:** cloud/model credentials are stored only through the encrypted vault; SQLite stores opaque references.
-- **Secrets never enter model context:** credentials, Authorization material, signatures, tokens, and sensitive query parameters are excluded/redacted.
-- **Read-only storage capabilities:** no destructive/mutating S3 tool is shipped.
-- **No generic shell/arbitrary subprocess:** Agent capabilities are typed and whitelisted.
-- **Bounded analysis:** object listings, previews, scans, evidence imports, and model context are explicitly bounded.
-- **Hard bounds on data movement:** managed cloud Evidence Import runs only from a discovered source, clamped to 500 files / 256 MiB per call, refused without disk headroom, audited, and stoppable; account surveys never exceed 500 buckets and report coverage.
-- **Evidence truth:** persisted tool/evidence records are sanitized; missing evidence remains a gap rather than being guessed.
-- **No chain-of-thought persistence/exposure.**
-
-See [docs/security.md](docs/security.md) for the authoritative security contract.
+Secrets live only in an encrypted local vault and never reach the model, the logs or the window. Storage tools are read-only; there is no shell, SQL or raw client. Bucket/prefix scope is enforced server-side. Tool output reaches the model as untrusted data. No chain-of-thought is stored. See [docs/security.md](docs/security.md).
 
 ## Architecture
 
 ```text
-Tauri v2 desktop shell
-        │
-React + TypeScript Agent UI
-        │ localhost HTTP / SSE
-Python FastAPI Sidecar
-        │
-        ├── user-configured model endpoint
-        └── user-configured S3-compatible storage
+Tauri v2 shell ── React window · Quick Ask · tray
+        │ localhost HTTP / SSE + per-launch token
+Python Sidecar ── one Agent (OpenAI Agents SDK) ── your model endpoint
+        │                                       └─ your S3-compatible storage
+        └── SQLite item stream · estate · encrypted vault · DuckDB datasets
 ```
 
-The Sidecar owns persistence, Agent runtime, tools, evidence, reports, provider adapters, and the encrypted-vault integration. The UI never receives secret values.
-
-Some backend names predate the current product model and remain compatibility contracts:
-
-| Product concept | Current compatibility storage/API |
-| --- | --- |
-| Agent Task | `sessions` + `/sessions/...`; `/agent-tasks` projects task-list state |
-| Direction / Work Result | `session_messages` |
-| Execution | `runs`, `session_runs`, `tool_calls`, turn metrics |
-| Evidence / Artifact | evidence/import/report persistence |
-
-Those names do not define the frontend information architecture.
+See [docs/architecture.md](docs/architecture.md).
 
 ## Install
 
-Download platform assets from [GitHub Releases](https://github.com/hxddh/storage-agent-workbench/releases). Current releases ship:
+Download from [GitHub Releases](https://github.com/hxddh/storage-agent-workbench/releases):
 
-| Platform | Asset pattern |
+| Platform | Asset |
 | --- | --- |
 | macOS Apple Silicon | `storage-agent-vX.Y.Z-macos-arm64.dmg` / `.app.zip` |
 | Linux x64 | `storage-agent-vX.Y.Z-linux-x64.deb` |
 | Windows x64 | `storage-agent-vX.Y.Z-windows-x64-setup.exe` |
 
-Each platform has a `SHA256SUMS-*` manifest. Current builds are not distributed with Apple notarization or Windows Authenticode signing, so the OS may warn on first launch. See [docs/install.md](docs/install.md) and [docs/signing.md](docs/signing.md).
-
-## Quality gates
-
-The repository protects the Agent Task architecture with executable tests and real-state validation:
-
-- TypeScript typecheck/lint and Vitest unit tests.
-- Agent ownership and legacy-architecture regression tests.
-- Documentation-contract tests so normative docs cannot silently drift back to retired product semantics.
-- Python Sidecar tests and packaged-Sidecar smoke.
-- Real-Sidecar Playwright E2E for delegation, execution, steering, stopping, bounded evidence import, automatic continuation, task switching/concurrency, Evidence/Report Review, persistence, localization, accessibility, contrast, and secret sanitization.
-- Real-state visual-review captures.
-- macOS Apple Silicon, Linux x64, and Windows x64 desktop build/runtime verification.
+Each platform has a `SHA256SUMS-*` manifest. Builds are not notarized or Authenticode-signed, so the OS may warn on first launch. Upgrading from v4 imports your providers, estate and past results on first start; the v4 database is left untouched. See [docs/install.md](docs/install.md).
 
 ## Documentation
 
-Start at [docs/README.md](docs/README.md). It defines documentation precedence and distinguishes current specifications from historical release/rebuild records.
-
-Key current documents:
-
-- [docs/product.md](docs/product.md) — canonical product model.
-- [docs/architecture.md](docs/architecture.md) — frontend/runtime ownership and compatibility boundaries.
-- [docs/security.md](docs/security.md) — safety and secret handling.
-- [docs/api.md](docs/api.md) — Sidecar API contracts.
-- [docs/data-model.md](docs/data-model.md) — current persistence model and migrations.
-- [docs/tools.md](docs/tools.md) — Agent capability contract.
-- [docs/roadmap.md](docs/roadmap.md) — post-0.93 direction.
-- [docs/release.md](docs/release.md) — release flow.
-
-Release notes and [CHANGELOG.md](CHANGELOG.md) are historical records. They may contain terminology that was correct for older versions and must not be used to reconstruct the current architecture.
+Start at [docs/README.md](docs/README.md): [product](docs/product.md) · [architecture](docs/architecture.md) · [security](docs/security.md) · [API](docs/api.md) · [data model](docs/data-model.md) · [tools](docs/tools.md) · [evals](docs/evals.md) · [release](docs/release.md). Release notes and the [CHANGELOG](CHANGELOG.md) are history.
 
 ## Development
 
-See [CLAUDE.md](CLAUDE.md) for the implementation contract used by coding Agents and contributors. Architecture/product changes must update the relevant canonical docs and executable contracts in the same PR.
+See [CLAUDE.md](CLAUDE.md), the implementation contract. Product or architecture changes update the canonical docs and the executable contracts in the same PR.
+
+```sh
+cd sidecar && pip install -c requirements.lock -e ".[dev]" && pytest -q
+cd frontend && npm ci && npm test && npm run build && npm run test:e2e
+```
 
 ## License
 

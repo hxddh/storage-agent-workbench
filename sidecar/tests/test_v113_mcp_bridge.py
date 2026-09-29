@@ -1,96 +1,42 @@
-"""MCP bridge honesty (v1.13): real dispatch, real scope, no stubs.
-
-``POST /mcp/tools/call`` executes through the same S3 layer as the Agent
-(plus the provider scope check), recorded via ``run_tool``. Session-bound
-tools are not exposed — the bridge is stateless. Disabled by default.
-"""
+"""The read-only MCP server (official SDK, opt-in) exposes the registry's
+stateless read-only subset with the same scope check, audited as actor=mcp."""
 
 from __future__ import annotations
 
-import os
+import asyncio
+import json
 
-PRESIGNED_URL = ("https://bucket.s3.us-east-1.amazonaws.com/path/obj.bin"
-                 "?X-Amz-Algorithm=AWS4-HMAC-SHA256"
-                 "&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20200101%2Feu-west-1%2Fs3%2Faws4_request"
-                 "&X-Amz-Date=20200101T000000Z&X-Amz-Expires=3600"
-                 "&X-Amz-SignedHeaders=host&X-Amz-Signature=deadbeefcafe")
+from app.agent import tools as _tools  # noqa: F401
+from app.api import mcp
 
 
-def _enable(monkeypatch):
-    monkeypatch.setenv("STORAGE_AGENT_ENABLE_MCP", "1")
+def test_off_by_default():
+    assert mcp.ENABLED is False and mcp.SERVER is None
 
 
-def _provider(client, **over):
-    body = {"name": "mcp", "provider_type": "s3-compatible",
-            "endpoint_url": "https://minio.example.com", "region": "us-east-1",
-            "addressing_style": "path"}
-    body.update(over)
-    return client.post("/cloud-providers", json=body).json()["id"]
+def test_exposes_only_stateless_read_only_tools():
+    names = mcp.exposed()
+    assert {"list_buckets", "head_object", "review_bucket_security", "get_bucket_config_detail"} <= names
+    for task_bound in ("survey_account", "import_evidence", "record_conclusion", "list_uploaded_files",
+                       "analyze_uploaded_file", "review_bucket_config", "simulate_storage_cost"):
+        assert task_bound not in names
+    server = mcp.build_server()
+    listed = {t.name: t for t in asyncio.run(server.list_tools())}
+    assert set(listed) == names | {"list_providers"}
+    assert all(t.annotations and t.annotations.read_only_hint for t in listed.values())
 
 
-def test_mcp_disabled_by_default(client):
-    os.environ.pop("STORAGE_AGENT_ENABLE_MCP", None)
-    assert client.get("/mcp/tools").status_code == 404
-    assert client.post("/mcp/tools/call",
-                       json={"tool": "list_buckets", "arguments": {}}).status_code == 404
-
-
-def test_mcp_allowlist_is_stateless_only(client, monkeypatch):
-    _enable(monkeypatch)
-    names = {t["name"] for t in client.get("/mcp/tools").json()["tools"]}
-    for session_bound in ("survey_account", "query_account_profile",
-                          "compare_to_last_survey", "list_uploaded_files"):
-        assert session_bound not in names
-
-
-def test_mcp_non_allowlisted_tool_is_403(client, monkeypatch):
-    _enable(monkeypatch)
-    r = client.post("/mcp/tools/call",
-                    json={"tool": "import_evidence", "arguments": {}})
-    assert r.status_code == 403
-
-
-def test_mcp_presigned_parse_is_real_and_redacted(client, monkeypatch):
-    _enable(monkeypatch)
-    r = client.post("/mcp/tools/call", json={
-        "tool": "diagnose_presigned_url", "arguments": {"url": PRESIGNED_URL}})
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["status"] == "ok"
-    result = body["result"]
-    assert result["success"] is True and result["signature_version"] == "v4"
-    assert "deadbeefcafe" not in r.text and "AKIAIOSFODNN7EXAMPLE" not in r.text
-
-
-def test_mcp_missing_provider_is_error_not_crash(client, monkeypatch):
-    _enable(monkeypatch)
-    r = client.post("/mcp/tools/call",
-                    json={"tool": "head_bucket", "arguments": {"bucket": "b"}})
-    assert r.status_code == 200
-    assert r.json()["result"]["error_code"] == "missing_provider_id"
-
-
-def test_mcp_scope_denial_matches_agent(client, monkeypatch):
-    _enable(monkeypatch)
-    pid = _provider(client, allowed_buckets=["logs"], allowed_prefixes=["app/"])
-    r = client.post("/mcp/tools/call", json={
-        "tool": "head_object",
-        "arguments": {"bucket": "other", "key": "app/a"},
-        "provider_id": pid})
-    assert r.status_code == 200
-    assert r.json()["result"]["error_code"] == "scope_denied"
-
-
-def test_mcp_call_is_audited(client, monkeypatch):
-    _enable(monkeypatch)
-    from app import db
-    client.post("/mcp/tools/call", json={
-        "tool": "diagnose_presigned_url", "arguments": {"url": PRESIGNED_URL}})
-    conn = db.connect()
-    try:
-        n = conn.execute(
-            "SELECT count(*) FROM tool_calls WHERE tool_name = 'diagnose_presigned_url'"
-        ).fetchone()[0]
-    finally:
-        conn.close()
-    assert n >= 1
+def test_call_is_scope_checked_and_audited(client, conn):
+    pid = client.post("/providers/clouds", json={
+        "name": "scoped", "provider_type": "s3-compatible", "endpoint_url": "https://minio.example.com",
+        "region": "us-east-1", "access_key": "AKIAIOSFODNN7EXAMPLE",
+        "secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "allowed_buckets": ["only-this"]}).json()["id"]
+    server = mcp.build_server()
+    result = asyncio.run(server.call_tool("head_bucket", {"provider_id": pid, "bucket": "elsewhere"}))
+    text = json.dumps(result.model_dump(), default=str)
+    assert "Refused" in text
+    row = conn.execute("SELECT actor, action, ok FROM audit WHERE action = 'tool.head_bucket'").fetchone()
+    assert (row["actor"], row["ok"]) == ("mcp", 0)
+    providers = asyncio.run(server.call_tool("list_providers", {}))
+    blob = json.dumps(providers.model_dump(), default=str)
+    assert pid in blob and "wJalrXUtnFEMI" not in blob and "AKIA" not in blob

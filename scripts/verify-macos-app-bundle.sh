@@ -47,7 +47,7 @@ fi
 
 # The bundle must NOT ship user/app data. Prune the sidecar resource dir — its
 # bundled libraries legitimately contain package folders named data/runs.
-if find "$APP" -path "$SIDECAR_DIR" -prune -o -type f \( -name '*.duckdb' -o -name 'app.db' -o -name '.env' \) -print 2>/dev/null | grep -q .; then
+if find "$APP" -path "$SIDECAR_DIR" -prune -o -type f \( -name '*.duckdb' -o -name 'app.db' -o -name 'storage-agent.db' -o -name '.env' \) -print 2>/dev/null | grep -q .; then
   fail "bundle unexpectedly contains user data / secrets"
 fi
 if [ -e "$APP/Contents/Resources/runs" ] || [ -e "$APP/Contents/Resources/data" ]; then
