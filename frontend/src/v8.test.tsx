@@ -44,7 +44,7 @@ describe("v8 fixes", () => {
   });
 
   it("the native shell subscribes once, however often the window re-renders", async () => {
-    const invoke = vi.fn(async () => []);
+    const invoke = vi.fn(async (_cmd: string) => [] as unknown);
     const listen = vi.fn(async () => () => {});
     (window as unknown as { __TAURI__: unknown }).__TAURI__ = { core: { invoke }, event: { listen } };
     function Probe({ n }: { n: number }) {
