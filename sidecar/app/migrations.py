@@ -951,6 +951,87 @@ ALTER TABLE session_messages ADD COLUMN conclusion TEXT;
 ALTER TABLE work_results ADD COLUMN conclusion_json_sanitized TEXT;
 """
 
+# --- Migration 032 (v4.0.0): the storage estate ------------------------------
+# The estate is the object; tasks are how work is done. What the deterministic
+# engines learned about an account outlives the task that learned it:
+#   estate_buckets   one row per (provider, bucket): region, a sanitized posture
+#                    projection (status enums and booleans only, never raw
+#                    configuration) and when it was last checked.
+#   issues           one row per (provider, bucket, rule code) — the fingerprint.
+#                    Opened only by deterministic engine output (survey posture,
+#                    config review, read-only verify), never by model prose.
+#                    status: open | fix_proposed | resolved | recurred | accepted.
+#                    fix_json_sanitized is a generated fix the USER applies;
+#                    storage stays read-only.
+#   issue_events     the append-only lifecycle of an issue (opened, seen,
+#                    fix_proposed, verified, resolved, recurred, accepted,
+#                    reopened), each with its source.
+#   watch_schedules  opt-in per cloud provider, off by default: a bounded
+#                    read-only sweep on the Sidecar's clock.
+# Append-only; never edit shipped 031.
+
+_M032 = """
+CREATE TABLE IF NOT EXISTS estate_buckets (
+    provider_id             TEXT NOT NULL,
+    bucket                  TEXT NOT NULL,
+    region                  TEXT,
+    posture_json_sanitized  TEXT,
+    last_checked_at         TEXT NOT NULL,
+    source_run_id           TEXT,
+    source_task_id          TEXT,
+    PRIMARY KEY (provider_id, bucket)
+);
+
+CREATE TABLE IF NOT EXISTS issues (
+    id                  TEXT PRIMARY KEY,
+    provider_id         TEXT NOT NULL,
+    bucket              TEXT NOT NULL,
+    code                TEXT NOT NULL,
+    fingerprint         TEXT NOT NULL UNIQUE,
+    title               TEXT NOT NULL,
+    severity            TEXT NOT NULL,
+    status              TEXT NOT NULL,
+    detail_sanitized    TEXT,
+    first_seen_at       TEXT NOT NULL,
+    last_seen_at        TEXT NOT NULL,
+    resolved_at         TEXT,
+    resolved_by         TEXT,
+    source_task_id      TEXT,
+    source_run_id       TEXT,
+    fix_json_sanitized  TEXT,
+    last_verified_at    TEXT,
+    last_verify_result  TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_issues_status ON issues (status, severity);
+CREATE INDEX IF NOT EXISTS idx_issues_provider ON issues (provider_id, bucket);
+
+CREATE TABLE IF NOT EXISTS issue_events (
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id               TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    kind                   TEXT NOT NULL,
+    source                 TEXT,
+    detail_json_sanitized  TEXT,
+    created_at             TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_issue_events_issue ON issue_events (issue_id, id);
+
+CREATE TABLE IF NOT EXISTS watch_schedules (
+    provider_id             TEXT PRIMARY KEY,
+    enabled                 INTEGER NOT NULL DEFAULT 0,
+    interval_hours          INTEGER NOT NULL DEFAULT 24,
+    next_run_at             TEXT,
+    last_run_at             TEXT,
+    last_status             TEXT,
+    last_summary_sanitized  TEXT,
+    last_run_id             TEXT,
+    last_task_id            TEXT,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL
+);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -999,6 +1080,9 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     # v1.12.0 — context compaction summary on the typed task context. Append-only.
     (30, "native_agent_context_compaction", _M030),
     (31, "result_first_work_result_conclusion", _M031),
+    # v4.0.0 — the storage estate: buckets, issues with a lifecycle, and
+    # opt-in watch schedules. Append-only.
+    (32, "storage_estate_issues_watch", _M032),
 ]
 
 

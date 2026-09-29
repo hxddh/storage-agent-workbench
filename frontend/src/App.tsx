@@ -277,6 +277,7 @@ export default function App() {
               sidecarStatus={status}
               onTaskDiscarded={(id) => { if (activeTaskId === id) setActiveTaskId(null); refreshTasks(); }}
               onOpenSettings={() => setSettingsOpen(true)}
+              onOpenTask={setActiveTaskId}
               onChanged={refreshTasks}
               sidecarReady={status === "connected"}
               settingsOpen={settingsOpen}

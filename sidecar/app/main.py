@@ -47,6 +47,7 @@ from .routers import (
     cloud_providers,
     datasets,
     error_triage,
+    estate,
     evidence_imports,
     health,
     mcp,
@@ -268,6 +269,8 @@ app.include_router(sessions.router)
 app.include_router(agent_tasks.router)
 app.include_router(error_triage.router)
 app.include_router(settings.router)
+# v4.0 — the storage estate
+app.include_router(estate.router)
 # Modern native-agent extensions (read-only, bounded, opt-in where gated)
 app.include_router(skills.router)
 app.include_router(observability.router)

@@ -1,0 +1,99 @@
+/* v4.0 — the home: readiness and the storage estate ("what to care about now").
+   Composes the v3 tokens; status reads as a dot or badge beside neutral text. */
+
+.estate-ready,
+.estate-panel { display: grid; gap: 8px; margin-top: 28px; }
+
+.estate-ready-list,
+.estate-issues {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  padding: 0;
+  list-style: none;
+}
+.estate-ready-row {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  font-size: var(--text-sm);
+}
+.estate-ready-row + .estate-ready-row { border-top: 1px solid var(--edge); }
+.estate-ready-label { flex: none; width: 5rem; color: var(--gray-100); font-weight: 500; }
+.estate-ready-text { min-width: 0; flex: 1; color: var(--gray-400); }
+
+.native-starter-note {
+  grid-column: 2;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+}
+.native-starter[data-needs-storage="true"] .native-starter-icon { background: var(--hover); color: var(--gray-500); }
+
+.estate-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.estate-meta { color: var(--gray-500); font-size: var(--text-2xs); }
+
+.estate-issue + .estate-issue { border-top: 1px solid var(--edge); }
+.estate-issue-head {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--gray-100);
+  font-size: var(--text-sm);
+  text-align: left;
+}
+.estate-issue-head:hover { background: var(--hover); }
+.estate-issue-title { min-width: 0; flex: 1; overflow-wrap: break-word; }
+.estate-issue-bucket {
+  flex: none;
+  max-width: 14rem;
+  overflow: hidden;
+  color: var(--gray-400);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.estate-issue-state { flex: none; color: var(--gray-500); font-size: var(--text-2xs); }
+.estate-issue[data-status="recurred"] .estate-issue-state,
+.estate-issue[data-status="fix_proposed"] .estate-issue-state { color: var(--gray-300); }
+@media (max-width: 560px) {
+  .estate-issue-head { flex-wrap: wrap; }
+  .estate-issue-bucket { max-width: 100%; }
+}
+
+.estate-issue-body {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+  animation: reveal-in var(--duration-base) var(--ease-out);
+}
+.estate-issue-body p { margin: 0; color: var(--gray-300); font-size: var(--text-sm); line-height: 1.5; }
+.estate-issue-body .estate-issue-note { color: var(--gray-500); font-size: var(--text-2xs); }
+.estate-fix { display: grid; gap: 6px; }
+.estate-fix-title { color: var(--gray-400); font-size: var(--text-2xs); }
+.estate-fix-command {
+  margin: 0;
+  overflow-x: auto;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  background: var(--code-bg);
+  color: var(--gray-200);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.estate-fix-notes { margin: 0; padding-left: 18px; color: var(--gray-400); font-size: var(--text-2xs); line-height: 1.5; }
+.estate-issue-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (prefers-reduced-motion: reduce) { .estate-issue-body { animation: none; } }

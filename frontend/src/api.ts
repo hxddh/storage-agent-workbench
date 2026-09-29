@@ -13,6 +13,8 @@
  * - `api/settings.ts`  — settings, instructions file,
  *                        skills, trace export, MCP bridge status.
  * - `api/providers.ts` — model + cloud providers and their inline probes.
+ * - `api/estate.ts`    — (v4.0) the storage estate: buckets, issues and their
+ *                        lifecycle (fix text, read-only verify, accept risk).
  *
  * There is exactly one way to start work: `createTaskExecution` followed by
  * `followExecutionEvents`. Nothing here speaks to a session message endpoint,
@@ -23,3 +25,4 @@ export * from "./api/runtime";
 export * from "./api/tasks";
 export * from "./api/settings";
 export * from "./api/providers";
+export * from "./api/estate";

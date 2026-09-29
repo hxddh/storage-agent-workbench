@@ -101,6 +101,22 @@ PUT  /agent-tasks/{task_id}/revisit
 - `context` returns the latest TYPED, versioned Storage Task Context (machine state derived from durable rows — recovery never replays messages). The same snapshot is injected into the Agent prompt's stable half.
 - `GET .../provenance` is a **read-only projection** of existing `session_findings`, `tool_calls`, `task_artifacts`, and `runs`. It returns the latest cost / inventory / access-log / drift analysis documents plus per-finding evidence chains (tool, time, coverage, Review target). A missing link is `gap: "no_direct_evidence"` — never a fabricated source. No new tables.
 
+## Storage estate (v4.0)
+
+The estate is what the deterministic engines established about the user's
+accounts, remembered across tasks. Issues are opened, resolved and marked
+recurred only by deterministic observations (survey posture, config review,
+read-only verify) — never by model prose. No route here submits Agent work.
+
+| Method | Path | Behaviour |
+| --- | --- | --- |
+| `GET` | `/estate?lang=en\|zh` | per provider: known buckets, last checked, open issues by severity, watch state; plus the issues that need care (≤ 20, most severe first) |
+| `GET` | `/issues?status=active\|all\|<status>&provider_id=&lang=` | issues, most severe first (≤ 500) |
+| `GET` | `/issues/{id}` | one issue with its lifecycle events |
+| `POST` | `/issues/{id}/fix` | generate the deterministic fix (text the user applies; storage stays read-only); an open issue becomes `fix_proposed`; 409 when the rule has no generated fix |
+| `POST` | `/issues/{id}/verify` | read-only re-check (`review_bucket_security` / `review_bucket_lifecycle`, recorded as tool calls, scope-checked); `result` = `still_present` \| `resolved` \| `inconclusive` (a blind read decides nothing) |
+| `POST` | `/issues/{id}/accept` | `{accepted}` — accept the risk (leaves the home list) or reopen |
+
 ## Health
 
 ```text
