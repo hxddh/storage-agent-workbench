@@ -1,11 +1,11 @@
 # Documentation
 
-> **Current baseline: Storage Agent v7.0.0.** Built on the v5 rewrite around one
+> **Current baseline: Storage Agent v8.0.0.** Built on the v5 rewrite around one
 > idea — *the estate is the object, Agent Tasks are how work is done, and one item
-> stream is the truth* — v6 closed the loop on fixes (CLI · Terraform · document,
-> an evidence-based impact preview, Verify); v7 makes a task one conversation,
-> oldest first, with exact follow-ups, folds the estate into the home and a bucket
-> sheet, and keeps one Details pane. See `docs/releases/7.0.0.md`.
+> stream is the truth* — v7 made a task one conversation; v8 is subtraction and
+> correctness: the bugs a full review found are fixed, the Agent has 30 tools
+> instead of 42, and the palette, the dollar estimate, dead endpoints and dead code
+> are gone. See `docs/releases/8.0.0.md`.
 
 ## Source-of-truth order
 

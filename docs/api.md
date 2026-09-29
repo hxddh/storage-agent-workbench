@@ -66,7 +66,6 @@ goes through the runtime (`RUNTIME.submit`). There is no other submit path.
 | Model | Field | Type and limits |
 | --- | --- | --- |
 | `TaskIn` | `direction` | `str \| null`, max 16 000 chars |
-| | `title` | `str \| null`, max 120 chars |
 | | `origin` | `"user"` (default) or `"quick_ask"` |
 | `TaskPatch` | `title` | `str`, 1–120 chars |
 | `TurnIn` | `direction` | `str`, 1–16 000 chars (required) |
@@ -114,12 +113,12 @@ snapshot of the task's current branch:
 | Method | Path | Body | Success | Errors |
 | --- | --- | --- | --- | --- |
 | `GET` | `/tasks?q=` | — | `200 {"tasks": [{id, title, title_source, origin, state, created_at, updated_at}]}`. Newest `updated_at` first, at most 500. `q` (max 200 chars) filters titles with `LIKE %q%`. | `422` |
-| `POST` | `/tasks` | `TaskIn` | `201` snapshot. Title: `title`, or the first 60 chars of the Direction (whitespace collapsed, `…` appended when cut), or `"New task"`. With a non-empty `direction`, the first turn is submitted at once. Publishes a global `task` event `{task_id, state: "ready", title, created: true}`. | `422` |
+| `POST` | `/tasks` | `TaskIn` | `201` snapshot. Title: the first 60 chars of the Direction (whitespace collapsed, `…` appended when cut), or `"New task"`. With a non-empty `direction`, the first turn is submitted at once. Publishes a global `task` event `{task_id, state: "ready", title, created: true}`. | `422` |
 | `GET` | `/tasks/{id}` | — | `200` snapshot | `404 task not found` |
 | `PATCH` | `/tasks/{id}` | `TaskPatch` | `200` task row. Sets `title_source = 'user'`, writes the audit row `task.rename` and publishes `task {task_id, title}`. | `404`, `422` |
 | `DELETE` | `/tasks/{id}` | — | `204`. Stops any running turn, deletes the task (turns, items, artifacts and datasets cascade), removes `<data>/tasks/<id>/`, writes the audit row `task.delete` and publishes `task {task_id, deleted: true}`. | `404` |
 | `POST` | `/tasks/{id}/turns` | `TurnIn` | `202 {"turn_id", "status"}`. The Direction is recorded as a `user_message` item at once. The turn waits in the queue behind any running turn. | `404`; `422 unknown parent turn` (the parent is not in this task); `422 unknown attachment for this task` |
-| `POST` | `/tasks/{id}/steer` | `SteerIn` | `200 {"steered": bool, "turn_id"}`. With a turn running, the text is recorded as a `steer` item and injected into the running model loop before its next model call (`steered: true`). With nothing running, it becomes a new Direction (`steered: false`, `turn_id` is the new turn). | `404`, `422` |
+| `POST` | `/tasks/{id}/steer` | `SteerIn` | `200 {"steered": bool, "turn_id"}`. With a turn running, the text is recorded as a `steer` item and injected into the running model loop before its next model call (`steered: true`). With nothing running, it becomes a new Direction (`steered: false`, `turn_id` is the new turn). A steer that arrives after the model's last call of the running turn becomes the next Direction when that turn completes (a `notice {event: "carried", steers}` on the turn); it is never dropped. Blank text is a `422`. | `404`, `422` |
 | `POST` | `/tasks/{id}/stop` | — | `200 {"stopping": bool}`. `false` when nothing is running. Stop sets the turn's cancel flag and cancels the streamed run. The turn ends `cancelled` and keeps what it recorded. | `404` |
 | `DELETE` | `/tasks/{id}/turns/{turn_id}` | — | `200 {"cancelled": true}`. Withdraws a queued Direction: status becomes `cancelled`, a `notice {event: "cancelled", queued: true}` is recorded, and the head moves back to the turn's parent when the turn was the head. Queued Directions that followed it are re-parented onto its parent, so the branch stays one line. | `404`; `409 only a queued Direction can be withdrawn` |
 | `POST` | `/tasks/{id}/turns/{turn_id}/resume` | — | `202 {"turn_id", "status"}`. Continues an `interrupted`, `failed` or `cancelled` turn as a new `kind = resume` turn whose parent is that turn. | `404`; `409 the task is working`; `409 nothing to resume` |
@@ -130,7 +129,6 @@ snapshot of the task's current branch:
 | Method | Path | Body | Success | Errors |
 | --- | --- | --- | --- | --- |
 | `POST` | `/tasks/{id}/files` | `multipart/form-data`: `file` (required), `dataset_type` = `auto` (default) \| `access_log` \| `inventory` | `201` file object. `auto` decides from the file name and the first 64 KiB. Streamed to disk in 1 MiB chunks. Writes the audit row `file.upload` with detail `{type, bytes}`. | `404`; `422 dataset_type must be auto, access_log or inventory`; `413 file is larger than 2 GiB`; `422` for other save errors |
-| `GET` | `/tasks/{id}/files` | — | `200 {"files": [file object]}` | `404` |
 
 A file object is
 `{id, origin: "upload" | "import", type, filename, size_bytes, rows, status, bucket, created_at}`.
@@ -140,7 +138,6 @@ A file object is
 
 | Method | Path | Success | Errors |
 | --- | --- | --- | --- |
-| `GET` | `/tasks/{id}/artifacts/{artifact_id}` | `200 {id, kind, title, turn_id, provider_id, created_at, payload}` | `404 artifact not found` (also when the artifact belongs to another task) |
 | `GET` | `/tasks/{id}/report?lang=en\|zh` | `200 text/plain`: the task report in Markdown, projected from the current branch's items. `lang` defaults to `en`. Only the report's own headings are localized. | `404`; `422` for any other `lang` |
 | `GET` | `/tasks/{id}/trace` | `200` OTLP-shaped JSON: `{"resourceSpans": [{"resource": {"attributes": {"service.name": "storage-agent", "storage_agent.task_id"}}, "scopeSpans": [{"scope": {"name": "openai-agents"}, "spans": [{traceId, spanId, parentSpanId, name, kind, startTime, endTime, status: {code: "OK" \| "ERROR", message?}, attributes: {"storage_agent.turn_id", …}}]}]}]}`. Built from the local `spans` table, so it holds names, timings and sizes only. | `404` |
 
@@ -315,7 +312,7 @@ A model provider is:
 | `POST` | `/providers/clouds` | `CloudIn` | `201` cloud provider. Audit row `cloud_provider.create`. | `422` |
 | `PATCH` | `/providers/clouds/{id}` | `CloudPatch` | `200` cloud provider. Invalidates cached S3 clients. Audit row `cloud_provider.update`. | `404 cloud provider not found`, `422` |
 | `DELETE` | `/providers/clouds/{id}` | — | `204`. Deletes the vault secrets. The account's estate buckets, issues and watch cascade. Audit row `cloud_provider.delete`. | `404` |
-| `POST` | `/providers/clouds/{id}/test` | — | `200`: the redacted result of the read-only `test_credentials` engine call, audited as `tool.test_credentials` with actor `user` (see `run_direct` in [tools.md](tools.md)) | `404` |
+| `POST` | `/providers/clouds/{id}/test` | — | `200`: the redacted result of the read-only credential check (the engine's ListBuckets call), audited as `tool.test_credentials` with actor `user` (see `run_direct` in [tools.md](tools.md)) | `404` |
 
 `CloudIn`: `name` (1–120, required), `provider_type` (1–40, required),
 `endpoint_url`, `region`, `addressing_style` (default `"virtual"`),
@@ -337,10 +334,7 @@ A cloud provider is:
 | --- | --- | --- | --- | --- |
 | `GET` | `/settings` | — | `200 {language: "en" \| "zh" \| null, theme: "system" \| "light" \| "dark", vault: {unreadable, backup_present}, instructions: {loaded, path, chars, truncated, error}}`. `instructions` reports on the standing instructions file (`AGENTS.md`) but never returns its text. `language` is `null` until one is chosen; the window then follows the system language and saves it. | — |
 | `PATCH` | `/settings` | `{language?: str, theme?: str}` | `200`, the same shape as `GET` | `422 <key> must be one of …` |
-| `GET` | `/settings/price-table` | — | `200 {id: "default", confirmed, example, note, rates, updated_at}`. Returns the example schedule (`confirmed: false`, `example: true`) until the user saves a table. | — |
-| `PUT` | `/settings/price-table` | `{confirmed?: bool, rates?: object, note?: str (≤ 800)}` | `200` price table. Omitted fields keep their value. Audit row `settings.price_table`. | `422` |
 | `GET` | `/skills` | — | `200 {skills: [{name, description, domains, user}], dirs: [str]}`. `user` is true for a user-supplied skill. `dirs` are the user skill directories. | — |
-| `GET` | `/skills/{name}` | — | `200 {name, body}` | `400 invalid skill name` (the name must match `^[a-zA-Z][a-zA-Z0-9_-]{1,64}$`); `404 skill not found` |
 
 ## MCP server
 

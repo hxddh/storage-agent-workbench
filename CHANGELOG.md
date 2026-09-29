@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [8.0.0] - 2026-09-29
+
+_Fewer things, each working: the bugs a full review of v7 found are fixed, and what did not earn its place is removed — on the same native core._ See `docs/releases/8.0.0.md`.
+
+### Fixed
+
+- A steer during a running tool no longer erases that tool's result in history; a steer during the final answer becomes the next Direction instead of being dropped.
+- Withdraw and run cannot both win; a withdrawn Direction never returns to a branch and cannot be resumed.
+- Blank input refused; literal task search; bounded stream position.
+- Failed reviews no longer invent buckets; accepted-risk reasons leave when the risk resolves; a shorter watch interval takes effect.
+- Window: choosing a model no longer sends the draft; the native shell subscribes once; a late snapshot cannot bring back Working; sidebar search is stable; arrows and Escape stay in fields and menus; a draft stays with its task; a verified issue stays readable; Quick Ask sends once and answers once; failures show an error.
+
+### Changed
+
+- Agent tools 42 → 30 (`review_bucket_config` aspects, `inspect_object`, `test_object_read`; `test_credentials` and `query_account_profile` folded in).
+- Storage-class simulation without dollar figures; the price table is gone.
+- Home groups issues by kind with every bucket reachable; never-checked storage says so. The bucket sheet lists only deviations.
+- Settings: General · Models · Storage (skills, instructions and MCP under General › Advanced).
+- Bundled skills 20 → 15.
+
+### Removed
+
+- The ⌘K command palette (⌘K focuses the sidebar search) and the Keyboard Shortcuts menu item.
+- `GET /tasks/{id}/files`, `GET /tasks/{id}/artifacts/{id}`, `GET /skills/{name}`, `/settings/price-table`; `TaskIn.title`.
+- Dead frontend code, strings and styles.
+
 ## [7.0.0] - 2026-09-29
 
 _Simpler to use, exact when you follow up: a task is one conversation, the estate folds into the home and a bucket sheet, one Details pane — on the same native core (one Agent, one item stream, one submit path, read-only storage)._ See `docs/releases/7.0.0.md`.

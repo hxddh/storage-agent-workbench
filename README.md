@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v7.0.0**
+**Current release: v8.0.0**
 
 Storage Agent is a local-first desktop Agent for object storage — AWS S3 and every S3-compatible service. Give it a goal or a problem; it investigates with real, read-only, bounded tools, stays steerable and stoppable while it works, and answers with evidence. What it learns about your storage — accounts, buckets, their posture and the Issues found there — outlives the task that learned it.
 
@@ -25,7 +25,7 @@ It is not a chatbot wrapped around a storage console, and it never writes to you
 - survey an account (≤ 500 buckets) and review bucket security, lifecycle, observability, cost and performance configuration;
 - analyze attached access logs and inventories locally with DuckDB — raw rows never reach the model;
 - import a discovered inventory or access-log source (≤ 500 files / 256 MiB per call, audited, stoppable);
-- triage pasted S3 errors and simulate storage-class mix and cost under lifecycle rules;
+- triage pasted S3 errors and project the storage-class mix under lifecycle rules (no dollar figures);
 - write a task report in English or Chinese.
 
 ## Safety

@@ -487,7 +487,7 @@ Neither tool calls storage or a model.
 - **`simulate_storage_cost`**: projects the storage-class mix of an inventory
   the task holds over 0–365 days, under the current lifecycle and the
   candidate rules. Without `dataset_id`, it uses the task's latest inventory.
-  - Dollar figures appear only when the local price table is confirmed.
+  - It produces no dollar figures (v8): bytes per storage class only.
   - A missing inventory or an unconfirmed table is returned as a gap
     (`kind: "gap"`, with `gaps`).
   - `candidate_rules_json` must be valid JSON.

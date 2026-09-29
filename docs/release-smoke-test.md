@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v7.0.0.**
+> **Current baseline: Storage Agent v8.0.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -26,8 +26,8 @@ A user must be able to recognize and use the product without reading source code
 - [ ] A fresh install shows the greeting (the page's one heading), the **Composer** and three starters — not a wizard. A starter only fills the Composer. Without a model or storage account one sentence says what to add, each part a link to Settings; the survey starter is hidden without storage.
 - [ ] The UI follows the system language on first run (Chinese on a Chinese system) until the user picks one.
 - [ ] The sidebar is New task, search, the task list grouped by day, and Settings — no Home or Estate entries. Rows show Working (pulsing), Queued, Needs attention; Rename and Delete work; ↑/↓ move between tasks.
-- [ ] With storage configured, **Needs attention** lists open Issues most severe first (six, then a count), each naming its bucket; a row opens the **bucket sheet** in the side pane. One quiet line per account shows buckets, last check and watch.
-- [ ] ⌘K opens the palette (Recent tasks and Actions); ⌘I toggles Details; Esc closes the pane; its edge drags (352–880 px). Dark and light themes are both first-class.
+- [ ] With storage configured, **Needs attention** shows one row per kind of Issue, most severe first, naming every bucket (three, then *+N*); a bucket opens the **bucket sheet**. Storage never checked says so and offers the survey. One quiet line per account shows buckets, last check and watch.
+- [ ] ⌘K focuses the sidebar search; ⌘I toggles Details; Esc closes the pane; its edge drags (352–880 px). Dark and light themes are both first-class.
 
 ### One control path
 
@@ -46,7 +46,7 @@ A user must be able to recognize and use the product without reading source code
 
 ### Steering, stopping and recovery
 
-- [ ] Adding to a running request reaches the model once, in the running turn; with nothing running it becomes a new request.
+- [ ] Adding to a running request reaches the model once, in the running turn (after any tool still running returns); sent during the final answer it becomes the next request; with nothing running it becomes a new request.
 - [ ] **Stop** ends the turn promptly and keeps the partial work (one *Stopped* note).
 - [ ] Kill the Sidecar during a running turn and relaunch: the work continues once on its own as a `resume` turn, before any queued follow-up; if that is interrupted too, the task shows *Needs attention* with **Continue** / **Open Settings** — no crash loop.
 
@@ -57,7 +57,7 @@ A user must be able to recognize and use the product without reading source code
 
 ### A bucket
 
-- [ ] The bucket sheet shows its Issues (resolved folded), configuration (deviations first, *Show all*), notes (Enter adds) and history (folded). *Ask about this bucket* only fills the Composer.
+- [ ] The bucket sheet shows its Issues (resolved folded), configuration (only what deviates), notes (Enter adds) and history (folded). *Ask about this bucket* only fills the Composer.
 - [ ] **Show fix** offers CLI · Terraform · JSON with Copy and a plain-sentence impact preview; **Verify** re-checks read-only; the menu offers Open task and Accept risk (a reason is kept as a note).
 - [ ] Settings › Storage accounts keeps notes on each account and on all storage, and each account's Watch (Off · 6 h · Daily · Weekly, Check now).
 
@@ -166,4 +166,4 @@ Never mark an unchecked item as passed merely because another automated gate was
 - The OS window title reads `<task> — Storage Agent`.
 - After the first Work Result of a new Task the sidebar title changes from the truncated Direction to a short runtime title; renaming the Task and delegating again keeps the user's name.
 - With a reasoning model active (for example `o3-mini`), the Composer chip reads `model · Default` and offers Low / Medium / High; with `gpt-4.1` it offers nothing.
-- Settings → Model Providers `+` shows presets; Cloud Providers presets include MinIO and Custom (S3-compatible); Skills & bridges **Open skills folder** reveals the folder and **Export trace…** writes a JSON file.
+- Settings → Model Providers `+` shows presets; Cloud Providers presets include MinIO and Custom (S3-compatible); General › Advanced **Open skills folder** reveals the folder.

@@ -48,7 +48,7 @@ test("a bucket opens beside the Composer: its issues, a fix that says what it ca
   await settled(page);
 
   await page.getByTestId("new-task").click();
-  await page.getByTestId("needs-care").getByTestId("issue").filter({ hasText: "acme-www" }).first().click();
+  await page.getByTestId("needs-care").getByTestId("issue-bucket").filter({ hasText: "acme-www" }).first().click();
   const sheet = page.getByTestId("bucket-sheet");
   await expect(sheet).toContainText("acme-www");
   await expect(page.getByTestId("composer")).toBeVisible(); // the Composer stays beside it
