@@ -14,23 +14,21 @@ from typing import Any
 from ...analysis import cost_sim
 from ...engines import datasets
 from ...error_triage import parser, playbooks
-from .registry import current, tool
+from .registry import current, plural, tool
 
 _MAX_CAUSES = 6
 
 
 @tool(group="advice", timeout=15,
-      summarize=lambda r: (f"{(r or {}).get('error_code') or 'unrecognized'} · "
-                           f"{len((r or {}).get('candidate_causes') or [])} candidate causes")
+      summarize=lambda r: (f"{(r or {}).get('error_code') or 'unrecognized'}, "
+                           f"{plural(len((r or {}).get('candidate_causes') or []), 'likely cause')}")
       if isinstance(r, dict) else "triaged")
 def triage_error(text: str) -> dict[str, Any]:
-    """Triage a pasted S3 error, SDK exception or log excerpt deterministically: the error code, HTTP
-    status, operation, region/endpoint hints, then candidate causes ordered by confidence with the checks
-    that would confirm each. No storage call is made; the causes are hypotheses — confirm them with your
-    read-only tools before concluding.
+    """Triage a pasted S3 error, SDK exception or log excerpt offline: error code, status, hints, and
+    candidate causes with the checks that would confirm them (hypotheses until checked).
 
     Args:
-        text: The error text as the user pasted it (secrets are redacted before parsing).
+        text: The error text as pasted (redacted before parsing).
     """
     redacted = parser.redact_input(text or "")
     parsed = parser.parse(redacted, "mixed")
@@ -41,7 +39,7 @@ def triage_error(text: str) -> dict[str, Any]:
                        "likely_causes": e["likely_causes"][:5], "evidence_to_check": e["evidence_to_check"][:5],
                        "next_checks": e["next_checks"][:5]})
         skill = playbooks.skill_for_category(e["category"])
-        if skill not in skills:
+        if skill and skill not in skills:
             skills.append(skill)
     signals = {k: parsed.get(k) for k in ("error_code", "http_status", "operation", "method", "region",
                                           "endpoint", "bucket", "request_id", "language")
@@ -61,14 +59,13 @@ def _latest_inventory(conn: Any, task_id: str, dataset_id: str) -> dict[str, Any
       summarize=lambda r: ("gap: " + ", ".join(g.get("code", "") for g in (r or {}).get("gaps") or [])
                            if isinstance(r, dict) and r.get("kind") == "gap" else "simulated")[:160])
 def simulate_storage_cost(dataset_id: str = "", candidate_rules_json: str = "") -> dict[str, Any]:
-    """Project the storage-class mix (bytes per class) of an inventory this task holds over 0-365 days,
-    under the current lifecycle and candidate rules. Estimates carry coverage; a missing inventory is
-    returned as a gap. It produces no dollar figures — never invent one.
+    """Project an inventory's bytes per storage class over 0-365 days under the current lifecycle and
+    candidate rules. No dollar figures.
 
     Args:
-        dataset_id: The inventory dataset (from list_uploaded_files); the latest inventory when not given.
-        candidate_rules_json: JSON list of rules, e.g. [{"kind": "transition", "days": 30,
-            "storage_class": "STANDARD_IA"}, {"kind": "expiration", "days": 365}].
+        dataset_id: The inventory dataset; the latest one when omitted.
+        candidate_rules_json: JSON list, e.g. [{"kind": "transition", "days": 30, "storage_class":
+            "STANDARD_IA"}, {"kind": "expiration", "days": 365}].
     """
     ctx = current()
     conn = ctx.conn()

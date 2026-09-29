@@ -47,6 +47,10 @@ RESUME_NOTE = ("[The app restarted while you were working on this. Your complete
                "Continue from where you stopped; do not repeat calls that already returned.]")
 _COMPACT_FRACTION = 0.8
 _KEEP_RECENT_TURNS = 2
+_CHARS_PER_TOKEN = 4
+_TOOL_OUTPUT_FRACTION = 0.25
+_MIN_TOOL_OUTPUT_CHARS = 4_000
+_SMALL_WINDOW = 65_536  # below this, older tool outputs are trimmed harder
 
 
 @dataclass
@@ -314,7 +318,12 @@ class Runtime:
         lang = _setting(conn, "language") or "en"
         agent = Agent(name="Storage Agent", instructions=prompt.instructions_for(conn, responses=responses, lang=lang),
                       tools=tools, model=model, model_settings=settings)
-        trimmer = ToolOutputTrimmer(recent_turns=2, max_output_chars=4000, preview_chars=600)
+        window = _window(creds)
+        # Older Directions' tool outputs shrink to a preview; a small window keeps
+        # only the current Direction's outputs whole.
+        trimmer = (ToolOutputTrimmer(recent_turns=2, max_output_chars=4000, preview_chars=600)
+                   if window >= _SMALL_WINDOW else
+                   ToolOutputTrimmer(recent_turns=1, max_output_chars=2000, preview_chars=400))
         applied: list[tuple[int, str]] = []
 
         def model_input(data: Any) -> Any:
@@ -331,7 +340,8 @@ class Runtime:
             md.input = items
             return md
 
-        turn_ctx = registry.TurnContext(task_id, turn_id, live.cancel, rec, lang=lang)
+        turn_ctx = registry.TurnContext(task_id, turn_id, live.cancel, rec, lang=lang,
+                                        model_chars=tool_output_chars(window))
         run_config = RunConfig(
             call_model_input_filter=model_input,
             tool_not_found_behavior="return_error_to_model",
@@ -426,14 +436,18 @@ class Runtime:
 
     async def _maybe_compact(self, conn: Any, task_id: str, turn_id: str, creds: dict[str, Any],
                              rec: Recorder, clients: list[Any]) -> None:
-        """Fold older turns into one summary item when the history nears the window."""
+        """Fold older turns into one summary item when the request nears the window:
+        the history PLUS the fixed prefix every request carries (instructions and
+        tool definitions — on a small local model, most of the window)."""
         chain = store.branch(conn, task_id, turn_id)
         if len(chain) <= _KEEP_RECENT_TURNS + 1:
             return
         history = _history(conn, task_id, turn_id)
-        chars = sum(len(str(h.get("content") or h.get("output") or h.get("arguments") or "")) for h in history)
-        window_chars = int(creds.get("context_window") or budget.context_window(creds.get("model"))) * 4
-        if chars < window_chars * _COMPACT_FRACTION:
+        responses = models.is_responses(creds)
+        lang = _setting(conn, "language") or "en"
+        prefix = (len(prompt.instructions_for(conn, responses=responses, lang=lang))
+                  + registry.schema_chars(responses=responses))
+        if not needs_compaction(history_chars(history), prefix, _window(creds)):
             return
         older = [t["id"] for t in chain[:-(_KEEP_RECENT_TURNS + 1)]]
         from agents import Agent, Runner
@@ -544,6 +558,26 @@ class Runtime:
             "[Continue this work from where it stopped; do not repeat calls that already returned.]")
         return self.submit(conn, task_id, turn["direction"], kind="resume", parent_turn_id=turn_id,
                            resumed_from=turn_id, note=note)
+
+
+def _window(creds: dict[str, Any]) -> int:
+    return int(creds.get("context_window") or budget.context_window(creds.get("model")))
+
+
+def history_chars(history: list[dict[str, Any]]) -> int:
+    return sum(len(str(h.get("content") or h.get("output") or h.get("arguments") or "")) for h in history)
+
+
+def needs_compaction(history: int, prefix: int, window_tokens: int) -> bool:
+    """Whether a request (fixed prefix + history, in chars) reaches the compaction threshold."""
+    return prefix + history >= window_tokens * _CHARS_PER_TOKEN * _COMPACT_FRACTION
+
+
+def tool_output_chars(window_tokens: int) -> int:
+    """What one tool output may put in front of the model: a quarter of the
+    window, never above the absolute cap (60 000) nor below a workable floor."""
+    return max(_MIN_TOOL_OUTPUT_CHARS,
+               min(registry.MODEL_CHARS_CAP, int(window_tokens * _CHARS_PER_TOKEN * _TOOL_OUTPUT_FRACTION)))
 
 
 def _history(conn: Any, task_id: str, turn_id: str) -> list[dict[str, Any]]:

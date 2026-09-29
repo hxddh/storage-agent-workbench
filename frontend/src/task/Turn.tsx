@@ -114,7 +114,7 @@ function Activity({ section, running }: { section: Section; running: boolean }) 
   const rows = tools(section);
   const commentary = section.blocks.filter((b) => b.kind === "commentary" || b.kind === "steer" || b.kind === "compacted");
   const start = section.turn.started_at ?? section.turn.created_at;
-  const elapsed = useElapsed(start, running ? null : section.turn.finished_at, running);
+  const elapsed = useElapsed(start, running ? null : section.turn.finished_at, running, lang);
   if (!running && !rows.length && !commentary.length) return null;
   const now = [...rows].reverse().find((r) => r.status === "running");
   const failed = rows.filter((r) => r.status === "failed" || r.status === "refused").length;
@@ -195,18 +195,20 @@ function Answer({ section, running }: { section: Section; running: boolean }) {
       </div>
     ) : null;
   }
-  const text = section.answer ?? (c ? c.answer : null);
-  if (!text && !c?.findings.length && !fig) return null;
+  // A conclusion recorded before v9 carries its own answer; newer ones do not.
+  const text = section.answer ?? c?.answer ?? null;
+  const found = c?.findings ?? [];
+  if (!text && !found.length && !fig) return null;
   return (
     <div className="answer reveal" data-testid="answer">
       {text ? <Markdown text={text} /> : null}
-      {c?.findings.length ? <Findings findings={c.findings} /> : null}
+      {found.length ? <Findings findings={found} /> : null}
       {fig ? <AnalysisFigures provenance={fig} /> : null}
     </div>
   );
 }
 
-function Findings({ findings }: { findings: NonNullable<Section["conclusion"]>["findings"] }) {
+function Findings({ findings }: { findings: NonNullable<NonNullable<Section["conclusion"]>["findings"]> }) {
   const { t } = useI18n();
   return (
     <ul className="findings" aria-label={t("turn.findings")} data-testid="findings">
@@ -233,8 +235,11 @@ function Outcome({ section, taskId, running }: { section: Section; taskId: strin
     return (
       <div className="turn-outcome" data-testid="attention">
         <StatusDot tone={st === "failed" ? "danger" : "warn"} />
-        <span>{section.error?.message ?? (st === "interrupted" ? t("turn.interrupted") : t("turn.failed"))}</span>
-        {section.error?.action === "settings"
+        {/* The reason, when the runtime recorded one; a failure points at the model settings,
+            an interruption (a restart) can simply continue. */}
+        <span className="turn-outcome-text">{section.error?.message ?? section.turn.error
+          ?? (st === "interrupted" ? t("turn.interrupted") : t("turn.failed"))}</span>
+        {st === "failed"
           ? <Button size="sm" onClick={() => app.openSettings("models")}>{t("turn.openSettings")}</Button>
           : <Button size="sm" onClick={() => void api.resume(taskId, section.turn.id).catch((e) => toast.error(String(e)))}>{t("turn.resume")}</Button>}
       </div>

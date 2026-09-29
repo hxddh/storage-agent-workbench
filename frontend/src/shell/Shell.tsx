@@ -104,6 +104,8 @@ export function Shell() {
   return (
     <div className="window" data-traffic-lights={hasNativeTrafficLights() ? "true" : undefined} data-sidebar={app.sidebar ? "open" : "closed"} data-pane={app.pane ? "open" : "closed"}>
       <Sidebar />
+      {/* Narrow window only (CSS): tapping outside the overlaid sidebar closes it. */}
+      {app.sidebar ? <div className="scrim" aria-hidden onClick={() => app.setSidebar(false)} /> : null}
       <main className="main" aria-busy={busy}>
         <header className="titlebar" data-tauri-drag-region>
           <div className="titlebar-start">
@@ -131,7 +133,8 @@ export function Shell() {
           </div>
           {busy ? <div className="titlebar-progress" aria-hidden /> : null}
         </header>
-        <div className="document" data-testid="document">
+        {/* A scrolling page is not a Tab stop of its own (the keys still scroll it once focus is inside). */}
+        <div className="document" data-testid="document" tabIndex={-1}>
           {taskId ? <TaskPage key={taskId} model={model} setSnapshot={setSnapshot} />
             : <Home />}
         </div>

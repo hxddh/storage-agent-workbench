@@ -81,6 +81,19 @@ def default_api_style(kind: str, base_url: str | None) -> str:
     return "responses" if any(h in base_url for h in _OFFICIAL_OPENAI_HOSTS) else "chat"
 
 
+def context_window(kind: str, base_url: str | None, model: str | None, declared: int | None) -> int:
+    """The window the runtime plans for. A declared window wins. A local or
+    self-hosted endpoint without one is assumed small: its server's configured
+    context is usually far below what the model family supports, and assuming
+    too much is what overflows it (the user sets the real size in Settings)."""
+    if declared and declared > 0:
+        return int(declared)
+    official = bool(base_url) and any(h in base_url for h in _OFFICIAL_OPENAI_HOSTS)  # type: ignore[operator]
+    if kind in LOCAL_KINDS and not official:
+        return budget.LOCAL_DEFAULT_WINDOW
+    return budget.context_window(model)
+
+
 def _secret_name(provider_id: str) -> str:
     return f"{provider_id}/api_key"
 
@@ -214,7 +227,7 @@ def credentials(conn: sqlite3.Connection, provider_id: str | None = None) -> dic
         "base_url": base_url,
         "model": row["model"],
         "api_style": row["api_style"],
-        "context_window": budget.context_window(row["model"], row["context_window"]),
+        "context_window": context_window(row["kind"], base_url, row["model"], row["context_window"]),
         "max_output_tokens": row["max_output_tokens"],
         "reasoning_effort": (row["reasoning_effort"] if budget.is_reasoning_model(row["model"]) else None),
     }

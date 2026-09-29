@@ -2,50 +2,60 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ...core import store as core_store
+from ...estate import rules
 from ...estate import store as estate
 from ...s3 import config_tools as ct
-from .registry import Scope, current, tool
+from .registry import Scope, current, plural, tool
 
 _BUCKET = Scope()
+
+DetailAspect = Literal["replication", "notification", "cors", "logging", "lifecycle", "encryption",
+                       "public_access_block", "policy", "policy_status", "ownership", "object_lock", "acl",
+                       "inventory", "website", "intelligent_tiering", "accelerate", "request_payment",
+                       "metrics", "analytics"]
+ReviewAspect = Literal["summary", "security", "lifecycle", "observability", "cost"]
 
 
 def _review_summary(res: Any) -> str:
     if not isinstance(res, dict) or res.get("success") is False:
         return "could not read"
     findings = res.get("findings") or []
+    issues = {f["issue"]["title"] for f in findings if isinstance(f.get("issue"), dict)}
+    if issues:
+        return plural(len(issues), "issue")
     bad = [f for f in findings if str(f.get("category", "")).lower() in ("critical", "warning")]
-    return f"{len(bad)} to fix · {len(findings)} findings" if findings else "reviewed"
+    return plural(len(bad), "warning") if bad else "nothing to fix"
+
+
+def _profile_summary(res: Any) -> str:
+    if not isinstance(res, dict) or res.get("success") is False:
+        return "could not read"
+    facts = res.get("facts") or {}
+    if facts.get("inconclusive"):
+        return "inconclusive: could not list objects"
+    n = facts.get("sampled_objects")
+    return f"sampled {plural(n, 'object')}" if isinstance(n, int) else "profiled"
 
 
 @tool(group="config", scope=_BUCKET, timeout=45)
-def get_bucket_config_detail(provider_id: str, bucket: str, aspect: str) -> dict[str, Any]:
-    """Read the sanitized rule detail of one configuration aspect (read-only GET) so you never have to ask
-    the user for their config. aspect is one of: replication, notification, cors, logging, lifecycle,
-    encryption, public_access_block, policy, policy_status, ownership, object_lock, acl, inventory,
-    website, intelligent_tiering, accelerate, request_payment, metrics, analytics. 'policy_status' is
-    AWS's verdict for the POLICY only (combine with 'acl', or review_bucket_config's security aspect,
-    before saying a bucket is public); BucketOwnerEnforced ownership means ACLs are disabled. ARNs
-    reduced, values redacted, at most 20 rules.
+def get_bucket_config_detail(bucket: str, aspect: DetailAspect, provider_id: str = "") -> dict[str, Any]:
+    """The sanitized rules of one configuration aspect. policy_status is the verdict on the policy only;
+    combine it with acl before calling a bucket public.
 
     Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-        aspect: One configuration aspect.
+        aspect: The configuration aspect.
     """
     return ct.get_bucket_config_detail(current().conn(), provider_id, bucket, aspect)
 
 
-@tool(group="config", scope=Scope(prefix="prefix", listing=True), timeout=90, summarize=_review_summary)
-def review_bucket_performance_profile(provider_id: str, bucket: str, prefix: str = "") -> dict[str, Any]:
-    """Profile a bucket's performance from a bounded object sample: key layout, sizes, storage classes.
-    This lists objects, so a prefix-scoped provider needs an in-scope prefix.
+@tool(group="config", scope=Scope(prefix="prefix", listing=True), timeout=90, summarize=_profile_summary)
+def review_bucket_performance_profile(bucket: str, prefix: str = "", provider_id: str = "") -> dict[str, Any]:
+    """Profile key layout, object sizes and storage classes from a bounded object sample.
 
     Args:
-        provider_id: The provider.
-        bucket: The bucket name.
         prefix: Sample under this prefix.
     """
     return ct.review_bucket_performance_profile(current().conn(), provider_id, bucket, prefix or None)
@@ -56,23 +66,24 @@ _ASPECTS = {"summary": "get_bucket_config_summary", "security": "review_bucket_s
             "cost": "review_bucket_cost_optimization"}
 _INGESTED = ("security", "lifecycle")  # the aspects whose findings open, resolve or recur estate issues
 _ORDER = {"critical": 0, "warning": 1, "opportunity": 2, "good": 3}
+# A review finding that asserts an estate Issue, by the finding's title.
+_ISSUE_BY_FINDING = {(r.check, t): r for r in rules.RULES for t in r.review_titles}
+
+
+def issue_label(rule: rules.Rule, lang: str) -> dict[str, str]:
+    """The Issue as the estate names it, so the conversation and the home agree."""
+    return {"title": rules.title(rule, lang), "severity": rule.severity}
 
 
 @tool(group="config", scope=_BUCKET, timeout=240, summarize=_review_summary)
-def review_bucket_config(provider_id: str, bucket: str, aspects: list[str] | None = None) -> dict[str, Any]:
-    """Review one bucket's configuration with read-only GETs. Omit aspects for the full review, or name
-    the ones to run: summary (every readable setting with an overall status); security (policy with
-    anonymous / wildcard principals and AWS's public verdict, ACL grants, public access block, default
-    encryption, CORS); lifecycle (multipart cleanup, expiration, transitions, noncurrent versions);
-    observability (logging, event notifications, tagging); cost (transitions, noncurrent versions,
-    incomplete uploads, cost-attribution tags). Returns each aspect's status and every finding, most
-    severe first; security and lifecycle findings feed the estate's issues. The performance profile is
-    separate because it lists objects.
+def review_bucket_config(bucket: str, aspects: list[ReviewAspect] | None = None,
+                         provider_id: str = "") -> dict[str, Any]:
+    """Review one bucket's configuration: summary (every readable setting), security (policy, ACL, public
+    access block, encryption, CORS), lifecycle, observability (logging, notifications, tags) and cost.
+    Findings most severe first; one that is an estate issue carries the issue's title and severity.
 
     Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-        aspects: Any of summary, security, lifecycle, observability, cost. Omit for all.
+        aspects: Which aspects to run; omit for all.
     """
     unknown = sorted(set(aspects or ()) - set(_ASPECTS))
     if unknown:
@@ -92,7 +103,8 @@ def review_bucket_config(provider_id: str, bucket: str, aspects: list[str] | Non
             res = {"success": False, "error_code": type(exc).__name__}
         out["sections"][name] = {k: v for k, v in (res or {}).items() if k != "findings"}
         for f in (res or {}).get("findings") or []:
-            findings.append({**f, "section": name})
+            rule = _ISSUE_BY_FINDING.get((name, str(f.get("title", "")))) if isinstance(f, dict) else None
+            findings.append({**f, "section": name, **({"issue": issue_label(rule, ctx.turn.lang)} if rule else {})})
         if name in _INGESTED:
             # The estate learns from what this call read, aspect by aspect — never
             # from the model's prose, and never about an aspect it did not run.

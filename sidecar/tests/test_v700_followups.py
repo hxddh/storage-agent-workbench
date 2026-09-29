@@ -20,7 +20,7 @@ def _strict(fake: FakeModel) -> None:
 
 
 def test_three_directions_replay_exactly_and_strictly(client):
-    concl = {"answer": "No files.", "findings": [{"title": "Nothing", "severity": "info"}], "next_steps": []}
+    concl = {"findings": [{"title": "Nothing", "severity": "info"}], "next_steps": []}
     with FakeModel([
         commentary_tool_turn("Let me look.", "list_uploaded_files", {}),
         tool_turn("record_conclusion", concl),
@@ -68,7 +68,7 @@ def test_a_follow_up_queued_while_a_turn_runs_comes_after_that_turn(client):
 
 
 def test_a_parallel_batch_with_a_conclusion_replays_calls_then_outputs(client):
-    concl = {"answer": "x", "findings": [], "next_steps": []}
+    concl = {"next_steps": ["Look again"]}
     with FakeModel([
         parallel_turn([("list_uploaded_files", {}), ("record_conclusion", concl), ("query_estate", {})],
                       text="Looking at both."),

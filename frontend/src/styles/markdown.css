@@ -126,18 +126,6 @@
   line-height: 1.625;
 }
 
-/* ---------- Table toolbar (the grid itself: native-document.css) ---------- */
-.md-table-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-1);
-  color: var(--gray-500);
-  font-size: var(--text-2xs);
-  line-height: var(--leading-2xs);
-}
-.md-table-copy { border-radius: var(--radius-md); padding: 2px var(--space-1); }
-
 /* ---------- Inline ---------- */
 .md-code-inline {
   border: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
@@ -165,12 +153,10 @@
   .md-link { transition: none; }
 }
 
-/* v7: a table's size and Copy sit in its corner, shown on hover or focus — no extra row. */
-.agent-table { position: relative; }
-.md-table-meta {
-  position: absolute; top: 6px; right: 8px; z-index: 1;
-  display: flex; gap: var(--space-2); align-items: center;
-  padding: 2px var(--space-2); border-radius: var(--radius); background: var(--panel);
-  opacity: 0; transition: opacity var(--duration-fast) var(--ease-out);
+/* A table's Copy sits at the end of its header row, shown on hover or focus. */
+.agent-table-grid th:last-child { position: relative; padding-right: 2.25rem; }
+.agent-table-grid th:last-child > .md-table-copy {
+  position: absolute; top: 50%; right: var(--space-2); transform: translateY(-50%);
+  display: grid; place-items: center; width: 1.5rem; height: 1.5rem; opacity: 0; transition: opacity var(--duration-fast) var(--ease-out);
 }
-.agent-table:hover .md-table-meta, .md-table-meta:focus-within { opacity: 1; }
+.agent-table:hover .md-table-copy, .md-table-copy:focus-visible { opacity: 1; }

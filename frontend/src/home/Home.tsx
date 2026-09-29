@@ -83,39 +83,40 @@ function Attention() {
     const timer = setInterval(() => void reload(), 60_000);
     return () => clearInterval(timer);
   }, [reload]);
-  // The sheet may have changed an issue (verify, accept): read again when it closes.
-  const paneOpen = app.pane?.tab === "bucket";
-  const wasOpen = useRef(paneOpen);
+  // The sheet changed an issue (verify, accept): read again at once.
+  const first = useRef(true);
   useEffect(() => {
-    if (wasOpen.current && !paneOpen) void reload();
-    wasOpen.current = paneOpen;
-  }, [paneOpen, reload]);
+    if (first.current) { first.current = false; return; }
+    void reload();
+  }, [app.estateRev]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!estate || estate.providers.length === 0) return null;
   const groups = groupIssues(estate.issues);
   const checked = estate.providers.some((p) => p.last_checked_at);
+  const survey = () => app.prefill(t("home.starter.surveyPrompt"));
   return (
-    <section className="attention" aria-labelledby="attention-label" data-testid="needs-care">
-      <h2 id="attention-label" className="attention-title">{t("home.care")}</h2>
+    <section className="attention" aria-labelledby={checked || groups.length ? "attention-label" : undefined} data-testid="needs-care">
+      {checked || groups.length ? <h2 id="attention-label" className="attention-title">{t("home.care")}</h2> : null}
       {groups.length ? (
         <ul className="attention-list">
           {groups.map((g) => <AttentionRow key={g.key} group={g} />)}
         </ul>
-      ) : checked ? <p className="quiet-note">{t("home.careEmpty")}</p> : (
-        <p className="quiet-note" data-testid="not-checked">
-          {t("home.notChecked")}{" "}
-          <button type="button" className="link" onClick={() => app.prefill(t("home.starter.surveyPrompt"))}>
-            {t("home.checkNow")}
-          </button>
-        </p>
-      )}
-      <p className="accounts" data-testid="estate">
-        {estate.providers.map((p) => [
-          p.name,
-          t("home.buckets", { n: p.bucket_count }),
-          p.last_checked_at ? t("home.checked", { when: timeAgo(p.last_checked_at, t) }) : t("home.neverChecked"),
-          p.watch.enabled ? t("home.watched") : null,
-        ].filter(Boolean).join(" · ")).join("   ")}
-      </p>
+      ) : checked ? <p className="quiet-note">{t("home.careEmpty")}</p> : null}
+      {/* One quiet line per account; storage never checked says so and offers the survey. */}
+      <ul className="accounts" data-testid="estate">
+        {estate.providers.map((p) => (
+          <li key={p.provider_id}>
+            {[
+              p.name,
+              p.last_checked_at ? t("home.buckets", { n: p.bucket_count }) : null,
+              p.last_checked_at ? t("home.checked", { when: timeAgo(p.last_checked_at, t) }) : t("home.neverChecked"),
+              p.watch.enabled ? t("home.watched") : null,
+            ].filter(Boolean).join(" · ")}
+            {p.last_checked_at ? null : (
+              <>{" · "}<button type="button" className="link" data-testid="not-checked" onClick={survey}>{t("home.survey")}</button></>
+            )}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

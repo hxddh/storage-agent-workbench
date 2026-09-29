@@ -58,7 +58,7 @@ export function QuickAsk() {
           {working ? <p className="quiet-note"><StatusDot tone="accent" pulse />{t("work.thinking")}</p> : null}
           {/* The answer once: the full text when there is one, else the recorded conclusion. */}
           {result?.answer ? <Markdown text={result.answer} />
-            : result?.conclusion ? <p className="result-answer">{result.conclusion.answer}</p>
+            : result?.conclusion?.answer ? <p className="result-answer">{result.conclusion.answer}</p>
               : live ? <Markdown text={live} /> : null}
           <Button size="sm" variant="ghost" icon="external" onClick={openMain}>{t("quick.open")}</Button>
         </div>

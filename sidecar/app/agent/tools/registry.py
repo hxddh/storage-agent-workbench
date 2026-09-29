@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import json
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -65,13 +66,14 @@ class ToolDef:
 
 
 REGISTRY: dict[str, ToolDef] = {}
+MODEL_CHARS_CAP = 60_000
 
 GROUPS: dict[str, str] = {
     "core": "Orientation: providers, buckets, skills, the estate and the conclusion.",
     "probes": "Endpoint probes: bucket location, TLS, addressing, latency, presigned URLs.",
     "objects": "Object forensics: listing, versions, multipart uploads, one object's metadata, read tests, previews.",
     "config": "Bucket configuration: the review (summary, security, lifecycle, observability, cost), detail per aspect, performance.",
-    "account": "Account-wide: survey every bucket, compare with the last survey.",
+    "account": "Account-wide: compare with the last survey.",
     "files": "Local analysis of attached files and imported evidence: analyze, aggregate, import evidence.",
     "advice": "Deterministic advice: error triage, cost and lifecycle simulation.",
 }
@@ -105,6 +107,9 @@ class TurnContext:
     recorder: Any  # agent.recorder.Recorder
     budgets: dict[str, dict[str, int]] = field(default_factory=dict)
     lang: str = "en"
+    # What one tool output may put in front of the model: the absolute cap, or a
+    # quarter of a small window (the runtime sets it from the active model).
+    model_chars: int = MODEL_CHARS_CAP
     # Parallel calls run in worker threads: spending from a budget is one step.
     budget_lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -196,22 +201,38 @@ def compact_json(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), default=str, ensure_ascii=False)
 
 
+_PSEUDO_PLURAL = re.compile(r"\b(\d+) ([A-Za-z-]+)\(s\)")
+SUMMARY_CHARS = 60
+
+
+def plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def tidy_summary(text: str) -> str:
+    """A tool row's note: one short clause with real plurals ("3 buckets", never "3 bucket(s)")."""
+    text = _PSEUDO_PLURAL.sub(lambda m: plural(int(m.group(1)), m.group(2)), str(text or ""))
+    text = " ".join(text.replace("(s)", "s").split())
+    if len(text) > SUMMARY_CHARS:
+        first = re.split(r"(?<=[.;])\s", text)[0]
+        text = first if len(first) <= SUMMARY_CHARS else text[:SUMMARY_CHARS - 1].rstrip(" ,;·") + "…"
+    return text.rstrip(". ")
+
+
 def default_summary(result: Any) -> str:
     if isinstance(result, dict):
         if result.get("error"):
-            return str(result["error"])[:120]
+            return str(result["error"])
         if result.get("success") is False:
-            code = str(result.get("error_code") or "failed")
-            rid = result.get("request_id")
-            return f"{code} · req {str(rid)[:24]}" if rid else code
+            return str(result.get("error_code") or "failed")
         for key in ("buckets", "objects", "keys", "versions", "uploads", "parts", "groups", "findings", "rows"):
             if isinstance(result.get(key), list):
-                return f"{len(result[key])} {key}"
+                return plural(len(result[key]), key[:-1])
         if result.get("summary") and isinstance(result["summary"], str):
-            return result["summary"][:160]
-        return "ok"
+            return result["summary"]
+        return "done"
     if isinstance(result, str):
-        return result[:160]
+        return result
     return "done"
 
 
@@ -262,12 +283,34 @@ def _clamp(args: dict[str, Any], bounds: dict[str, tuple[int, int]]) -> dict[str
 # --- scope guardrail ---------------------------------------------------------------------
 
 
+def _account_count() -> int:
+    conn = db.connect()
+    try:
+        return int(conn.execute("SELECT COUNT(*) AS n FROM cloud_providers").fetchone()["n"])
+    finally:
+        conn.close()
+
+
+def with_default_provider(td: ToolDef, args: dict[str, Any]) -> dict[str, Any]:
+    """A storage tool called without an account uses the only one configured.
+    With several (or none), the call is left as is and the scope check refuses it."""
+    if td.scope is None or args.get(td.scope.provider):
+        return args
+    conn = db.connect()
+    try:
+        rows = conn.execute("SELECT id FROM cloud_providers LIMIT 2").fetchall()
+    finally:
+        conn.close()
+    return {**args, td.scope.provider: rows[0]["id"]} if len(rows) == 1 else args
+
+
 def scope_denial(td: ToolDef, args: dict[str, Any]) -> str | None:
     if td.scope is None:
         return None
     provider_id = args.get(td.scope.provider)
     if not provider_id:
-        return None
+        return ("Several storage accounts are configured: pass provider_id (from configured_providers)."
+                if _account_count() else "No storage account is configured. Add one in Settings › Storage accounts.")
     from ...providers import clouds
     conn = db.connect()
     try:
@@ -296,22 +339,69 @@ def _parse_args(raw: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def build_sdk_tools(*, responses: bool, names: set[str] | None = None) -> list[Any]:
-    """FunctionTools for this turn. On the Responses backend non-core groups
-    become deferred namespaces behind hosted tool search; elsewhere every tool
-    is sent (Chat Completions has no tool search)."""
-    from agents import FunctionTool, ToolGuardrailFunctionOutput, tool_input_guardrail, tool_namespace
+def _slim(node: Any) -> Any:
+    """A JSON schema without what a model does not need: pydantic ``title``s,
+    ``Optional`` spelled as anyOf-with-null, empty defaults; one-line descriptions."""
+    if isinstance(node, list):
+        return [_slim(x) for x in node]
+    if not isinstance(node, dict):
+        return node
+    out: dict[str, Any] = {}
+    for key, value in node.items():
+        if key == "title":
+            continue  # schema metadata; a PROPERTY named "title" lives under "properties"
+        if key in ("properties", "$defs"):
+            out[key] = {name: _slim(sub) for name, sub in value.items()}
+        elif key == "description" and isinstance(value, str):
+            out[key] = " ".join(value.split())
+        else:
+            out[key] = _slim(value)
+    variants = out.get("anyOf")
+    if isinstance(variants, list):
+        real = [v for v in variants if v != {"type": "null"}]
+        if len(real) == 1 and len(real) < len(variants):
+            del out["anyOf"]
+            out = {**real[0], **out}
+    if "default" in out and out["default"] in ("", None, 0, False):
+        del out["default"]
+    return out
+
+
+def tool_schema(td: ToolDef) -> tuple[str, dict[str, Any]]:
+    """(description, parameters) as the model reads them. Not strict: an
+    optional argument stays optional and the body's default applies."""
     from agents.function_schema import function_schema
+    schema = function_schema(td.fn, strict_json_schema=False)
+    return " ".join((schema.description or td.name).split()), _slim(schema.params_json_schema)
+
+
+def schema_chars(*, responses: bool) -> int:
+    """What the tool definitions cost in every request (characters, as sent)."""
+    total = 0
+    for td in REGISTRY.values():
+        if responses and not td.core:
+            continue  # deferred: loaded only when the model searches for it
+        desc, params = tool_schema(td)
+        total += len(json.dumps({"type": "function", "function": {"name": td.name, "description": desc,
+                                                                  "parameters": params}}))
+    return total
+
+
+def build_sdk_tools(*, responses: bool, names: set[str] | None = None) -> list[Any]:
+    """FunctionTools for this turn. On the Responses backend non-core tools
+    become deferred group namespaces behind hosted tool search; elsewhere every
+    tool is sent (Chat Completions has no tool search)."""
+    from agents import FunctionTool, ToolGuardrailFunctionOutput, tool_input_guardrail, tool_namespace
 
     tools_by_group: dict[str, list[Any]] = {}
     for td in REGISTRY.values():
         if names is not None and td.name not in names:
             continue
-        schema = function_schema(td.fn, strict_json_schema=True)
+        description, params = tool_schema(td)
 
         @tool_input_guardrail(name=f"scope:{td.name}")
         def _scope_guard(data, _td=td):  # type: ignore[no-untyped-def]
-            args = _parse_args(getattr(data.context, "tool_arguments", "") or "")
+            args = with_default_provider(_td, _parse_args(getattr(data.context, "tool_arguments", "") or ""))
             denial = scope_denial(_td, args)
             if denial is None:
                 return ToolGuardrailFunctionOutput.allow()
@@ -324,15 +414,15 @@ def build_sdk_tools(*, responses: bool, names: set[str] | None = None) -> list[A
 
         ft = FunctionTool(
             name=td.name,
-            description=schema.description or td.name,
-            params_json_schema=schema.params_json_schema,
+            description=description,
+            params_json_schema=params,
             on_invoke_tool=_invoke,
-            strict_json_schema=True,
+            strict_json_schema=False,
             tool_input_guardrails=[_scope_guard] if td.scope else None,
             timeout_seconds=td.timeout,
             defer_loading=responses and not td.core,
         )
-        tools_by_group.setdefault(td.group, []).append(ft)
+        tools_by_group.setdefault("core" if td.core else td.group, []).append(ft)
 
     out: list[Any] = []
     for group, tools in tools_by_group.items():
@@ -346,10 +436,19 @@ def build_sdk_tools(*, responses: bool, names: set[str] | None = None) -> list[A
 async def invoke(td: ToolDef, tool_ctx: Any, raw_args: str) -> str:
     turn: TurnContext = tool_ctx.context
     call_id = getattr(tool_ctx, "tool_call_id", None) or f"call-{time.monotonic_ns()}"
-    args = _clamp(_parse_args(raw_args), td.bounds)
-    safe_args = redact(args)
+    raw = _parse_args(raw_args)
     if td.special == "conclusion":
-        return turn.recorder.conclusion(call_id, args)
+        return turn.recorder.conclusion(call_id, raw)
+    filled = with_default_provider(td, raw)
+    args = _clamp(filled, td.bounds)
+    safe_args = redact(args)
+    if filled is not raw:
+        # The account was filled in here, after the guardrail read the raw call:
+        # check the scope of what will actually run.
+        denial = scope_denial(td, args)
+        if denial is not None:
+            turn.recorder.tool_refused(call_id, td.name, safe_args, denial)
+            return f"Refused: {denial}"
     turn.recorder.tool_started(call_id, td.name, safe_args, _target(args))
     if turn.cancel.is_set():
         turn.recorder.tool_finished(call_id, td.name, False, "stopped", None, 0)
@@ -382,9 +481,9 @@ async def invoke(td: ToolDef, tool_ctx: Any, raw_args: str) -> str:
     duration_ms = int((time.monotonic() - started) * 1000)
     clean = redact(result)
     ok = _ok(clean)
-    summary = redact_text((td.summarize or default_summary)(clean))[:240]
+    summary = tidy_summary(redact_text((td.summarize or default_summary)(clean)))
     text = clean if isinstance(clean, str) else compact_json(clean)
-    text = _bounded_for_model(text, td.max_model_chars)
+    text = _bounded_for_model(text, min(td.max_model_chars, turn.model_chars))
     model_text = safety.envelope(text) if td.untrusted else text
     turn.recorder.tool_finished(call_id, td.name, ok, summary, clean, duration_ms, model_text=model_text)
     return model_text
@@ -420,7 +519,7 @@ def call_direct(name: str, args: dict[str, Any], *, actor: str, allowed: frozens
     td = REGISTRY.get(name)
     if td is None or name not in allowed:
         return {"error": f"Unknown tool: {name}"}
-    args = _clamp(dict(args or {}), td.bounds)
+    args = _clamp(with_default_provider(td, dict(args or {})), td.bounds)
     denial = scope_denial(td, args)
     conn = db.connect()
     try:

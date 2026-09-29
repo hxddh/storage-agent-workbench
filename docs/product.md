@@ -26,13 +26,13 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 The greeting, the Composer, three starters (*Diagnose an access error*, *Survey my storage account*, *Analyze an access log*) that only fill the Composer, then:
 
 - **Getting started** — one sentence when a model or a storage account is missing, each part a link to the right Settings pane.
-- **Needs attention** — one row per kind of open Issue, most severe first, naming every bucket it was found on (three, then *+N*); a bucket opens in the side pane. Storage that was never checked says so and offers to survey it. Below, one quiet line per account: its buckets, when it was last checked, whether it is watched.
+- **Needs attention** — one row per kind of open Issue, most severe first, naming every bucket it was found on (three, then *+N*); a bucket opens in the side pane. Below, one quiet line per account: its buckets, when it was last checked, whether it is watched — storage never checked reads *name · not checked yet · Survey* (Survey fills the Composer), with no bucket count.
 
 ### A bucket
 
 The **bucket sheet** (the side pane) is where the storage itself is the subject: what needs attention (the resolved Issues folded below), its configuration as last checked (only what deviates: exposure that is on, a read that failed, a missing protection), the notes kept about it, and its history (posture changes and Issue events, folded). *Ask about this bucket* fills the Composer; it never submits.
 
-An Issue shows **Show fix** and **Verify** (a read-only re-check that can resolve it); its menu holds *Open task* and *Accept risk* (with an optional reason, kept as a note). The **fix** is the AWS CLI command, a Terraform resource or the API document — copy whichever you apply changes with — with an **impact preview**: what applying it would change, from the evidence the estate holds. For a public access block it counts the anonymous requests in the bucket's attached S3 server access logs; for lifecycle rules it says whether existing rules would be replaced. When the evidence cannot tell, it says so and what would answer it.
+An Issue shows **Show fix** and **Verify** (a read-only re-check that can resolve it); its *More* menu holds *Open task* and *Accept risk* (with an optional reason, kept as a note). The **fix** is the AWS CLI command, a Terraform resource or the API document — copy whichever you apply changes with — with an **impact preview**: one verdict sentence on what applying it would change, from the evidence the estate holds, with its reasons folded under it. For a public access block it counts the anonymous requests in the bucket's attached S3 server access logs; for lifecycle rules it says whether existing rules would be replaced. When the evidence cannot tell, it says so and what would answer it.
 
 **Notes** are what you and the Agent want remembered — an owner, an intent, why a setting is deliberate. You add them on a bucket (Enter saves), on an account or for all storage in Settings; the Agent keeps them with its `note` tool; accepting a risk with a reason keeps the reason. Every task starts with the most recent notes as context.
 
@@ -52,7 +52,7 @@ A small always-on-top window (⌘⇧Space, the tray, View › Quick Ask) for one
 
 ### Settings
 
-General (theme, language, the safety floor in three points; *Advanced*: skills, the standing-instructions file, the MCP server) · Models (presets for OpenAI, Anthropic, DeepSeek, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint; masked keys; a live test) · Storage accounts (presets for the common services; scope by bucket and prefix; each account's **Watch**: Off · 6 h · Daily · Weekly, Check now).
+General (theme, language, the safety floor in three points; *Advanced*: skills, the standing-instructions file, the MCP server) · Models (presets for OpenAI, Anthropic, DeepSeek, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint; masked keys; a local model's context window prefilled with 16 384, a hosted one's under *Advanced*; a live test) · Storage accounts (presets for the common services; each account's **Watch** first: Off · 6 h · Daily · Weekly, Check now; the session token and bucket/prefix scope under *Advanced*). Save stays on what was saved and shows its test result.
 
 ## Principles
 

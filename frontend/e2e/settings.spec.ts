@@ -13,8 +13,13 @@ test("a model and a storage account are added in Settings; keys never come back"
     const editor = page.getByTestId("model-editor");
     await editor.getByLabel("Provider").selectOption({ label: "Ollama" });
     await editor.getByLabel("Model", { exact: true }).fill("llama3.1");
+    // A local model is asked for its window, prefilled with 16 384.
+    await expect(editor.getByTestId("context-window")).toHaveValue("16384");
     await editor.getByRole("button", { name: "Save" }).click();
     await expect(page.locator(".provider-item")).toContainText("llama3.1");
+    // Save stays on the saved model and shows its connection test.
+    await expect(page.getByTestId("model-editor").getByTestId("probe")).toBeVisible();
+    await expect(page.locator(".provider-item[aria-current='true']")).toContainText("llama3.1");
     await expect(page.getByTestId("model-chip")).toContainText("llama3.1");
 
     await page.getByTestId("settings-storage").click();
@@ -26,6 +31,7 @@ test("a model and a storage account are added in Settings; keys never come back"
     await cloud.getByLabel("Secret key").fill("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
     await cloud.getByRole("button", { name: "Save" }).click();
     await expect(page.locator(".provider-item", { hasText: "lab" })).toBeVisible();
+    await expect(page.getByTestId("cloud-editor").getByTestId("probe")).toBeVisible();
     await page.locator(".provider-item", { hasText: "lab" }).click();
     await expect(page.getByTestId("watch")).toContainText("Off");
     await expect(page.getByTestId("settings")).not.toContainText("wJalrXUtnFEMI");
@@ -36,7 +42,7 @@ test("a model and a storage account are added in Settings; keys never come back"
     await expect.poll(async () => (await api<Array<{ watch: { enabled: boolean } }>>("/providers/clouds"))[0].watch.enabled).toBe(true);
 
     await page.getByTestId("settings-general").click();
-    await expect(page.getByTestId("settings")).toContainText("Storage is read-only");
+    await expect(page.getByTestId("settings")).toContainText("only reads your storage");
   } finally {
     await s3.close();
   }
