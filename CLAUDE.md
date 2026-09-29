@@ -1,12 +1,12 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v8.1.0.**
+> **Implementation contract for Storage Agent v9.0.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md` and `docs/security.md`. Current code and the
 > executable contracts (`frontend/src/contracts.test.ts`, `sidecar/tests/test_v500_*.py`,
 > `sidecar/tests/test_v600_kernel.py`, `sidecar/tests/test_v700_followups.py`,
-> `sidecar/tests/test_v800_*.py`) are authoritative. v5 was a clean rewrite; v6–v8 build on it: do not reconstruct earlier information architecture, tables or routes
+> `sidecar/tests/test_v800_*.py`, `sidecar/tests/test_v900_*.py`) are authoritative. v5 was a clean rewrite; v6–v9 build on it: do not reconstruct earlier information architecture, tables or routes
 > from git history or release notes. No plan mode, todo lists, approvals, mode switches,
 > sub-agents or workflow builders — new capability lands on Task, item stream and estate.
 

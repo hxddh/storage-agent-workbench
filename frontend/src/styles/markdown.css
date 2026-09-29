@@ -154,5 +154,9 @@
 }
 
 /* A table's Copy sits at the end of its header row, shown on hover or focus. */
-.agent-table-grid th:last-child > .md-table-copy { float: right; margin-left: var(--space-2); opacity: 0; transition: opacity var(--duration-fast) var(--ease-out); }
+.agent-table-grid th:last-child { position: relative; padding-right: 2.25rem; }
+.agent-table-grid th:last-child > .md-table-copy {
+  position: absolute; top: 50%; right: var(--space-2); transform: translateY(-50%);
+  display: grid; place-items: center; width: 1.5rem; height: 1.5rem; opacity: 0; transition: opacity var(--duration-fast) var(--ease-out);
+}
 .agent-table:hover .md-table-copy, .md-table-copy:focus-visible { opacity: 1; }

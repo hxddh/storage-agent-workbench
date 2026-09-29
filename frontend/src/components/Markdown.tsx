@@ -4,6 +4,7 @@ import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
 import { highlight, TOK_CLASS } from "../lib/highlight";
 import { revealInScroller } from "../lib/scroll";
+import { Icon } from "./icons";
 
 /** Dependency-free, safe markdown renderer for Agent Work Results and artifacts. */
 const MarkdownBlocks = memo(function MarkdownBlocks({ text }: { text: string }) {
@@ -262,8 +263,8 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
                   {/* Copy sits in the header's last cell, in flow: it never covers a column name. */}
                   {i === headers.length - 1 ? (
                     <button type="button" onClick={copyTsv} data-testid="table-copy" className="md-table-copy"
-                      aria-label={t("common.copy")} title={t("common.copy")}>
-                      {copied ? t("common.copied") : t("common.copy")}
+                      aria-label={copied ? t("common.copied") : t("common.copy")} title={t("common.copy")}>
+                      <Icon name={copied ? "check" : "copy"} size={14} />
                     </button>
                   ) : null}
                 </th>

@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [9.0.0] - 2026-09-29
+
+_Small models work; state stays consistent._ See `docs/releases/9.0.0.md`.
+
+### Changed
+
+- Agent request 0 ≈ 40 % smaller: lean tool schemas (no titles, optional args optional, real enums, short descriptions), deduplicated prompt, two meta skills removed.
+- Context windows: longest-name match; local models default to 16 384 tokens (asked for in Settings).
+- Compaction counts instructions and tools; tool output capped relative to the window.
+- `record_conclusion` records findings and next steps only; `provider_id` defaults to the only account; `survey_account` always loaded.
+- Tool rows and review/survey output use the estate Issue's title and severity; notes ≤ 60 characters, real plurals.
+- Settings stays on the saved item with its test; *Advanced* folds; the fix panel keeps its actions in place; the never-checked home line; table Copy in the header; Chinese copy.
+
+### Fixed
+
+- Verify updates the bucket's configuration and the home.
+- A failed turn shows its reason and points at Settings.
+- Narrow windows: the sidebar and side pane no longer hide the page.
+
 ## [8.1.0] - 2026-09-29
 
 _The rest of the review: the findings v8.0 left open, closed._ See `docs/releases/8.1.0.md`.
