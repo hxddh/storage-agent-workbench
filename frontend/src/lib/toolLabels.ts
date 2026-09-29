@@ -37,6 +37,8 @@ const LABELS: Record<string, { en: string; zh: string }> = {
   review_bucket_performance_profile: { en: "Reviewed performance", zh: "审查性能" },
   review_bucket_cost_optimization: { en: "Reviewed cost", zh: "审查成本" },
   survey_account: { en: "Surveyed account", zh: "盘点账号" },
+  fix_preview: { en: "Previewed a fix", zh: "预览修复" },
+  note: { en: "Kept a note", zh: "记下备注" },
   query_account_profile: { en: "Queried account profile", zh: "查询账号画像" },
   compare_to_last_survey: { en: "Compared with last survey", zh: "与上次盘点对比" },
   read_run_result: { en: "Read analysis result", zh: "读取分析结果" },

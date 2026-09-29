@@ -57,6 +57,19 @@ def propose_fix(issue_id: str, lang: str | None = None, conn: sqlite3.Connection
     return store.get_issue(conn, issue_id, _lang(lang))
 
 
+@router.get("/issues/{issue_id}/impact")
+def issue_impact(issue_id: str, lang: str | None = None, conn: sqlite3.Connection = Depends(get_conn)):
+    """What the fix would change, from the evidence the estate holds (never a guess)."""
+    from ..estate import fixpacks
+    issue = store.get_issue(conn, issue_id)
+    if issue is None:
+        raise HTTPException(404, "issue not found")
+    out = fixpacks.impact(conn, issue, _lang(lang))
+    if out is None:
+        raise HTTPException(409, "this issue has no generated fix")
+    return out
+
+
 @router.post("/issues/{issue_id}/verify")
 def verify_issue(issue_id: str, lang: str | None = None, conn: sqlite3.Connection = Depends(get_conn)):
     if store.get_issue(conn, issue_id) is None:

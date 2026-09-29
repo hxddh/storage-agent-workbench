@@ -112,7 +112,17 @@ export type TaskFeedEvent = { task_id: string; state?: TaskState; title?: string
 
 export type IssueStatus = "open" | "fix_proposed" | "resolved" | "recurred" | "accepted";
 
-export type Fix = { kind: string; command: string; document?: Record<string, unknown>; notes?: string[] };
+export type FixFormat = { format: "cli" | "terraform" | "json"; label: string; text: string };
+
+export type Fix = {
+  kind: string; command: string; document?: Record<string, unknown>; notes?: string[]; formats?: FixFormat[];
+};
+
+export type Impact = {
+  verdict: "low" | "caution" | "unknown";
+  points: Array<{ text: string; evidence: "posture" | "access_log" | "rule"; count?: number; total?: number }>;
+  gaps: string[];
+};
 
 export type Issue = {
   id: string;

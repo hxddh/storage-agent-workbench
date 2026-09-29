@@ -1,7 +1,7 @@
 import { sidecarBaseUrl, sidecarToken } from "../config";
 import { ApiError, UPLOAD_TIMEOUT_MS, authHeaders, boundedController, errorDetail, request } from "./client";
 import type {
-  BucketPage, BucketRow, CloudProvider, Estate, FileRow, Issue, ModelProvider, Note, ProbeResult, Settings, TaskRow,
+  BucketPage, BucketRow, CloudProvider, Estate, FileRow, Impact, Issue, ModelProvider, Note, ProbeResult, Settings, TaskRow,
   TaskSnapshot, Watch,
 } from "./types";
 
@@ -61,6 +61,7 @@ export const api = {
   estate: (lang: string) => request<Estate>(`/estate?lang=${lang}`),
   issue: (id: string, lang: string) => request<Issue>(`/issues/${id}?lang=${lang}`),
   proposeFix: (id: string, lang: string) => request<Issue>(`/issues/${id}/fix?lang=${lang}`, { method: "POST" }),
+  impact: (id: string, lang: string) => request<Impact>(`/issues/${id}/impact?lang=${lang}`, undefined, 30_000),
   verifyIssue: (id: string, lang: string) =>
     request<{ result: string; issue: Issue }>(`/issues/${id}/verify?lang=${lang}`, { method: "POST" }),
   acceptIssue: (id: string, accepted: boolean, lang: string, reason?: string) =>

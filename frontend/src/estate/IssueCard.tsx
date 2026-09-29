@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { Issue } from "../api/types";
+import type { FixFormat, Impact, Issue } from "../api/types";
 import { Icon } from "../components/icons";
-import { Badge, Button, StatusDot, TextInput } from "../components/ui";
+import { Badge, Button, Segmented, StatusDot, TextInput } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { useCopy } from "../hooks/useCopy";
 import { useI18n } from "../i18n";
@@ -22,7 +22,6 @@ export function IssueCard({ issue: initial, onChange, showBucket = true }: {
   const { t, lang } = useI18n();
   const app = useApp();
   const toast = useToast();
-  const { copied, copy } = useCopy();
   const [issue, setIssue] = useState(initial);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -68,15 +67,7 @@ export function IssueCard({ issue: initial, onChange, showBucket = true }: {
         <div className="issue-body reveal">
           <p className="quiet-note">{issue.provider_name} · {t("issue.firstSeen", { when: timeAgo(issue.first_seen_at, t) })}</p>
           {issue.detail ? <p>{issue.detail}</p> : null}
-          {issue.fix ? (
-            <div className="issue-fix">
-              <pre><code>{issue.fix.command}</code></pre>
-              <Button size="sm" icon={copied ? "check" : "copy"} onClick={() => copy(issue.fix!.command)}>
-                {copied ? t("common.copied") : t("issue.copyCommand")}
-              </Button>
-              <p className="quiet-note">{t("issue.fixNote")}</p>
-            </div>
-          ) : !issue.fixable ? <p className="quiet-note">{t("issue.noFix")}</p> : null}
+          {issue.fix ? <FixPack issue={issue} /> : !issue.fixable ? <p className="quiet-note">{t("issue.noFix")}</p> : null}
           {verdict ? (
             <p className="issue-verdict">
               <StatusDot tone={verdict === "resolved" ? "success" : verdict === "still_present" ? "warn" : "neutral"} />
@@ -123,5 +114,62 @@ export function IssueCard({ issue: initial, onChange, showBucket = true }: {
         </div>
       ) : null}
     </li>
+  );
+}
+
+const IMPACT_TONE = { low: "success", caution: "warn", unknown: "neutral" } as const;
+
+/**
+ * The fix in the forms people apply changes with, and what applying it would
+ * change — from the evidence the estate holds, or an honest "cannot tell".
+ */
+function FixPack({ issue }: { issue: Issue }) {
+  const { t, lang } = useI18n();
+  const { copied, copy } = useCopy();
+  const formats: FixFormat[] = issue.fix?.formats?.length
+    ? issue.fix.formats
+    : [{ format: "cli", label: "AWS CLI", text: issue.fix?.command ?? "" }];
+  const [format, setFormat] = useState<FixFormat["format"]>(formats[0].format);
+  const [impact, setImpact] = useState<Impact | null>(null);
+  const [impactFailed, setImpactFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api.impact(issue.id, lang).then((i) => live && setImpact(i)).catch(() => live && setImpactFailed(true));
+    return () => { live = false; };
+  }, [issue.id, lang]);
+  const current = formats.find((f) => f.format === format) ?? formats[0];
+  const labelId = `fix-${issue.id}`;
+  return (
+    <div className="issue-fix" data-testid="fix-pack">
+      <div className="fix-head">
+        <span id={labelId} className="sr-only">{t("issue.fixFormat")}</span>
+        {formats.length > 1 ? (
+          <Segmented labelId={labelId} value={current.format} onChange={setFormat} testId="fix-formats"
+            options={formats.map((f) => ({ value: f.format, label: f.label }))} />
+        ) : null}
+        <Button size="sm" icon={copied ? "check" : "copy"} onClick={() => copy(current.text)}>
+          {copied ? t("common.copied") : t("issue.copyFix")}
+        </Button>
+      </div>
+      <pre data-format={current.format}><code>{current.text}</code></pre>
+      {issue.fix?.notes?.length ? (
+        <ul className="fix-notes">{issue.fix.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+      ) : null}
+      <p className="quiet-note">{t("issue.fixNote")}</p>
+      <div className="impact" data-verdict={impact?.verdict} data-testid="impact">
+        <p className="impact-head">
+          <StatusDot tone={impact ? IMPACT_TONE[impact.verdict] : "neutral"} />
+          <span>{impact ? t(`impact.${impact.verdict}`) : impactFailed ? t("impact.failed") : t("impact.loading")}</span>
+        </p>
+        {impact ? (
+          <ul className="impact-points">
+            {impact.points.map((p) => (
+              <li key={p.text}><span className="impact-source">{t(`impact.source.${p.evidence}`)}</span>{p.text}</li>
+            ))}
+            {impact.gaps.map((g) => <li key={g} data-gap="true"><span className="impact-source">{t("impact.source.gap")}</span>{g}</li>)}
+          </ul>
+        ) : null}
+      </div>
+    </div>
   );
 }

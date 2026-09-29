@@ -124,3 +124,112 @@ def test_accepting_a_risk_with_a_reason_keeps_it_as_a_note(client):
     assert out["status"] == "accepted"
     page = client.get(f"/estate/providers/{pid}/buckets/b2").json()
     assert page["notes"][0]["source"] == "accept" and page["notes"][0]["issue_id"] == issue["id"]
+
+
+# --- fix packs + impact preview -------------------------------------------------------
+
+def test_fix_packs_come_in_cli_terraform_and_json_and_quote_hostile_names():
+    import json as _json
+    import shlex
+
+    from app.estate import rules
+
+    fix = rules.generate_fix("public_access_block_missing", "acme-www", endpoint_url="http://minio:9000", region="us-east-1")
+    kinds = [f["format"] for f in fix["formats"]]
+    assert kinds == ["cli", "terraform", "json"]
+    tf = fix["formats"][1]["text"]
+    assert 'resource "aws_s3_bucket_public_access_block" "acme_www"' in tf and "restrict_public_buckets = true" in tf
+    assert "endpoints" in tf  # the custom endpoint belongs in the user's provider block
+    assert _json.loads(fix["formats"][2]["text"]) == fix["document"]
+
+    evil = "x; rm -rf ~ ${jndi}"
+    fix = rules.generate_fix("no_default_encryption", evil)
+    argv = shlex.split(fix["command"])
+    assert argv[argv.index("--bucket") + 1] == evil  # one argument, never a second command
+    tf = next(f["text"] for f in fix["formats"] if f["format"] == "terraform")
+    assert "$${jndi}" in tf and '"x_' in tf.split("\n")[0]
+
+    lc = rules.generate_fix("noncurrent_never_expire", "b")
+    tf = next(f["text"] for f in lc["formats"] if f["format"] == "terraform")
+    assert "noncurrent_version_expiration" in tf and "noncurrent_days = 30" in tf
+
+
+def _s3_log_line(bucket, requester, key, ts="06/Feb/2026:00:00:38 +0000"):
+    return (f"79a59df900b949e5 {bucket} [{ts}] 192.0.2.3 {requester} 3E57427F3EXAMPLE REST.GET.OBJECT {key} "
+            f'"GET /{bucket}/{key} HTTP/1.1" 200 - 2662 2662 70 10 "-" "curl/8" - s9lzHYrFp76ZVxRcpX9+5cjAnEH2ROuNkd2BHfIa6UkFVdtjf5mKR3/eTPFvsiP/XV/VLi31234= SigV4 ECDHE-RSA-AES128-GCM-SHA256 AuthHeader {bucket}.s3.amazonaws.com TLSv1.2 - -')
+
+
+def test_the_impact_preview_reads_evidence_and_says_when_it_cannot_tell(client):
+    from app.db import connect
+    from app.estate import store as estate
+
+    pid = _provider(client, "logs")
+    conn = connect()
+    try:
+        estate.ingest_survey(conn, pid, {"buckets": [
+            {"bucket_name": "site", "publicly_exposed": True, "lifecycle_status": "available"},
+            {"bucket_name": "quiet", "public_access_block_status": "not_configured", "lifecycle_status": "not_configured"}]})
+    finally:
+        conn.close()
+    issues = {(i["bucket"], i["code"]): i for i in client.get("/issues", params={"provider_id": pid}).json()}
+
+    # No access log yet: the preview says it cannot tell.
+    out = client.get(f"/issues/{issues[('site', 'public_exposure')]['id']}/impact").json()
+    assert out["verdict"] == "unknown" and "Cannot tell" in out["gaps"][0]
+
+    # Attach an S3 server access log: 2 of 3 requests to `site` were anonymous.
+    task = client.post("/tasks", json={}).json()["task"]
+    lines = [_s3_log_line("site", "-", "img/a.png"), _s3_log_line("site", "-", "img/b.png"),
+             _s3_log_line("site", "arn:aws:iam::123456789012:user/ci", "build/x.tgz"),
+             _s3_log_line("quiet", "arn:aws:iam::123456789012:user/ci", "k")]
+    r = client.post(f"/tasks/{task['id']}/files", files={"file": ("access.log", "\n".join(lines).encode())},
+                    data={"dataset_type": "access_log"})
+    assert r.status_code in (200, 201), r.text
+    out = client.get(f"/issues/{issues[('site', 'public_exposure')]['id']}/impact").json()
+    assert out["verdict"] == "caution"
+    anon = next(p for p in out["points"] if p["evidence"] == "access_log" and "count" in p)
+    assert (anon["count"], anon["total"]) == (2, 3)
+    assert any("img" in p["text"] for p in out["points"])
+    # Aggregates only: no requester ARN, no IP, no raw line in the preview.
+    assert "arn:aws" not in str(out) and "192.0.2.3" not in str(out)
+
+    out = client.get(f"/issues/{issues[('quiet', 'public_access_block_missing')]['id']}/impact",
+                     params={"lang": "zh"}).json()
+    assert out["verdict"] == "low" and "没有匿名请求" in out["points"][0]["text"]
+
+    # Lifecycle: an existing configuration would be replaced; none means nothing is.
+    site_mpu = issues.get(("site", "no_abort_mpu"))
+    quiet_mpu = issues[("quiet", "no_abort_mpu")]
+    assert client.get(f"/issues/{quiet_mpu['id']}/impact").json()["verdict"] == "low"
+    if site_mpu:
+        assert client.get(f"/issues/{site_mpu['id']}/impact").json()["verdict"] == "caution"
+
+
+def test_the_agent_keeps_a_note_and_previews_a_fix_in_a_real_turn(client):
+    from app.db import connect
+    from app.estate import store as estate
+
+    from .fake_model import FakeModel, text_turn, tool_turn
+    from .test_v500_estate import _settled, _use_model
+
+    pid = _provider(client, "turn")
+    conn = connect()
+    try:
+        estate.ingest_survey(conn, pid, {"buckets": [{"bucket_name": "b9", "encryption_status": "not_configured"}]})
+    finally:
+        conn.close()
+    iid = client.get("/issues", params={"provider_id": pid}).json()[0]["id"]
+    with FakeModel([
+        tool_turn("fix_preview", {"issue_id": iid}),
+        tool_turn("note", {"text": "b9 holds build caches; encryption is wanted.", "provider_id": pid, "bucket": "b9"}),
+        text_turn("Here is the fix."),
+    ]) as model:
+        _use_model(client, model)
+        task = client.post("/tasks", json={"direction": "Show me the fix for b9"}).json()["task"]
+        snap = _settled(client, task["id"])
+    outs = {i["payload"]["name"]: i["payload"] for i in snap["items"] if i["type"] == "tool_output"}
+    assert outs["fix_preview"]["ok"] and outs["note"]["ok"]
+    notes = client.get("/notes", params={"provider_id": pid, "bucket": "b9"}).json()
+    assert notes[0]["source"] == "agent" and notes[0]["task_id"] == task["id"]
+    # Previewing never changes the issue: only the user proposes a fix.
+    assert client.get(f"/issues/{iid}").json()["status"] == "open"

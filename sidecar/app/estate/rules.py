@@ -15,6 +15,7 @@ cannot see is never resolved by that silence.
 from __future__ import annotations
 
 import json
+import shlex
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -200,17 +201,21 @@ def generate_fix(code: str, bucket: str, *, endpoint_url: str | None = None,
         return None
     target = ""
     if endpoint_url:
-        target += f" --endpoint-url {endpoint_url}"
+        target += f" --endpoint-url {shlex.quote(endpoint_url)}"
     if region:
-        target += f" --region {region}"
+        target += f" --region {shlex.quote(region)}"
     fix["command"] = fix["command"].replace("aws s3api ", "aws" + target + " s3api ", 1)
     if endpoint_url:
         fix["notes"].insert(0, f"Runs against {endpoint_url} — use credentials for that account.")
+    from .fixpacks import formats
+    fix["formats"] = formats(fix, bucket, endpoint_url=endpoint_url, region=region)
     return fix
 
 
 def _fix(code: str, bucket: str) -> dict[str, Any] | None:
-    b = bucket
+    # The name came from a listing — a hostile endpoint can name a bucket
+    # `x; rm -rf ~`. It is shell-quoted in text the user copies into a terminal.
+    b = shlex.quote(bucket)
     if code in ("public_exposure", "public_access_block_missing"):
         doc = _PAB
         return {

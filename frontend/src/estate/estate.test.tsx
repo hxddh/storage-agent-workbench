@@ -25,6 +25,14 @@ const page = {
   notes: [{ id: "n1", provider_id: "p1", bucket: "acme-www", text: "Serves the marketing site.", source: "agent",
     task_id: null, issue_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" }],
 };
+const fixed = { ...issue, id: "i2", status: "fix_proposed", fixable: true, fix: {
+  kind: "public_access_block", command: "aws s3api put-public-access-block --bucket acme-www", notes: ["Blocks public ACLs."],
+  document: { BlockPublicAcls: true },
+  formats: [
+    { format: "cli", label: "AWS CLI", text: "aws s3api put-public-access-block --bucket acme-www" },
+    { format: "terraform", label: "Terraform", text: 'resource "aws_s3_bucket_public_access_block" "acme_www" {}' },
+    { format: "json", label: "PublicAccessBlockConfiguration", text: '{ "BlockPublicAcls": true }' },
+  ] } };
 const estate = { providers: [{ provider_id: "p1", name: "Prod", provider_type: "aws", bucket_count: 1,
   last_checked_at: null, open_issues: { high: 1, medium: 0, low: 0 }, watch: { enabled: false, interval_hours: 24 } }],
   bucket_count: 1, issues: [issue], open_issue_count: 1, last_watch_at: null };
@@ -37,7 +45,10 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
     let body: unknown = [];
-    if (url.includes("/estate/providers/p1/buckets/acme-www")) body = page;
+    if (url.includes("/impact")) {
+      body = { verdict: "caution", gaps: ["The access logs were truncated at ingest; counts are a lower bound."],
+        points: [{ text: "2 of 3 requests to this bucket were anonymous.", evidence: "access_log", count: 2, total: 3 }] };
+    } else if (url.includes("/estate/providers/p1/buckets/acme-www")) body = page;
     else if (url.includes("/estate/providers/p1/buckets")) {
       body = { buckets: [{ bucket: "acme-www", region: "us-east-1", last_checked_at: null, open_issues: { high: 1, medium: 0, low: 0 } }], notes: [] };
     } else if (url.includes("/estate")) body = estate;
@@ -95,5 +106,21 @@ describe("the estate view", () => {
     await act(async () => { fireEvent.submit(screen.getByLabelText(/Why is this acceptable/).closest("form")!); });
     const post = calls.find((c) => c.url.includes("/issues/i1/accept"));
     expect(JSON.parse(String(post?.init?.body))).toEqual({ accepted: true, reason: "Static site." });
+  });
+});
+
+describe("a fix pack", () => {
+  it("offers CLI, Terraform and the API document, and previews the impact from evidence", async () => {
+    const { IssueCard } = await import("./IssueCard");
+    await act(async () => { render(wrap(<ul><IssueCard issue={fixed as never} onChange={() => {}} /></ul>)); });
+    fireEvent.click(screen.getByText("Bucket is publicly exposed", { selector: ".issue-title" }));
+    const pack = await screen.findByTestId("fix-pack");
+    expect(pack.querySelector("pre")).toHaveTextContent("aws s3api put-public-access-block");
+    fireEvent.click(screen.getByRole("button", { name: "Terraform" }));
+    expect(pack.querySelector("pre")).toHaveTextContent('resource "aws_s3_bucket_public_access_block"');
+    const impact = await screen.findByTestId("impact");
+    expect(await screen.findByText("Check before applying")).toBeInTheDocument();
+    expect(impact).toHaveTextContent("2 of 3 requests to this bucket were anonymous.");
+    expect(impact).toHaveTextContent("counts are a lower bound");
   });
 });

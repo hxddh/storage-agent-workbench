@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...estate import notes as estate_notes
+from ...estate import rules
 from ...estate import store as estate
 from ...skills import context as skill_context
 from ..recorder import Finding
@@ -50,6 +51,34 @@ def query_estate(provider_id: str = "", bucket: str = "", status: str = "active"
     return {"success": True, "buckets": known[:200], "bucket_count": len(known),
             "issues": estate.list_issues(conn, status=status, provider_id=provider_id or None,
                                          bucket=bucket or None, limit=100, lang=lang)}
+
+
+@tool(group="core", core=True, timeout=30)
+def fix_preview(issue_id: str) -> dict[str, Any]:
+    """The generated fix for an estate issue — AWS CLI, Terraform and the API document — and what applying
+    it would change, from the evidence the estate holds (posture, attached access logs). Present the fix as
+    text the user applies with their own credentials; you never apply it. Say plainly what the preview
+    cannot tell. Get issue ids from query_estate or the estate digest.
+
+    Args:
+        issue_id: The issue id.
+    """
+    from ...estate import fixpacks
+    ctx = current()
+    conn = ctx.conn()
+    issue = estate.get_issue(conn, issue_id, ctx.turn.lang)
+    if issue is None:
+        return {"error": "Unknown issue id. Use query_estate to find it."}
+    cp = conn.execute("SELECT endpoint_url, region FROM cloud_providers WHERE id = ?",
+                      (issue["provider_id"],)).fetchone()
+    fix = rules.generate_fix(issue["code"], issue["bucket"], endpoint_url=(cp["endpoint_url"] if cp else None) or None,
+                             region=(cp["region"] if cp else None) or None)
+    if fix is None:
+        return {"success": True, "fixable": False, "issue": issue["title"],
+                "note": "The fix depends on intent (who should have access); there is no generated fix."}
+    return {"success": True, "fixable": True, "issue": issue["title"], "bucket": issue["bucket"],
+            "formats": fix["formats"], "notes": fix["notes"],
+            "impact": fixpacks.impact(conn, issue, ctx.turn.lang)}
 
 
 @tool(group="core", core=True, untrusted=False, timeout=10,
