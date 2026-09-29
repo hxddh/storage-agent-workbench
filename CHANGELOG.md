@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [8.1.0] - 2026-09-29
+
+_The rest of the review: the findings v8.0 left open, closed._ See `docs/releases/8.1.0.md`.
+
+### Fixed
+
+- Per-turn tool budgets are spent under a lock (parallel calls could overspend).
+- A tool thread that outlives its Stop or timeout writes nothing after the turn's record closes.
+- The Agent's note is refused honestly when only the user's notes fill the store; trimming never removes the note just written.
+- Recovery no longer moves a reader who switched to another version.
+- Triage proposals name the real tools.
+- Window: no stale frame on task switch; menus close on an outside click; localized preset hints, check result, toast and chart label; Ctrl key caps off Apple platforms.
+- The live model eval fails without its key instead of reporting success.
+
+### Removed
+
+- Nine unused strings.
+
 ## [8.0.0] - 2026-09-29
 
 _Fewer things, each working: the bugs a full review of v7 found are fixed, and what did not earn its place is removed — on the same native core._ See `docs/releases/8.0.0.md`.

@@ -435,7 +435,7 @@ Indexes: `idx_audit_at (at)` and `idx_audit_task (task_id, id)`.
 | --- | --- | --- |
 | `tool.<name>` | `agent` | `{args, summary}`, or `{refused}` with `ok = 0` for a scope refusal |
 | `tool.<name>` | `mcp`, or `user` for `tool.test_credentials` from Settings | `{args}`, or `{refused}` |
-| `tool.review_bucket_security`, `tool.review_bucket_lifecycle` | `user` (Verify) or `watch` (sweep re-check) | `{source}` |
+| `tool.review_bucket_security`, `tool.review_bucket_lifecycle` (the engine reads behind `review_bucket_config`) | `user` (Verify) or `watch` (sweep re-check) | `{source}` |
 | `evidence.import` | `agent` | `{source_type, files, bytes, approved_by: "agent", bounds: {files, bytes}}` |
 | `file.upload` | `user` | `{type, bytes}` |
 | `task.rename`, `task.delete` | `user` | — |

@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v8.0.0.**
+> **Current baseline: Storage Agent v8.1.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
