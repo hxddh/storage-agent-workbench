@@ -86,3 +86,18 @@ export const acceptIssue = (id: string, accepted: boolean, lang: string) =>
     method: "POST",
     body: JSON.stringify({ accepted }),
   });
+
+// --- proactive watch (opt-in per cloud provider, off by default) ---
+
+export const getProviderWatch = (providerId: string) =>
+  request<WatchState & { running: boolean }>(`/estate/watch/${encodeURIComponent(providerId)}`);
+
+export const setProviderWatch = (providerId: string, enabled: boolean, intervalHours: number) =>
+  request<WatchState & { running: boolean }>(`/estate/watch/${encodeURIComponent(providerId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled, interval_hours: intervalHours }),
+  });
+
+/** Check now: one read-only sweep in the background (one at a time). */
+export const runProviderWatch = (providerId: string) =>
+  request<{ started: boolean }>(`/estate/watch/${encodeURIComponent(providerId)}/run`, { method: "POST" });

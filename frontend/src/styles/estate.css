@@ -97,3 +97,17 @@
 .estate-fix-notes { margin: 0; padding-left: 18px; color: var(--gray-400); font-size: var(--text-2xs); line-height: 1.5; }
 .estate-issue-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 @media (prefers-reduced-motion: reduce) { .estate-issue-body { animation: none; } }
+
+/* v4.0 — a cloud provider's watch row in Settings. */
+.provider-watch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 8px;
+  border-top: 1px solid var(--edge);
+  padding-top: 8px;
+}
+.provider-watch-label { color: var(--gray-300); font-size: var(--text-2xs); font-weight: 500; }
+.provider-watch-note { flex-basis: 100%; margin: 0; color: var(--gray-500); font-size: var(--text-2xs); line-height: 1.45; }
+.provider-watch-status { display: inline-flex; align-items: center; gap: 6px; }

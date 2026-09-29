@@ -1,7 +1,18 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v3.1.0** (`v3.1.0`).
-> **v3.1.0 is Outputs made real** (`docs/releases/3.1.0.md`): the Task report
+> **Current architecture baseline: Storage Agent v4.0.0** (`v4.0.0`).
+> **v4.0.0 is the resident Agent for the storage estate** (`docs/releases/4.0.0.md`):
+> the estate is the object and Agent Tasks are how work is done. What a survey
+> or config review establishes outlives the task that asked — buckets and their
+> posture per account, and **Issues** opened only by deterministic
+> observations, with a lifecycle (open → fix proposed → resolved, recurred when
+> they come back). A fix is text the user applies; Verify is a read-only
+> re-check. An opt-in, off-by-default **watch** sweeps an account read-only on
+> the Sidecar's clock and opens one task when something new turns up. The home
+> says what to care about now (readiness, the estate, open Issues); every task
+> starts knowing the estate. Migration **032**. The live golden task runs a
+> real Execution against a real S3 server in CI.
+> **v3.1.0 was Outputs made real** (`docs/releases/3.1.0.md`): the Task report
 > is rebuilt conclusion-first (Goal · Conclusion · one Findings list · Next
 > steps · the per-Direction record · Coverage and gaps · the record · Safety)
 > in the reader's language (`GET /sessions/{id}/report?lang=en|zh`); the Result
@@ -55,7 +66,7 @@
 > `docs/roadmap.md`. **v1.19.0 is the Document-native window**
 > (`docs/releases/1.19.0.md`): the Task reads as a document, not a message exchange.
 >
-> The normative product invariant is: **the Agent Task is the application**.
+> The normative product invariant is (v4.0): **the estate is the object; Agent Tasks are how work is done** (v0.94–v3.1: *the Agent Task is the application*).
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
 > added quantified storage engines under that runtime. v1.00–v1.03 removed the
 > copilot/workbench shells and added gated native-agent extensions. v1.04–v1.08
@@ -83,7 +94,7 @@
 > context compaction (`context.compacted`, ⌘K Compact context), `AGENTS.md`
 > instructions, Execution detail from the durable log, wall-clock *Worked
 > for …*, and the frontend split into document / runner / api modules.
-> Migration head was **030** through v1.19.0 (v1.13.0–v1.19.0 add no migration; v2.0.0 appends **031**; v2.1.0, v2.2.0, v3.0.0 and v3.1.0 add none).
+> Migration head was **030** through v1.19.0 (v1.13.0–v1.19.0 add no migration; v2.0.0 appends **031**; v2.1.0, v2.2.0, v3.0.0 and v3.1.0 add none; v4.0.0 appends **032**, the storage estate).
 > **v1.14.0 is interaction truth and content craft.** Steering reaches waiting
 > executions, queued Directions edit until they run, Execution detail shows
 > measured usage, figures and evidence read localized, times read relative,
@@ -154,9 +165,9 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`architecture.md`](architecture.md) — Tauri/React/Sidecar topology and ownership boundaries.
 - [`security.md`](security.md) — secret, tool, model-context, evidence and data-movement-bound guarantees.
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
-- [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 031, and product-to-persistence mapping.
+- [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 032, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — next direction after **v3.1.0 — Outputs made real**. Delivered history lives in `releases/`.
+- [`roadmap.md`](roadmap.md) — next direction after **v4.0.0 — the resident Agent for the storage estate**. Delivered history lives in `releases/`.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.

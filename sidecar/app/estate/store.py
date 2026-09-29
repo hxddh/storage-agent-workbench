@@ -344,7 +344,7 @@ def overview(conn: sqlite3.Connection, lang: str = "en") -> dict[str, Any]:
             "bucket_count": b["n"],
             "last_checked_at": b["at"],
             "open_issues": {s: counts.get(s, 0) for s in ("high", "medium", "low")},
-            "watch": _watch_out(w),
+            "watch": {**_watch_out(w), "running": _sweep_running(p.id)},
         })
     care = [i for i in list_issues(conn, status="active", limit=50, lang=lang)
             if i["status"] != "accepted"]
@@ -356,6 +356,11 @@ def overview(conn: sqlite3.Connection, lang: str = "en") -> dict[str, Any]:
         "issues": care[:20],
         "last_watch_at": last_watch,
     }
+
+
+def _sweep_running(provider_id: str) -> bool:
+    from . import watch
+    return watch.is_running(provider_id)
 
 
 def _watch_out(row: sqlite3.Row | None) -> dict[str, Any]:

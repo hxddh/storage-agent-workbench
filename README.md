@@ -1,12 +1,14 @@
 # Storage Agent
 
-**Current release: v2.1.0**
+**Current release: v4.0.0**
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. Give it a storage goal or problem; it investigates with real read-only tools, remains steerable and stoppable while it works, keeps its one data-moving tool inside hard server-side bounds, and produces durable results backed by reviewable execution and evidence.
 
-The product is organized around one invariant:
+The product is organized around one invariant (v4.0):
 
-> **The Agent Task is the application.**
+> **The estate is the object; Agent Tasks are how work is done.**
+
+What the Agent learns about your storage — accounts, buckets, their posture and the Issues found there — outlives the task that learned it. Issues carry a lifecycle (open → fix proposed → resolved, recurred when they come back); fixes are text you apply (the Agent never writes to storage) and Verify re-checks read-only. An opt-in watch re-checks an account on a schedule and opens one task when something new turns up. The home shows what to care about now.
 
 Canonical work model:
 
@@ -15,6 +17,10 @@ Canonical work model:
 Storage Agent is not a chatbot wrapped around a storage console, and it is not a page-per-backend-table admin application.
 
 ## How the product works
+
+### Storage estate (v4.0)
+
+Completed surveys and config reviews are remembered per account. The home lists open Issues most severe first; each opens the task that found it, shows a generated fix to copy and apply yourself, and can be verified with a read-only re-check. Settings › Cloud Providers turns the watch on per account (off by default).
 
 ### Agent Task
 

@@ -86,6 +86,16 @@ _AUTH_TOKEN = os.environ.get("STORAGE_AGENT_AUTH_TOKEN") or None
 _AUTH_EXEMPT_PATHS = {"/health"}
 
 
+def watch_tick_seconds() -> int:
+    """How often the estate watch looks for due sweeps
+    (`STORAGE_AGENT_WATCH_TICK_SECONDS`, default 60, floor 5)."""
+    raw = os.environ.get("STORAGE_AGENT_WATCH_TICK_SECONDS", "60")
+    try:
+        return max(5, int(raw))
+    except ValueError:
+        return 60
+
+
 def revisit_tick_seconds() -> int:
     """How often the revisit scheduler looks for due schedules
     (`STORAGE_AGENT_REVISIT_TICK_SECONDS`, default 60, floor 5)."""
@@ -147,7 +157,20 @@ async def lifespan(_app: FastAPI):
             except Exception:  # noqa: BLE001 — a failed tick retries next time
                 pass
 
-    loop_tasks = [asyncio.create_task(_periodic()), asyncio.create_task(_revisits())]
+    async def _watch():
+        # v4.0 — the estate watch: opt-in per provider, off by default; due
+        # sweeps run on the Sidecar's own clock, read-only and bounded.
+        from .estate import watch as estate_watch
+        interval = watch_tick_seconds()
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await asyncio.to_thread(estate_watch.tick)
+            except Exception:  # noqa: BLE001 — a failed tick retries next time
+                pass
+
+    loop_tasks = [asyncio.create_task(_periodic()), asyncio.create_task(_revisits()),
+                  asyncio.create_task(_watch())]
     try:
         yield
     finally:

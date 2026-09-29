@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [4.0.0] - 2026-09-29
+
+_The resident Agent for the storage estate — the estate is the object; Agent Tasks are how work is done. Migration **032**; storage stays read-only; one Agent and one submit path unchanged._ See `docs/releases/4.0.0.md`.
+
+### Added
+
+- **Estate** (`sidecar/app/estate/`, migration 032): completed surveys and config reviews project onto `estate_buckets` and deterministic **Issues** (`issues`, `issue_events`) with a lifecycle — open → fix proposed → resolved → recurred; accept risk. Model prose never opens or closes an Issue; a blind read decides nothing.
+- **Fix and Verify** — deterministic fix text the user applies (public access block, default encryption, lifecycle rules); a read-only re-check recorded as tool calls.
+- **Proactive watch** — opt-in per cloud provider, off by default (1 h–7 d, Check now): a bounded read-only sweep on the Sidecar's clock that opens one task through `runtime.submit` only when something new turned up, and notifies once.
+- **Home** — readiness (model · storage), starters that need storage say so, *Your storage* and *Needs care*.
+- **`known_estate`** prompt block — every task starts knowing the estate.
+- API: `/estate`, `/issues` (+ fix / verify / accept), `/estate/watch/{provider_id}` (+ run).
+- Live golden task against a real S3 server (moto) in CI.
+
+### Changed
+
+- The product invariant: *the estate is the object; Agent Tasks are how work is done* (was *the Agent Task is the application*).
+
 ## [3.1.0] - 2026-09-26
 
 _Outputs made real — the report, the findings and the side pane now say what the Task actually recorded, and the design system is finished. No migration (head stays **031**); the runtime, the security floor and the single submit path are unchanged._ See `docs/releases/3.1.0.md`.

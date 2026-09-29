@@ -77,3 +77,40 @@ def accept_issue(issue_id: str, body: AcceptBody, lang: str | None = None,
     if not store.set_accepted(conn, issue_id, body.accepted):
         raise HTTPException(404, "issue not found")
     return store.get_issue(conn, issue_id, _lang(lang))
+
+
+# --- proactive watch (opt-in per cloud provider, off by default) -------------
+
+class WatchBody(BaseModel):
+    enabled: bool
+    interval_hours: int = 24
+
+
+def _provider_or_404(conn: sqlite3.Connection, provider_id: str) -> None:
+    from ..repositories import cloud_providers as cloud_repo
+    if cloud_repo.get(conn, provider_id) is None:
+        raise HTTPException(404, "cloud provider not found")
+
+
+@router.get("/estate/watch/{provider_id}")
+def get_watch(provider_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+    from ..estate import watch
+    _provider_or_404(conn, provider_id)
+    return {**watch.get(conn, provider_id), "running": watch.is_running(provider_id)}
+
+
+@router.put("/estate/watch/{provider_id}")
+def put_watch(provider_id: str, body: WatchBody, conn: sqlite3.Connection = Depends(get_conn)):
+    from ..estate import watch
+    _provider_or_404(conn, provider_id)
+    out = watch.set_watch(conn, provider_id, enabled=body.enabled, interval_hours=body.interval_hours)
+    return {**out, "running": watch.is_running(provider_id)}
+
+
+@router.post("/estate/watch/{provider_id}/run", status_code=202)
+def run_watch(provider_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+    """Check now: one read-only sweep in the background (one at a time per
+    provider). It runs even when the watch is off — the user asked."""
+    from ..estate import watch
+    _provider_or_404(conn, provider_id)
+    return {"started": watch.run_now(provider_id)}

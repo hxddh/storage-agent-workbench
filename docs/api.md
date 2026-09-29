@@ -116,6 +116,11 @@ read-only verify) — never by model prose. No route here submits Agent work.
 | `POST` | `/issues/{id}/fix` | generate the deterministic fix (text the user applies; storage stays read-only); an open issue becomes `fix_proposed`; 409 when the rule has no generated fix |
 | `POST` | `/issues/{id}/verify` | read-only re-check (`review_bucket_security` / `review_bucket_lifecycle`, recorded as tool calls, scope-checked); `result` = `still_present` \| `resolved` \| `inconclusive` (a blind read decides nothing) |
 | `POST` | `/issues/{id}/accept` | `{accepted}` — accept the risk (leaves the home list) or reopen |
+| `GET` | `/estate/watch/{provider_id}` | the provider's watch (`enabled`, `interval_hours`, next/last run, last status `found`\|`clear`\|`failed`\|`running`, last summary, last task, `running`) |
+| `PUT` | `/estate/watch/{provider_id}` | `{enabled, interval_hours}` — opt-in (off by default); interval clamped to 1–168 h; turning it on schedules the first sweep for the next tick |
+| `POST` | `/estate/watch/{provider_id}/run` | 202 `{started}` — Check now: one read-only sweep in the background, one at a time per provider |
+
+A sweep (Sidecar clock, `STORAGE_AGENT_WATCH_TICK_SECONDS`, default 60 s) runs the survey engine (≤ 500 buckets), re-checks what posture cannot decide (≤ 25 buckets) and, only when a high/medium Issue was opened or came back, opens one Agent Task through `runtime.submit` with the evidence in its Direction. No model configured → no task; the Issues stay on the home.
 
 ## Health
 

@@ -116,3 +116,52 @@ describe("v4.0 the estate on the home", () => {
     expect(source("../api.ts")).toContain('export * from "./api/estate"');
   });
 });
+
+describe("v4.0 proactive watch", () => {
+  const watchState = { enabled: false, interval_hours: 24, next_run_at: null, last_run_at: null,
+    last_status: null, last_summary: null, last_task_id: null, running: false };
+
+  it("is off by default in Settings and turns on with an interval", async () => {
+    const setProviderWatch = vi.fn((_id: string, enabled: boolean, hours: number) =>
+      Promise.resolve({ ...watchState, enabled, interval_hours: hours }));
+    vi.doMock("../api", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../api")>()),
+      getProviderWatch: () => Promise.resolve(watchState),
+      setProviderWatch,
+    }));
+    const { ProviderWatch } = await import("../settings/ProviderWatch");
+    const { I18nProvider } = await import("../i18n");
+    render(<I18nProvider><ProviderWatch providerId="p1" /></I18nProvider>);
+    await waitFor(() => expect(screen.getByTestId("provider-watch")).toHaveAttribute("data-enabled", "false"));
+    expect(screen.getByRole("button", { name: "Off" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Daily" }));
+    await waitFor(() => expect(screen.getByTestId("provider-watch")).toHaveAttribute("data-enabled", "true"));
+    expect(setProviderWatch).toHaveBeenCalledWith("p1", true, 24);
+  });
+
+  it("notifies once per sweep that found something, never on the first read", async () => {
+    const notify = vi.fn(() => Promise.resolve(true));
+    vi.doMock("../hooks/useNativeAgent", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../hooks/useNativeAgent")>()), notifyNative: notify }));
+    let lastRun = "2026-09-28T10:00:00Z";
+    vi.doMock("../api", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../api")>()),
+      getEstate: () => Promise.resolve({ ...estate([]), providers: [{ ...estate([]).providers[0],
+        watch: { ...watchState, enabled: true, last_status: "found", last_run_at: lastRun, last_summary: "2 new" } }] }),
+    }));
+    localStorage.removeItem("saw.watch.seen");
+    const { useWatchAlerts } = await import("../hooks/useWatchAlerts");
+    const { I18nProvider } = await import("../i18n");
+    const onFound = vi.fn();
+    function Probe() { useWatchAlerts(true, onFound); return null; }
+    const first = render(<I18nProvider><Probe /></I18nProvider>);
+    await waitFor(() => expect(localStorage.getItem("saw.watch.seen")).toBe(lastRun));
+    expect(notify).not.toHaveBeenCalled();
+    first.unmount();
+    lastRun = "2026-09-28T11:00:00Z";
+    render(<I18nProvider><Probe /></I18nProvider>);
+    await waitFor(() => expect(notify).toHaveBeenCalledWith("Watch: prod", "2 new"));
+    expect(onFound).toHaveBeenCalledTimes(1);
+    expect(source("../hooks/useWatchAlerts.ts")).not.toContain("createTaskExecution");
+  });
+});
