@@ -166,6 +166,43 @@ export type Estate = {
   last_watch_at: string | null;
 };
 
+export type Note = {
+  id: string;
+  provider_id: string | null;
+  bucket: string | null;
+  text: string;
+  source: "user" | "agent" | "accept";
+  task_id: string | null;
+  issue_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BucketRow = {
+  bucket: string;
+  region: string | null;
+  last_checked_at: string | null;
+  open_issues: { high: number; medium: number; low: number };
+};
+
+export type TimelineEntry =
+  | { kind: "posture"; at: string; source: string; task_id: string | null; first: boolean; changed: string[];
+      posture: Record<string, unknown> }
+  | { kind: "issue"; at: string; source: string | null; event: string; issue_id: string; code: string; title: string;
+      severity: Severity };
+
+export type BucketPage = {
+  provider_id: string;
+  bucket: string;
+  region: string | null;
+  posture: Record<string, unknown>;
+  last_checked_at: string | null;
+  source_task_id: string | null;
+  issues: Issue[];
+  timeline: TimelineEntry[];
+  notes: Note[];
+};
+
 // --- providers & settings ----------------------------------------------------------
 
 export type ModelKind =

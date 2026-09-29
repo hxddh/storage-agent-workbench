@@ -8,7 +8,10 @@ import type { CloudProvider, ModelProvider } from "../api/types";
  * storage accounts. Work itself lives in the task store, never here.
  */
 
-export type Route = { kind: "home" } | { kind: "task"; id: string };
+export type Route =
+  | { kind: "home" }
+  | { kind: "task"; id: string }
+  | { kind: "estate"; providerId?: string; bucket?: string };
 export type PaneTab = "evidence" | "report" | "activity";
 export type Pane = { tab: PaneTab; callId?: string } | null;
 export type Editing = { turnId: string; parentTurnId: string | null; text: string } | null;
@@ -17,6 +20,7 @@ type Ctx = {
   route: Route;
   openTask: (id: string) => void;
   goHome: () => void;
+  openEstate: (providerId?: string, bucket?: string) => void;
   pane: Pane;
   setPane: (p: Pane) => void;
   sidebar: boolean;
@@ -40,8 +44,21 @@ type Ctx = {
 const AppContext = createContext<Ctx | null>(null);
 
 function readRoute(): Route {
-  const m = /^#\/task\/([A-Za-z0-9_-]+)/.exec(window.location.hash);
-  return m ? { kind: "task", id: m[1] } : { kind: "home" };
+  const hash = window.location.hash;
+  const m = /^#\/task\/([A-Za-z0-9_-]+)/.exec(hash);
+  if (m) return { kind: "task", id: m[1] };
+  const e = /^#\/estate(?:\/([A-Za-z0-9_-]+)(?:\/([^/]+))?)?\/?$/.exec(hash);
+  if (e) {
+    let bucket: string | undefined;
+    try { bucket = e[2] ? decodeURIComponent(e[2]) : undefined; } catch { bucket = undefined; }
+    return { kind: "estate", providerId: e[1], bucket };
+  }
+  return { kind: "home" };
+}
+
+export function estateHash(providerId?: string, bucket?: string): string {
+  if (!providerId) return "#/estate";
+  return bucket ? `#/estate/${providerId}/${encodeURIComponent(bucket)}` : `#/estate/${providerId}`;
 }
 
 function storedSidebar(): boolean {
@@ -101,6 +118,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     route,
     openTask: (id) => navigate(`#/task/${id}`, { kind: "task", id }),
     goHome: () => navigate("#/", { kind: "home" }),
+    openEstate: (providerId, bucket) => navigate(estateHash(providerId, bucket), { kind: "estate", providerId, bucket }),
     pane,
     setPane,
     sidebar,

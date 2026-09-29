@@ -1,7 +1,8 @@
 import { sidecarBaseUrl, sidecarToken } from "../config";
 import { ApiError, UPLOAD_TIMEOUT_MS, authHeaders, boundedController, errorDetail, request } from "./client";
 import type {
-  CloudProvider, Estate, FileRow, Issue, ModelProvider, ProbeResult, Settings, TaskRow, TaskSnapshot, Watch,
+  BucketPage, BucketRow, CloudProvider, Estate, FileRow, Issue, ModelProvider, Note, ProbeResult, Settings, TaskRow,
+  TaskSnapshot, Watch,
 } from "./types";
 
 export { ApiError };
@@ -62,8 +63,17 @@ export const api = {
   proposeFix: (id: string, lang: string) => request<Issue>(`/issues/${id}/fix?lang=${lang}`, { method: "POST" }),
   verifyIssue: (id: string, lang: string) =>
     request<{ result: string; issue: Issue }>(`/issues/${id}/verify?lang=${lang}`, { method: "POST" }),
-  acceptIssue: (id: string, accepted: boolean, lang: string) =>
-    request<Issue>(`/issues/${id}/accept?lang=${lang}`, { method: "POST", ...json({ accepted }) }),
+  acceptIssue: (id: string, accepted: boolean, lang: string, reason?: string) =>
+    request<Issue>(`/issues/${id}/accept?lang=${lang}`, { method: "POST", ...json({ accepted, reason: reason || null }) }),
+  buckets: (providerId: string) =>
+    request<{ buckets: BucketRow[]; notes: Note[] }>(`/estate/providers/${encodeURIComponent(providerId)}/buckets`),
+  bucket: (providerId: string, bucket: string, lang: string) =>
+    request<BucketPage>(`/estate/providers/${encodeURIComponent(providerId)}/buckets/${encodeURIComponent(bucket)}?lang=${lang}`),
+  notes: (query: string) => request<Note[]>(`/notes${query ? `?${query}` : ""}`),
+  addNote: (text: string, providerId?: string | null, bucket?: string | null) =>
+    request<Note>("/notes", { method: "POST", ...json({ text, provider_id: providerId ?? null, bucket: bucket ?? null }) }),
+  editNote: (id: string, text: string) => request<Note>(`/notes/${id}`, { method: "PATCH", ...json({ text }) }),
+  deleteNote: (id: string) => request<void>(`/notes/${id}`, { method: "DELETE" }),
   watch: (providerId: string) => request<Watch>(`/estate/watch/${providerId}`),
   setWatch: (providerId: string, enabled: boolean, intervalHours: number) =>
     request<Watch>(`/estate/watch/${providerId}`, { method: "PUT", ...json({ enabled, interval_hours: intervalHours }) }),

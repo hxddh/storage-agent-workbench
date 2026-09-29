@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...estate import notes as estate_notes
 from ...estate import store as estate
 from ...skills import context as skill_context
 from ..recorder import Finding
@@ -49,6 +50,28 @@ def query_estate(provider_id: str = "", bucket: str = "", status: str = "active"
     return {"success": True, "buckets": known[:200], "bucket_count": len(known),
             "issues": estate.list_issues(conn, status=status, provider_id=provider_id or None,
                                          bucket=bucket or None, limit=100, lang=lang)}
+
+
+@tool(group="core", core=True, untrusted=False, timeout=10,
+      summarize=lambda r: "kept" if (r or {}).get("success") else str((r or {}).get("error", ""))[:80])
+def note(text: str, provider_id: str = "", bucket: str = "") -> dict[str, Any]:
+    """Keep a short note about the estate that later tasks should remember — an owner, an intent, why a
+    setting is deliberate. The user sees and can edit or delete every note. Never note secrets or raw data.
+
+    Args:
+        text: The note, at most 1000 characters.
+        provider_id: The account it is about (optional).
+        bucket: The bucket it is about (optional; needs provider_id).
+    """
+    ctx = current()
+    if not ctx.budget("notes", 5):
+        return {"error": "Note budget for this turn is used up (5)."}
+    try:
+        n = estate_notes.add(ctx.conn(), text, provider_id=provider_id or None, bucket=bucket or None,
+                             source="agent", task_id=ctx.task_id)
+    except estate_notes.NoteError as exc:
+        return {"error": str(exc)}
+    return {"success": True, "note_id": n["id"]}
 
 
 @tool(group="core", core=True, untrusted=False, special="conclusion", timeout=10)

@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import type { Estate, Issue } from "../api/types";
+import type { Estate } from "../api/types";
 import { Composer } from "../composer/Composer";
 import { Icon } from "../components/icons";
-import { Badge, Button, SectionLabel, StatusDot } from "../components/ui";
-import { useToast } from "../components/Toast";
-import { useCopy } from "../hooks/useCopy";
+import { Badge, SectionLabel } from "../components/ui";
 import { setTrayStatus } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
 import { timeAgo } from "../lib/time";
 import { useApp } from "../shell/context";
-import { SEVERITY_TONE } from "../task/Result";
+import { IssueCard } from "../estate/IssueCard";
 
 /**
  * The home is "what to care about now": the greeting, the Composer, three
@@ -80,6 +78,7 @@ function Readiness() {
 
 function EstateView() {
   const { t, lang } = useI18n();
+  const app = useApp();
   const [estate, setEstate] = useState<Estate | null>(null);
   const reload = useCallback(async () => {
     try {
@@ -106,6 +105,8 @@ function EstateView() {
             const open = p.open_issues.high + p.open_issues.medium + p.open_issues.low;
             return (
               <li key={p.provider_id} className="estate-account">
+                <button type="button" className="estate-account-link" onClick={() => app.openEstate(p.provider_id)}
+                  data-testid="estate-account">
                 <div className="estate-account-head">
                   <Icon name="storage" size={16} />
                   <span className="estate-account-name">{p.name}</span>
@@ -118,6 +119,7 @@ function EstateView() {
                     p.watch.enabled ? t("home.watched", { interval: [6, 24, 168].includes(p.watch.interval_hours) ? t(`interval.${p.watch.interval_hours}`) : `${p.watch.interval_hours} h` }) : t("home.notWatched"),
                   ].join(" · ")}
                 </p>
+                </button>
               </li>
             );
           })}
@@ -134,91 +136,5 @@ function EstateView() {
         {more > 0 ? <p className="quiet-note">{t("home.careMore", { n: more })}</p> : null}
       </section>
     </>
-  );
-}
-
-function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange: () => void }) {
-  const { t, lang } = useI18n();
-  const app = useApp();
-  const toast = useToast();
-  const { copied, copy } = useCopy();
-  const [issue, setIssue] = useState(initial);
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [verdict, setVerdict] = useState<string | null>(null);
-  useEffect(() => setIssue(initial), [initial]);
-
-  const act = async (name: string, fn: () => Promise<Issue>) => {
-    setBusy(name);
-    try {
-      setIssue(await fn());
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(null);
-    }
-  };
-  const verify = async () => {
-    setBusy("verify");
-    try {
-      const out = await api.verifyIssue(issue.id, lang);
-      setVerdict(out.result);
-      setIssue(out.issue);
-      if (out.issue.status === "resolved") onChange();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <li className="issue" data-severity={issue.severity} data-status={issue.status} data-testid="issue">
-      <button type="button" className="issue-head" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <Badge tone={SEVERITY_TONE[issue.severity]}>{t(`sev.${issue.severity}`)}</Badge>
-        <span className="issue-title">{issue.title}</span>
-        <span className="issue-where">{issue.bucket}</span>
-        {issue.status !== "open" ? <span className="issue-status">{t(`issue.status.${issue.status}`)}</span> : null}
-        <Icon name="chevron" size={14} className="issue-caret" />
-      </button>
-      {open ? (
-        <div className="issue-body reveal">
-          <p className="quiet-note">{issue.provider_name} · {t("issue.firstSeen", { when: timeAgo(issue.first_seen_at, t) })}</p>
-          {issue.detail ? <p>{issue.detail}</p> : null}
-          {issue.fix ? (
-            <div className="issue-fix">
-              <pre><code>{issue.fix.command}</code></pre>
-              <Button size="sm" icon={copied ? "check" : "copy"} onClick={() => copy(issue.fix!.command)}>
-                {copied ? t("common.copied") : t("issue.copyCommand")}
-              </Button>
-              <p className="quiet-note">{t("issue.fixNote")}</p>
-            </div>
-          ) : !issue.fixable ? <p className="quiet-note">{t("issue.noFix")}</p> : null}
-          {verdict ? (
-            <p className="issue-verdict">
-              <StatusDot tone={verdict === "resolved" ? "success" : verdict === "still_present" ? "warn" : "neutral"} />
-              {t(`issue.verify.${verdict}`)}
-            </p>
-          ) : null}
-          <div className="issue-actions">
-            {issue.fixable && !issue.fix ? (
-              <Button size="sm" variant="primary" disabled={!!busy} onClick={() => void act("fix", () => api.proposeFix(issue.id, lang))}>
-                {t("issue.fix")}
-              </Button>
-            ) : null}
-            <Button size="sm" disabled={!!busy} onClick={() => void verify()}>
-              {busy === "verify" ? t("issue.verifying") : t("issue.verify")}
-            </Button>
-            {issue.source_task_id ? (
-              <Button size="sm" variant="ghost" onClick={() => app.openTask(issue.source_task_id!)}>{t("issue.openTask")}</Button>
-            ) : null}
-            <Button size="sm" variant="ghost" disabled={!!busy}
-              onClick={() => void act("accept", () => api.acceptIssue(issue.id, issue.status !== "accepted", lang)).then(onChange)}>
-              {issue.status === "accepted" ? t("issue.unaccept") : t("issue.accept")}
-            </Button>
-          </div>
-        </div>
-      ) : null}
-    </li>
   );
 }

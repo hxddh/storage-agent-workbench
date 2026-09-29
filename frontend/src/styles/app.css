@@ -193,6 +193,61 @@ button.model-chip:hover { background: var(--hover); color: var(--gray-100); }
 .estate-account-head { display: flex; align-items: center; gap: var(--space-2); color: var(--gray-400); }
 .estate-account-name { flex: 1; color: var(--gray-100); font-weight: 600; }
 .estate-account-meta { margin: var(--space-1) 0 0; color: var(--gray-400); font-size: var(--text-2xs); }
+.estate-account { padding: 0; }
+.estate-account-link {
+  display: block; width: 100%; padding: var(--space-3) var(--space-4); border: 0; border-radius: inherit;
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.estate-account-link:hover { background: var(--hover); }
+
+/* The estate view: accounts, an account's buckets, a bucket page. */
+.estate-page { max-width: var(--doc-measure); margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-12); }
+.page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.page-title { margin: 0; font-size: var(--text-2xl); line-height: var(--leading-2xl); font-weight: 600; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.page-meta { margin: var(--space-2) 0 0; color: var(--gray-400); font-size: var(--text-sm); }
+.page-section { display: grid; gap: var(--space-3); margin-top: var(--space-8); }
+.estate-empty { display: grid; gap: var(--space-3); justify-items: start; margin-top: var(--space-6); color: var(--gray-300); }
+.mono { font-family: "JetBrains Mono Variable", ui-monospace, monospace; }
+.link { padding: 0; border: 0; background: none; color: var(--accent-text); font: inherit; cursor: pointer; }
+.link:hover { text-decoration: underline; }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin-bottom: var(--space-3); color: var(--gray-500); font-size: var(--text-sm); }
+.crumbs button { padding: 0; border: 0; background: none; color: var(--gray-400); font: inherit; cursor: pointer; }
+.crumbs button:hover { color: var(--gray-100); }
+.crumbs span { color: var(--gray-300); }
+.bucket-list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--edge); border-radius: var(--radius-lg); overflow: hidden; }
+.bucket-list li + li { border-top: 1px solid var(--edge); }
+.bucket-row {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-3) var(--space-4);
+  border: 0; background: transparent; color: var(--gray-200); font: inherit; text-align: left; cursor: pointer;
+}
+.bucket-row:hover { background: var(--panel); }
+.bucket-name { min-width: 0; overflow: hidden; color: var(--gray-100); text-overflow: ellipsis; white-space: nowrap; }
+.bucket-meta { flex: 1; min-width: 0; overflow: hidden; color: var(--gray-400); font-size: var(--text-2xs); text-overflow: ellipsis; white-space: nowrap; }
+.bucket-caret { color: var(--gray-500); }
+.past-issues > summary { margin: var(--space-2) 0; color: var(--gray-400); font-size: var(--text-sm); cursor: pointer; }
+.posture { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0 var(--space-6); margin: 0; }
+.posture-row { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--edge); }
+.posture-row dt { color: var(--gray-400); }
+.posture-row dd { margin: 0; color: var(--gray-100); text-align: right; }
+.timeline { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.timeline-row { display: grid; grid-template-columns: var(--space-4) 1fr; gap: 0 var(--space-2); align-items: baseline; padding: var(--space-2) 0; }
+.timeline-row + .timeline-row { border-top: 1px solid var(--edge); }
+.timeline-mark { display: flex; align-items: center; height: 1lh; }
+.timeline-text { color: var(--gray-200); }
+.timeline-meta { grid-column: 2; color: var(--gray-500); font-size: var(--text-2xs); }
+.notes { display: grid; gap: var(--space-3); }
+.note-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.note { position: relative; display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-10) var(--space-3) var(--space-4); border: 1px solid var(--edge); border-radius: var(--radius-lg); background: var(--panel); }
+.note-text { margin: 0; color: var(--gray-100); white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-meta { margin: 0; color: var(--gray-500); font-size: var(--text-2xs); }
+.note-tools { position: absolute; top: var(--space-2); right: var(--space-2); display: flex; gap: 2px; opacity: 0; transition: opacity var(--duration-fast) var(--ease-out); }
+.note:hover .note-tools, .note:focus-within .note-tools { opacity: 1; }
+.note-edit, .note-add { display: grid; gap: var(--space-2); justify-items: start; }
+.note-edit textarea, .note-add textarea { width: 100%; resize: vertical; }
+.note-actions { display: flex; gap: var(--space-2); }
+.issue-accept { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.issue-accept .ui-input { flex: 1; min-width: 12rem; }
+@media (hover: none) { .note-tools { opacity: 1; } }
 .issues { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--edge); border-radius: var(--radius-lg); overflow: hidden; }
 .issue + .issue { border-top: 1px solid var(--edge); }
 .issue-head {
@@ -357,6 +412,12 @@ button.model-chip:hover { background: var(--hover); color: var(--gray-100); }
   .inspector { position: fixed; right: 0; top: 0; bottom: 0; z-index: 40; box-shadow: var(--shadow-pop); }
 }
 
+/* A narrow window: the sidebar overlays the document instead of squeezing it. */
+@media (max-width: 720px) {
+  .sidebar[data-open="true"] { position: fixed; left: 0; top: 0; bottom: 0; z-index: 40; box-shadow: var(--shadow-pop); }
+  .home, .estate-page { padding-left: var(--space-4); padding-right: var(--space-4); }
+}
+
 /* --- settings, palette ------------------------------------------------------------ */
 
 dialog { margin: auto; padding: 0; border: 0; color: inherit; }
@@ -432,3 +493,4 @@ dialog::backdrop { background: var(--scrim); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+.estate-page > .estate-accounts, .estate-page > .estate-empty { margin-top: var(--space-6); }
