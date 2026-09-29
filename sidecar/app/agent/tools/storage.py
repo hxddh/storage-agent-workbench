@@ -318,6 +318,9 @@ def test_range_get(provider_id: str, bucket: str, key: str, range_header: str = 
     return s3.test_range_get(ctx.conn(), provider_id, bucket, key, range_header)
 
 
+_PREVIEW_BYTES = 24 * 1024 * 1024
+
+
 @tool(group="objects", scope=_KEY, timeout=60, bounds={"max_bytes": (1024, 1024 * 1024)})
 def preview_object(provider_id: str, bucket: str, key: str, max_bytes: int = 262144) -> dict[str, Any]:
     """Read a bounded, sanitized preview of one object's content (its first bytes, at most 1 MiB) — a
@@ -332,9 +335,13 @@ def preview_object(provider_id: str, bucket: str, key: str, max_bytes: int = 262
         max_bytes: Bytes to read (default 256 KiB, at most 1 MiB).
     """
     ctx = current()
+    left = ctx.remaining("bytes", _PREVIEW_BYTES)
+    if left <= 0:
+        return {"error": "Object-preview byte budget for this turn is used up (24 MiB)."}
     if not ctx.budget("objects", 16):
         return {"error": "Object-preview budget for this turn is used up (16 objects)."}
-    res = s3.preview_object(ctx.conn(), provider_id, bucket, key, max_bytes)
-    if isinstance(res, dict) and not ctx.budget("bytes", 24 * 1024 * 1024, int(res.get("bytes_read") or 0)):
-        return {"error": "Object-preview byte budget for this turn is used up (24 MiB)."}
+    # The read itself is clamped to what is left, so the budget bounds bytes read — not just reported.
+    res = s3.preview_object(ctx.conn(), provider_id, bucket, key, min(max_bytes, left))
+    if isinstance(res, dict):
+        ctx.budget("bytes", _PREVIEW_BYTES, min(left, int(res.get("bytes_read") or 0)))
     return res

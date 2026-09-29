@@ -179,10 +179,18 @@ class Runtime:
             rec.notice("cancelled", queued=True)
         finally:
             rec.close()
-        # The head falls back to the cancelled turn's parent.
+        # The head falls back to the cancelled turn's parent — or, for a first
+        # Direction, to the newest other branch (none: the task reads empty).
         task = store.get_task(conn, task_id)
-        if task and task["head_turn_id"] == turn_id and turn["parent_turn_id"]:
-            store.set_head(conn, task_id, turn["parent_turn_id"])
+        if task and task["head_turn_id"] == turn_id:
+            if turn["parent_turn_id"]:
+                store.set_head(conn, task_id, turn["parent_turn_id"])
+            else:
+                other = conn.execute("SELECT id FROM turns WHERE task_id = ? AND parent_turn_id IS NULL AND id != ? "
+                                     "AND status != 'cancelled' ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                                     (task_id, turn_id)).fetchone()
+                if other:
+                    store.set_head(conn, task_id, store.leaf_of(conn, task_id, other["id"]))
         self._publish_state(conn, task_id)
         return True
 
@@ -380,8 +388,9 @@ class Runtime:
             return
         if summary:
             # Recorded on the oldest kept turn; history reads it first and skips the folded turns.
-            store.append_item(conn, task_id, chain[-(_KEEP_RECENT_TURNS + 1)]["id"], "compaction",
-                              {"summary": summary, "turns_folded": len(older), "folded": older})
+            item = store.append_item(conn, task_id, chain[-(_KEEP_RECENT_TURNS + 1)]["id"], "compaction",
+                                     {"summary": summary, "turns_folded": len(older), "folded": older})
+            hub.item(task_id, item)
             rec.notice("compacted", turns_folded=len(older))
 
     async def _maybe_title(self, task_id: str, turn_id: str) -> None:

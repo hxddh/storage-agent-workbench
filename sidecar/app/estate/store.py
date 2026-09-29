@@ -44,6 +44,7 @@ def fingerprint(provider_id: str, bucket: str, code: str) -> str:
 
 def upsert_bucket(conn: sqlite3.Connection, provider_id: str, bucket: str, *, region: str | None = None,
                   posture: dict[str, Any] | None = None, task_id: str | None = None) -> None:
+    task_id = task_id or None  # a call outside a task (the MCP bridge) never unlinks the one that found it
     existing = conn.execute("SELECT posture, region FROM estate_buckets WHERE provider_id = ? AND bucket = ?",
                             (provider_id, bucket)).fetchone()
     posture_json = _dumps(rules.posture_projection(posture)) if posture is not None else (
@@ -93,6 +94,7 @@ def observe(conn: sqlite3.Connection, provider_id: str, bucket: str, verdicts: d
     """Apply one source's decided verdicts. present+none → opened; present+resolved
     → recurred; present+active → seen; absent+active → resolved; undecided → nothing."""
     details = details or {}
+    task_id = task_id or None
     changes: list[dict[str, Any]] = []
     now = utcnow()
     for code, verdict in verdicts.items():

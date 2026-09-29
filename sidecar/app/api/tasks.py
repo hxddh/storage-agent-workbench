@@ -307,9 +307,16 @@ async def follow(task_id: str, request: Request, after: int = Query(default=0, g
     sub = hub.subscribe(task_id, loop)
 
     def replay(since: int) -> list[dict[str, Any]]:
+        """Every durable item after ``since``, however many (read in pages)."""
         c = connect()
+        out: list[dict[str, Any]] = []
         try:
-            return store.items_after(c, task_id, since)
+            while True:
+                page = store.items_after(c, task_id, since)
+                out.extend(page)
+                if len(page) < 2000:
+                    return out
+                since = page[-1]["seq"]
         finally:
             c.close()
 

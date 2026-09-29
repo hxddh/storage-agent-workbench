@@ -134,6 +134,10 @@ class CallContext:
     def progress(self, done: int, total: int, unit: str) -> None:
         self.turn.recorder.progress(self.call_id, self.tool, done, total, unit)
 
+    def remaining(self, key: str, limit: int) -> int:
+        """What is left of a per-turn budget, without spending it."""
+        return max(0, limit - self.turn.budgets.get(self.tool, {}).get(key, 0))
+
     def budget(self, key: str, limit: int, cost: int = 1) -> bool:
         """Spend from a per-turn budget; False when it would go over."""
         spent = self.turn.budgets.setdefault(self.tool, {}).get(key, 0)
@@ -338,10 +342,11 @@ async def invoke(td: ToolDef, tool_ctx: Any, raw_args: str) -> str:
     clean = redact(result)
     ok = _ok(clean)
     summary = redact_text((td.summarize or default_summary)(clean))[:240]
-    turn.recorder.tool_finished(call_id, td.name, ok, summary, clean, duration_ms)
     text = clean if isinstance(clean, str) else compact_json(clean)
     text = _bounded_for_model(text, td.max_model_chars)
-    return safety.envelope(text) if td.untrusted else text
+    model_text = safety.envelope(text) if td.untrusted else text
+    turn.recorder.tool_finished(call_id, td.name, ok, summary, clean, duration_ms, model_text=model_text)
+    return model_text
 
 
 def run_direct(conn: Any, name: str, args: dict[str, Any], fn: Callable[[], Any], *, actor: str) -> Any:
@@ -393,6 +398,10 @@ def call_direct(name: str, args: dict[str, Any], *, actor: str, allowed: frozens
                 _current.reset(token)
                 call.close()
 
-        return run_direct(conn, name, args, fn, actor=actor)
+        result = run_direct(conn, name, args, fn, actor=actor)
+        text = result if isinstance(result, str) else compact_json(result)
+        if len(text) > td.max_model_chars:
+            return {"truncated": True, "text": _bounded_for_model(text, td.max_model_chars)}
+        return result
     finally:
         conn.close()

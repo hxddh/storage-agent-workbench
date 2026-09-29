@@ -79,7 +79,7 @@ def list_tasks(conn: sqlite3.Connection, *, query: str | None = None, limit: int
     sql = ("SELECT t.*, "
            " (SELECT status FROM turns WHERE task_id = t.id AND status IN ('running','queued') "
            "  ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END LIMIT 1) AS live_status, "
-           " (SELECT status FROM turns WHERE task_id = t.id ORDER BY created_at DESC LIMIT 1) AS last_status "
+           " (SELECT status FROM turns WHERE task_id = t.id ORDER BY created_at DESC, rowid DESC LIMIT 1) AS last_status "
            "FROM tasks t")
     args: list[Any] = []
     if query:

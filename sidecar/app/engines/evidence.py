@@ -64,6 +64,21 @@ def import_source(conn: Any, *, task_id: str, provider_id: str, bucket: str, sou
         raise ImportRefused(f"No discovered {source_type} source for bucket '{bucket}'. Run survey_account first "
                             "— only a source the survey discovered can be imported.")
     files_cap, bytes_cap = _clamp(max_files, MAX_FILES), _clamp(max_bytes, MAX_BYTES)
+    # Planning lists the SOURCE (the inventory destination or the logging target),
+    # which can be another bucket: it must be in the account's scope too.
+    if source_type == "inventory":
+        cfg0 = (detail.get("configurations") or [{}])[0]
+        src_bucket, src_prefix = cfg0.get("destination_bucket"), cfg0.get("destination_prefix") or ""
+    else:
+        src_bucket, src_prefix = detail.get("target_bucket"), detail.get("target_prefix") or ""
+    from ..providers import clouds
+    from ..s3.scope import check_scope
+    cloud = clouds.get(conn, provider_id)
+    if cloud is not None and src_bucket:
+        denial = check_scope(cloud.allowed_buckets, cloud.allowed_prefixes, src_bucket, prefix=src_prefix,
+                             listing=True)
+        if denial:
+            raise ImportRefused(f"The evidence source is outside this account's scope: {denial}")
     if source_type == "inventory":
         cfg = (detail.get("configurations") or [{}])[0]
         if not cfg.get("destination_bucket"):

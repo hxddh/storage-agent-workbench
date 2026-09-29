@@ -90,6 +90,9 @@ for pkg in ("duckdb", "pyarrow", "pandas", "openai", "agents", "griffe",
 # RUNTIME is explicitly out of scope for this product. Only the dist-info is
 # needed, and only the dist-info is taken.
 datas += copy_metadata("mcp")
+# The service's own version (`app.__version__`, reported on /health and checked
+# by the smoke test) is read from its dist-info at runtime — bundle it.
+datas += copy_metadata("storage-agent-sidecar")
 
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += ["app.main"]

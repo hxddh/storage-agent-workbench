@@ -79,8 +79,9 @@ def run_once(conn: sqlite3.Connection) -> dict[str, int] | None:
             finally:
                 old.close()
         except sqlite3.DatabaseError as exc:
-            logger.warning("v4 import skipped: %s", type(exc).__name__)
+            logger.warning("v4 import failed (%s); it is retried on the next start", type(exc).__name__)
             conn.rollback()
+            return None
     conn.execute("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
                  (_MARK, json.dumps(counts), utcnow()))
     conn.commit()
@@ -124,21 +125,27 @@ def _import(old: sqlite3.Connection, new: sqlite3.Connection) -> dict[str, int]:
     task_ids = _import_tasks(old, new, counts)
 
     for r in _rows(old, "SELECT * FROM estate_buckets"):
-        new.execute("INSERT OR IGNORE INTO estate_buckets (provider_id, bucket, region, posture, last_checked_at, "
-                    "source_task_id) VALUES (?, ?, ?, ?, ?, ?)",
-                    (r["provider_id"], r["bucket"], r["region"], r["posture_json_sanitized"], r["last_checked_at"],
-                     r["source_task_id"] if r["source_task_id"] in task_ids else None))
-        counts["buckets"] += 1
+        # INSERT … SELECT … WHERE EXISTS: an orphan v4 row (its provider gone) is
+        # skipped instead of violating a foreign key and rolling everything back.
+        n = new.execute("INSERT OR IGNORE INTO estate_buckets (provider_id, bucket, region, posture, "
+                        "last_checked_at, source_task_id) SELECT ?, ?, ?, ?, ?, ? "
+                        "WHERE EXISTS (SELECT 1 FROM cloud_providers WHERE id = ?)",
+                        (r["provider_id"], r["bucket"], r["region"], r["posture_json_sanitized"],
+                         r["last_checked_at"], r["source_task_id"] if r["source_task_id"] in task_ids else None,
+                         r["provider_id"])).rowcount
+        counts["buckets"] += max(n, 0)
     for r in _rows(old, "SELECT * FROM issues"):
-        new.execute("INSERT OR IGNORE INTO issues (id, provider_id, bucket, code, fingerprint, severity, status, "
-                    "detail, first_seen_at, last_seen_at, resolved_at, resolved_by, source_task_id, fix, "
-                    "last_verified_at, last_verify_result, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (r["id"], r["provider_id"], r["bucket"], r["code"], r["fingerprint"], r["severity"], r["status"],
-                     r["detail_sanitized"], r["first_seen_at"], r["last_seen_at"], r["resolved_at"],
-                     r["resolved_by"], r["source_task_id"] if r["source_task_id"] in task_ids else None,
-                     r["fix_json_sanitized"], r["last_verified_at"], r["last_verify_result"], r["updated_at"]))
-        counts["issues"] += 1
+        n = new.execute("INSERT OR IGNORE INTO issues (id, provider_id, bucket, code, fingerprint, severity, status, "
+                        "detail, first_seen_at, last_seen_at, resolved_at, resolved_by, source_task_id, fix, "
+                        "last_verified_at, last_verify_result, updated_at) "
+                        "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? "
+                        "WHERE EXISTS (SELECT 1 FROM cloud_providers WHERE id = ?)",
+                        (r["id"], r["provider_id"], r["bucket"], r["code"], r["fingerprint"], r["severity"],
+                         r["status"], r["detail_sanitized"], r["first_seen_at"], r["last_seen_at"], r["resolved_at"],
+                         r["resolved_by"], r["source_task_id"] if r["source_task_id"] in task_ids else None,
+                         r["fix_json_sanitized"], r["last_verified_at"], r["last_verify_result"], r["updated_at"],
+                         r["provider_id"])).rowcount
+        counts["issues"] += max(n, 0)
     for r in _rows(old, "SELECT * FROM issue_events ORDER BY id"):
         new.execute("INSERT INTO issue_events (issue_id, kind, source, detail, created_at) "
                     "SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM issues WHERE id = ?)",

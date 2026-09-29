@@ -132,13 +132,16 @@ class Recorder:
                     target=str(args.get("bucket") or ""), ok=False, detail={"refused": reason})
 
     def tool_finished(self, call_id: str, name: str, ok: bool, summary: str, result: Any,
-                      duration_ms: int) -> None:
+                      duration_ms: int, model_text: str | None = None) -> None:
+        """``model_text`` is exactly what the model read (bounded, enveloped); it is
+        what a later turn replays, so the history never loses the envelope."""
         call = self._calls.pop(call_id, {"args": {}})
         detail = None
-        model_output = None
+        model_output = model_text
         if result is not None:
             text = result if isinstance(result, str) else _json(result)
-            model_output = text[:60_000]
+            if model_output is None:
+                model_output = text[:60_000]
             detail = text[:_UI_DETAIL_CHARS]
         self._append("tool_output", {"call_id": call_id, "name": name, "ok": ok, "summary": summary,
                                      "duration_ms": duration_ms, "detail": detail,
