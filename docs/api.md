@@ -210,7 +210,7 @@ with `zh` selects Chinese issue titles. Anything else selects English.
 | `GET` | `/issues/{id}` | `lang` | `200` issue plus `events: [{kind, source, at, detail}]` (newest first, at most 50) | `404 issue not found` |
 | `POST` | `/issues/{id}/fix` | `lang` | `200` issue. Generates and stores the deterministic fix text. An `open` or `recurred` issue moves to `fix_proposed`. | `404`; `409 no generated fix for this issue` |
 | `GET` | `/issues/{id}/impact` | `lang` | `200 {verdict: "low" \| "caution" \| "unknown", points: [{text, evidence: "access_log" \| "posture" \| "rule", count?, total?}], gaps: [text]}` — what applying the fix would change, from evidence the estate holds (`estate/fixpacks.py`): anonymous requests counted from attached or imported S3 server access logs for the bucket (aggregates only — counts, a time range, at most 3 key prefixes; never a requester, IP or raw line), the recorded lifecycle and versioning posture, and what the change itself does. Only logs already analyzed are read (the preview never ingests); an import must match the issue's provider and bucket, an upload is matched by the bucket named in each line (said in `gaps`); the same log attached twice counts once; unanalyzed or unreadable logs are named in `gaps`. When the evidence cannot answer, `verdict` is `unknown` and `gaps` says why. Reads only local data. | `404`; `409 this issue has no generated fix` |
-| `POST` | `/issues/{id}/verify` | `lang` | `200 {"result": "still_present" \| "resolved" \| "inconclusive", "issue"}`. Re-runs the rule's read-only review (`review_bucket_security` or `review_bucket_lifecycle`). The bucket is scope-checked, the call is audited as `tool.review_bucket_<check>` (actor `user`), and the verdict goes through the issue lifecycle (source `verify`). | `404`; `409` with the reason (the storage account is gone, the bucket is out of scope, or the rule has no read-only check) |
+| `POST` | `/issues/{id}/verify` | `lang` | `200 {"result": "still_present" \| "resolved" \| "inconclusive", "issue"}`. Re-runs the rule's read-only review (the security or lifecycle aspect of `review_bucket_config`). The bucket is scope-checked, the call is audited as `tool.review_bucket_<check>` (actor `user`), and the verdict goes through the issue lifecycle (source `verify`). | `404`; `409` with the reason (the storage account is gone, the bucket is out of scope, or the rule has no read-only check) |
 | `POST` | `/issues/{id}/accept` | `{"accepted": bool = true, "reason": str ≤ 1000 \| null}`, `lang` | `200` issue. `true` moves an `open`, `fix_proposed` or `recurred` issue to `accepted`; a non-empty `reason` is kept as a note on the bucket (`source = accept`, with the issue id). `false` moves an `accepted` issue back to `open`. Any other combination leaves the status unchanged. | `404`, `422` |
 | `GET` | `/estate/providers/{provider_id}/buckets` | — | `200 {buckets: [{bucket, region, last_checked_at, open_issues: {high, medium, low}}], notes: [note]}` — the account's known buckets, most in need of care first (≤ 500), and its account-level notes. | `404 cloud provider not found` |
 | `GET` | `/estate/providers/{provider_id}/buckets/{bucket}` | `lang` | `200` bucket page: `{provider_id, bucket, region, posture, last_checked_at, source_task_id, issues: [issue] (every status), timeline: [entry] (newest first, ≤ 200), notes: [note]}`. A timeline entry is `{kind: "posture", at, source, task_id, first, changed: [key], posture}` (the first observation, then each change of the posture projection) or `{kind: "issue", at, source, event, issue_id, code, title, severity}` (an `issue_events` row). | `404` (provider, or a bucket the estate does not know) |
@@ -369,17 +369,15 @@ never returns credentials. It is annotated read-only and closed-world. Every
 other tool is annotated `readOnlyHint = true`, `destructiveHint = false`,
 `openWorldHint = true`.
 
-The 31 exposed tools are: `list_providers`, `diagnose_presigned_url`,
-`get_bucket_config_detail`, `get_bucket_config_summary`,
-`get_bucket_location`, `get_object_acl`, `get_object_attributes`,
-`get_object_lock_status`, `get_object_tagging`, `head_bucket`, `head_object`,
-`inspect_endpoint_tls`, `list_buckets`, `list_multipart_uploads`,
-`list_object_versions`, `list_objects`, `list_upload_parts`,
-`measure_request_latency`, `preview_object`, `query_estate`, `read_skill`,
-`review_bucket_cost_optimization`, `review_bucket_lifecycle`,
-`review_bucket_observability`, `review_bucket_performance_profile`,
-`review_bucket_security`, `test_addressing_style`, `test_conditional_get`,
-`test_credentials`, `test_range_get`, `triage_error`.
+The 21 exposed tools are: `list_providers`, `diagnose_presigned_url`,
+`get_bucket_config_detail`, `get_bucket_location`, `head_bucket`,
+`inspect_endpoint_tls`, `inspect_object`, `list_buckets`,
+`list_multipart_uploads`, `list_object_versions`, `list_objects`,
+`list_upload_parts`, `measure_request_latency`, `preview_object`,
+`query_estate`, `read_skill`, `review_bucket_config`,
+`review_bucket_performance_profile`, `test_addressing_style`,
+`test_object_read`, `triage_error`. `note` and `record_conclusion` are never
+exposed.
 
 Each registry tool runs through `registry.call_direct(..., actor="mcp")`. It
 gets the same argument clamping, scope check and redaction as inside a turn,

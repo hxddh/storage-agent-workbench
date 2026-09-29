@@ -48,15 +48,14 @@ Two paths, depending on where the inventory lives:
   first to get the actual `dataset_id` attached to this session (don't assume
   one), then `analyze_uploaded_file` on it (it ingests CSV/Parquet and computes
   the metrics above over the local file) and explain the result conversationally.
-  No confirmation. If the result carries `"truncated": true`, the metrics cover
+  If the result carries `"truncated": true`, the metrics cover
   only the first `rows_analyzed` rows — present them as a LOWER BOUND and offer a
   narrower slice.
 - **Inventory still in a bucket** — once `survey_account` has discovered the
   inventory configuration, call `import_evidence(source_type="inventory", …)`.
   It downloads a bounded slice (at most 500 files / 256 MiB) and starts the
-  analysis; say whether coverage is partial. If it finished in the background,
-  pick the result back up with `read_run_result(run_id)` rather than
-  re-importing.
+  analysis; say whether coverage is partial. Then use `aggregate_uploaded_file`
+  on the new dataset rather than re-importing.
 
 Use judgement about which metrics matter for the question — you don't need every
 one. Hand cost/tiering decisions to `storageops-lifecycle-cost` and small-object

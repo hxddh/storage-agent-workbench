@@ -46,7 +46,7 @@ Connectivity issue →
   mismatches, and wrong-endpoint cases directly.
 - `test_addressing_style` — a "bucket not found"/DNS-looking failure on a
   non-AWS provider is often virtual-hosted-vs-path-style, not true DNS.
-- `head_bucket` / `test_credentials` — confirm whether *any* request completes;
+- `head_bucket` / `list_buckets` — confirm whether *any* request completes;
   success here means the transport path is fine and the issue is higher up.
 
 ## Ask the user (only what tools can't reveal)

@@ -44,8 +44,8 @@ Two cases, depending on where the logs live:
   `list_uploaded_files` first to get the `dataset_id` of what's actually attached
   (don't assume one), then `analyze_uploaded_file` on it (it imports + computes
   error rates, status/method mix, top keys/prefixes/user-agents, requests-by-hour
-  over the local file) and explain the result conversationally. No confirmation
-  step. `analyze_uploaded_file` does NOT break down by requester — for "who is
+  over the local file) and explain the result conversationally.
+  `analyze_uploaded_file` does NOT break down by requester — for "who is
   accessing", follow it with
   `aggregate_uploaded_file(dataset_id, metric='count', group_by='client_ip_masked')`
   (add `group_by_2='day'` for a trend, or `status_min`/`status_max` to isolate
@@ -55,9 +55,8 @@ Two cases, depending on where the logs live:
 - **Logs still in a bucket** — once `survey_account` has discovered the logging
   target, call `import_evidence(source_type="access_log", …)` with a time range.
   It downloads a bounded slice (at most 500 files / 256 MiB) and starts the
-  analysis; say what time range you covered and whether coverage is partial. If
-  the analysis finished in the background, pick it back up with
-  `read_run_result(run_id)` rather than re-importing.
+  analysis; say what time range you covered and whether coverage is partial. Then
+  use `aggregate_uploaded_file` on the new dataset rather than re-importing.
 
 Either way, route permission decisions to `storageops-security-iam-policy` and
 cost decisions to `storageops-lifecycle-cost`.

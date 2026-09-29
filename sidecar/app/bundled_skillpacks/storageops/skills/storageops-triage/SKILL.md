@@ -54,10 +54,10 @@ User reports a storage issue →
 
 Before routing, confirm the basics cheaply so the specialist starts from facts:
 
-- `test_credentials` — are the provider's keys valid at all? (separates an auth
-  failure from a specific permission/signature problem)
-- `list_buckets` / `head_bucket` — is the account reachable and the bucket
-  present? Narrow "everything is broken" down to a single layer.
+- `list_buckets` — are the provider's keys valid at all, and is the account
+  reachable? (separates an auth failure from a specific permission/signature
+  problem)
+- `head_bucket` — is the bucket present? Narrow "everything is broken" down to a single layer.
 - Note the provider type (AWS / BOS / OSS / COS / GCS / R2 / B2). Most
   misdiagnosis comes from applying AWS assumptions to a non-AWS provider — carry
   the real provider into the specialist skill.

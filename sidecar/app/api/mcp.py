@@ -21,12 +21,12 @@ from ..providers import clouds
 ENABLED = os.environ.get("STORAGE_AGENT_ENABLE_MCP") == "1"
 _GROUPS = frozenset({"probes", "objects", "config"})
 _EXTRA = frozenset({"list_buckets", "head_bucket", "read_skill", "query_estate", "triage_error"})
-_EXCLUDED = frozenset({"review_bucket_config"})  # saves a task artifact
+_NEVER = frozenset({"note", "record_conclusion"})  # the estate's memory and the conclusion belong to a task
 
 
 def exposed() -> frozenset[str]:
     return frozenset(n for n, td in registry.REGISTRY.items()
-                     if (td.group in _GROUPS or n in _EXTRA) and n not in _EXCLUDED)
+                     if (td.group in _GROUPS or n in _EXTRA) and n not in _NEVER)
 
 
 def _bridge(name: str) -> Any:

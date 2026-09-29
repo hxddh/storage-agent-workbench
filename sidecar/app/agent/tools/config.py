@@ -20,27 +20,15 @@ def _review_summary(res: Any) -> str:
     return f"{len(bad)} to fix · {len(findings)} findings" if findings else "reviewed"
 
 
-@tool(group="config", scope=_BUCKET, timeout=60)
-def get_bucket_config_summary(provider_id: str, bucket: str) -> dict[str, Any]:
-    """Summarize a bucket's readable configuration: encryption, versioning, policy, CORS, lifecycle,
-    logging and more, with an overall status.
-
-    Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-    """
-    return ct.get_bucket_config_summary(current().conn(), provider_id, bucket)
-
-
 @tool(group="config", scope=_BUCKET, timeout=45)
 def get_bucket_config_detail(provider_id: str, bucket: str, aspect: str) -> dict[str, Any]:
     """Read the sanitized rule detail of one configuration aspect (read-only GET) so you never have to ask
     the user for their config. aspect is one of: replication, notification, cors, logging, lifecycle,
     encryption, public_access_block, policy, policy_status, ownership, object_lock, acl, inventory,
     website, intelligent_tiering, accelerate, request_payment, metrics, analytics. 'policy_status' is
-    AWS's verdict for the POLICY only (combine with 'acl', or use review_bucket_security, before saying a
-    bucket is public); BucketOwnerEnforced ownership means ACLs are disabled. ARNs reduced, values
-    redacted, at most 20 rules.
+    AWS's verdict for the POLICY only (combine with 'acl', or review_bucket_config's security aspect,
+    before saying a bucket is public); BucketOwnerEnforced ownership means ACLs are disabled. ARNs
+    reduced, values redacted, at most 20 rules.
 
     Args:
         provider_id: The provider.
@@ -48,66 +36,6 @@ def get_bucket_config_detail(provider_id: str, bucket: str, aspect: str) -> dict
         aspect: One configuration aspect.
     """
     return ct.get_bucket_config_detail(current().conn(), provider_id, bucket, aspect)
-
-
-def _review(check: str, fn: Any, provider_id: str, bucket: str) -> dict[str, Any]:
-    ctx = current()
-    res = fn(ctx.conn(), provider_id, bucket)
-    if check in ("security", "lifecycle") and isinstance(res, dict):
-        # The estate learns from the review deterministically: issues open,
-        # resolve or recur here — never from the model's prose.
-        try:
-            estate.ingest_review(ctx.conn(), provider_id, bucket, {check: res}, task_id=ctx.task_id)
-        except Exception:  # noqa: BLE001 — the estate never fails a tool
-            pass
-    return res
-
-
-@tool(group="config", scope=_BUCKET, timeout=90, summarize=_review_summary)
-def review_bucket_security(provider_id: str, bucket: str) -> dict[str, Any]:
-    """Review a bucket's security posture: policy (anonymous and wildcard principals, AWS public verdict),
-    ACL grants, public access block, default encryption, CORS. Findings feed the estate's issues.
-
-    Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-    """
-    return _review("security", ct.review_bucket_security, provider_id, bucket)
-
-
-@tool(group="config", scope=_BUCKET, timeout=90, summarize=_review_summary)
-def review_bucket_lifecycle(provider_id: str, bucket: str) -> dict[str, Any]:
-    """Review a bucket's lifecycle rules and version cleanup (multipart cleanup, expiration, transitions,
-    noncurrent versions). Findings feed the estate's issues.
-
-    Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-    """
-    return _review("lifecycle", ct.review_bucket_lifecycle, provider_id, bucket)
-
-
-@tool(group="config", scope=_BUCKET, timeout=90, summarize=_review_summary)
-def review_bucket_observability(provider_id: str, bucket: str) -> dict[str, Any]:
-    """Review a bucket's logging, event notifications and tagging.
-
-    Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-    """
-    return _review("observability", ct.review_bucket_observability, provider_id, bucket)
-
-
-@tool(group="config", scope=_BUCKET, timeout=90, summarize=_review_summary)
-def review_bucket_cost_optimization(provider_id: str, bucket: str) -> dict[str, Any]:
-    """Review a bucket for cost-optimization opportunities (lifecycle, transitions, noncurrent versions,
-    incomplete uploads, cost-attribution tags).
-
-    Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-    """
-    return _review("cost", ct.review_bucket_cost_optimization, provider_id, bucket)
 
 
 @tool(group="config", scope=Scope(prefix="prefix", listing=True), timeout=90, summarize=_review_summary)
@@ -123,42 +51,63 @@ def review_bucket_performance_profile(provider_id: str, bucket: str, prefix: str
     return ct.review_bucket_performance_profile(current().conn(), provider_id, bucket, prefix or None)
 
 
+_ASPECTS = {"summary": "get_bucket_config_summary", "security": "review_bucket_security",  # engine reads
+            "lifecycle": "review_bucket_lifecycle", "observability": "review_bucket_observability",
+            "cost": "review_bucket_cost_optimization"}
+_INGESTED = ("security", "lifecycle")  # the aspects whose findings open, resolve or recur estate issues
+_ORDER = {"critical": 0, "warning": 1, "opportunity": 2, "good": 3}
+
+
 @tool(group="config", scope=_BUCKET, timeout=240, summarize=_review_summary)
-def review_bucket_config(provider_id: str, bucket: str) -> dict[str, Any]:
-    """Run the full read-only configuration review of one bucket in one call: summary, security,
-    lifecycle, observability and cost (the performance profile is separate because it lists objects).
-    Returns every finding, most severe first, and feeds the estate's issues.
+def review_bucket_config(provider_id: str, bucket: str, aspects: list[str] | None = None) -> dict[str, Any]:
+    """Review one bucket's configuration with read-only GETs. Omit aspects for the full review, or name
+    the ones to run: summary (every readable setting with an overall status); security (policy with
+    anonymous / wildcard principals and AWS's public verdict, ACL grants, public access block, default
+    encryption, CORS); lifecycle (multipart cleanup, expiration, transitions, noncurrent versions);
+    observability (logging, event notifications, tagging); cost (transitions, noncurrent versions,
+    incomplete uploads, cost-attribution tags). Returns each aspect's status and every finding, most
+    severe first; security and lifecycle findings feed the estate's issues. The performance profile is
+    separate because it lists objects.
 
     Args:
         provider_id: The provider.
         bucket: The bucket name.
+        aspects: Any of summary, security, lifecycle, observability, cost. Omit for all.
     """
+    unknown = sorted(set(aspects or ()) - set(_ASPECTS))
+    if unknown:
+        return {"error": f"Unknown aspect {', '.join(unknown)}. Use any of: {', '.join(_ASPECTS)}."}
+    chosen = [a for a in _ASPECTS if not aspects or a in aspects]
     ctx = current()
     conn = ctx.conn()
-    out: dict[str, Any] = {"success": True, "bucket": bucket, "sections": {}}
+    out: dict[str, Any] = {"success": True, "bucket": bucket, "aspects": chosen, "sections": {}}
     findings: list[dict[str, Any]] = []
-    for name, fn in (("summary", ct.get_bucket_config_summary), ("security", ct.review_bucket_security),
-                     ("lifecycle", ct.review_bucket_lifecycle), ("observability", ct.review_bucket_observability),
-                     ("cost", ct.review_bucket_cost_optimization)):
+    for name in chosen:
         if ctx.cancelled:
             out["stopped"] = True
             break
         try:
-            res = fn(conn, provider_id, bucket)
+            res = getattr(ct, _ASPECTS[name])(conn, provider_id, bucket)
         except Exception as exc:  # noqa: BLE001 — one aspect never sinks the review
             res = {"success": False, "error_code": type(exc).__name__}
         out["sections"][name] = {k: v for k, v in (res or {}).items() if k != "findings"}
         for f in (res or {}).get("findings") or []:
             findings.append({**f, "section": name})
-        if name in ("security", "lifecycle"):
+        if name in _INGESTED:
+            # The estate learns from what this call read, aspect by aspect — never
+            # from the model's prose, and never about an aspect it did not run.
             try:
                 estate.ingest_review(conn, provider_id, bucket, {name: res}, task_id=ctx.task_id)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — the estate never fails a tool
                 pass
-    order = {"critical": 0, "warning": 1, "opportunity": 2, "good": 3}
-    findings.sort(key=lambda f: order.get(str(f.get("category", "")).lower(), 2))
+    if len(chosen) == 1 and out["sections"].get(chosen[0], {}).get("success") is False:
+        out["success"] = False  # one aspect asked for and it could not be read
+        out["error_code"] = out["sections"][chosen[0]].get("error_code")
+    findings.sort(key=lambda f: _ORDER.get(str(f.get("category", "")).lower(), 2))
     out["findings"] = findings[:80]
-    core_store.add_artifact(conn, kind="review", title=f"Configuration review · {bucket}", task_id=ctx.task_id,
-                            turn_id=ctx.turn_id, provider_id=provider_id,
-                            payload={"bucket": bucket, "findings": findings[:200]})
+    if ctx.task_id:  # the MCP bridge has no task to keep an output in
+        what = "" if len(chosen) == len(_ASPECTS) else f" ({', '.join(chosen)})"
+        core_store.add_artifact(conn, kind="review", title=f"Configuration review{what} · {bucket}",
+                                task_id=ctx.task_id, turn_id=ctx.turn_id, provider_id=provider_id,
+                                payload={"bucket": bucket, "aspects": chosen, "findings": findings[:200]})
     return out

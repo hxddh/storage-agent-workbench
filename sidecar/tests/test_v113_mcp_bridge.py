@@ -16,9 +16,9 @@ def test_off_by_default():
 
 def test_exposes_only_stateless_read_only_tools():
     names = mcp.exposed()
-    assert {"list_buckets", "head_object", "review_bucket_security", "get_bucket_config_detail"} <= names
+    assert {"list_buckets", "inspect_object", "review_bucket_config", "get_bucket_config_detail"} <= names
     for task_bound in ("survey_account", "import_evidence", "record_conclusion", "list_uploaded_files",
-                       "analyze_uploaded_file", "review_bucket_config", "simulate_storage_cost"):
+                       "analyze_uploaded_file", "simulate_storage_cost", "note", "fix_preview"):
         assert task_bound not in names
     server = mcp.build_server()
     listed = {t.name: t for t in asyncio.run(server.list_tools())}

@@ -68,10 +68,10 @@ REGISTRY: dict[str, ToolDef] = {}
 
 GROUPS: dict[str, str] = {
     "core": "Orientation: providers, buckets, skills, the estate and the conclusion.",
-    "probes": "Endpoint and credential probes: reachability, TLS, addressing, latency, presigned URLs.",
-    "objects": "Object forensics: listing, versions, multipart uploads, heads, ACLs, tags, lock, previews.",
-    "config": "Bucket configuration: summary, detail per aspect, security / lifecycle / cost / performance reviews.",
-    "account": "Account-wide: survey every bucket, compare with the last survey, query posture.",
+    "probes": "Endpoint probes: bucket location, TLS, addressing, latency, presigned URLs.",
+    "objects": "Object forensics: listing, versions, multipart uploads, one object's metadata, read tests, previews.",
+    "config": "Bucket configuration: the review (summary, security, lifecycle, observability, cost), detail per aspect, performance.",
+    "account": "Account-wide: survey every bucket, compare with the last survey.",
     "files": "Local analysis of attached files and imported evidence: analyze, aggregate, import evidence.",
     "advice": "Deterministic advice: error triage, cost and lifecycle simulation.",
 }

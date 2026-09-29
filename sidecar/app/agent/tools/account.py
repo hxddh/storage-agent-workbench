@@ -1,4 +1,4 @@
-"""Account-wide tools (v5 registry): survey, compare, query the latest survey."""
+"""Account-wide tools (v5 registry): survey, compare with the last survey."""
 
 from __future__ import annotations
 
@@ -27,11 +27,11 @@ def _compact(profile: dict[str, Any]) -> dict[str, Any]:
     out["buckets"] = rows
     if len(profile.get("buckets") or []) > _MODEL_BUCKET_ROWS:
         out["buckets_note"] = (f"{len(profile['buckets']) - _MODEL_BUCKET_ROWS} more bucket rows are stored; "
-                               "use query_account_profile to filter them.")
+                               "use query_estate with survey_filter to filter them.")
     return out
 
 
-def _latest_surveys(conn: Any, provider_id: str, n: int = 2) -> list[dict[str, Any]]:
+def latest_surveys(conn: Any, provider_id: str, n: int = 2) -> list[dict[str, Any]]:
     rows = conn.execute("SELECT payload, created_at FROM artifacts WHERE kind = 'survey' AND provider_id = ? "
                         "ORDER BY created_at DESC, rowid DESC LIMIT ?", (provider_id, n)).fetchall()
     return [{**core_store.loads(r["payload"], {}), "surveyed_at": r["created_at"]} for r in rows]
@@ -76,27 +76,9 @@ def compare_to_last_survey(provider_id: str) -> dict[str, Any]:
     Args:
         provider_id: The provider.
     """
-    surveys = _latest_surveys(current().conn(), provider_id, 2)
+    surveys = latest_surveys(current().conn(), provider_id, 2)
     if len(surveys) < 2:
         return {"success": True, "comparable": False,
                 "note": "Fewer than two surveys of this account exist; run survey_account first."}
     return {"success": True, "comparable": True, "older_at": surveys[1]["surveyed_at"],
             "newer_at": surveys[0]["surveyed_at"], **survey.diff_profiles(surveys[1], surveys[0])}
-
-
-@tool(group="account", scope=_ACCOUNT, timeout=30)
-def query_account_profile(provider_id: str, filter: str = "all") -> dict[str, Any]:
-    """Answer posture questions from the latest stored survey without a new scan. filter is one of: all,
-    public_buckets, missing_encryption, missing_public_access_block, missing_lifecycle, missing_logging,
-    no_versioning, access_denied. Buckets the survey could not decide are listed as undetermined.
-
-    Args:
-        provider_id: The provider.
-        filter: The posture filter.
-    """
-    if filter not in survey.FILTERS:
-        return {"error": f"Unknown filter. Use one of: {', '.join(survey.FILTERS)}."}
-    surveys = _latest_surveys(current().conn(), provider_id, 1)
-    if not surveys:
-        return {"success": True, "has_survey": False, "note": "No survey of this account yet; run survey_account."}
-    return {"has_survey": True, "surveyed_at": surveys[0]["surveyed_at"], **survey.query(surveys[0], filter)}

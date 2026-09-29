@@ -138,8 +138,8 @@ skills:
       Analyze object-storage server access logs for error patterns, traffic
       profiles, anomaly spikes, hot keys, and request-cost attribution. Use when
       the user asks who/what is hitting a bucket, why error rates changed over
-      time, or where request cost comes from. Runs as a confirmed import +
-      analysis in the app.
+      time, or where request cost comes from. Runs as a bounded evidence
+      import + analysis in the app.
     trigger_keywords:
       - access log
       - error rate

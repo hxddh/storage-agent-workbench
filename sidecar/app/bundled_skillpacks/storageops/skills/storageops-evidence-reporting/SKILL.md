@@ -22,8 +22,8 @@ to the audience and never overstate confidence.
 ## Structure to produce
 
 - **Summary** — one-line conclusion and the affected layer.
-- **Evidence** — what each tool returned (e.g. `test_credentials → ok`,
-  `review_bucket_security` findings), clearly marked tool-verified vs. inferred.
+- **Evidence** — what each tool returned (e.g. `list_buckets → ok`,
+  `review_bucket_config` security findings), clearly marked tool-verified vs. inferred.
 - **Root cause** — with a confidence level and what would falsify it.
 - **Remediation** — concrete steps, each marked manual-only when it changes
   anything; the user applies them, the app never does.

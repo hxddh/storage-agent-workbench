@@ -53,9 +53,9 @@ Protocol error →
   legacy SigV2? path vs virtual-hosted). Pure parse — no request is made and the
   signature/key-id never leave the tool. Reach for this instead of interviewing
   the user about the URL.
-- `test_credentials` — if signing fails outright vs. only on one operation, this
+- `list_buckets` — if signing fails outright vs. only on one operation, this
   separates a global signature problem from an operation-specific one.
-- `get_bucket_config_summary` — its `bucket_region` + `region_mismatch` fields
+- `review_bucket_config` (aspect `summary`) — its `bucket_region` + `region_mismatch` fields
   confirm the #1 SignatureDoesNotMatch cause: the bucket's real region differs
   from the provider's configured signing region.
 - `inspect_endpoint_tls` — confirm the endpoint host/cert matches the URL being
@@ -63,8 +63,8 @@ Protocol error →
 - `head_bucket` — confirm a clean signed request succeeds at all.
 - `get_bucket_config_detail` (aspect `cors`) — for a CORS failure, the per-rule
   allowed origins / methods / headers, so you can say whether a rule is missing
-  or just doesn't cover the request's origin/method. `review_bucket_security`
-  cross-checks the posture and flags an over-broad `*` origin.
+  or just doesn't cover the request's origin/method. `review_bucket_config`
+  (aspect `security`) cross-checks the posture and flags an over-broad `*` origin.
 
 ## Ask the user (only what tools can't reveal)
 

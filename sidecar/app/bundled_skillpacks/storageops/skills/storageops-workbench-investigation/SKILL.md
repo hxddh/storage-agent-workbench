@@ -30,11 +30,10 @@ specifics for each branch.
                (provider/bucket/key/time-range) is ambiguous AND tools can't
                resolve it, ask one sharp question; otherwise pick the obvious one
                and say which you picked.
-2. Orient    → what's already known? Reuse agent_memory + the deterministic
-               summary before re-deriving. list_providers / list_buckets to see
-               the surface.
+2. Orient    → what's already known? Reuse query_estate and the estate's
+               notes before re-deriving. list_buckets to see the surface.
 3. Probe     → chain the cheapest read-only tools that discriminate between
-               hypotheses (head_bucket → list_objects → head_object → the config
+               hypotheses (head_bucket → list_objects → inspect_object → the config
                readers → the live probes). Load a specialist skill with
                read_skill when the branch is clear.
 4. Verify    → before asserting a high-severity conclusion, confirm it with a
@@ -43,10 +42,10 @@ specifics for each branch.
 5. Ground    → answer in your own words, marking tool-verified facts vs.
                inferences vs. assumptions; list evidence_used and honest
                evidence_gaps.
-6. Persist   → note_fact / record_finding / note_open_question so the next turn
-               builds on this one instead of repeating it.
-7. Propose   → offer next-action proposals for anything heavier or data-moving
-               (an auditable run, an evidence import) — never auto-run those.
+6. Persist   → record_conclusion once; a note for what later tasks should
+               remember about the estate.
+7. Next      → name the next steps; a bounded evidence import (import_evidence)
+               runs when the question needs it, and you say what it covered.
 ```
 
 ## Choosing the next specialist skill
@@ -65,22 +64,19 @@ specifics for each branch.
 
 - `survey_account` / `review_bucket_config` — the broad, bounded read-only runs
   when the question is about the account or a whole bucket's posture.
-- `query_account_profile` — after a survey, answer account-WIDE posture questions
+- `query_estate` with `survey_filter` — after a survey, answer account-WIDE posture questions
   ("which buckets have no encryption / no public-access-block / no lifecycle?")
   from the persisted matrix, with a filter, instead of reviewing every bucket.
 - `compare_to_last_survey` — "what changed since last time?": a deterministic diff
   of the provider's two most recent surveys (no new scan).
-- `list_*` / `head_*` / config readers — the fine-grained probes for a specific
+- `list_*` / `head_bucket` / `inspect_object` / config readers — the fine-grained probes for a specific
   hypothesis (`get_bucket_config_detail` returns the actual rules for one aspect;
-  `diagnose_presigned_url` / `test_conditional_get` / `get_object_acl` /
+  `diagnose_presigned_url` / `test_object_read` / `inspect_object` /
   `list_upload_parts` are the targeted object/protocol probes).
 - `analyze_uploaded_file` / `aggregate_uploaded_file` (after `list_uploaded_files`)
   — when the user attached a log or inventory export; `aggregate_uploaded_file`
   runs one constrained metric+group-by when the fixed metrics don't fit. For data
-  still in a bucket, propose an import.
-- `read_run_result(run_id, wait_seconds?)` — pick up a backgrounded run's
-  result. Pass `wait_seconds` (up to 60) to finish it inside THIS turn instead of
-  handing the user a "check back later".
+  still in a bucket, use `import_evidence`.
 
 ## What to report
 
