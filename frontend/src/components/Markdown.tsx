@@ -244,18 +244,6 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
 
   return (
     <div className="agent-table my-1" data-folded={folded ? "true" : "false"}>
-      <div className="md-table-meta">
-        <span data-testid="table-size">{t("table.size", { rows: rows.length, cols: headers.length })}</span>
-        <button
-          type="button"
-          onClick={copyTsv}
-          data-testid="table-copy"
-          className="md-table-copy"
-          aria-label={t("common.copy")}
-        >
-          {copied ? t("common.copied") : t("common.copy")}
-        </button>
-      </div>
       <table className="agent-table-grid" data-testid="table-grid">
         <thead>
           <tr>
@@ -271,6 +259,13 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
                     {inline(h)}
                     <span className="agent-table-sort-mark" data-dir={dir ?? "none"} aria-hidden>{dir === "desc" ? "↓" : "↑"}</span>
                   </button>
+                  {/* Copy sits in the header's last cell, in flow: it never covers a column name. */}
+                  {i === headers.length - 1 ? (
+                    <button type="button" onClick={copyTsv} data-testid="table-copy" className="md-table-copy"
+                      aria-label={t("common.copy")} title={t("common.copy")}>
+                      {copied ? t("common.copied") : t("common.copy")}
+                    </button>
+                  ) : null}
                 </th>
               );
             })}

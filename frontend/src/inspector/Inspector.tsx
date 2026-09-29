@@ -184,7 +184,7 @@ function CallDetail({ row }: { row: ToolRow }) {
   const app = useApp();
   return (
     <div className="call-detail" data-testid="call-detail">
-      <Button size="sm" variant="ghost" icon="arrowRight" className="flip-icon" onClick={() => app.setPane({ tab: "details" })}>
+      <Button size="sm" variant="ghost" icon="arrowLeft" onClick={() => app.setPane({ tab: "details" })}>
         {t("pane.back")}
       </Button>
       <h3 className="call-title">{toolLabel(row.name, lang)}</h3>

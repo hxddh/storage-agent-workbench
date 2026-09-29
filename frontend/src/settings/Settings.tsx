@@ -104,33 +104,56 @@ function General() {
 
 // --- models --------------------------------------------------------------------------
 
+type Probe = { ok: boolean; detail: string };
+/** A local model's context window when the user does not know a larger one. */
+const LOCAL_CONTEXT = "16384";
+
+/** The item being edited, kept fresh from the reloaded list (a save stays on its item). */
+function useEditing<T extends { id: string }>(list: T[] | null) {
+  const [editing, setEditing] = useState<T | "new" | null>(null);
+  const [probe, setProbe] = useState<Probe | null>(null);
+  useEffect(() => {
+    if (list === null) return;
+    if (list.length === 0) { setEditing("new"); return; }
+    setEditing((e) => (e && e !== "new" ? list.find((x) => x.id === e.id) ?? null : e));
+  }, [list]);
+  const open = (e: T | "new" | null) => { setProbe(null); setEditing(e); };
+  const saved = (item: T, p: Probe | null) => { setEditing(item); setProbe(p); };
+  return { editing, probe, open, saved };
+}
+
 function Models() {
   const { t } = useI18n();
   const app = useApp();
-  const [editing, setEditing] = useState<ModelProvider | "new" | null>(null);
+  const { editing, probe, open, saved } = useEditing(app.models);
   const list = app.models ?? [];
-  useEffect(() => { if (list.length === 0 && app.models !== null) setEditing("new"); }, [app.models]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="provider-pane">
       <div className="provider-list">
         {list.map((m) => (
           <button key={m.id} type="button" className="provider-item" aria-current={editing !== "new" && editing?.id === m.id}
-            onClick={() => setEditing(m)}>
+            onClick={() => open(m)}>
             <span className="provider-name">{m.name}</span>
-            <small>{m.model}</small>
             {m.active ? <Badge tone="accent">{t("settings.active")}</Badge> : null}
+            <small>{m.model}</small>
           </button>
         ))}
-        <Button size="sm" icon="plus" onClick={() => setEditing("new")} data-testid="add-model">{t("settings.add")}</Button>
-        {list.length === 0 ? <p className="quiet-note">{t("settings.empty.models")}</p> : null}
+        <Button size="sm" icon="plus" onClick={() => open("new")} data-testid="add-model">{t("settings.add")}</Button>
+        {list.length === 0 && !editing ? <p className="quiet-note">{t("settings.empty.models")}</p> : null}
       </div>
       {editing ? <ModelEditor key={editing === "new" ? "new" : editing.id} model={editing === "new" ? null : editing}
-        onDone={() => { setEditing(null); void app.reloadProviders(); }} /> : null}
+        initialProbe={probe}
+        onSaved={(m, p) => { saved(m, p); void app.reloadProviders(); }}
+        onChanged={() => void app.reloadProviders()}
+        onDeleted={() => { open(null); void app.reloadProviders(); }} /> : null}
     </div>
   );
 }
 
-function ModelEditor({ model, onDone }: { model: ModelProvider | null; onDone: () => void }) {
+function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
+  model: ModelProvider | null; initialProbe: Probe | null;
+  onSaved: (m: ModelProvider, p: Probe | null) => void; onChanged: () => void; onDeleted: () => void;
+}) {
   const { t } = useI18n();
   const toast = useToast();
   const [preset, setPreset] = useState(model ? (MODEL_PRESETS.find((p) => p.providerType === model.kind)?.id ?? "compatible") : "openai");
@@ -140,8 +163,10 @@ function ModelEditor({ model, onDone }: { model: ModelProvider | null; onDone: (
   const [modelName, setModelName] = useState(model?.model ?? "");
   const [key, setKey] = useState("");
   const [ctx, setCtx] = useState(model?.context_window ? String(model.context_window) : "");
-  const [probe, setProbe] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [probe, setProbe] = useState<Probe | null>(initialProbe);
   const [busy, setBusy] = useState(false);
+  const local = isLocalProvider(p.providerType);
+  const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -155,11 +180,17 @@ function ModelEditor({ model, onDone }: { model: ModelProvider | null; onDone: (
       const saved = model ? await api.updateModel(model.id, body) : await api.createModel(body);
       setKey("");
       setProbe(null);
-      const out = await api.testModel(saved.id);
-      setProbe({ ok: out.ok, detail: out.detail });
-      if (!model) onDone();
+      let out: Probe | null = null;
+      try {
+        const r = await api.testModel(saved.id);
+        out = { ok: r.ok, detail: r.detail };
+      } catch (err) {
+        out = { ok: false, detail: err instanceof Error ? err.message : String(err) };
+      }
+      setProbe(out);
+      onSaved(saved, out);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      fail(err);
     } finally {
       setBusy(false);
     }
@@ -171,15 +202,20 @@ function ModelEditor({ model, onDone }: { model: ModelProvider | null; onDone: (
       const out = await api.testModel(model.id);
       setProbe({ ok: out.ok, detail: out.detail });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      fail(err);
     } finally {
       setBusy(false);
     }
   };
   const remove = async () => {
     if (!model) return;
-    await api.deleteModel(model.id).then(onDone, (e) => toast.error(e instanceof Error ? e.message : String(e)));
+    await api.deleteModel(model.id).then(onDeleted, fail);
   };
+  const contextField = (
+    <Field label={t("field.contextWindow")} hint={local ? t("field.contextHint") : t("field.optional")}>
+      <TextInput inputMode="numeric" value={ctx} onChange={(e) => setCtx(e.target.value.replace(/\D/g, ""))} data-testid="context-window" />
+    </Field>
+  );
 
   return (
     <form className="provider-editor" onSubmit={save} data-testid="model-editor">
@@ -188,6 +224,9 @@ function ModelEditor({ model, onDone }: { model: ModelProvider | null; onDone: (
           const next = MODEL_PRESETS.find((x) => x.id === e.target.value)!;
           setPreset(next.id);
           setBaseUrl(next.baseUrl);
+          // A local model's window is small unless the user says otherwise.
+          if (isLocalProvider(next.providerType) && !ctx) setCtx(LOCAL_CONTEXT);
+          if (!isLocalProvider(next.providerType) && ctx === LOCAL_CONTEXT) setCtx("");
         }}>
           {MODEL_PRESETS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
         </Select>
@@ -199,21 +238,24 @@ function ModelEditor({ model, onDone }: { model: ModelProvider | null; onDone: (
       <Field label={t("field.model")}>
         <TextInput required value={modelName} placeholder={p.modelPlaceholder} onChange={(e) => setModelName(e.target.value)} />
       </Field>
-      <Field label={t("field.apiKey")} hint={model?.has_api_key ? t("field.keepKey") : isLocalProvider(p.providerType) ? t("field.optional") : undefined}>
+      <Field label={t("field.apiKey")} hint={model?.has_api_key ? t("field.keepKey") : local ? t("field.optional") : undefined}>
         <TextInput type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)}
           placeholder={model?.has_api_key ? "••••••••" : ""} />
       </Field>
-      <Field label={t("field.contextWindow")} hint={t("field.optional")}>
-        <TextInput inputMode="numeric" value={ctx} onChange={(e) => setCtx(e.target.value.replace(/\D/g, ""))} />
-      </Field>
+      {local ? contextField : (
+        <details className="fold" open={Boolean(model?.context_window) || undefined}>
+          <summary>{t("settings.advanced")}</summary>
+          {contextField}
+        </details>
+      )}
       {model ? <p className="quiet-note">{t("field.apiStyle")}: {t(`settings.apiStyle.${model.api_style}`)}</p> : null}
       {probe ? (
-        <p className="probe" data-ok={probe.ok ? "true" : "false"}><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
+        <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
       ) : null}
       <div className="editor-actions">
-        <Button type="submit" variant="primary" disabled={busy || !modelName.trim()}>{t("settings.save")}</Button>
-        {model ? <Button onClick={() => void test()} disabled={busy}>{busy ? t("settings.testing") : t("settings.test")}</Button> : null}
-        {model && !model.active ? <Button variant="ghost" onClick={() => void api.activateModel(model.id).then(onDone, (e) => toast.error(e instanceof Error ? e.message : String(e)))}>{t("settings.makeActive")}</Button> : null}
+        <Button type="submit" variant="primary" disabled={busy || !modelName.trim()}>{busy ? t("settings.testing") : t("settings.save")}</Button>
+        {model ? <Button onClick={() => void test()} disabled={busy}>{t("settings.test")}</Button> : null}
+        {model && !model.active ? <Button variant="ghost" onClick={() => void api.activateModel(model.id).then(onChanged, fail)}>{t("settings.makeActive")}</Button> : null}
         <span className="editor-spacer" />
         {model ? <Button variant="danger" onClick={() => void remove()}>{t("settings.delete")}</Button> : null}
       </div>
@@ -226,22 +268,21 @@ function ModelEditor({ model, onDone }: { model: ModelProvider | null; onDone: (
 function Storage() {
   const { t } = useI18n();
   const app = useApp();
-  const [editing, setEditing] = useState<CloudProvider | "new" | null>(null);
+  const { editing, probe, open, saved } = useEditing(app.clouds);
   const list = app.clouds ?? [];
-  useEffect(() => { if (list.length === 0 && app.clouds !== null) setEditing("new"); }, [app.clouds]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="provider-pane">
       <div className="provider-list">
         {list.map((c) => (
           <button key={c.id} type="button" className="provider-item" aria-current={editing !== "new" && editing?.id === c.id}
-            onClick={() => setEditing(c)}>
+            onClick={() => open(c)}>
             <span className="provider-name">{c.name}</span>
-            <small>{CLOUD_PRESETS.find((p) => p.providerType === c.provider_type)?.label ?? c.provider_type}</small>
             {c.watch?.enabled ? <Icon name="shield" size={14} /> : null}
+            <small>{CLOUD_PRESETS.find((p) => p.providerType === c.provider_type)?.label ?? c.provider_type}</small>
           </button>
         ))}
-        <Button size="sm" icon="plus" onClick={() => setEditing("new")} data-testid="add-storage">{t("settings.add")}</Button>
-        {list.length === 0 ? <p className="quiet-note">{t("settings.empty.storage")}</p> : null}
+        <Button size="sm" icon="plus" onClick={() => open("new")} data-testid="add-storage">{t("settings.add")}</Button>
+        {list.length === 0 && !editing ? <p className="quiet-note">{t("settings.empty.storage")}</p> : null}
         {list.length ? (
           <details className="fold">
             <summary>{t("notes.general")}</summary>
@@ -250,12 +291,17 @@ function Storage() {
         ) : null}
       </div>
       {editing ? <CloudEditor key={editing === "new" ? "new" : editing.id} cloud={editing === "new" ? null : editing}
-        onDone={() => { setEditing(null); void app.reloadProviders(); }} /> : null}
+        initialProbe={probe}
+        onSaved={(c, p) => { saved(c, p); void app.reloadProviders(); }}
+        onDeleted={() => { open(null); void app.reloadProviders(); }} /> : null}
     </div>
   );
 }
 
-function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: () => void }) {
+function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
+  cloud: CloudProvider | null; initialProbe: Probe | null;
+  onSaved: (c: CloudProvider, p: Probe | null) => void; onDeleted: () => void;
+}) {
   const { t } = useI18n();
   const toast = useToast();
   const initial = cloud ? CLOUD_PRESETS.find((p) => p.providerType === cloud.provider_type) ?? CLOUD_PRESETS[CLOUD_PRESETS.length - 1] : CLOUD_PRESETS[0];
@@ -266,9 +312,10 @@ function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: (
     access_key: "", secret_key: "", session_token: "",
     buckets: (cloud?.allowed_buckets ?? []).join(", "), prefixes: (cloud?.allowed_prefixes ?? []).join(", "),
   });
-  const [probe, setProbe] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [probe, setProbe] = useState<Probe | null>(initialProbe);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
+  const scoped = Boolean(cloud?.allowed_buckets?.length || cloud?.allowed_prefixes?.length);
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -282,10 +329,16 @@ function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: (
       };
       for (const k of ["access_key", "secret_key", "session_token"] as const) if (form[k].trim()) body[k] = form[k].trim();
       const saved = cloud ? await api.updateCloud(cloud.id, body) : await api.createCloud(body);
-      const out = await api.testCloud(saved.id);
-      setProbe({ ok: Boolean(out.success), detail: out.success ? t("settings.probeOk") : (out.error_message_sanitized ?? out.error_code ?? t("settings.probeFailed")) });
       setForm({ ...form, access_key: "", secret_key: "", session_token: "" });
-      if (!cloud) onDone();
+      let out: Probe;
+      try {
+        const r = await api.testCloud(saved.id);
+        out = { ok: Boolean(r.success), detail: r.success ? t("settings.probeOk") : (r.error_message_sanitized ?? r.error_code ?? t("settings.probeFailed")) };
+      } catch (err) {
+        out = { ok: false, detail: err instanceof Error ? err.message : String(err) };
+      }
+      setProbe(out);
+      onSaved(saved, out);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -295,45 +348,50 @@ function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: (
 
   return (
     <div className="provider-editor">
-    <form className="provider-editor" onSubmit={save} data-testid="cloud-editor">
-      <Field label={t("field.providerType")}>
-        <Select value={preset} onChange={(e) => {
-          const next = CLOUD_PRESETS.find((x) => x.id === e.target.value)!;
-          setPreset(next.id);
-          setForm({ ...form, region: next.regionDefault });
-        }}>
-          {CLOUD_PRESETS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-        </Select>
-      </Field>
-      <Field label={t("field.name")}><TextInput value={form.name} placeholder={p.label} onChange={set("name")} /></Field>
-      {p.variable === "endpoint" ? (
-        <Field label={t("field.endpoint")} hint={p.hint ? t(`preset.hint.${p.id}`) : undefined}><TextInput required value={form.endpoint_url} onChange={set("endpoint_url")} /></Field>
-      ) : null}
-      {p.variable === "account" ? (
-        <Field label={t("field.accountId")} hint={p.hint ? t(`preset.hint.${p.id}`) : undefined}><TextInput required value={form.account} onChange={set("account")} /></Field>
-      ) : null}
-      <Field label={t("field.region")}><TextInput value={form.region} placeholder={p.regionPlaceholder ?? p.regionDefault} onChange={set("region")} /></Field>
-      <Field label={t("field.accessKey")} hint={cloud?.has_access_key ? t("field.keepKey") : undefined}>
-        <TextInput autoComplete="off" value={form.access_key} onChange={set("access_key")} placeholder={cloud?.has_access_key ? "••••••••" : ""} />
-      </Field>
-      <Field label={t("field.secretKey")} hint={cloud?.has_secret_key ? t("field.keepKey") : undefined}>
-        <TextInput type="password" autoComplete="off" value={form.secret_key} onChange={set("secret_key")} placeholder={cloud?.has_secret_key ? "••••••••" : ""} />
-      </Field>
-      <Field label={t("field.sessionToken")} hint={t("field.optional")}>
-        <TextInput type="password" autoComplete="off" value={form.session_token} onChange={set("session_token")} />
-      </Field>
-      <Field label={t("field.buckets")} hint={t("field.listHint")}><TextInput value={form.buckets} onChange={set("buckets")} /></Field>
-      <Field label={t("field.prefixes")} hint={t("field.listHint")}><TextInput value={form.prefixes} onChange={set("prefixes")} /></Field>
-      {probe ? (
-        <p className="probe" data-ok={probe.ok ? "true" : "false"}><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
-      ) : null}
-      <div className="editor-actions">
-        <Button type="submit" variant="primary" disabled={busy}>{busy ? t("settings.testing") : t("settings.save")}</Button>
-        <span className="editor-spacer" />
-        {cloud ? <Button variant="danger" onClick={() => void api.deleteCloud(cloud.id).then(onDone, (e) => toast.error(e instanceof Error ? e.message : String(e)))}>{t("settings.delete")}</Button> : null}
-      </div>
-    </form>
       {cloud ? <WatchControl providerId={cloud.id} /> : null}
+      <form className="provider-editor" onSubmit={save} data-testid="cloud-editor">
+        <Field label={t("field.providerType")}>
+          <Select value={preset} onChange={(e) => {
+            const next = CLOUD_PRESETS.find((x) => x.id === e.target.value)!;
+            setPreset(next.id);
+            setForm({ ...form, region: next.regionDefault });
+          }}>
+            {CLOUD_PRESETS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </Select>
+        </Field>
+        <Field label={t("field.name")}><TextInput value={form.name} placeholder={p.label} onChange={set("name")} /></Field>
+        {p.variable === "endpoint" ? (
+          <Field label={t("field.endpoint")} hint={p.hint ? t(`preset.hint.${p.id}`) : undefined}><TextInput required value={form.endpoint_url} onChange={set("endpoint_url")} /></Field>
+        ) : null}
+        {p.variable === "account" ? (
+          <Field label={t("field.accountId")} hint={p.hint ? t(`preset.hint.${p.id}`) : undefined}><TextInput required value={form.account} onChange={set("account")} /></Field>
+        ) : null}
+        <Field label={t("field.region")}><TextInput value={form.region} placeholder={p.regionPlaceholder ?? p.regionDefault} onChange={set("region")} /></Field>
+        <Field label={t("field.accessKey")} hint={cloud?.has_access_key ? t("field.keepKey") : undefined}>
+          <TextInput autoComplete="off" value={form.access_key} onChange={set("access_key")} placeholder={cloud?.has_access_key ? "••••••••" : ""} />
+        </Field>
+        <Field label={t("field.secretKey")} hint={cloud?.has_secret_key ? t("field.keepKey") : undefined}>
+          <TextInput type="password" autoComplete="off" value={form.secret_key} onChange={set("secret_key")} placeholder={cloud?.has_secret_key ? "••••••••" : ""} />
+        </Field>
+        <details className="fold" open={scoped || undefined} data-testid="cloud-advanced">
+          <summary>{t("settings.advanced")}</summary>
+          <div className="provider-editor">
+            <Field label={t("field.sessionToken")} hint={t("field.optional")}>
+              <TextInput type="password" autoComplete="off" value={form.session_token} onChange={set("session_token")} />
+            </Field>
+            <Field label={t("field.buckets")} hint={t("field.listHint")}><TextInput value={form.buckets} onChange={set("buckets")} /></Field>
+            <Field label={t("field.prefixes")} hint={t("field.listHint")}><TextInput value={form.prefixes} onChange={set("prefixes")} /></Field>
+          </div>
+        </details>
+        {probe ? (
+          <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
+        ) : null}
+        <div className="editor-actions">
+          <Button type="submit" variant="primary" disabled={busy}>{busy ? t("settings.testing") : t("settings.save")}</Button>
+          <span className="editor-spacer" />
+          {cloud ? <Button variant="danger" onClick={() => void api.deleteCloud(cloud.id).then(onDeleted, (e) => toast.error(e instanceof Error ? e.message : String(e)))}>{t("settings.delete")}</Button> : null}
+        </div>
+      </form>
       {cloud ? (
         <div className="pref-group">
           <h4 className="pref-group-title">{t("notes.account")}</h4>

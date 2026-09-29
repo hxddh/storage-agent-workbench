@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { FixFormat, Impact, Issue } from "../api/types";
 import { Icon } from "../components/icons";
-import { Button, IconButton, Segmented, StatusDot, TextInput } from "../components/ui";
+import { Button, Segmented, StatusDot, TextInput } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { useCopy } from "../hooks/useCopy";
 import { useI18n } from "../i18n";
@@ -11,9 +11,9 @@ import { SEVERITY_TONE } from "../lib/severity";
 import { useApp } from "../shell/context";
 
 /**
- * One Issue on its bucket: what it is; opened, the detail, the fix (text the
- * user applies — Storage Agent never writes to storage) with what applying it
- * would change, and a read-only Verify. The rest (the task that found it,
+ * One Issue on its bucket: what it is; opened, the detail, Show fix and a
+ * read-only Verify, then the fix (text the user applies — Storage Agent never
+ * writes to storage) with one sentence on what applying it would change. The rest (the task that found it,
  * accepting the risk) sits behind ⋯.
  */
 export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange: () => void }) {
@@ -28,6 +28,8 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
   const [verdict, setVerdict] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [reason, setReason] = useState("");
+  // The fix opens under the actions, which stay where they are.
+  const [fixShown, setFixShown] = useState(Boolean(initial.fix));
   useEffect(() => setIssue(initial), [initial]);
 
   const act = async (name: string, fn: () => Promise<Issue>) => {
@@ -70,24 +72,23 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
       {open ? (
         <div className="issue-body reveal">
           {issue.detail ? <p className="issue-detail">{issue.detail}</p> : null}
-          {issue.fix ? <FixPack issue={issue} /> : !issue.fixable ? <p className="quiet-note">{t("issue.noFix")}</p> : null}
-          {verdict ? (
-            <p className="issue-verdict">
-              <StatusDot tone={verdict === "resolved" ? "success" : verdict === "still_present" ? "warn" : "neutral"} />
-              {t(`issue.verify.${verdict}`)}
-            </p>
-          ) : null}
           <div className="issue-actions">
-            {issue.fixable && !issue.fix ? (
-              <Button size="sm" variant="primary" disabled={!!busy} onClick={() => void act("fix", () => api.proposeFix(issue.id, lang))}>
-                {t("issue.fix")}
+            {issue.fixable ? (
+              <Button size="sm" variant={fixShown ? "secondary" : "primary"} disabled={!!busy} aria-expanded={fixShown}
+                onClick={() => {
+                  if (issue.fix) setFixShown(!fixShown);
+                  else void act("fix", () => api.proposeFix(issue.id, lang)).then(() => setFixShown(true));
+                }}>
+                {fixShown ? t("issue.hideFix") : t("issue.fix")}
               </Button>
             ) : null}
             <Button size="sm" disabled={!!busy} onClick={() => void verify()}>
               {busy === "verify" ? t("issue.verifying") : t("issue.verify")}
             </Button>
             <span className="issue-more" ref={menuRef}>
-              <IconButton icon="more" size="sm" label={t("issue.more")} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} />
+              <Button size="sm" variant="ghost" icon="more" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+                {t("issue.more")}
+              </Button>
               {menu ? (
                 <div className="ui-menu issue-menu" role="menu" onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setMenu(false); } }}>
                   {issue.source_task_id ? (
@@ -124,6 +125,14 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
               <Button size="sm" type="submit" disabled={!!busy}>{t("issue.acceptConfirm")}</Button>
             </form>
           ) : null}
+          {verdict ? (
+            <p className="issue-verdict">
+              <StatusDot tone={verdict === "resolved" ? "success" : verdict === "still_present" ? "warn" : "neutral"} />
+              {t(`issue.verify.${verdict}`)}
+            </p>
+          ) : null}
+          {fixShown && issue.fix ? <FixPack issue={issue} /> : null}
+          {!issue.fixable ? <p className="quiet-note">{t("issue.noFix")}</p> : null}
         </div>
       ) : null}
     </li>
@@ -162,16 +171,15 @@ function FixPack({ issue }: { issue: Issue }) {
         </Button>
       </div>
       <pre data-format={current.format}><code>{current.text}</code></pre>
-      <p className="quiet-note">{t("issue.fixNote")}</p>
       {impact ? (
-        <div className="impact" data-verdict={impact.verdict} data-testid="impact">
-          <p className="impact-head"><StatusDot tone={IMPACT_TONE[impact.verdict]} />{t(`impact.${impact.verdict}`)}</p>
+        <details className="impact" data-verdict={impact.verdict} data-testid="impact">
+          <summary className="impact-head"><StatusDot tone={IMPACT_TONE[impact.verdict]} />{t(`impact.${impact.verdict}`)}</summary>
           <ul className="impact-points">
             {impact.points.map((p) => <li key={p.text}>{p.text}</li>)}
             {impact.gaps.map((g) => <li key={g} data-gap="true">{g}</li>)}
             {issue.fix?.notes?.map((n) => <li key={n} data-note="true">{n}</li>)}
           </ul>
-        </div>
+        </details>
       ) : null}
     </div>
   );

@@ -10,6 +10,7 @@ const PATHS: Record<string, string> = {
   more: "M5 12h.01|M12 12h.01|M19 12h.01",
   close: "M18 6 6 18|M6 6l12 12",
   arrowUp: "M12 19V5|M5 12l7-7 7 7",
+  arrowLeft: "M19 12H5|M11 6l-6 6 6 6",
   arrowRight: "M5 12h14|M13 6l6 6-6 6",
   arrowDown: "M12 5v14|M19 12l-7 7-7-7",
   stop: "M7 7h10v10H7z",

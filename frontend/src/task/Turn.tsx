@@ -114,7 +114,7 @@ function Activity({ section, running }: { section: Section; running: boolean }) 
   const rows = tools(section);
   const commentary = section.blocks.filter((b) => b.kind === "commentary" || b.kind === "steer" || b.kind === "compacted");
   const start = section.turn.started_at ?? section.turn.created_at;
-  const elapsed = useElapsed(start, running ? null : section.turn.finished_at, running);
+  const elapsed = useElapsed(start, running ? null : section.turn.finished_at, running, lang);
   if (!running && !rows.length && !commentary.length) return null;
   const now = [...rows].reverse().find((r) => r.status === "running");
   const failed = rows.filter((r) => r.status === "failed" || r.status === "refused").length;

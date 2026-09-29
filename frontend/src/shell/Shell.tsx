@@ -133,7 +133,8 @@ export function Shell() {
           </div>
           {busy ? <div className="titlebar-progress" aria-hidden /> : null}
         </header>
-        <div className="document" data-testid="document">
+        {/* A scrolling page is not a Tab stop of its own (the keys still scroll it once focus is inside). */}
+        <div className="document" data-testid="document" tabIndex={-1}>
           {taskId ? <TaskPage key={taskId} model={model} setSnapshot={setSnapshot} />
             : <Home />}
         </div>

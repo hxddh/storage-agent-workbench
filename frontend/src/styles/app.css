@@ -162,7 +162,7 @@ button.model-chip:hover { background: var(--hover); color: var(--gray-100); }
 .starters { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
 .starter {
   height: 2rem; padding: 0 var(--space-3); border: 1px solid var(--edge); border-radius: 999px;
-  background: transparent; color: var(--gray-300); font: inherit; cursor: pointer;
+  background: var(--elevated); color: var(--gray-200); font: inherit; cursor: pointer;
   transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
 .starter:hover { background: var(--hover); color: var(--gray-100); }
@@ -183,7 +183,7 @@ button.model-chip:hover { background: var(--hover); color: var(--gray-100); }
 }
 .attention-bucket:hover, .attention-bucket[aria-pressed="true"] { background: var(--hover); color: var(--gray-100); }
 .attention-bucket[data-more="true"] { color: var(--gray-500); }
-.accounts { margin: var(--space-3) var(--space-3) 0; color: var(--gray-500); font-size: var(--text-sm); white-space: pre-wrap; }
+.accounts { display: grid; gap: var(--space-1); margin: var(--space-3) var(--space-3) 0; padding: 0; list-style: none; color: var(--gray-500); font-size: var(--text-sm); }
 .attention > .quiet-note { margin: var(--space-2) var(--space-3) 0; }
 
 /* --- a task: the conversation ------------------------------------------------------ */
@@ -302,9 +302,11 @@ button.model-chip:hover { background: var(--hover); color: var(--gray-100); }
 .issue-fix { display: grid; gap: var(--space-2); }
 .fix-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .issue-fix pre { max-height: 22rem; margin: 0; padding: var(--space-3); overflow: auto; border-radius: var(--radius); background: var(--code-bg); font-size: var(--text-2xs); line-height: 1.6; }
-.issue-fix pre[data-format="cli"] { white-space: pre-wrap; overflow-wrap: anywhere; }
+.issue-fix pre, .issue-fix code { white-space: pre; overflow-wrap: normal; }
 .impact { display: grid; gap: var(--space-2); }
-.impact-head { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--gray-100); font-weight: 500; }
+.impact-head { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--gray-100); font-weight: 500; cursor: pointer; list-style: none; }
+.impact-head::-webkit-details-marker { display: none; }
+.impact[open] > .impact-head { margin-bottom: var(--space-2); }
 .impact-points { display: grid; gap: var(--space-1); margin: 0; padding-left: var(--space-5); color: var(--gray-300); line-height: 1.5; }
 .impact-points li[data-gap="true"], .impact-points li[data-note="true"] { color: var(--gray-400); }
 .issue-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
@@ -399,7 +401,11 @@ dialog::backdrop { background: var(--scrim); }
 .editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .editor-spacer { flex: 1; }
 .probe { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--gray-200); }
-.watch { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--edge); }
+.watch { padding-bottom: var(--space-4); border-bottom: 1px solid var(--edge); }
+/* The save row stays in reach however long the form is. */
+form.provider-editor > .editor-actions { position: sticky; bottom: calc(-1 * var(--space-5)); z-index: 1; padding: var(--space-3) 0; background: var(--panel); }
+.provider-editor .fold > summary { margin: 0; }
+.provider-editor .fold[open] > summary { margin-bottom: var(--space-3); }
 .skill-list { display: grid; gap: var(--space-2); max-height: 16rem; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .skill-list li { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: var(--space-2); }
 .skill-list .quiet-note { display: block; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
