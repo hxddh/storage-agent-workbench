@@ -215,15 +215,7 @@ class Runtime:
             hub.turn(task_id, store.turn_public(t))
 
     def _publish_state(self, conn: Any, task_id: str) -> None:
-        active = store.active_turns(conn, task_id)
-        running = next((t["id"] for t in active if t["status"] == "running"), None)
-        queued = [t["id"] for t in active if t["status"] == "queued"]
-        last = store.head_status(conn, task_id)
-        task = store.get_task(conn, task_id)
-        hub.state(task_id, {"state": store.task_state("running" if running else ("queued" if queued else None),
-                                                      last),
-                            "running_turn_id": running, "queued_turn_ids": queued,
-                            "head_turn_id": task["head_turn_id"] if task else None})
+        hub.state(task_id, store.state_payload(conn, task_id))
 
     # -- worker ------------------------------------------------------------------------------
     async def _drain(self, task_id: str) -> None:

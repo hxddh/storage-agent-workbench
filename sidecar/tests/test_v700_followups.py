@@ -197,3 +197,13 @@ def test_a_steer_closes_the_running_turns_open_segment_first(client, conn):
         rec.close()
     items = store.items_for_turns(conn, [turn["id"]])
     assert [i["type"] for i in items] == ["agent_message", "steer"]
+
+
+def test_a_tool_row_names_the_storage_account_not_its_id(conn):
+    from app.agent.tools import registry
+    conn.execute("INSERT INTO cloud_providers (id, name, provider_type, created_at, updated_at) "
+                 "VALUES ('p-7', 'acme-prod', 'custom', 'now', 'now')")
+    conn.commit()
+    assert registry._target({"provider_id": "p-7"}) == "acme-prod"
+    assert registry._target({"provider_id": "p-7", "bucket": "b"}) == "b"
+    assert registry._target({"provider_id": "gone"}) == "gone"

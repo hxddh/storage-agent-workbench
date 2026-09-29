@@ -327,6 +327,13 @@ async def follow(task_id: str, request: Request, after: int = Query(default=0, g
                 last = it["seq"]
                 yield _sse("item", public_item(it), it["seq"])
             yield _sse("live", live)
+            # State is not durable: a follower (re)connecting reads it now, so a
+            # turn that settled while it was away never stays "working".
+            c = connect()
+            try:
+                yield _sse("state", store.state_payload(c, task_id))
+            finally:
+                c.close()
             while True:
                 if await request.is_disconnected():
                     return

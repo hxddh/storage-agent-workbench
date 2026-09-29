@@ -220,7 +220,22 @@ def _target(args: dict[str, Any]) -> str:
     bucket, key = args.get("bucket"), args.get("key")
     if bucket and key:
         return f"{bucket}/{key}"
-    return str(bucket or args.get("name") or args.get("dataset_id") or args.get("provider_id") or "")[:200]
+    if not (bucket or args.get("name") or args.get("dataset_id")) and args.get("provider_id"):
+        return _account_name(str(args["provider_id"]))
+    return str(bucket or args.get("name") or args.get("dataset_id") or "")[:200]
+
+
+def _account_name(provider_id: str) -> str:
+    """A storage account reads as its name, not its opaque id."""
+    try:
+        conn = db.connect()
+        try:
+            row = conn.execute("SELECT name FROM cloud_providers WHERE id = ?", (provider_id,)).fetchone()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        row = None
+    return str(row["name"] if row else provider_id)[:200]
 
 
 def _bounded_for_model(text: str, limit: int) -> str:

@@ -30,39 +30,34 @@ test.afterEach(async () => {
   await model.close();
 });
 
-test("a Direction becomes a result-first task with its outputs in the side pane", async ({ page }) => {
+test("a message becomes a conversation: the work in one line, the answer, Details beside it", async ({ page }) => {
   await boot(page);
   await delegate(page, "What evidence do I have attached?");
   await expect(page.getByTestId("task-page")).toBeVisible();
-  await expect(page.getByTestId("result-answer")).toHaveText(conclusion.answer, { timeout: 30_000 });
+  await expect(page.getByTestId("answer")).toContainText("no attached files", { timeout: 30_000 });
   await settled(page);
 
-  // Conclusion first: findings with severity badges, next steps, then the full answer.
-  const result = page.getByTestId("result");
-  await expect(result).toContainText("No access log attached");
-  await expect(result).toContainText("Medium");
-  await expect(result.locator("table")).toBeVisible();
-  // One Direction: no Work log; its work sits above the outputs.
+  await expect(page.getByTestId("message")).toHaveText(/What evidence do I have attached\?/);
+  await expect(page.getByTestId("activity-line")).toContainText("1 step");
+  const answer = page.getByTestId("answer");
+  await expect(answer.locator("table")).toBeVisible();
+  await expect(page.getByTestId("findings")).toContainText("No access log attached");
   await expect(page.getByText("Work log")).toHaveCount(0);
-  await expect(result.getByText(/Worked for/)).toBeVisible();
 
   // The agent names the task; the sidebar and title bar follow.
   await expect(page.getByTestId("task-title")).toHaveText("Attached evidence check", { timeout: 15_000 });
   await expect(page.getByTestId("task-list")).toContainText("Attached evidence check");
 
-  // A next step fills the Composer and sends nothing.
-  await result.getByRole("button", { name: /Attach last week's access log/ }).click();
+  // A suggestion fills the Composer and sends nothing.
+  await page.getByTestId("suggestions").getByRole("button", { name: /Attach last week's access log/ }).click();
   await expect(page.getByTestId("composer-input")).toHaveValue("Attach last week's access log");
 
-  // Outputs open the side pane.
-  await page.getByTestId("outputs").getByRole("button", { name: /Evidence/ }).click();
-  await expect(page.getByTestId("evidence")).toContainText("No access log attached");
-  await page.getByRole("tab", { name: /Report/ }).click();
-  await expect(page.getByTestId("report")).toContainText("Conclusion");
-  await expect(page.getByTestId("report")).toContainText("Safety");
-  await page.getByRole("tab", { name: /Activity/ }).click();
-  await page.getByTestId("activity").getByRole("button", { name: /Listed attached files/ }).click();
+  // The work line opens to every call; a call opens in Details.
+  await page.getByTestId("activity-line").click();
+  await page.locator(".call-row button", { hasText: "Listed attached files" }).click();
   await expect(page.getByTestId("call-detail")).toContainText("list_uploaded_files");
+  await page.getByRole("button", { name: "All calls" }).click();
+  await expect(page.getByTestId("details")).toContainText("Save report");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("inspector")).toHaveCount(0);
 });
@@ -71,11 +66,11 @@ test("⌘K finds the task again", async ({ page }) => {
   await boot(page);
   await delegate(page, "What evidence do I have attached?");
   await settled(page);
-  await page.getByTestId("nav-home").click();
+  await page.getByTestId("new-task").click();
   await page.keyboard.press("Control+k");
   await page.getByRole("combobox").fill("evidence");
   // The palette loads recent tasks asynchronously: press Enter once the match is selected.
   await expect(page.getByRole("option", { selected: true })).toContainText(/evidence/i);
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("result-answer")).toBeVisible();
+  await expect(page.getByTestId("answer")).toBeVisible();
 });

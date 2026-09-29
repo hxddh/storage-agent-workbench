@@ -52,6 +52,7 @@
   --sidebar: #161619;
   --panel: #1b1b1f;
   --elevated: #232327;
+  --bubble: #232327;
   --hover: #2c2c32;
   --edge: #25252a;
   --edge-strong: #34343b;
@@ -160,6 +161,7 @@
   --sidebar: #f4f4f5;
   --panel: #f7f7f8;
   --elevated: #ffffff;
+  --bubble: #f0f0f2;
   --hover: #ebebee;
   --edge: #e8e8eb;
   --edge-strong: #d6d6db;

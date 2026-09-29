@@ -3,7 +3,7 @@ import type { TaskSnapshot } from "../api/types";
 import { useI18n } from "../i18n";
 import { useApp } from "../shell/context";
 import { sections } from "../store/derive";
-import type { TaskModel } from "../store/task";
+import { forksOf, type TaskModel } from "../store/task";
 import { Turn } from "./Turn";
 
 /**
@@ -16,6 +16,7 @@ export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot
   const { t } = useI18n();
   const app = useApp();
   const all = useMemo(() => sections(model.turns, model.items, model.live), [model.turns, model.items, model.live]);
+  const forks = useMemo(() => forksOf(model), [model.snapshot?.forks, model.allTurns]); // eslint-disable-line react-hooks/exhaustive-deps
   const end = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const first = useRef(true);
@@ -56,7 +57,7 @@ export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot
   return (
     <div className="task-page" data-testid="task-page">
       {all.length ? all.map((s) => (
-        <Turn key={s.turn.id} section={s} taskId={model.id} forks={model.snapshot!.forks} setSnapshot={setSnapshot}
+        <Turn key={s.turn.id} section={s} taskId={model.id} forks={forks} setSnapshot={setSnapshot}
           running={s.turn.status === "running"} />
       )) : <p className="quiet-note">{t("task.empty")}</p>}
       {steps.length ? (

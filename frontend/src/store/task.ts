@@ -159,6 +159,24 @@ export function reduce(m: TaskModel, a: Action): TaskModel {
   }
 }
 
+/**
+ * Versions of each message: the snapshot's (which knows other branches) plus
+ * every turn heard of since — an edit shows ‹ 1 / 2 › the moment it is sent.
+ */
+export function forksOf(m: TaskModel): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [k, ids] of Object.entries(m.snapshot?.forks ?? {})) out[k] = [...ids];
+  const known = Object.values(m.allTurns)
+    .filter((t) => t.kind !== "resume" && t.status !== "cancelled")
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  for (const t of known) {
+    const key = t.parent_turn_id ?? "";
+    const list = out[key] ?? (out[key] = []);
+    if (!list.includes(t.id)) list.push(t.id);
+  }
+  return out;
+}
+
 /** A turn the model still marks running although the runtime runs something else (or nothing). */
 export function stale(m: TaskModel): boolean {
   return m.turns.some((t) => t.status === "running" && t.id !== m.runningTurnId);

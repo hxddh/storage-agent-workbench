@@ -44,7 +44,8 @@ Surfaces (cool, low chroma; dark theme, darkest first):
 `--canvas #0e0e10` < `--sidebar #161619` < `--panel #1b1b1f` < `--elevated #232327` < `--hover #2c2c32`;
 edges `--edge #25252a`, `--edge-strong #34343b`. Light: `--canvas #ffffff`,
 `--sidebar #f4f4f5`, `--panel #f7f7f8`, `--elevated #ffffff`, `--hover #ebebee`,
-edges `#e8e8eb` / `#d6d6db`.
+edges `#e8e8eb` / `#d6d6db`. The user's message bubble has its own `--bubble`
+(`#232327` dark, `#f0f0f2` light) so it reads on the canvas in both themes.
 
 Ink: `--gray-100` primary · `--gray-200` strong secondary · `--gray-300`
 secondary · `--gray-400` tertiary · `--gray-500` meta. No `--gray-600/700`

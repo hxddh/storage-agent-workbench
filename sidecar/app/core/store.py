@@ -109,6 +109,17 @@ def task_state(live: str | None, last: str | None) -> str:
     return "ready"
 
 
+def state_payload(conn: sqlite3.Connection, task_id: str) -> dict[str, Any]:
+    """The task's live state as the window reads it (the ``state`` event)."""
+    active = active_turns(conn, task_id)
+    running = next((t["id"] for t in active if t["status"] == "running"), None)
+    queued = [t["id"] for t in active if t["status"] == "queued"]
+    task = get_task(conn, task_id)
+    return {"state": task_state("running" if running else ("queued" if queued else None), head_status(conn, task_id)),
+            "running_turn_id": running, "queued_turn_ids": queued,
+            "head_turn_id": task["head_turn_id"] if task else None}
+
+
 def rename_task(conn: sqlite3.Connection, task_id: str, title: str, *, source: str = "user") -> bool:
     title = (title or "").strip()[:120]
     if not title:
