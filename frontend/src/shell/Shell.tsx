@@ -1,0 +1,127 @@
+import { useCallback, useEffect, useRef } from "react";
+import { api } from "../api";
+import { Composer } from "../composer/Composer";
+import { hasNativeTrafficLights } from "../config";
+import { IconButton, StatusDot } from "../components/ui";
+import { Home } from "../home/Home";
+import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "../hooks/useNativeAgent";
+import { useI18n } from "../i18n";
+import { Inspector } from "../inspector/Inspector";
+import { Settings } from "../settings/Settings";
+import { useTask } from "../store/task";
+import { TaskPage } from "../task/TaskPage";
+import { useTheme } from "../theme";
+import { useApp } from "./context";
+import { Palette } from "./Palette";
+import { Sidebar } from "./Sidebar";
+
+/**
+ * The window: sidebar · title bar · one document (the home or one Task) ·
+ * one Composer, plus the closable side pane for the Task's outputs.
+ */
+export function Shell() {
+  const app = useApp();
+  const taskId = app.route.kind === "task" ? app.route.id : null;
+  const { model, setSnapshot } = useTask(taskId);
+  const busy = model.state === "working" || model.state === "queued";
+  const { t } = useI18n();
+  const theme = useTheme();
+  const prevState = useRef(model.state);
+
+  // An OS notification when a task this window follows settles in the background.
+  useEffect(() => {
+    const was = prevState.current;
+    prevState.current = model.state;
+    if (was === "working" && model.state !== "working" && document.hidden && model.snapshot) {
+      const title = model.snapshot.task.title;
+      void notifyNative(model.state === "needs_attention" ? t("notify.attention", { title }) : t("notify.done", { title }), "");
+    }
+  }, [model.state, model.snapshot, t]);
+
+  useEffect(() => {
+    void setNativeWindowTitle(model.snapshot && taskId ? `${model.snapshot.task.title} — Storage Agent` : "Storage Agent");
+  }, [model.snapshot, taskId]);
+
+  useEffect(() => { if (!taskId) app.setPane(null); }, [taskId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const command = useCallback((c: MenuCommand) => {
+    switch (c) {
+      case "new-task": app.goHome(); break;
+      case "settings": app.openSettings(); break;
+      case "palette": app.setPalette(true); break;
+      case "toggle-sidebar": app.setSidebar(!app.sidebar); break;
+      case "theme": theme.toggle(); break;
+      case "stop": if (taskId) void api.stop(taskId); break;
+      case "review": if (taskId) app.setPane(app.pane ? null : { tab: "evidence" }); break;
+      case "focus-composer": document.querySelector<HTMLTextAreaElement>("[data-testid=composer-input]")?.focus(); break;
+      default: break;
+    }
+  }, [app, theme, taskId]);
+
+  useNativeShell({ onOpenTask: app.openTask, onMenuCommand: command, onSummon: () => command("focus-composer") });
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const k = e.key.toLowerCase();
+      if (k === "k") { e.preventDefault(); app.setPalette(!app.palette); }
+      else if (k === "n" && !e.shiftKey) { e.preventDefault(); command("new-task"); }
+      else if (k === ",") { e.preventDefault(); command("settings"); }
+      else if (k === "i" && taskId) { e.preventDefault(); command("review"); }
+      else if (k === "b" || k === "\\") { e.preventDefault(); command("toggle-sidebar"); }
+      else if (k === "." && busy) { e.preventDefault(); command("stop"); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [app, command, taskId, busy]);
+
+  const title = taskId ? model.snapshot?.task.title ?? "" : t("nav.home");
+  const state = taskId ? model.state : null;
+
+  return (
+    <div className="window" data-traffic-lights={hasNativeTrafficLights() ? "true" : undefined} data-sidebar={app.sidebar ? "open" : "closed"} data-pane={app.pane ? "open" : "closed"}>
+      <Sidebar />
+      <main className="main" aria-busy={busy}>
+        <header className="titlebar" data-tauri-drag-region>
+          <div className="titlebar-start">
+            {!app.sidebar ? (
+              <>
+                <IconButton icon="sidebar" label={t("nav.showSidebar")} onClick={() => app.setSidebar(true)} />
+                <IconButton icon="compose" label={t("nav.newTask")} onClick={() => app.goHome()} />
+              </>
+            ) : null}
+          </div>
+          <div className="titlebar-center" data-tauri-drag-region>
+            <span className="titlebar-title" data-testid="task-title">{title}</span>
+            {state && state !== "ready" ? (
+              <span className="state-pill" data-state={state} data-testid="task-state">
+                <StatusDot tone={state === "working" ? "accent" : state === "needs_attention" ? "warn" : "neutral"} pulse={state === "working"} />
+                {t(`state.${state}`)}
+              </span>
+            ) : null}
+          </div>
+          <div className="titlebar-end">
+            {taskId ? (
+              <IconButton icon="panelRight" label={app.pane ? t("inspector.close") : t("inspector.open")} data-testid="titlebar-sidepane"
+                aria-pressed={!!app.pane} onClick={() => command("review")} />
+            ) : null}
+          </div>
+          {busy ? <div className="titlebar-progress" aria-hidden /> : null}
+        </header>
+        <div className="document" data-testid="document">
+          {taskId ? <TaskPage key={taskId} model={model} setSnapshot={setSnapshot} /> : <Home />}
+        </div>
+        {taskId ? (
+          <div className="dock">
+            <Composer taskId={taskId} busy={busy} />
+          </div>
+        ) : null}
+      </main>
+      {taskId && app.pane ? <Inspector model={model} /> : null}
+      {app.settings ? <Settings /> : null}
+      {app.palette ? <Palette /> : null}
+      <span className="sr-only" aria-live="polite">{state ? t(`state.${state}`) : ""}</span>
+    </div>
+  );
+}

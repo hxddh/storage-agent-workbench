@@ -2,10 +2,8 @@ import { sidecarBaseUrl, sidecarToken } from "../config";
 
 /**
  * The one HTTP client under every Sidecar call: auth header, bounded
- * timeouts, and one error shape. Domain modules (`runtime`, `tasks`,
- * `settings`, `providers`) build on this; nothing else talks to `fetch`
- * except the SSE follower in `runtime.ts` and the multipart upload in
- * `tasks.ts`, which need the raw response.
+ * timeouts, and one error shape. `api/index.ts` builds on it; only the
+ * multipart upload needs the raw response.
  */
 
 // Default client-side timeout for plain (non-streaming) requests. Guards against

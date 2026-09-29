@@ -5,28 +5,27 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { I18nProvider } from "./i18n";
 import { ThemeProvider, applyTheme, initialTheme } from "./theme";
 import { ToastProvider } from "./components/Toast";
+import { initSidecarBaseUrl } from "./config";
 import "./index.css";
-import "./agent/native-components.css";
-import "./agent/native-shell.css";
-import "./agent/native-document.css";
+import "./styles/components.css";
+import "./styles/app.css";
+import "./styles/document.css";
 import "./styles/markdown.css";
-import "./styles/settings-panes.css";
-import "./styles/artifacts.css";
-import "./styles/overlays.css";
-import "./styles/estate.css";
 
 applyTheme(initialTheme());
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <ThemeProvider>
-        <I18nProvider>
-          <ToastProvider>
-            <App />
-          </ToastProvider>
-        </I18nProvider>
-      </ThemeProvider>
-    </ErrorBoundary>
-  </React.StrictMode>
-);
+void initSidecarBaseUrl().finally(() => {
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <I18nProvider>
+            <ToastProvider>
+              <App />
+            </ToastProvider>
+          </I18nProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
+    </React.StrictMode>,
+  );
+});
