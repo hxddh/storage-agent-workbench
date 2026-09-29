@@ -60,8 +60,6 @@ class Recorder:
         self._open: dict[str, Any] | None = None  # the segment being written
         self._progress: dict[str, tuple[float, int]] = {}
         self._calls: dict[str, dict[str, Any]] = {}
-        self.tool_count = 0
-        self.last_text = ""
         self._produced = False  # any model output (text or a tool call) this Turn
 
     def close(self) -> None:
@@ -120,14 +118,12 @@ class Recorder:
         hub.close_segment(self.task_id, seg["id"])
         if not text:
             return None
-        self.last_text = text
         self._append("agent_message", {"text": text}, item_id=seg["id"])
         return text
 
     # -- tools -------------------------------------------------------------------------
     def tool_started(self, call_id: str, name: str, args: dict[str, Any], target: str) -> None:
         self.close_segment()
-        self.tool_count += 1
         self._calls[call_id] = {"name": name, "args": args, "started": time.monotonic()}
         self._append("tool_call", {"call_id": call_id, "name": name, "args": args, "target": target})
 

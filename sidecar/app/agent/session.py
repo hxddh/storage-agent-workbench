@@ -22,15 +22,6 @@ from ..core import store
 _INTERRUPTED_OUTPUT = "[No result: the work was interrupted before this call returned.]"
 
 
-def history_items(conn, task_id: str, before_turn_id: str | None) -> list[dict[str, Any]]:
-    """Input items for everything on the branch before ``before_turn_id``
-    (or the whole branch when it is None), compaction-aware."""
-    chain = store.branch(conn, task_id, before_turn_id)
-    turn_ids = [t["id"] for t in chain if t["id"] != before_turn_id]
-    items = store.items_for_turns(conn, turn_ids)
-    return to_input(items)
-
-
 def _assistant(item_id: str, text: str) -> dict[str, Any]:
     # The SDK's own output-message shape: on Chat Completions its converter
     # merges this message with the tool calls that follow it into ONE assistant

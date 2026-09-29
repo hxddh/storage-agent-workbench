@@ -255,21 +255,6 @@ async def upload(task_id: str, file: UploadFile = File(...), dataset_type: str =
     return _file_out(ds)
 
 
-@router.get("/{task_id}/files")
-def list_files(task_id: str, conn: Any = Depends(get_conn)) -> dict[str, Any]:
-    _task_or_404(conn, task_id)
-    return {"files": [_file_out(d) for d in datasets.list_for_task(conn, task_id)]}
-
-
-@router.get("/{task_id}/artifacts/{artifact_id}")
-def get_artifact(task_id: str, artifact_id: str, conn: Any = Depends(get_conn)) -> dict[str, Any]:
-    row = conn.execute("SELECT * FROM artifacts WHERE id = ? AND task_id = ?", (artifact_id, task_id)).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail="artifact not found")
-    return {k: row[k] for k in ("id", "kind", "title", "turn_id", "provider_id", "created_at")} | {
-        "payload": store.loads(row["payload"])}
-
-
 @router.get("/{task_id}/report", response_class=PlainTextResponse)
 def get_report(task_id: str, lang: str = Query(default="en", pattern="^(en|zh)$"),
                conn: Any = Depends(get_conn)) -> str:
