@@ -36,11 +36,9 @@ export function costChart(doc: AnalysisDocument | null | undefined): CostChart |
     return {
       kind: "cost",
       estimate: true,
-      priceConfirmed: false,
       coverage: doc.coverage,
       gaps: gaps.length ? gaps : [{ code: str(payload.code) ?? "gap" }],
       horizons: [],
-      delta: null,
       classes: [],
     };
   }
@@ -58,25 +56,14 @@ export function costChart(doc: AnalysisDocument | null | undefined): CostChart |
       classes[name] = amount;
       classSet.add(name);
     }
-    const candidateCost = record(point.candidate_monthly_cost);
-    const baselineCost = record(point.baseline_monthly_cost);
-    horizons.push({
-      day: num(point.day) as number,
-      classes,
-      baselineCost: candidateCost ? num(baselineCost?.usd_per_month) : (baselineCost ? num(baselineCost.usd_per_month) : null),
-      candidateCost: candidateCost ? num(candidateCost.usd_per_month) : null,
-    });
+    horizons.push({ day: num(point.day) as number, classes });
   }
-  const delta = record(payload.monthly_cost_delta);
-  const priceConfirmed = horizons.some((h) => h.candidateCost != null);
   return {
     kind: "cost",
     estimate: true,
-    priceConfirmed,
     coverage: doc.coverage,
     gaps,
     horizons,
-    delta: delta ? num(delta.usd_per_month_at_365d) : null,
     classes: [...classSet],
   };
 }

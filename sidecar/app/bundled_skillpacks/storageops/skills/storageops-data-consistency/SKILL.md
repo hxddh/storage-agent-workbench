@@ -29,7 +29,7 @@ Consistency concern →
   ├─ wrote but can't read →
   │   ├─ multipart: CompleteMultipartUpload actually called? (else object doesn't exist)
   │   ├─ read via a different client/CDN? → that layer's cache
-  │   └─ read via a mount? → mount cache not invalidated → storageops-mount-filesystem-workspace
+  │   └─ read via a mount (s3fs, goofys, mountpoint)? → the mount's cache was not invalidated
   ├─ see old data after overwrite → browser/CDN/app cache TTL or ETag validation
   ├─ object overwritten unexpectedly → concurrent writers, last-writer-wins → enable versioning
   ├─ LIST missing new objects → wrong prefix, pagination, or directory-marker (LIST is consistent)

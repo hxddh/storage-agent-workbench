@@ -72,18 +72,14 @@ export type TaskProvenance = {
 export type HorizonPoint = {
   day: number;
   classes: Record<string, number>;
-  baselineCost: number | null;
-  candidateCost: number | null;
 };
 
 export type CostChart = {
   kind: "cost";
   estimate: true;
-  priceConfirmed: boolean;
   coverage: Coverage | null;
   gaps: Array<{ code?: string; message?: string }>;
   horizons: HorizonPoint[];
-  delta: number | null;
   classes: string[];
 };
 

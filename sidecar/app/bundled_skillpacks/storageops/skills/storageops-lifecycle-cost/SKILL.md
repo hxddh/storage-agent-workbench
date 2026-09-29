@@ -6,7 +6,7 @@ description: >
   objects in the wrong tier, accumulating noncurrent versions, orphaned
   incomplete multipart uploads, and transition/minimum-duration rules. Use for
   billed-storage and tiering questions (not transfer speed). Treat class
-  thresholds, minimum durations, and prices as provider-specific until confirmed.
+  thresholds and minimum durations as provider-specific; never quote a price.
 domains: [lifecycle, cost]
 trigger_keywords:
   - lifecycle

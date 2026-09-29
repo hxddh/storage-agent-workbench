@@ -1,11 +1,11 @@
-"""Deterministic storage-class / lifecycle cost simulator.
+"""Deterministic storage-class / lifecycle simulator.
 
-Pure functions over already-bounded inventory aggregates, current lifecycle
-facts, and a local price table. No model, no DuckDB, no raw object rows.
+Pure functions over already-bounded inventory aggregates and current lifecycle
+facts. No model, no DuckDB, no raw object rows, and no dollar figures: the
+class mix over time is what the evidence supports.
 
 Outputs always carry coverage (how many objects/bytes, snapshot time) and
-uncertainty. Missing inventory or an unconfirmed price table is an explicit
-gap — never a fabricated dollar figure or trend.
+uncertainty. Missing inventory is an explicit gap — never a fabricated trend.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from typing import Any
 from ..security.redaction import redact_text
 
 _HORIZON_DAYS = (0, 30, 90, 180, 365)
-_GIB = 1000 ** 3  # billed GB ≈ 10^9; labelled as an estimate
 
 # Mid-points for the inventory age buckets. ``unknown`` does not age.
 _AGE_MIDPOINT_DAYS = {
@@ -203,28 +202,6 @@ def _sum_by_class(pools: list[dict[str, Any]]) -> dict[str, int]:
     return out
 
 
-def _monthly_cost(class_bytes: dict[str, int], rates: dict[str, Any]) -> dict[str, Any]:
-    storage_rates = rates.get("storage_gb_month") or {}
-    if not isinstance(storage_rates, dict) or not storage_rates:
-        return {"kind": "gap", "code": "price_unconfirmed",
-                "message": "No storage-class monthly rates in the price table."}
-    usd = 0.0
-    missing: list[str] = []
-    for klass, nbytes in class_bytes.items():
-        rate = storage_rates.get(klass)
-        if rate is None:
-            rate = storage_rates.get("STANDARD")
-            missing.append(klass)
-        usd += (nbytes / _GIB) * _num(rate)
-    return {
-        "usd_per_month": round(usd, 4),
-        "currency": "USD",
-        "estimate": True,
-        "missing_class_rates": sorted(set(missing))[:12],
-        "gb_divisor": _GIB,
-    }
-
-
 def current_rules_from_lifecycle(lifecycle: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Best-effort projection of already-applied lifecycle facts.
 
@@ -247,12 +224,11 @@ def simulate(*,
              inventory: dict[str, Any] | None,
              lifecycle: dict[str, Any] | None = None,
              candidates: Any = None,
-             price_table: dict[str, Any] | None = None,
              inventory_as_of: str | None = None) -> dict[str, Any]:
-    """Project storage-class mix and monthly cost under candidate rules.
+    """Project the storage-class mix under the current and candidate rules.
 
     Returns ``kind="simulation"`` with coverage, or ``kind="gap"`` when the
-    inputs cannot support a number.
+    inputs cannot support a number. Bytes only: no dollar figure is produced.
     """
     gaps: list[dict[str, str]] = []
     inv = inventory if isinstance(inventory, dict) else None
@@ -261,22 +237,10 @@ def simulate(*,
             "kind": "gap",
             "gaps": [_gap("no_inventory",
                           "No bounded inventory aggregate is attached to this Task. "
-                          "Import or upload inventory before simulating cost.")],
+                          "Import or upload inventory before simulating the class mix.")],
             "coverage": coverage_from_inventory(inv, as_of=inventory_as_of),
             "timeline": [],
-            "monthly_cost": None,
-            "monthly_cost_delta": None,
         }
-
-    prices = price_table if isinstance(price_table, dict) else {}
-    confirmed = bool(prices.get("confirmed"))
-    if not prices or not confirmed:
-        gaps.append(_gap(
-            "price_unconfirmed",
-            "The local price table is still the example schedule and has not "
-            "been confirmed against your bill. Class mix is projected; dollar "
-            "figures are withheld rather than invented.",
-        ))
 
     pools, estimated = _pools(inv)
     coverage = coverage_from_inventory(inv, as_of=inventory_as_of)
@@ -287,51 +251,22 @@ def simulate(*,
         candidate_rules = list(baseline_rules)
 
     timeline: list[dict[str, Any]] = []
-    cost_now = None
-    cost_end = None
-    base_end = None
     for day in _HORIZON_DAYS:
-        baseline_pools = _apply_rules(pools, baseline_rules, day)
-        candidate_pools = _apply_rules(pools, candidate_rules, day)
-        baseline_mix = _sum_by_class(baseline_pools)
-        candidate_mix = _sum_by_class(candidate_pools)
-        point: dict[str, Any] = {
+        baseline_mix = _sum_by_class(_apply_rules(pools, baseline_rules, day))
+        candidate_mix = _sum_by_class(_apply_rules(pools, candidate_rules, day))
+        timeline.append({
             "day": day,
             "baseline_class_bytes": baseline_mix,
             "candidate_class_bytes": candidate_mix,
             "baseline_bytes": sum(baseline_mix.values()),
             "candidate_bytes": sum(candidate_mix.values()),
-        }
-        if confirmed:
-            point["baseline_monthly_cost"] = _monthly_cost(baseline_mix, prices)
-            point["candidate_monthly_cost"] = _monthly_cost(candidate_mix, prices)
-        else:
-            point["baseline_monthly_cost"] = None
-            point["candidate_monthly_cost"] = None
-        timeline.append(point)
-        if day == 0 and confirmed:
-            cost_now = point["candidate_monthly_cost"]
-        if day == 365 and confirmed:
-            cost_end = point["candidate_monthly_cost"]
-            base_end = point["baseline_monthly_cost"]
+        })
 
-    delta = None
-    if confirmed and isinstance(cost_end, dict) and isinstance(base_end, dict):
-        if "usd_per_month" in cost_end and "usd_per_month" in base_end:
-            delta = {
-                "usd_per_month_at_365d": round(
-                    cost_end["usd_per_month"] - base_end["usd_per_month"], 4),
-                "estimate": True,
-                "horizon_days": 365,
-            }
-
-    abort = [r for r in candidate_rules if r["kind"] == "abort_mpu"]
-    if abort:
+    if any(r["kind"] == "abort_mpu" for r in candidate_rules):
         gaps.append(_gap(
             "abort_mpu_no_inventory",
             "Abort-incomplete-MPU rules are recorded in the plan but inventory "
-            "aggregates do not include multipart bytes, so no MPU savings number "
-            "is produced.",
+            "aggregates do not include multipart bytes, so no MPU effect is projected.",
         ))
 
     return {
@@ -342,11 +277,8 @@ def simulate(*,
         "candidates": candidate_rules,
         "baseline_rules": baseline_rules,
         "timeline": timeline,
-        "monthly_cost": cost_now if confirmed else None,
-        "monthly_cost_delta": delta,
         "uncertainty": [
             "Class×age joint distribution is assumed independent.",
             "Age buckets use mid-points, not per-object ages.",
-            "Dollar figures use the local price table, not a live bill.",
         ],
     }

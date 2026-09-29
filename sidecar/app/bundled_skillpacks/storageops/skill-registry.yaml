@@ -18,7 +18,7 @@ skills:
     description: >
       First-contact triage for any object-storage issue with no clear category.
       Classify the domain (permission, performance, protocol, network, cost,
-      mount, CLI/SDK, bigdata, consistency, notification, replication, migration),
+      CLI/SDK, consistency, notification, replication),
       gauge severity and evidence, then load the matching specialist skill. Use
       first when a user reports an S3/BOS/OSS/COS/GCS error without an obvious
       category.
@@ -183,39 +183,6 @@ skills:
       - Object Lock
     domains: [replication]
 
-  - name: storageops-mount-filesystem-workspace
-    path: skills/storageops-mount-filesystem-workspace/SKILL.md
-    priority: 30
-    description: >
-      Diagnose object-storage mount problems — s3fs, goofys, rclone mount,
-      JuiceFS. Most issues are POSIX semantic mismatches (no atomic rename, no
-      file locks, no mmap) or metadata amplification (ls/git stat storms). Use
-      when a mounted bucket is slow, corrupts files, or breaks tools.
-    trigger_keywords:
-      - mount
-      - FUSE
-      - s3fs
-      - goofys
-      - JuiceFS
-      - filesystem
-    domains: [mount, filesystem]
-
-  - name: storageops-migration-sync
-    path: skills/storageops-migration-sync/SKILL.md
-    priority: 30
-    description: >
-      Plan and validate migration and ongoing sync — same-provider server-side
-      copy, cross-provider transfer (AWS↔BOS/OSS/COS/GCS), large/offline
-      transfers. Covers strategy by volume/bandwidth, egress cost, ETag/metadata/
-      ACL compatibility, and post-migration integrity. Use for "how do I move/sync
-      N TB between buckets/providers".
-    trigger_keywords:
-      - migration
-      - sync
-      - transfer
-      - 跨云
-    domains: [migration]
-
   - name: storageops-data-consistency
     path: skills/storageops-data-consistency/SKILL.md
     priority: 30
@@ -232,22 +199,6 @@ skills:
       - checksum
     domains: [consistency]
 
-  - name: storageops-bigdata-pipeline
-    path: skills/storageops-bigdata-pipeline/SKILL.md
-    priority: 30
-    description: >
-      Diagnose Spark/Hive/Hadoop/Flink failures against object storage — output
-      committer races (FileOutputCommitter V1 on S3), small-file amplification,
-      partition discovery, connection-pool exhaustion, table-format snapshots. Use
-      for S3A/EMR job errors or slow jobs writing to buckets.
-    trigger_keywords:
-      - Spark
-      - Hive
-      - Hadoop
-      - S3A
-      - EMR
-    domains: [bigdata]
-
   - name: storageops-event-notification
     path: skills/storageops-event-notification/SKILL.md
     priority: 30
@@ -263,36 +214,6 @@ skills:
       - Lambda
       - EventBridge
     domains: [notification]
-
-  - name: storageops-evidence-reporting
-    path: skills/storageops-evidence-reporting/SKILL.md
-    priority: 40
-    description: >
-      Turn a completed diagnosis into a clear, evidence-based report or summary —
-      separating tool-verified facts from inference, scoring confidence, and
-      routing a formal report to the app's report generator. Use when the user
-      asks for a write-up, summary, or diagnostic report.
-    trigger_keywords:
-      - report
-      - summary
-      - 总结
-      - 诊断报告
-    domains: [reporting]
-
-  - name: storageops-eval-golden-cases
-    path: skills/storageops-eval-golden-cases/SKILL.md
-    priority: 40
-    description: >
-      A self-check rubric for the quality and safety of a diagnosis before you
-      present it — right domain, claims tool-verified, confidence matching the
-      evidence, no unsafe step recommended. Use on high-stakes or low-confidence
-      answers, or when the user questions a result.
-    trigger_keywords:
-      - eval
-      - quality
-      - 验证
-      - double-check
-    domains: [eval]
 
   - name: storageops-inventory-analysis
     path: skills/storageops-inventory-analysis/SKILL.md

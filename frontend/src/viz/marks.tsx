@@ -276,70 +276,6 @@ export function StackedHorizon({
   );
 }
 
-export function CostColumns({
-  days,
-  baseline,
-  candidate,
-  labels,
-}: {
-  days: number[];
-  baseline: Array<number | null>;
-  candidate: Array<number | null>;
-  labels: { baseline: string; candidate: string };
-}) {
-  const [ref, width] = useMeasuredWidth();
-  const [tip, setTip] = useState<Tip | null>(null);
-  const nums = [...baseline, ...candidate].filter((n): n is number => n != null);
-  if (nums.length === 0) return null;
-  const ticks = niceTicks(Math.max(...nums, 0.01));
-  const max = ticks[ticks.length - 1];
-  const height = 120;
-  const plotW = width - PAD.left - PAD.right;
-  const slot = plotW / days.length;
-  const barW = Math.max(6, Math.min(22, (slot * 0.6 - 2) / 2));
-  const money = (n: number) => `$${n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(n < 10 ? 2 : 0)}`;
-  return (
-    <div ref={ref} className="viz-plot" onMouseLeave={() => setTip(null)}>
-      <svg width={width} height={height + PAD.top + PAD.bottom} role="img" aria-label="Monthly cost at simulator horizons">
-        <Axis ticks={ticks} max={max} width={width} height={height} format={money} />
-        {days.map((day, i) => {
-          const x = PAD.left + i * slot + (slot - (barW * 2 + 2)) / 2;
-          const b = baseline[i];
-          const c = candidate[i];
-          const bar = (value: number, bx: number, fill: string) => {
-            const h = Math.max((value / max) * height, 1);
-            return <path d={columnPath(bx, PAD.top + height - h, barW, h, 4)} fill={fill} />;
-          };
-          return (
-            <g key={day}>
-              {b != null ? bar(b, x, "var(--gray-500)") : null}
-              {c != null ? bar(c, x + barW + 2, "var(--viz-1)") : null}
-              <text x={x + barW + 1} y={PAD.top + height + 16} textAnchor="middle" className="viz-tick" data-axis="x">{day}d</text>
-              <rect
-                x={PAD.left + i * slot}
-                y={PAD.top}
-                width={slot}
-                height={height}
-                className="viz-hit"
-                onMouseEnter={() => setTip({
-                  x: Math.min(x + barW * 2 + 10, width - 180),
-                  y: PAD.top,
-                  title: `${day}d`,
-                  rows: [
-                    ...(b != null ? [{ label: labels.baseline, value: `$${b.toFixed(2)}`, color: "var(--gray-500)" }] : []),
-                    ...(c != null ? [{ label: labels.candidate, value: `$${c.toFixed(2)}`, color: "var(--viz-1)" }] : []),
-                  ],
-                })}
-              />
-            </g>
-          );
-        })}
-      </svg>
-      <Tooltip tip={tip} />
-    </div>
-  );
-}
-
 export function RankedBars({
   points,
   ariaLabel,
@@ -395,7 +331,3 @@ export function formatSignedBytes(n: number): string {
   return `${n < 0 ? "−" : "+"}${formatBytes(Math.abs(n))}`;
 }
 
-export function formatUsd(n: number): string {
-  const sign = n < 0 ? "−" : n > 0 ? "+" : "";
-  return `${sign}$${Math.abs(n).toFixed(2)}/mo`;
-}

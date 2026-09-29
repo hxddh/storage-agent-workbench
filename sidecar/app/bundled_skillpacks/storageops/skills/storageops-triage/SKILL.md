@@ -3,8 +3,8 @@ name: storageops-triage
 description: >
   First-contact triage for any object-storage issue with no clear category.
   Classify the problem domain (permission, performance, protocol/signature,
-  network/TLS, cost/lifecycle, mount, CLI/SDK, bigdata, consistency,
-  notification, replication, migration), gauge severity and evidence, then load
+  network/TLS, cost/lifecycle, CLI/SDK, consistency, notification,
+  replication), gauge severity and evidence, then load
   the matching specialist skill. Use this first when a user reports an
   S3/BOS/OSS/COS/GCS error without an obvious domain.
 domains: [triage]
@@ -34,18 +34,18 @@ User reports a storage issue →
   │   ├─ SignatureDoesNotMatch / 400 / CORS         → storageops-s3-protocol-compatibility
   │   ├─ Connection refused / DNS / TLS / cert      → storageops-network-endpoint-access
   │   ├─ SDK/CLI exception (boto3, awscli, rclone)  → storageops-cli-sdk-diagnosis
-  │   ├─ Spark / Hive / Hadoop / S3A                → storageops-bigdata-pipeline
+  │   ├─ Spark / Hive / Hadoop / S3A connector      → storageops-cli-sdk-diagnosis
   │   ├─ Event missing / Lambda not triggered       → storageops-event-notification
   │   └─ Replication lag / version / DeleteMarker   → storageops-replication-versioning
   ├─ Cost / billing / storage-class complaint        → storageops-lifecycle-cost
-  ├─ Mount / FUSE / s3fs complaint                    → storageops-mount-filesystem-workspace
+  ├─ Mount / FUSE / s3fs complaint                    → storageops-data-consistency (caching) or storageops-cli-sdk-diagnosis
   ├─ Stale read / missing object / ETag mismatch      → storageops-data-consistency
-  ├─ Migration / cross-cloud sync question            → storageops-migration-sync
+  ├─ Migration / cross-cloud sync question            → compare both sides read-only (list_objects, inspect_object); Storage Agent never copies data
   ├─ Access-log / traffic / who-is-accessing question → storageops-access-log-analysis
   ├─ Account-wide overview / "map my buckets" / audit  → storageops-account-posture
   ├─ Object count / size distribution / capacity        → storageops-inventory-analysis
   ├─ Logging/notification/metrics coverage gaps         → storageops-observability-audit
-  ├─ "How do I write this up / report it?"              → storageops-evidence-reporting
+  ├─ "How do I write this up / report it?"              → the task report (Details › Save report); record_conclusion keeps the findings
   ├─ Vague / multi-bucket / where-do-I-start            → storageops-workbench-investigation
   └─ No usable evidence → ask clarifying questions; do NOT guess the domain
 ```

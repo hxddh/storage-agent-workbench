@@ -6,7 +6,6 @@ beside it, this copies what the user would miss — never modifying `app.db`:
 - model endpoints and storage accounts (the vault references carry over; the
   secrets themselves never move);
 - the estate: known buckets, issues with their lifecycle, watch schedules;
-- the price table;
 - each task's title and, for every Direction, its final answer and recorded
   conclusion (the tool trace stays in v4 — the task says it was imported).
 
@@ -113,14 +112,6 @@ def _import(old: sqlite3.Connection, new: sqlite3.Connection) -> dict[str, int]:
                      r["allowed_buckets_json"] or "[]", r["allowed_prefixes_json"] or "[]", r["created_at"],
                      r["updated_at"]))
         counts["cloud_providers"] += 1
-
-    prices = _rows(old, "SELECT * FROM storage_price_table WHERE id = 'default'")
-    if prices:
-        doc = {"rates": _json(prices[0]["rates_json"]), "confirmed": bool(prices[0]["confirmed"]),
-               "note": prices[0]["note"]}
-        if isinstance(doc["rates"], dict):
-            new.execute("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('price_table', ?, ?)",
-                        (json.dumps(doc), prices[0]["updated_at"] or utcnow()))
 
     task_ids = _import_tasks(old, new, counts)
 
