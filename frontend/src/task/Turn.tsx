@@ -195,18 +195,20 @@ function Answer({ section, running }: { section: Section; running: boolean }) {
       </div>
     ) : null;
   }
-  const text = section.answer ?? (c ? c.answer : null);
-  if (!text && !c?.findings.length && !fig) return null;
+  // A conclusion recorded before v9 carries its own answer; newer ones do not.
+  const text = section.answer ?? c?.answer ?? null;
+  const found = c?.findings ?? [];
+  if (!text && !found.length && !fig) return null;
   return (
     <div className="answer reveal" data-testid="answer">
       {text ? <Markdown text={text} /> : null}
-      {c?.findings.length ? <Findings findings={c.findings} /> : null}
+      {found.length ? <Findings findings={found} /> : null}
       {fig ? <AnalysisFigures provenance={fig} /> : null}
     </div>
   );
 }
 
-function Findings({ findings }: { findings: NonNullable<Section["conclusion"]>["findings"] }) {
+function Findings({ findings }: { findings: NonNullable<NonNullable<Section["conclusion"]>["findings"]> }) {
   const { t } = useI18n();
   return (
     <ul className="findings" aria-label={t("turn.findings")} data-testid="findings">

@@ -52,7 +52,7 @@ export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot
   }
   const busy = model.state === "working" || model.state === "queued";
   const last = all[all.length - 1];
-  const steps = !busy && last?.turn.status === "completed" ? last.conclusion?.next_steps.slice(0, 3) ?? [] : [];
+  const steps = !busy && last?.turn.status === "completed" ? (last.conclusion?.next_steps ?? []).slice(0, 3) : [];
 
   return (
     <div className="task-page" data-testid="task-page">

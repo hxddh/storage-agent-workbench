@@ -66,7 +66,7 @@ export type Item =
       call_id: string; name: string; ok: boolean; refused?: boolean; summary: string;
       duration_ms?: number; detail?: string | null; detail_truncated?: boolean;
     }>
-  | Base<"conclusion", { call_id: string; answer: string; findings: Finding[]; next_steps: string[] }>
+  | Base<"conclusion", { call_id: string; answer?: string; findings?: Finding[]; next_steps?: string[] }>
   | Base<"steer", { text: string }>
   | Base<"compaction", { summary: string; turns_folded: number }>
   | Base<"notice", { event: NoticeEvent; error?: string; reason?: string; title?: string; note?: string; queued?: boolean }>
