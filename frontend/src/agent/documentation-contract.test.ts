@@ -108,7 +108,7 @@ describe("v3.1 documentation contract", () => {
     expect(api).toContain("/remediation-plans");
     expect(api).toContain("/settings/price-table");
     expect(api).toMatch(/product-level.*Agent Task/i);
-    expect(dataModel).toMatch(/Current migration head:\s*031/i);
+    expect(dataModel).toMatch(/Current migration head:\s*032/i);
     expect(dataModel).toContain("result_first_work_result_conclusion");
     expect(dataModel).toContain("conclusion_json_sanitized");
     expect(api).toContain("conclusion.recorded");
