@@ -103,9 +103,12 @@ export type TaskSnapshot = {
   files: FileRow[];
   artifacts: ArtifactRow[];
   last_seq: number;
+  head_turn_id?: string | null;
 };
 
-export type StateEvent = { state: TaskState; running_turn_id: string | null; queued_turn_ids: string[] };
+export type StateEvent = {
+  state: TaskState; running_turn_id: string | null; queued_turn_ids: string[]; head_turn_id?: string | null;
+};
 export type TaskFeedEvent = { task_id: string; state?: TaskState; title?: string; deleted?: boolean; created?: boolean };
 
 // --- estate -------------------------------------------------------------------------
@@ -251,7 +254,7 @@ export type CloudProvider = {
 };
 
 export type Settings = {
-  language: "en" | "zh";
+  language: "en" | "zh" | null;
   theme: "system" | "light" | "dark";
   vault: { unreadable: boolean; backup_present: boolean };
   instructions: { loaded: boolean; path: string; chars: number; truncated: boolean; error: string | null };

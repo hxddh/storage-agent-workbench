@@ -109,6 +109,17 @@ def task_state(live: str | None, last: str | None) -> str:
     return "ready"
 
 
+def state_payload(conn: sqlite3.Connection, task_id: str) -> dict[str, Any]:
+    """The task's live state as the window reads it (the ``state`` event)."""
+    active = active_turns(conn, task_id)
+    running = next((t["id"] for t in active if t["status"] == "running"), None)
+    queued = [t["id"] for t in active if t["status"] == "queued"]
+    task = get_task(conn, task_id)
+    return {"state": task_state("running" if running else ("queued" if queued else None), head_status(conn, task_id)),
+            "running_turn_id": running, "queued_turn_ids": queued,
+            "head_turn_id": task["head_turn_id"] if task else None}
+
+
 def rename_task(conn: sqlite3.Connection, task_id: str, title: str, *, source: str = "user") -> bool:
     title = (title or "").strip()[:120]
     if not title:
@@ -157,6 +168,24 @@ def create_turn(conn: sqlite3.Connection, task_id: str, direction: str, *, kind:
     conn.execute("UPDATE tasks SET head_turn_id = ?, updated_at = ? WHERE id = ?", (turn_id, now, task_id))
     conn.commit()
     return get_turn(conn, turn_id)  # type: ignore[return-value]
+
+
+TURN_FIELDS = ("id", "parent_turn_id", "kind", "direction", "status", "error", "created_at",
+               "started_at", "finished_at", "resumed_from")
+
+
+def turn_public(turn: dict[str, Any]) -> dict[str, Any]:
+    """A turn as the window reads it (snapshot and the live ``turn`` event)."""
+    return {k: turn.get(k) for k in TURN_FIELDS} | {"usage": loads(turn.get("usage_json"))}
+
+
+def reparent_children(conn: sqlite3.Connection, turn_id: str, new_parent: str | None) -> list[str]:
+    """Move a turn's children onto ``new_parent``; returns the moved turn ids."""
+    ids = [r["id"] for r in conn.execute("SELECT id FROM turns WHERE parent_turn_id = ?", (turn_id,)).fetchall()]
+    if ids:
+        conn.execute("UPDATE turns SET parent_turn_id = ? WHERE parent_turn_id = ?", (new_parent, turn_id))
+        conn.commit()
+    return ids
 
 
 def get_turn(conn: sqlite3.Connection, turn_id: str) -> dict[str, Any] | None:
@@ -254,12 +283,16 @@ def append_item(conn: sqlite3.Connection, task_id: str, turn_id: str | None, typ
 
 
 def items_for_turns(conn: sqlite3.Connection, turn_ids: Iterable[str]) -> list[dict[str, Any]]:
+    """Items of the given turns in TURN order (the order given — a branch, oldest
+    first), then by seq within a turn. Seq alone interleaves a follow-up queued
+    while an earlier turn ran into that turn's items."""
     ids = list(turn_ids)
     if not ids:
         return []
+    order = {tid: n for n, tid in enumerate(ids)}
     marks = ",".join("?" * len(ids))
     rows = conn.execute(f"SELECT * FROM items WHERE turn_id IN ({marks}) ORDER BY seq", ids).fetchall()
-    return [_item(r) for r in rows]
+    return sorted((_item(r) for r in rows), key=lambda it: (order[it["turn_id"]], it["seq"]))
 
 
 def items_after(conn: sqlite3.Connection, task_id: str, after: int, limit: int = 2000) -> list[dict[str, Any]]:

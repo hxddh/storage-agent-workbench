@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import type { CloudProvider, ModelProvider, Settings as SettingsData, Watch } from "../api/types";
+import { Notes } from "../estate/Notes";
 import { Icon } from "../components/icons";
 import { Badge, Button, Field, IconButton, Segmented, Select, StatusDot, TextInput } from "../components/ui";
 import { useToast } from "../components/Toast";
@@ -237,6 +238,12 @@ function Storage() {
         ))}
         <Button size="sm" icon="plus" onClick={() => setEditing("new")} data-testid="add-storage">{t("settings.add")}</Button>
         {list.length === 0 ? <p className="quiet-note">{t("settings.empty.storage")}</p> : null}
+        {list.length ? (
+          <details className="fold">
+            <summary>{t("notes.general")}</summary>
+            <Notes scope={{}} />
+          </details>
+        ) : null}
       </div>
       {editing ? <CloudEditor key={editing === "new" ? "new" : editing.id} cloud={editing === "new" ? null : editing}
         onDone={() => { setEditing(null); void app.reloadProviders(); }} /> : null}
@@ -321,6 +328,12 @@ function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: (
         {cloud ? <Button variant="danger" onClick={() => void api.deleteCloud(cloud.id).then(onDone)}>{t("settings.delete")}</Button> : null}
       </div>
       {cloud ? <WatchControl providerId={cloud.id} /> : null}
+      {cloud ? (
+        <div className="pref-group">
+          <h4 className="pref-group-title">{t("notes.account")}</h4>
+          <Notes scope={{ providerId: cloud.id }} accountOnly />
+        </div>
+      ) : null}
     </form>
   );
 }

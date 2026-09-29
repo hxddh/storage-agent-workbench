@@ -103,9 +103,8 @@ def snapshot(conn: Any, task_id: str) -> dict[str, Any]:
                                   last),
         "running_turn_id": running,
         "queued": [{"turn_id": t["id"], "direction": t["direction"], "created_at": t["created_at"]} for t in queued],
-        "turns": [{k: t[k] for k in ("id", "parent_turn_id", "kind", "direction", "status", "error", "created_at",
-                                    "started_at", "finished_at", "resumed_from")}
-                  | {"usage": store.loads(t["usage_json"])} for t in chain],
+        "turns": [store.turn_public(t) for t in chain],
+        "head_turn_id": task["head_turn_id"],
         "items": items,
         "forks": forks,
         "live": hub.live_snapshot(task_id),
@@ -303,7 +302,9 @@ async def follow(task_id: str, request: Request, after: int = Query(default=0, g
     finally:
         conn.close()
     loop = asyncio.get_running_loop()
-    sub = hub.subscribe(task_id, loop)
+    # Subscribe and read the live segment in one step: a delta is either in the
+    # snapshot or in the queue, never both.
+    sub, live = hub.subscribe_with_live(task_id, loop)
 
     def replay(since: int) -> list[dict[str, Any]]:
         """Every durable item after ``since``, however many (read in pages)."""
@@ -322,11 +323,17 @@ async def follow(task_id: str, request: Request, after: int = Query(default=0, g
     async def stream() -> AsyncIterator[dict[str, Any]]:
         last = after
         try:
-            live = hub.live_snapshot(task_id)
             for it in await asyncio.to_thread(replay, last):
                 last = it["seq"]
                 yield _sse("item", public_item(it), it["seq"])
             yield _sse("live", live)
+            # State is not durable: a follower (re)connecting reads it now, so a
+            # turn that settled while it was away never stays "working".
+            c = connect()
+            try:
+                yield _sse("state", store.state_payload(c, task_id))
+            finally:
+                c.close()
             while True:
                 if await request.is_disconnected():
                     return

@@ -121,7 +121,7 @@ snapshot of the task's current branch:
 | `POST` | `/tasks/{id}/turns` | `TurnIn` | `202 {"turn_id", "status"}`. The Direction is recorded as a `user_message` item at once. The turn waits in the queue behind any running turn. | `404`; `422 unknown parent turn` (the parent is not in this task); `422 unknown attachment for this task` |
 | `POST` | `/tasks/{id}/steer` | `SteerIn` | `200 {"steered": bool, "turn_id"}`. With a turn running, the text is recorded as a `steer` item and injected into the running model loop before its next model call (`steered: true`). With nothing running, it becomes a new Direction (`steered: false`, `turn_id` is the new turn). | `404`, `422` |
 | `POST` | `/tasks/{id}/stop` | — | `200 {"stopping": bool}`. `false` when nothing is running. Stop sets the turn's cancel flag and cancels the streamed run. The turn ends `cancelled` and keeps what it recorded. | `404` |
-| `DELETE` | `/tasks/{id}/turns/{turn_id}` | — | `200 {"cancelled": true}`. Withdraws a queued Direction: status becomes `cancelled`, a `notice {event: "cancelled", queued: true}` is recorded, and the head moves back to the turn's parent when the turn was the head. | `404`; `409 only a queued Direction can be withdrawn` |
+| `DELETE` | `/tasks/{id}/turns/{turn_id}` | — | `200 {"cancelled": true}`. Withdraws a queued Direction: status becomes `cancelled`, a `notice {event: "cancelled", queued: true}` is recorded, and the head moves back to the turn's parent when the turn was the head. Queued Directions that followed it are re-parented onto its parent, so the branch stays one line. | `404`; `409 only a queued Direction can be withdrawn` |
 | `POST` | `/tasks/{id}/turns/{turn_id}/resume` | — | `202 {"turn_id", "status"}`. Continues an `interrupted`, `failed` or `cancelled` turn as a new `kind = resume` turn whose parent is that turn. | `404`; `409 the task is working`; `409 nothing to resume` |
 | `PUT` | `/tasks/{id}/head` | `HeadIn` | `200` snapshot. Moves the head to the newest descendant (`leaf_of`) of `turn_id`, which is how the UI reads another version of a Direction. | `404 task not found`; `404 turn not found` |
 
@@ -156,13 +156,15 @@ before the stream opens.
 
 The stream does the following, in order:
 
-1. Subscribes to the task's in-process hub first, then replays, so no item can
-   land in the gap between the two.
+1. Subscribes to the task's in-process hub and copies the live segment in one
+   step, then replays, so no item or delta can land in the gap between them.
 2. **Replays** the durable items with `seq > after`, as `item` events, in
    `seq` order. The replay query returns at most 2 000 items; any remainder
    arrives through the resync described in step 4.
-3. Sends one `live` event: the text segment the model is writing now, or
-   `null`.
+3. Sends one `live` event (the text segment the model is writing now, or
+   `null`), then one `state` event with the task's current state — a turn
+   that settled between the client's snapshot and this stream is never left
+   showing as working.
 4. **Follows**: forwards hub events as they happen. Items are de-duplicated
    by `seq`: an item with `seq <= last` is dropped. When a new item arrives
    with the queue otherwise empty, any gap below it is filled from the table
@@ -174,8 +176,13 @@ The stream does the following, in order:
 | --- | --- | --- |
 | `item` | the item's `seq` | the public item `{seq, id, task_id, turn_id, type, payload, created_at}`, with `payload.model_output` removed |
 | `delta` | — | `{turn_id, segment_id, text}`: sanitized live text for the open segment. Deltas are ephemeral. The closed segment later arrives as an `agent_message` item whose `id` equals `segment_id`. |
-| `state` | — | `{state, running_turn_id, queued_turn_ids}`, published whenever a turn is queued, starts, finishes or is withdrawn |
+| `state` | — | `{state, running_turn_id, queued_turn_ids, head_turn_id}`, sent when the stream opens and published whenever a turn is queued, starts, finishes or is withdrawn |
+| `turn` | — | the public turn row (the snapshot's turn shape, with `usage`), published when a turn is created, starts, settles or is re-parented |
 | `live` | — | `{turn_id, segment_id, text}` or `null`. Sent once, after the replay. |
+
+The window opens this stream with `after` = the snapshot's `last_seq` and
+merges any later snapshot with what it holds (items above the snapshot's
+`last_seq` are kept), so a reload or reconnect never drops or repeats work.
 
 The stream is resumable. A client that reconnects with
 `after=<last id it saw>` receives exactly the items it missed. `id` values are
@@ -328,7 +335,7 @@ A cloud provider is:
 
 | Method | Path | Body | Success | Errors |
 | --- | --- | --- | --- | --- |
-| `GET` | `/settings` | — | `200 {language: "en" \| "zh", theme: "system" \| "light" \| "dark", vault: {unreadable, backup_present}, instructions: {loaded, path, chars, truncated, error}}`. `instructions` reports on the standing instructions file (`AGENTS.md`) but never returns its text. | — |
+| `GET` | `/settings` | — | `200 {language: "en" \| "zh" \| null, theme: "system" \| "light" \| "dark", vault: {unreadable, backup_present}, instructions: {loaded, path, chars, truncated, error}}`. `instructions` reports on the standing instructions file (`AGENTS.md`) but never returns its text. `language` is `null` until one is chosen; the window then follows the system language and saves it. | — |
 | `PATCH` | `/settings` | `{language?: str, theme?: str}` | `200`, the same shape as `GET` | `422 <key> must be one of …` |
 | `GET` | `/settings/price-table` | — | `200 {id: "default", confirmed, example, note, rates, updated_at}`. Returns the example schedule (`confirmed: false`, `example: true`) until the user saves a table. | — |
 | `PUT` | `/settings/price-table` | `{confirmed?: bool, rates?: object, note?: str (≤ 800)}` | `200` price table. Omitted fields keep their value. Audit row `settings.price_table`. | `422` |

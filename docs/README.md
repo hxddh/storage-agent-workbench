@@ -1,10 +1,11 @@
 # Documentation
 
-> **Current baseline: Storage Agent v6.0.0.** Built on the v5 rewrite around one
+> **Current baseline: Storage Agent v7.0.0.** Built on the v5 rewrite around one
 > idea — *the estate is the object, Agent Tasks are how work is done, and one item
-> stream is the truth* — v6 makes the estate a primary surface (bucket pages,
-> timelines, notes) and closes the loop on fixes (CLI · Terraform · document, an
-> evidence-based impact preview, Verify). See `docs/releases/6.0.0.md`.
+> stream is the truth* — v6 closed the loop on fixes (CLI · Terraform · document,
+> an evidence-based impact preview, Verify); v7 makes a task one conversation,
+> oldest first, with exact follow-ups, folds the estate into the home and a bucket
+> sheet, and keeps one Details pane. See `docs/releases/7.0.0.md`.
 
 ## Source-of-truth order
 
@@ -26,13 +27,13 @@ When they disagree, the higher one wins; fix the lower one in the same PR.
 | **Direction** | What the user asked — the heading of a Turn, in their words. Editing it sends a new version (a fork). |
 | **Turn** | One Direction and the work it caused; queued, running, completed, failed, cancelled or interrupted. |
 | **Item** | One entry of the append-only stream (message, tool call/progress/output, conclusion, steer, compaction, notice, error). Everything shown is projected from items. |
-| **Result** | The latest Turn's answer, conclusion first (answer · findings · next steps), with its figures and outputs. |
+| **Conversation** | A task's page: every Turn on the branch, oldest first — the request, one activity line, the answer with its findings and figures. |
 | **Estate** | What the work established about the user's storage: accounts, known buckets, their posture and how it changed, Issues, notes. |
 | **Issue** | A deterministic observation about a bucket, with a lifecycle (open → fix proposed → resolved; recurred; accepted). |
 | **Fix pack** | An Issue's fix as text the user applies — AWS CLI, Terraform, the API document — with an impact preview drawn from evidence (or an honest *cannot tell*). |
 | **Note** | Something the user or the Agent wants remembered about the estate, an account or a bucket; visible and editable; every task starts with the most recent. |
 | **Watch** | An opt-in, read-only sweep of one account on the Sidecar's clock that opens one task when something new turns up. |
-| **Delegate / Steer / Stop** | The one control path: submit a Direction, redirect the running Turn, end it. |
+| **Send / Add to the request / Stop** | The one control path: submit a Direction, steer the running Turn, end it. |
 
 ## Documents
 

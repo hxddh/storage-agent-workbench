@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v6.0.0**
+**Current release: v7.0.0**
 
 Storage Agent is a local-first desktop Agent for object storage — AWS S3 and every S3-compatible service. Give it a goal or a problem; it investigates with real, read-only, bounded tools, stays steerable and stoppable while it works, and answers with evidence. What it learns about your storage — accounts, buckets, their posture and the Issues found there — outlives the task that learned it.
 
@@ -10,12 +10,12 @@ It is not a chatbot wrapped around a storage console, and it never writes to you
 
 ## How it works
 
-- **Delegate, Steer, Stop.** One Composer: delegate a Direction at rest; steer the running work; stop it and keep what it found. A Direction sent while the Agent works is queued.
-- **Result-first tasks.** A task opens on its latest Result — the conclusion the Agent recorded (the answer, findings by severity, next steps you can ask for), then the full answer, figures from deterministic analyses, and Evidence · Report · Activity in the side pane. Earlier Directions stay below as a work log.
-- **Forks.** Edit any Direction and the Agent answers the new version on its own branch; switch between versions.
-- **The estate.** Surveys and reviews are remembered per account. The home lists what needs care, most severe first; the **Estate** view opens every account and bucket — what is known, how it changed, its Issues and the notes you and the Agent keep. An opt-in watch re-checks an account on a schedule and opens one task when something new turns up.
+- **One conversation.** A task reads top to bottom, oldest first: your request, one line for what the Agent did (expand it for each step), the answer with its findings and figures. Follow up as often as you like — nothing is reordered, dropped or repeated, across reloads too. Suggested next steps fill the Composer.
+- **Send, add to the request, stop.** One Composer: send a request at rest; add to it while the Agent works; stop it and keep what it found. A request sent while the Agent works is queued.
+- **Edit a request.** The Agent answers the new version on its own branch; switch between versions. **Details** holds the report, usage and every tool call.
+- **Your storage.** Surveys and reviews are remembered per account. The home lists what needs attention, most severe first; a row opens the bucket — its Issues, configuration, notes and history. An opt-in watch re-checks an account on a schedule and opens one task when something new turns up.
 - **Fix packs.** Each Issue's fix comes as an AWS CLI command, a Terraform resource or the API document, with a preview of what applying it would change drawn from evidence (anonymous requests in the bucket's access logs, existing lifecycle rules) — or a plain *cannot tell*. Verify re-checks it read-only and closes the Issue; if the problem comes back, it reopens.
-- **Quick Ask.** ⌘⇧Space opens a small window for one question; the tray says what needs care.
+- **Quick Ask.** ⌘⇧Space opens a small window for one question; the tray says what needs attention.
 - **Your models.** OpenAI (Responses API, with hosted tool search and server-side compaction), Anthropic, DeepSeek, OpenRouter, or local models (Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint).
 
 ## What it can do

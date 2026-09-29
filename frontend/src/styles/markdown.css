@@ -164,3 +164,13 @@
   .md-table-copy,
   .md-link { transition: none; }
 }
+
+/* v7: a table's size and Copy sit in its corner, shown on hover or focus — no extra row. */
+.agent-table { position: relative; }
+.md-table-meta {
+  position: absolute; top: 6px; right: 8px; z-index: 1;
+  display: flex; gap: var(--space-2); align-items: center;
+  padding: 2px var(--space-2); border-radius: var(--radius); background: var(--panel);
+  opacity: 0; transition: opacity var(--duration-fast) var(--ease-out);
+}
+.agent-table:hover .md-table-meta, .md-table-meta:focus-within { opacity: 1; }

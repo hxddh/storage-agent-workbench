@@ -55,6 +55,7 @@ class _Live:
     cancel: threading.Event = field(default_factory=threading.Event)
     steers: list[str] = field(default_factory=list)
     result: Any = None
+    recorder: Any = None  # the running turn's Recorder: a steer closes ITS open segment first
 
 
 class Runtime:
@@ -128,10 +129,11 @@ class Runtime:
     # -- public API (thread-safe; called from request handlers) --------------------------
     def submit(self, conn: Any, task_id: str, direction: str, *, kind: str = "direction",
                parent_turn_id: str | None = None, attachments: list[dict[str, Any]] | None = None,
-               resumed_from: str | None = None, note: str | None = None) -> dict[str, Any]:
+               resumed_from: str | None = None, note: str | None = None, kick: bool = True) -> dict[str, Any]:
         """Queue a Direction as a new turn and make sure the task's worker runs."""
         turn = store.create_turn(conn, task_id, direction, kind=kind, parent_turn_id=parent_turn_id,
                                  resumed_from=resumed_from)
+        self._publish_turn(conn, task_id, turn["id"])
         rec = Recorder(task_id, turn["id"])
         try:
             if kind == "resume":
@@ -141,7 +143,8 @@ class Runtime:
         finally:
             rec.close()
         self._publish_state(conn, task_id)
-        self._kick(task_id)
+        if kick:
+            self._kick(task_id)
         return turn
 
     def steer(self, conn: Any, task_id: str, text: str) -> dict[str, Any]:
@@ -150,11 +153,14 @@ class Runtime:
             live = self._live.get(task_id)
         if live is None:
             return {"steered": False, "turn": self.submit(conn, task_id, text)}
-        rec = Recorder(task_id, live.turn_id)
-        try:
-            rec.steer(text)
-        finally:
-            rec.close()
+        if live.recorder is not None:
+            live.recorder.steer(text)  # closes the segment being written, then records the steer
+        else:
+            rec = Recorder(task_id, live.turn_id)
+            try:
+                rec.steer(text)
+            finally:
+                rec.close()
         with self._lock:
             live.steers.append(redact_text(text))
         return {"steered": True, "turn_id": live.turn_id}
@@ -179,6 +185,11 @@ class Runtime:
             rec.notice("cancelled", queued=True)
         finally:
             rec.close()
+        # A withdrawn Direction leaves the branch: what was queued after it now
+        # follows its parent, so the model never reads the withdrawn text.
+        for child in store.reparent_children(conn, turn_id, turn["parent_turn_id"]):
+            self._publish_turn(conn, task_id, child)
+        self._publish_turn(conn, task_id, turn_id)
         # The head falls back to the cancelled turn's parent — or, for a first
         # Direction, to the newest other branch (none: the task reads empty).
         task = store.get_task(conn, task_id)
@@ -198,22 +209,26 @@ class Runtime:
         with self._lock:
             return task_id in self._live
 
+    def _publish_turn(self, conn: Any, task_id: str, turn_id: str) -> None:
+        t = store.get_turn(conn, turn_id)
+        if t is not None:
+            hub.turn(task_id, store.turn_public(t))
+
     def _publish_state(self, conn: Any, task_id: str) -> None:
-        active = store.active_turns(conn, task_id)
-        running = next((t["id"] for t in active if t["status"] == "running"), None)
-        queued = [t["id"] for t in active if t["status"] == "queued"]
-        last = store.head_status(conn, task_id)
-        hub.state(task_id, {"state": store.task_state("running" if running else ("queued" if queued else None),
-                                                      last),
-                            "running_turn_id": running, "queued_turn_ids": queued})
+        hub.state(task_id, store.state_payload(conn, task_id))
 
     # -- worker ------------------------------------------------------------------------------
     async def _drain(self, task_id: str) -> None:
         while True:
             conn = db.connect()
             try:
-                row = conn.execute("SELECT id FROM turns WHERE task_id = ? AND status = 'queued' "
-                                   "ORDER BY created_at, rowid LIMIT 1", (task_id,)).fetchone()
+                # The oldest queued turn whose parent is not itself still waiting:
+                # a continuation runs before the Directions queued after it.
+                row = conn.execute(
+                    "SELECT t.id FROM turns t LEFT JOIN turns p ON p.id = t.parent_turn_id "
+                    "WHERE t.task_id = ? AND t.status = 'queued' "
+                    "AND (p.id IS NULL OR p.status NOT IN ('queued', 'running')) "
+                    "ORDER BY t.created_at, t.rowid LIMIT 1", (task_id,)).fetchone()
             finally:
                 conn.close()
             if row is None:
@@ -226,7 +241,7 @@ class Runtime:
     async def _run_turn(self, task_id: str, turn_id: str) -> None:
         conn = db.connect()
         rec = Recorder(task_id, turn_id)
-        live = _Live(turn_id)
+        live = _Live(turn_id, recorder=rec)
         with self._lock:
             self._live[task_id] = live
         clients: list[Any] = []
@@ -234,6 +249,7 @@ class Runtime:
         usage: dict[str, Any] | None = None
         try:
             store.set_turn_status(conn, turn_id, "running")
+            self._publish_turn(conn, task_id, turn_id)
             rec.notice("started")
             self._publish_state(conn, task_id)
             try:
@@ -263,6 +279,7 @@ class Runtime:
             store.touch_task(conn, task_id)
             conn.commit()
             rec.notice(status, **({"error": error} if error else {}))
+            self._publish_turn(conn, task_id, turn_id)
             self._publish_state(conn, task_id)
             rec.close()
             conn.close()
@@ -370,7 +387,6 @@ class Runtime:
             return {"status": "failed", "error": errors.user_message(exc), "usage": _usage(result)}
         rec.close_segment()
         if live.cancel.is_set():
-            rec.notice("stopped")
             return {"status": "cancelled", "usage": _usage(result)}
         if finalized:
             rec.notice("finalized", reason=finalized["reason"])
@@ -482,8 +498,19 @@ class Runtime:
                     model_providers.credentials(conn)
                 except model_providers.AgentUnavailable:
                     continue  # the Task offers Resume once a model exists
-                self.submit(conn, r["task_id"], r["direction"], kind="resume", parent_turn_id=r["id"],
-                            resumed_from=r["id"])
+                queued = [c["id"] for c in conn.execute(
+                    "SELECT id FROM turns WHERE parent_turn_id = ? AND status = 'queued'", (r["id"],)).fetchall()]
+                # Not started yet: the queued follow-ups are re-parented first
+                # (the loop below starts every task with queued turns).
+                resume = self.submit(conn, r["task_id"], r["direction"], kind="resume", parent_turn_id=r["id"],
+                                     resumed_from=r["id"], kick=False)
+                # Directions queued after the interrupted turn now follow its
+                # continuation (and wait for it), and the reader stays on their tip.
+                for cid in queued:
+                    conn.execute("UPDATE turns SET parent_turn_id = ? WHERE id = ?", (resume["id"], cid))
+                if queued:
+                    conn.commit()
+                    store.set_head(conn, r["task_id"], store.leaf_of(conn, r["task_id"], resume["id"]))
             for r in conn.execute("SELECT DISTINCT task_id FROM turns WHERE status = 'queued'").fetchall():
                 self._kick(r["task_id"])
         finally:

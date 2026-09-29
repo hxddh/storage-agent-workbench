@@ -51,7 +51,7 @@ export function QuickAsk() {
       </form>
       {taskId ? (
         <div className="quick-body">
-          {working ? <p className="quiet-note"><StatusDot tone="accent" pulse />{t("task.working")}</p> : null}
+          {working ? <p className="quiet-note"><StatusDot tone="accent" pulse />{t("work.thinking")}</p> : null}
           {result?.conclusion ? <p className="result-answer">{result.conclusion.answer}</p> : null}
           {result?.answer ? <Markdown text={result.answer} /> : live ? <Markdown text={live} /> : null}
           <Button size="sm" variant="ghost" icon="external" onClick={openMain}>{t("quick.open")}</Button>

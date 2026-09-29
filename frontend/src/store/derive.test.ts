@@ -60,4 +60,21 @@ describe("sections", () => {
     expect(versions(forks, turn("t2b", { parent_turn_id: "t1" }))).toEqual({ index: 1, ids: ["t2", "t2b"] });
     expect(versions(forks, turn("t1"))).toBeNull();
   });
+
+  it("a stopped turn has no answer: its last words stay commentary", () => {
+    const s = sections([turn("t1", { status: "cancelled" })], [
+      item("t1", "agent_message", { text: "Now let me check encryption…" }),
+      item("t1", "notice", { event: "cancelled" }),
+    ], null)[0];
+    expect(s.answer).toBeNull();
+    expect(s.blocks.map((b) => b.kind)).toEqual(["commentary"]);
+  });
+
+  it("notes a compaction once", () => {
+    const all = sections([turn("t1"), turn("t2")], [
+      item("t1", "compaction", { summary: "s", folded: [] } as never),
+      item("t2", "notice", { event: "compacted" }),
+    ], null);
+    expect(all.flatMap((s) => s.blocks.filter((b) => b.kind === "compacted"))).toHaveLength(1);
+  });
 });

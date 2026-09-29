@@ -136,7 +136,7 @@ async function boot(page: Page, theme: "dark" | "light", seeded: boolean) {
   ]);
   const id = await useFakeModel(model.baseUrl);
   await delegate(page, `contrast ${theme}`);
-  await expect(page.getByTestId("result")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("answer")).toBeVisible({ timeout: 30_000 });
   await settled(page);
   await dropModelProvider(id);
   await model.close();
@@ -150,14 +150,14 @@ for (const theme of ["dark", "light"] as const) {
       expect(v, report(`home (${theme})`, v)).toEqual([]);
     });
 
-    test("a Result with findings", async ({ page }) => {
+    test("a conversation with findings", async ({ page }) => {
       test.setTimeout(90_000);
       await boot(page, theme, true);
       const v = await audit(page);
-      expect(v, report(`Result (${theme})`, v)).toEqual([]);
+      expect(v, report(`conversation (${theme})`, v)).toEqual([]);
     });
 
-    test("a bucket page with its fix pack", async ({ page }) => {
+    test("a bucket sheet with its fix pack", async ({ page }) => {
       test.setTimeout(90_000);
       await boot(page, theme, false);
       const s3 = await startFakeS3({ "acme-www": ["index.html"] }, { config: { "acme-www": {} } });
@@ -166,14 +166,13 @@ for (const theme of ["dark", "light"] as const) {
       const id = await useFakeModel(model.baseUrl);
       try {
         await delegate(page, `estate ${theme}`);
-        await expect(page.getByTestId("result")).toContainText("Surveyed.", { timeout: 30_000 });
+        await expect(page.getByTestId("answer")).toContainText("Surveyed.", { timeout: 30_000 });
         await settled(page);
-        await page.getByTestId("nav-estate").click();
-        await page.getByTestId("estate-account").first().click();
-        await page.getByTestId("bucket-row").first().click();
-        await expect(page.getByTestId("timeline")).toBeVisible();
+        await page.getByTestId("new-task").click();
+        await page.getByTestId("needs-care").getByTestId("issue").first().click();
+        await expect(page.getByTestId("bucket-page")).toBeVisible();
         await page.getByTestId("note-input").fill("Owned by the growth team.");
-        await page.getByTestId("note-add").click();
+        await page.getByTestId("note-input").press("Enter");
         const issue = page.getByTestId("bucket-page").getByTestId("issue").first();
         await issue.locator(".issue-head").click();
         const show = issue.getByRole("button", { name: "Show the fix" });
@@ -181,7 +180,7 @@ for (const theme of ["dark", "light"] as const) {
         await expect(issue.getByTestId("impact")).toHaveAttribute("data-verdict", /./);
         await page.waitForTimeout(400);
         const v = await audit(page);
-        expect(v, report(`bucket page (${theme})`, v)).toEqual([]);
+        expect(v, report(`bucket sheet (${theme})`, v)).toEqual([]);
       } finally {
         await dropModelProvider(id);
         await model.close();

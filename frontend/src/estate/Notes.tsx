@@ -93,10 +93,9 @@ export function Notes({ scope, initial, accountOnly = false }: { scope: Scope; i
         </ul>
       ) : notes ? <p className="quiet-note">{t("notes.empty")}</p> : null}
       <form className="note-add" onSubmit={(e) => { e.preventDefault(); void add(); }}>
-        <textarea className="ui-input" value={draft} maxLength={1000} rows={2} placeholder={t("notes.placeholder")}
-          aria-label={t("notes.add")} data-testid="note-input" onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void add(); } }} />
-        <Button size="sm" type="submit" disabled={!draft.trim()} data-testid="note-add">{t("notes.add")}</Button>
+        <input className="ui-input" value={draft} maxLength={1000} placeholder={t("notes.placeholder")}
+          aria-label={t("notes.add")} data-testid="note-input" onChange={(e) => setDraft(e.target.value)} />
+        <button type="submit" className="sr-only" data-testid="note-add" disabled={!draft.trim()}>{t("notes.add")}</button>
       </form>
     </div>
   );
@@ -113,5 +112,5 @@ function listNotes(scope: Scope): Promise<Note[]> {
 function TaskLink({ id }: { id: string }) {
   const { t } = useI18n();
   const app = useApp();
-  return <button type="button" className="link" onClick={() => app.openTask(id)}>{t("estate.task")}</button>;
+  return <button type="button" className="link" onClick={() => app.openTask(id)}>{t("notes.task")}</button>;
 }

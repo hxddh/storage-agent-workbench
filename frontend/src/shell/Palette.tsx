@@ -3,7 +3,6 @@ import { api } from "../api";
 import type { TaskRow } from "../api/types";
 import { Kbd } from "../components/ui";
 import { useI18n } from "../i18n";
-import { useTheme } from "../theme";
 import { useApp } from "./context";
 
 type Entry = { id: string; group: "recent" | "actions"; label: string; keys?: string[]; run: () => void };
@@ -30,7 +29,6 @@ export function score(query: string, text: string): { score: number; hits: numbe
 export function Palette() {
   const { t } = useI18n();
   const app = useApp();
-  const theme = useTheme();
   const [query, setQuery] = useState("");
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [active, setActive] = useState(0);
@@ -46,12 +44,10 @@ export function Palette() {
     ...tasks.slice(0, query ? 50 : 8).map((task) => ({ id: task.id, group: "recent" as const, label: task.title,
       run: () => app.openTask(task.id) })),
     { id: "new", group: "actions", label: t("nav.newTask"), keys: ["⌘", "N"], run: () => app.goHome() },
-    { id: "home", group: "actions", label: t("palette.home"), run: () => app.goHome() },
+    ...(app.route.kind === "task" ? [{ id: "pane", group: "actions" as const, label: t("palette.details"), keys: ["⌘", "I"],
+      run: () => app.setPane(app.pane ? null : { tab: "details" }) }] : []),
     { id: "settings", group: "actions", label: t("palette.settings"), keys: ["⌘", ","], run: () => app.openSettings() },
-    { id: "theme", group: "actions", label: t("palette.theme"), run: () => theme.toggle() },
-    ...(app.route.kind === "task" ? [{ id: "pane", group: "actions" as const, label: t("palette.inspector"), keys: ["⌘", "I"],
-      run: () => app.setPane(app.pane ? null : { tab: "evidence" }) }] : []),
-  ], [tasks, query, t, app, theme]);
+  ], [tasks, query, t, app]);
 
   const ranked = useMemo(() => entries
     .map((e) => ({ e, m: score(query, e.label) }))

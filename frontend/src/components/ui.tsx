@@ -93,7 +93,7 @@ export function IconButton({
 /** Key caps for a shortcut: one cap per key, never run-together text. */
 export function Kbd({ keys }: { keys: string[] }) {
   return (
-    <span className="inline-flex items-center gap-1" aria-hidden>
+    <span className="ui-kbd-group inline-flex items-center gap-1" aria-hidden>
       {keys.map((key) => <kbd key={key} className="ui-kbd">{key}</kbd>)}
     </span>
   );

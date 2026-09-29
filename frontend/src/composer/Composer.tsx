@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { api } from "../api";
 import { Icon } from "../components/icons";
-import { Button, IconButton } from "../components/ui";
+import { IconButton } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { useI18n } from "../i18n";
 import { fmtBytes } from "../lib/format";
@@ -120,7 +120,7 @@ export function Composer({ taskId, busy, onCreated, autoFocus = false }: {
     addFiles(e.dataTransfer.files);
   };
 
-  const label = sending && files.length ? t("composer.uploading") : steering ? t("composer.steer") : t("composer.delegate");
+  const label = sending && files.length ? t("composer.uploading") : steering ? t("composer.steer") : t("composer.send");
 
   return (
     <form
@@ -136,12 +136,12 @@ export function Composer({ taskId, busy, onCreated, autoFocus = false }: {
       {editing ? (
         <div className="composer-editing">
           <Icon name="compose" size={14} />
-          <span>{t("task.editing")}</span>
+          <span>{t("composer.editing")}</span>
           <button type="button" onClick={() => { app.setEditing(null); setText(""); }}>{t("common.cancel")}</button>
         </div>
       ) : null}
       {files.length ? (
-        <ul className="composer-files" aria-label={t("inspector.files")}>
+        <ul className="composer-files" aria-label={t("composer.files")}>
           {files.map((f, i) => (
             <li key={`${f.name}-${i}`}>
               <Icon name="file" size={14} />
@@ -186,14 +186,11 @@ export function Composer({ taskId, busy, onCreated, autoFocus = false }: {
         <ModelChip />
         <span className="composer-spacer" />
         {busy ? (
-          <Button variant="secondary" icon="stop" onClick={() => void stop()} data-testid="composer-stop">
-            {t("composer.stop")}
-          </Button>
+          <IconButton icon="stop" label={t("composer.stop")} className="composer-stop" onClick={() => void stop()}
+            data-testid="composer-stop" />
         ) : null}
-        <Button type="submit" variant="primary" icon={steering ? "arrowRight" : "arrowUp"} disabled={!canSend}
-          data-testid="composer-send">
-          {label}
-        </Button>
+        <IconButton type="submit" icon={steering ? "arrowRight" : "arrowUp"} label={label} className="composer-send"
+          data-ready={canSend ? "true" : undefined} disabled={!canSend} data-testid="composer-send" />
       </div>
       {dragging ? <div className="composer-drop" aria-hidden>{t("composer.drop")}</div> : null}
     </form>

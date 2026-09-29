@@ -1,5 +1,5 @@
 /**
- * The v6 window contract, executable. If an intentional replacement is
+ * The v7 window contract, executable. If an intentional replacement is
  * needed, change the code, this file and the canonical docs together.
  */
 import fs from "node:fs";
@@ -39,31 +39,38 @@ describe("one submit path", () => {
 });
 
 describe("the window", () => {
-  it("is sidebar · title bar · one document · one Composer, plus the side pane", () => {
+  it("is sidebar · title bar · one document · one Composer, plus one side pane", () => {
     const shell = read(path.join(SRC, "shell/Shell.tsx"));
-    for (const part of ["<Sidebar", 'className="titlebar"', 'className="document"', "<Composer", "<Inspector"]) {
+    for (const part of ["<Sidebar", 'className="titlebar"', 'className="document"', "<Composer", "<Details", "<BucketSheet"]) {
       expect(shell).toContain(part);
     }
     // One Composer on a task page; the home renders its own (the only start surface).
     expect(shell.match(/<Composer\b/g)).toHaveLength(1);
     expect(read(path.join(SRC, "home/Home.tsx")).match(/<Composer\b/g)).toHaveLength(1);
+    // The sidebar is New task, search, the list and Settings — no separate areas.
+    const sidebar = read(path.join(SRC, "shell/Sidebar.tsx"));
+    for (const gone of ["nav-home", "nav-estate", "openEstate"]) expect(sidebar).not.toContain(gone);
   });
 
-  it("starters and next steps only fill the Composer — they never submit", () => {
-    const home = read(path.join(SRC, "home/Home.tsx"));
-    const result = read(path.join(SRC, "task/Result.tsx"));
-    expect(home).toMatch(/onClick=\{\(\) => app\.prefill\(/);
-    expect(result).toMatch(/onClick=\{\(\) => app\.prefill\(s\)\}/);
-    for (const text of [home, result]) expect(text).not.toMatch(/api\.(submit|createTask|steer)\(/);
+  it("a task reads as a conversation, oldest first — no result/work-log split", () => {
+    const page = read(path.join(SRC, "task/TaskPage.tsx"));
+    expect(page).toContain("all.map((s) =>");
+    for (const gone of ["latestResult", "work-log", "resultPointer", "<Result"]) expect(page).not.toContain(gone);
+    expect(fs.existsSync(path.join(SRC, "task/Result.tsx"))).toBe(false);
+  });
+
+  it("starters, suggestions and Ask about this bucket only fill the Composer — they never submit", () => {
+    const files = ["home/Home.tsx", "task/TaskPage.tsx", "estate/BucketSheet.tsx"].map((f) => read(path.join(SRC, f)));
+    for (const text of files) {
+      expect(text).toMatch(/app\.prefill\(/);
+      expect(text).not.toMatch(/api\.(submit|createTask|steer)\(/);
+    }
   });
 
   it("the estate never submits work and never writes to storage", () => {
-    // v6: the estate is a primary surface, but work still starts only in the Composer.
     const estate = source.filter((p) => rel(p).startsWith("estate/"));
-    expect(estate.map(rel).sort()).toEqual(["estate/EstatePage.tsx", "estate/IssueCard.tsx", "estate/Notes.tsx"]);
+    expect(estate.map(rel).sort()).toEqual(["estate/BucketSheet.tsx", "estate/IssueCard.tsx", "estate/Notes.tsx"]);
     for (const p of estate) expect(read(p)).not.toMatch(/api\.(submit|createTask|steer|resume)\(/);
-    // Ask about this bucket only fills the Composer.
-    expect(read(path.join(SRC, "estate/EstatePage.tsx"))).toContain("app.prefill(");
   });
 
   it("paints no approval, plan or chat-era chrome", () => {
