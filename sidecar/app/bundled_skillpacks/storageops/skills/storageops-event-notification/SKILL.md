@@ -45,11 +45,11 @@ Event not delivered →
   event types, and the prefix/suffix filters. This is the exact evidence "why
   isn't my Lambda firing" needs — read it FIRST, then compare the failing
   object's key against the filter.
-- `review_bucket_observability` — the summary pass (does ANY notification rule
+- `review_bucket_config` (aspect `observability`) — the summary pass (does ANY notification rule
   exist, plus logging/tagging posture) when you don't yet know which layer is
   missing.
-- `get_bucket_config_summary` — broader readable config to cross-check.
-- `head_object` / `list_objects` — confirm the object that *should* have fired an
+- `review_bucket_config` (aspect `summary`) — broader readable config to cross-check.
+- `inspect_object` / `list_objects` — confirm the object that *should* have fired an
   event matches the rule's prefix/suffix and event type (e.g. it landed via
   multipart, but only `Put` is configured).
 
@@ -65,4 +65,4 @@ The broken link (no rule / event-type mismatch / filter mismatch / target
 resource-policy / target limit), grounded in the notification config you could
 read vs. the target policy the user must supply, the fix (add the missing event
 type, correct the filter, grant the target's resource policy), and how to verify
-(re-check via `review_bucket_observability` and a test object that matches).
+(re-check via `review_bucket_config` and a test object that matches).

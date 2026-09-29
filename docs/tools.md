@@ -1,7 +1,7 @@
 # Agent tools
 
 The Agent works only through the tools registered in
-`sidecar/app/agent/tools/`. This document lists every registered tool (40)
+`sidecar/app/agent/tools/`. This document lists every registered tool (30)
 and describes the registry that binds them to the OpenAI Agents SDK.
 
 Sources of truth: `registry.py` (`REGISTRY`, `GROUPS`, `tool`,
@@ -176,7 +176,7 @@ count is always written.
   redacts the result, and writes one audit row (action `tool.<name>`, detail
   `{args}`). An exception becomes a sanitized failure result (message at most
   300 chars). Settings uses it directly for `POST /providers/clouds/{id}/test`
-  (`test_credentials`, actor `user`). Neither function bounds the output to
+  (the engine's credential check, audited as `tool.test_credentials`, actor `user`). Neither function bounds the output to
   `max_model_chars` or applies the envelope.
 
 ## Groups
@@ -184,10 +184,10 @@ count is always written.
 | Group | Description (sent as the namespace description) |
 | --- | --- |
 | `core` | Orientation: providers, buckets, skills, the estate and the conclusion. |
-| `probes` | Endpoint and credential probes: reachability, TLS, addressing, latency, presigned URLs. |
-| `objects` | Object forensics: listing, versions, multipart uploads, heads, ACLs, tags, lock, previews. |
-| `config` | Bucket configuration: summary, detail per aspect, security / lifecycle / cost / performance reviews. |
-| `account` | Account-wide: survey every bucket, compare with the last survey, query posture. |
+| `probes` | Endpoint probes: bucket location, TLS, addressing, latency, presigned URLs. |
+| `objects` | Object forensics: listing, versions, multipart uploads, one object's metadata, read tests, previews. |
+| `config` | Bucket configuration: the review (summary, security, lifecycle, observability, cost), detail per aspect, performance. |
+| `account` | Account-wide: survey every bucket, compare with the last survey. |
 | `files` | Local analysis of attached files and imported evidence: analyze, aggregate, import evidence. |
 | `advice` | Deterministic advice: error triage, cost and lifecycle simulation. |
 
@@ -210,12 +210,16 @@ tool's model output is bounded to 60 000 chars.
 | `list_buckets` | `provider_id: str` | account | yes | 30 s |
 | `head_bucket` | `provider_id: str, bucket: str` | bucket | yes | 30 s |
 | `read_skill` | `name: str` | none | no | 15 s |
-| `query_estate` | `provider_id: str = "", bucket: str = "", status: str = "active"` | none | yes | 15 s |
+| `query_estate` | `provider_id: str = "", bucket: str = "", status: str = "active", survey_filter: str = ""` | none | yes | 15 s |
 | `fix_preview` | `issue_id: str` | none | yes | 30 s |
 | `note` | `text: str, provider_id: str = "", bucket: str = ""` | none | no | 10 s |
 | `record_conclusion` | `answer: str, findings: list[Finding], next_steps: list[str]` | none | no | 10 s |
 
-- **`list_buckets`**: read-only `ListBuckets` for the account.
+- **`list_buckets`**: read-only `ListBuckets` for the account. It is also the
+  credential check (its description says so): success means the keys work;
+  `InvalidAccessKeyId` / `SignatureDoesNotMatch` mean they or the signing are
+  wrong; `AccessDenied` means they authenticate but may not list;
+  `provider_unsupported` is a capability gap, not bad keys.
 - **`head_bucket`**: read-only `HeadBucket`. Checks that the bucket exists
   and is reachable.
 - **`read_skill`**: returns the full text of a StorageOps skill, bundled or
@@ -230,6 +234,13 @@ tool's model output is bounded to 60 000 chars.
     `resolved`, `recurred` or `accepted`. Anything else falls back to
     `active`.
   - Issue titles follow the `language` setting.
+  - With `survey_filter` (and `provider_id`; without it → `error`) it answers
+    from the account's newest stored survey instead. No new scan.
+    `survey_filter` is one of `all`, `public_buckets`, `missing_encryption`,
+    `missing_public_access_block`, `missing_lifecycle`, `missing_logging`,
+    `no_versioning` or `access_denied`; anything else → `error`. Buckets the
+    survey could not decide are listed as undetermined; with no survey it
+    returns `has_survey: false`.
 - **`fix_preview`**: the generated fix for an estate Issue and what applying
   it would change. No storage call, and it never changes the Issue (only the
   user proposes a fix).
@@ -266,15 +277,12 @@ tool's model output is bounded to 60 000 chars.
 
 | Tool | Parameters | Bounds | Scope | Env. | Timeout |
 | --- | --- | --- | --- | --- | --- |
-| `test_credentials` | `provider_id` | — | account | yes | 30 s |
 | `get_bucket_location` | `provider_id, bucket` | — | bucket | yes | 30 s |
 | `test_addressing_style` | `provider_id, bucket` | — | bucket | yes | 45 s |
 | `inspect_endpoint_tls` | `provider_id` | — | account | yes | 30 s |
 | `measure_request_latency` | `provider_id, bucket, key = "", samples = 5` | `samples` 1–10 | key | yes | 60 s |
 | `diagnose_presigned_url` | `url: str` | — | none | yes | 10 s |
 
-- **`test_credentials`**: validates the credentials with a read-only call.
-  Returns whether they work and which endpoint was reached. No secrets.
 - **`get_bucket_location`**: one `GetBucketLocation`. Returns
   `bucket_region`, the configured region and endpoint, and `region_mismatch`.
 - **`test_addressing_style`**: two read-only `HeadBucket` calls, one
@@ -297,13 +305,8 @@ tool's model output is bounded to 60 000 chars.
 | `list_object_versions` | `provider_id, bucket, prefix = "", max_keys = 1000, key_marker = "", version_id_marker = ""` | `max_keys` 1–1000 | listing | yes | 60 s |
 | `list_multipart_uploads` | `provider_id, bucket, prefix = "", max_uploads = 1000, key_marker = "", upload_id_marker = ""` | `max_uploads` 1–1000 | listing | yes | 60 s |
 | `list_upload_parts` | `provider_id, bucket, key, upload_id, max_parts = 1000, part_number_marker = 0` | `max_parts` 1–1000 | key | yes | 45 s |
-| `head_object` | `provider_id, bucket, key, version_id = ""` | — | key | yes | 30 s |
-| `get_object_lock_status` | `provider_id, bucket, key, version_id = ""` | — | key | yes | 30 s |
-| `get_object_acl` | `provider_id, bucket, key, version_id = ""` | — | key | yes | 30 s |
-| `get_object_tagging` | `provider_id, bucket, key, version_id = ""` | — | key | yes | 30 s |
-| `get_object_attributes` | `provider_id, bucket, key, version_id = ""` | — | key | yes | 30 s |
-| `test_conditional_get` | `provider_id, bucket, key, etag` | — | key | yes | 30 s |
-| `test_range_get` | `provider_id, bucket, key, range_header = "bytes=0-1023"` | — | key | yes | 45 s |
+| `inspect_object` | `provider_id, bucket, key, version_id = "", aspects: list[str] \| None = None` | — | key | yes | 60 s |
+| `test_object_read` | `provider_id, bucket, key, mode, etag = "", range_header = "bytes=0-1023"` | — | key | yes | 45 s |
 | `preview_object` | `provider_id, bucket, key, max_bytes = 262144` | `max_bytes` 1 024–1 048 576 | key | yes | 60 s |
 
 - **`list_objects`**: one page of `ListObjectsV2` (no bodies).
@@ -322,21 +325,25 @@ tool's model output is bounded to 60 000 chars.
   not exist as a tool.
 - **`list_upload_parts`**: `ListParts` for one upload. Returns part count,
   bytes and first/last part times.
-- **`head_object`**: `HeadObject` metadata (no body), with sanitized user
-  metadata.
-- **`get_object_lock_status`**: retention mode, retain-until date and legal
-  hold. An unsupported provider reports `provider_unsupported`.
-- **`get_object_acl`**: the object's ACL. Grantees are reduced to a kind, and
-  `is_public` is set for a public grant.
-- **`get_object_tagging`**: the object's tag set, at most 20 tags, with keys
-  and values redacted.
-- **`get_object_attributes`**: `GetObjectAttributes` (checksum, parts,
-  storage class, size). Reports `provider_unsupported` where the provider
-  lacks it.
-- **`test_conditional_get`**: `HeadObject` with `If-None-Match`, no body.
-  Returns `etag_matches`.
-- **`test_range_get`**: a GET with a `Range` header. Reads at most the
-  requested bytes. Budget: 12 calls per turn.
+- **`inspect_object`**: one object's metadata, no body. `aspects` picks the
+  reads; the default is `head` alone (one `HeadObject`, the cheapest):
+  - `head`: `HeadObject` metadata, with sanitized user metadata;
+  - `attributes`: `GetObjectAttributes` (checksum, parts, storage class,
+    size); `provider_unsupported` where the provider lacks it;
+  - `lock`: retention mode, retain-until date and legal hold;
+    `provider_unsupported` on an unsupported provider;
+  - `acl`: the object's ACL, grantees reduced to a kind, `is_public` set for
+    a public grant;
+  - `tags`: the tag set, at most 20 tags, keys and values redacted.
+  One aspect returns that read's result unchanged; several return
+  `{bucket, key, <aspect>: result…, success}` (`success` when any read
+  succeeded), checking Stop between reads. An unknown aspect → `error`.
+- **`test_object_read`**: how one object reads. `mode`:
+  - `conditional`: `HeadObject` with `If-None-Match` set to `etag`, no body.
+    Returns `etag_matches`. `etag` is required.
+  - `range`: a GET with the `range_header` Range. Reads at most the
+    requested bytes. Budget: 12 range reads per turn.
+  Any other mode → `error`.
 - **`preview_object`**: a bounded, sanitized preview of the first bytes,
   at most 1 MiB. Gzip is decompressed within the bound, Parquet returns its
   structure only, binary content is reported rather than decoded, and secrets
@@ -346,19 +353,12 @@ tool's model output is bounded to 60 000 chars.
 
 | Tool | Parameters | Scope | Env. | Timeout |
 | --- | --- | --- | --- | --- |
-| `get_bucket_config_summary` | `provider_id, bucket` | bucket | yes | 60 s |
 | `get_bucket_config_detail` | `provider_id, bucket, aspect: str` | bucket | yes | 45 s |
-| `review_bucket_security` | `provider_id, bucket` | bucket | yes | 90 s |
-| `review_bucket_lifecycle` | `provider_id, bucket` | bucket | yes | 90 s |
-| `review_bucket_observability` | `provider_id, bucket` | bucket | yes | 90 s |
-| `review_bucket_cost_optimization` | `provider_id, bucket` | bucket | yes | 90 s |
 | `review_bucket_performance_profile` | `provider_id, bucket, prefix = ""` | listing | yes | 90 s |
-| `review_bucket_config` | `provider_id, bucket` | bucket | yes | 240 s |
+| `review_bucket_config` | `provider_id, bucket, aspects: list[str] \| None = None` | bucket | yes | 240 s |
 
 All of these tools use read-only `GET` calls only.
 
-- **`get_bucket_config_summary`**: encryption, versioning, policy, CORS,
-  lifecycle, logging and more, with an overall status.
 - **`get_bucket_config_detail`**: the sanitized detail of one `aspect`:
   `replication`, `notification`, `cors`, `logging`, `lifecycle`,
   `encryption`, `public_access_block`, `policy`, `policy_status`,
@@ -366,29 +366,37 @@ All of these tools use read-only `GET` calls only.
   `intelligent_tiering`, `accelerate`, `request_payment`, `metrics` or
   `analytics`. ARNs are reduced, values redacted, and at most 20 rules are
   returned.
-- **`review_bucket_security`**: policy (anonymous and wildcard principals,
-  the AWS public verdict), ACL grants, public access block, default
-  encryption and CORS. Its output is fed to the estate (`ingest_review`),
-  which opens, resolves or recurs issues.
-- **`review_bucket_lifecycle`**: multipart cleanup, expiration, transitions
-  and noncurrent versions. Also feeds the estate.
-- **`review_bucket_observability`**: logging, event notifications and
-  tagging.
-- **`review_bucket_cost_optimization`**: lifecycle, transitions, noncurrent
-  versions, incomplete uploads and cost-attribution tags.
 - **`review_bucket_performance_profile`**: key layout, sizes and storage
   classes from a bounded object sample. Because it lists objects, it uses
   listing scope.
-- **`review_bucket_config`**: runs the summary and the security, lifecycle,
-  observability and cost reviews in one call. Behaviour:
-  - Stop is checked between sections; a stopped review sets `stopped: true`.
-  - A failed section never sinks the review.
-  - Findings are sorted critical → warning → opportunity → good. At most 80
-    are returned to the model.
-  - The security and lifecycle sections feed the estate.
-  - Saves a `review` artifact with up to 200 findings.
+- **`review_bucket_config`**: the configuration review. `aspects` picks any
+  of the following; omitted (or empty), it runs all five, in this order:
+  - `summary`: encryption, versioning, policy, CORS, lifecycle, logging and
+    more, with an overall status;
+  - `security`: policy (anonymous and wildcard principals, the AWS public
+    verdict), ACL grants, public access block, default encryption and CORS;
+  - `lifecycle`: multipart cleanup, expiration, transitions and noncurrent
+    versions;
+  - `observability`: logging, event notifications and tagging;
+  - `cost`: lifecycle, transitions, noncurrent versions, incomplete uploads
+    and cost-attribution tags.
 
-The review tools summarize as `N to fix · M findings`, where "to fix" counts
+  Behaviour:
+  - An unknown aspect → `error`, nothing runs.
+  - Returns `{success, bucket, aspects, sections: {<aspect>: status…}, findings}`.
+    With one aspect that could not be read, `success` is false.
+  - Stop is checked between aspects; a stopped review sets `stopped: true`.
+  - A failed aspect never sinks the review.
+  - Findings carry their `section` and are sorted critical → warning →
+    opportunity → good. At most 80 are returned to the model.
+  - Each `security` and `lifecycle` aspect it ran is fed to the estate
+    (`ingest_review`, one aspect at a time), which opens, resolves or recurs
+    issues. An aspect it did not run decides nothing.
+  - Inside a task it saves a `review` artifact with up to 200 findings (the
+    title names the aspects when not all ran). Over MCP there is no task, so
+    no artifact.
+
+`review_bucket_config` and the performance profile summarize as `N to fix · M findings`, where "to fix" counts
 critical and warning findings.
 
 ## `account`
@@ -397,9 +405,8 @@ critical and warning findings.
 | --- | --- | --- | --- | --- | --- |
 | `survey_account` | `provider_id, max_buckets = 100` | `max_buckets` 1–500 | account | yes | 900 s |
 | `compare_to_last_survey` | `provider_id` | — | account | yes | 30 s |
-| `query_account_profile` | `provider_id, filter = "all"` | — | account | yes | 30 s |
 
-- **`survey_account`**: `test_credentials`, then `ListBuckets`, then a
+- **`survey_account`**: a credential check, then `ListBuckets`, then a
   read-only probe of each bucket. The probe covers region, public exposure,
   encryption, public access block, lifecycle, versioning, logging and
   evidence sources (inventory and access logs).
@@ -417,11 +424,8 @@ critical and warning findings.
   became public is flagged first) and evidence-source changes; at most 200
   changes are listed. No new scan. With fewer than two surveys it returns
   `comparable: false`.
-- **`query_account_profile`**: answers from the newest stored survey. No new
-  scan. `filter` is one of `all`, `public_buckets`, `missing_encryption`,
-  `missing_public_access_block`, `missing_lifecycle`, `missing_logging`,
-  `no_versioning` or `access_denied`. Buckets the survey could not decide are
-  listed as undetermined.
+Posture questions over the newest survey go through `query_estate` with
+`survey_filter` (see `core`).
 
 ## `files`
 
@@ -493,10 +497,24 @@ Neither tool calls storage or a model.
 With `STORAGE_AGENT_ENABLE_MCP=1`, the read-only MCP server exposes these
 tools through `call_direct` with actor `mcp`:
 
-- every `probes`, `objects` and `config` tool except `review_bucket_config`;
+- every `probes`, `objects` and `config` tool (`review_bucket_config` keeps no
+  artifact there);
 - plus `list_buckets`, `head_bucket`, `read_skill`, `query_estate` and
   `triage_error`.
 
-`note` (it writes local state) and `fix_preview` are never exposed.
+`note` (it writes local state), `record_conclusion` and `fix_preview` are
+never exposed.
+
+## Retired names
+
+Tasks recorded before this set keep their calls under the old names
+(`get_bucket_config_summary`, `review_bucket_security`,
+`review_bucket_lifecycle`, `review_bucket_observability`,
+`review_bucket_cost_optimization`, `head_object`, `get_object_attributes`,
+`get_object_lock_status`, `get_object_acl`, `get_object_tagging`,
+`test_conditional_get`, `test_range_get`, `test_credentials`,
+`query_account_profile`). History replay (`agent/session.py:to_input`)
+sends them back as past function calls with their outputs; nothing checks
+a replayed name against the registry.
 
 See [api.md](api.md#mcp-server).

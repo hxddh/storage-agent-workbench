@@ -43,10 +43,10 @@ Cost concern →
 
 ## Investigate with your read-only tools
 
-- `review_bucket_lifecycle` — read the bucket's current lifecycle rules and
+- `review_bucket_config` (aspect `lifecycle`) — read the bucket's current lifecycle rules and
   versioning/cleanup posture; surfaces missing "abort incomplete multipart" and
   risky early transitions.
-- `review_bucket_cost_optimization` — the cost-focused review: flags wrong-tier
+- `review_bucket_config` (aspect `cost`) — the cost-focused review: flags wrong-tier
   data, small-object overhead, and version accumulation.
 - `list_object_versions` — when config shows versioning on but the bill is
   unexplained, this reads the ACTUAL pileup (noncurrent-version count + bytes,
@@ -73,14 +73,14 @@ Cost concern →
   — sample size
   distribution and storage classes to judge small-file impact. `list_objects`
   now returns per-key `objects[]` (size / storage_class / last_modified) so you
-  can sample the distribution directly, without an extra head_object per key.
+  can sample the distribution directly, without an extra `inspect_object` per key.
 - Run `review_bucket_config` (inline, read-only) for the full lifecycle posture.
 - Account-wide: after a `survey_account`,
-  `query_account_profile(filter='missing_lifecycle')` lists every bucket with no
+  `query_estate(provider_id, survey_filter='missing_lifecycle')` lists every bucket with no
   lifecycle rules in one call from the persisted survey (no re-scan).
   For real per-object numbers, analyze an uploaded inventory export with
-  `analyze_uploaded_file`; for an inventory still in a bucket, propose
-  `plan_inventory_import` (a confirmed import). Do not invent prices.
+  `analyze_uploaded_file`; for an inventory still in a bucket, run
+  `import_evidence(source_type="inventory", …)`. Do not invent prices.
 
 ## Ask the user (only what tools can't reveal)
 

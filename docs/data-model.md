@@ -198,9 +198,9 @@ The code writes these kinds:
 | --- | --- | --- | --- |
 | `survey` | `survey_account` tool, only for a successful survey | `Account survey · <account>` | The full survey profile: `{success, provider_id, list_status, visible, processed, truncated, whole_account, summary, summary_text, buckets: [per-bucket snapshot + bucket_name, access_status, evidence_sources]}` |
 | `survey` | watch sweep (`task_id` is `NULL`) | `Watch survey · <account>` | Same profile. Only the newest 3 task-less surveys per provider are kept. |
-| `review` | `review_bucket_config` tool | `Configuration review · <bucket>` | `{bucket, findings}` (at most 200 findings) |
+| `review` | `review_bucket_config` tool (inside a task) | `Configuration review · <bucket>`, naming the aspects when not all ran | `{bucket, aspects, findings}` (at most 200 findings) |
 
-`compare_to_last_survey`, `query_account_profile` and evidence import read the
+`compare_to_last_survey`, `query_estate` with `survey_filter` and evidence import read the
 newest `survey` artifacts of a provider, including watch surveys.
 
 ## Datasets
@@ -248,8 +248,8 @@ findings and whitelisted aggregates.
 
 The estate records what the work has established about the user's storage.
 Issues are opened, resolved and marked recurred only by deterministic
-observations: survey posture, the `review_bucket_security` and
-`review_bucket_lifecycle` outputs, a Verify re-check, and a watch sweep.
+observations: survey posture, the security and lifecycle aspects of a
+`review_bucket_config` run, a Verify re-check, and a watch sweep.
 Model prose never changes an issue. An observation that could not read
 something decides nothing.
 

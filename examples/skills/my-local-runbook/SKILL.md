@@ -19,7 +19,7 @@ problem.
 
 1. Describe symptoms to collect (error code, endpoint, bucket, key, headers)
 2. Run the relevant read-only probes (`head_bucket`, `get_bucket_location`, `test_addressing_style`, `preview_object`)
-3. Compare config (`get_bucket_config_summary`) with observed behavior
+3. Compare config (`review_bucket_config`) with observed behavior
 4. Summarize findings, cite evidence, note gaps
 
 ## Boundaries

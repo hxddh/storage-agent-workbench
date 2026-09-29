@@ -38,13 +38,13 @@ Consistency concern →
 
 ## Investigate with your read-only tools
 
-- `head_object` — the key probe: read the object's ETag, size, last-modified,
+- `inspect_object` — the key probe: read the object's ETag, size, last-modified,
   storage class, and now `replication_status` / `parts_count` /
   `cache_control` / `content_encoding`. Compare the live ETag to what the client
   cached to prove staleness is client-side, classify the ETag (single-part MD5 vs
   multipart `-N` — `parts_count` confirms it), and use `cache_control` to explain
   a client/CDN serving old bytes.
-- `test_conditional_get` — the sharpest freshness probe: HeadObject with
+- `test_object_read` (mode `conditional`) — the sharpest freshness probe: HeadObject with
   If-None-Match against the client's cached ETag. Read the verdict from
   `etag_matches`, NOT the raw status: **304 → unchanged** (the stale read is a
   cache/CDN problem, not the store); **200 with a DIFFERENT `current_etag` → it
@@ -53,12 +53,12 @@ Consistency concern →
   conditional-request capability gap, NOT a change, so don't report the object as
   modified. No body either way. Reach for this before asking the user about their
   cache layers.
-- `get_object_attributes` — the object's checksum algorithm + part count when you
-  need to diagnose a checksum/multipart-assembly mismatch (falls back to
-  head_object where the provider doesn't implement it).
+- `inspect_object` with aspect `attributes` — the object's checksum algorithm +
+  part count when you need to diagnose a checksum/multipart-assembly mismatch
+  (fall back to aspect `head` where the provider doesn't implement it).
 - `list_objects` — confirm the object/prefix is actually present (LIST is
   consistent), ruling out "wrong prefix" and pagination illusions.
-- `test_range_get` — confirm the current bytes are readable directly from the
+- `test_object_read` (mode `range`) — confirm the current bytes are readable directly from the
   store, separating real object state from a stale cache.
 - `preview_object` — when "the content is wrong/old" for a text object, read a
   bounded, sanitized preview of its head to see the actual current bytes from the
@@ -77,7 +77,7 @@ Consistency concern →
 
 ## What to report
 
-That the store itself is consistent (shown via `head_object`/`list_objects`) and
+That the store itself is consistent (shown via `inspect_object`/`list_objects`) and
 which client-side layer is stale (or that a multipart upload never completed),
 the fix (cache invalidation / complete the upload / enable versioning for
-races), and how to confirm — re-`head_object` and compare ETag/last-modified.
+races), and how to confirm — re-run `inspect_object` and compare ETag/last-modified.

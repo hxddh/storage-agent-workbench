@@ -28,7 +28,10 @@ def _page_summary(res: Any) -> str:
 
 @tool(group="core", core=True, scope=Scope(bucket=None), timeout=30)
 def list_buckets(provider_id: str) -> dict[str, Any]:
-    """List every bucket the provider's credentials can see (read-only ListBuckets).
+    """List every bucket the provider's credentials can see (read-only ListBuckets). Also the first step
+    for any credentials, 403 or SignatureDoesNotMatch diagnosis: success means the keys work;
+    InvalidAccessKeyId / SignatureDoesNotMatch mean the keys or signing are wrong; AccessDenied means the
+    keys authenticate but may not ListBuckets; provider_unsupported is a capability gap, not bad keys.
 
     Args:
         provider_id: A provider_id from configured_providers.
@@ -45,17 +48,6 @@ def head_bucket(provider_id: str, bucket: str) -> dict[str, Any]:
         bucket: The bucket name.
     """
     return s3.head_bucket(current().conn(), provider_id, bucket)
-
-
-@tool(group="probes", scope=Scope(bucket=None), timeout=30)
-def test_credentials(provider_id: str) -> dict[str, Any]:
-    """Validate the provider's credentials with a read-only call — the first step for any auth, 403 or
-    SignatureDoesNotMatch diagnosis. Returns whether the keys work and the endpoint reached (no secrets).
-
-    Args:
-        provider_id: The provider.
-    """
-    return s3.test_credentials(current().conn(), provider_id)
 
 
 @tool(group="probes", scope=_BUCKET, timeout=30)
@@ -214,108 +206,76 @@ def list_upload_parts(provider_id: str, bucket: str, key: str, upload_id: str, m
                                 part_number_marker=part_number_marker or None)
 
 
-@tool(group="objects", scope=_KEY, timeout=30)
-def head_object(provider_id: str, bucket: str, key: str, version_id: str = "") -> dict[str, Any]:
-    """Read one object's metadata (read-only HeadObject; no body): size, ETag, last-modified, storage class,
-    sanitized user metadata, replication / restore / archive status, parts count, lifecycle expiration,
-    version id and content headers.
+_OBJECT_ASPECTS = {"head": "head_object", "attributes": "get_object_attributes",  # s3 engine reads
+                   "lock": "get_object_lock_status", "acl": "get_object_acl", "tags": "get_object_tagging"}
+
+
+@tool(group="objects", scope=_KEY, timeout=60)
+def inspect_object(provider_id: str, bucket: str, key: str, version_id: str = "",
+                   aspects: list[str] | None = None) -> dict[str, Any]:
+    """Read one object's metadata without its body (read-only). aspects picks the reads; the default is
+    head alone (one HeadObject). head: size, ETag, last-modified, storage class, sanitized user metadata,
+    replication / restore / archive status, parts count, lifecycle expiration, version id, content
+    headers. attributes: checksum algorithm, part count, storage class, size (GetObjectAttributes; not
+    every S3-compatible provider has it — provider_unsupported → use head). lock: Object-Lock retention
+    mode, retain-until date, legal hold — for "why can't I delete or overwrite this object?". acl: for
+    "is THIS object public?" (an object can be public under a locked-down bucket; grantees reduced to a
+    kind, a public grant sets is_public). tags: the tag set (redacted, at most 20) that drives lifecycle
+    rules, cost attribution and tag-based policies. An unsupported aspect reports provider_unsupported.
 
     Args:
         provider_id: The provider.
         bucket: The bucket name.
         key: The object key.
         version_id: A specific version to read.
+        aspects: Any of head, attributes, lock, acl, tags (default: head).
     """
-    return s3.head_object(current().conn(), provider_id, bucket, key, version_id or None)
-
-
-@tool(group="objects", scope=_KEY, timeout=30)
-def get_object_lock_status(provider_id: str, bucket: str, key: str, version_id: str = "") -> dict[str, Any]:
-    """Read one object's Object-Lock state: retention mode, retain-until date, legal hold (read-only). For
-    "why can't I delete or overwrite this object?". An unsupported provider reports provider_unsupported.
-
-    Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-        key: The object key.
-        version_id: A specific version.
-    """
-    return s3.get_object_lock_status(current().conn(), provider_id, bucket, key, version_id or None)
-
-
-@tool(group="objects", scope=_KEY, timeout=30)
-def get_object_acl(provider_id: str, bucket: str, key: str, version_id: str = "") -> dict[str, Any]:
-    """Read one object's ACL (read-only). For "is THIS object public?" — an object can be public under a
-    locked-down bucket. Grantees are reduced to a kind; a public grant sets is_public.
-
-    Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-        key: The object key.
-        version_id: A specific version.
-    """
-    return s3.get_object_acl(current().conn(), provider_id, bucket, key, version_id or None)
-
-
-@tool(group="objects", scope=_KEY, timeout=30)
-def get_object_tagging(provider_id: str, bucket: str, key: str, version_id: str = "") -> dict[str, Any]:
-    """Read one object's tag set (read-only; keys and values redacted, at most 20). Tags drive lifecycle
-    rules, cost attribution and tag-based policies.
-
-    Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-        key: The object key.
-        version_id: A specific version.
-    """
-    return s3.get_object_tagging(current().conn(), provider_id, bucket, key, version_id or None)
-
-
-@tool(group="objects", scope=_KEY, timeout=30)
-def get_object_attributes(provider_id: str, bucket: str, key: str, version_id: str = "") -> dict[str, Any]:
-    """Read one object's attributes: checksum algorithm, part count, storage class, size (read-only
-    GetObjectAttributes). Not every S3-compatible provider implements it (provider_unsupported → use
-    head_object).
-
-    Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-        key: The object key.
-        version_id: A specific version.
-    """
-    return s3.get_object_attributes(current().conn(), provider_id, bucket, key, version_id or None)
-
-
-@tool(group="objects", scope=_KEY, timeout=30)
-def test_conditional_get(provider_id: str, bucket: str, key: str, etag: str) -> dict[str, Any]:
-    """Does a cached ETag still match the stored object? Read-only HeadObject with If-None-Match, no body.
-    Read `etag_matches`, not the status code; a provider that ignores If-None-Match reports
-    provider_unsupported. For "I'm seeing stale data".
-
-    Args:
-        provider_id: The provider.
-        bucket: The bucket name.
-        key: The object key.
-        etag: The cached ETag (quotes optional).
-    """
-    return s3.test_conditional_get(current().conn(), provider_id, bucket, key, etag)
+    wanted = aspects or ["head"]
+    unknown = sorted(set(wanted) - set(_OBJECT_ASPECTS))
+    if unknown:
+        return {"error": f"Unknown aspect {', '.join(unknown)}. Use any of: {', '.join(_OBJECT_ASPECTS)}."}
+    chosen = [a for a in _OBJECT_ASPECTS if a in wanted]
+    ctx = current()
+    if len(chosen) == 1:  # one read answers as that read does
+        return getattr(s3, _OBJECT_ASPECTS[chosen[0]])(ctx.conn(), provider_id, bucket, key, version_id or None)
+    out: dict[str, Any] = {"bucket": bucket, "key": key}
+    for name in chosen:
+        if ctx.cancelled:
+            out["stopped"] = True
+            break
+        out[name] = getattr(s3, _OBJECT_ASPECTS[name])(ctx.conn(), provider_id, bucket, key, version_id or None)
+    reads = [v for k, v in out.items() if k in _OBJECT_ASPECTS and isinstance(v, dict)]
+    out["success"] = any(r.get("success") is not False for r in reads)
+    return out
 
 
 @tool(group="objects", scope=_KEY, timeout=45)
-def test_range_get(provider_id: str, bucket: str, key: str, range_header: str = "bytes=0-1023") -> dict[str, Any]:
-    """Test a bounded ranged read of one object (read-only GET with a Range header; reads at most the
-    requested bytes). Verifies range support and partial-read latency.
+def test_object_read(provider_id: str, bucket: str, key: str, mode: str, etag: str = "",
+                     range_header: str = "bytes=0-1023") -> dict[str, Any]:
+    """Test how one object reads (read-only). mode "conditional": does a cached ETag still match the
+    stored object? HeadObject with If-None-Match, no body — read `etag_matches`, not the status code; a
+    provider that ignores If-None-Match reports provider_unsupported. For "I'm seeing stale data".
+    mode "range": a bounded ranged GET (reads at most the requested bytes) that verifies range support
+    and partial-read latency; at most 12 per turn.
 
     Args:
         provider_id: The provider.
         bucket: The bucket name.
         key: The object key.
-        range_header: The Range header, e.g. bytes=0-1023.
+        mode: "conditional" or "range".
+        etag: For conditional: the cached ETag (quotes optional).
+        range_header: For range: the Range header, e.g. bytes=0-1023.
     """
     ctx = current()
+    if mode == "conditional":
+        if not etag:
+            return {"error": "mode conditional needs the cached etag."}
+        return s3.test_conditional_get(ctx.conn(), provider_id, bucket, key, etag)
+    if mode != "range":
+        return {"error": 'Unknown mode. Use "conditional" or "range".'}
     if not ctx.budget("reads", 12):
         return {"error": "Ranged-read budget for this turn is used up (12 calls)."}
-    return s3.test_range_get(ctx.conn(), provider_id, bucket, key, range_header)
+    return s3.test_range_get(ctx.conn(), provider_id, bucket, key, range_header or "bytes=0-1023")
 
 
 _PREVIEW_BYTES = 24 * 1024 * 1024

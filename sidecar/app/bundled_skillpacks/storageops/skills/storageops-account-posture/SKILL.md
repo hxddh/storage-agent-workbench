@@ -53,26 +53,24 @@ The survey gives the landscape; you decide where to go deeper.
   `public_access_block_status`, `policy_status` — plus detected `evidence_sources`
   (logging targets, inventory destinations). It reads the landscape; it is NOT a
   deep per-bucket audit.
-- `query_account_profile(provider_id, filter)` — the account-wide posture query:
+- `query_estate(provider_id, survey_filter=…)` — the account-wide posture query:
   reads the LATEST persisted survey and returns, per bucket, its region + config
   flags, filtered by posture (`public_buckets` — buckets AWS judges publicly exposed via
   policy verdict and/or ACL grants, the account's most critical question —
   `missing_public_access_block`, `missing_encryption`, `missing_lifecycle`,
-  `missing_logging`, `no_versioning`, `access_issues`, or `all`). This is how
+  `missing_logging`, `no_versioning`, `access_denied`, or `all`). This is how
   you answer "which of my N buckets are public / have no X?" at scale — no
-  re-scan, statuses only. Run `survey_account` first if none exists; the result
-  echoes `survey_truncated` — say so when the matrix is partial.
+  re-scan, statuses only. Run `survey_account` first if none exists; say so when
+  the survey was truncated and the matrix is partial.
 - `compare_to_last_survey(provider_id)` — "what changed since last time?" across
   the two most recent surveys. Changes carrying `"alert": true` mean a bucket
   BECAME PUBLIC since the last survey — lead your answer with those. Whenever
   `survey_account` returns `has_prior_survey: true`, call this next and report
   the delta unprompted.
-- For one bucket's full configuration, use `review_bucket_config` /
-  `review_bucket_*` instead of surveying the whole account.
-- Large accounts: the survey can exceed the inline time budget and finish in the
-  background — then read it with `read_run_result(run_id, wait_seconds=…)` (up
-  to 60s in-turn, rather than deferring to another message); don't re-run the
-  survey.
+- For one bucket's full configuration, use `review_bucket_config`
+  instead of surveying the whole account.
+- Large accounts: the survey is bounded (at most 500 buckets) and reports its
+  coverage; don't re-run it to fill gaps — say what was not covered.
 
 Treat `provider_unsupported` / `access_denied` items as exactly that — report the
 gap honestly rather than asserting a bucket lacks a feature you couldn't read.

@@ -46,7 +46,7 @@ writes to:
   size/count distribution that quantifies small-file amplification.
   Pass an in-scope `prefix` when the provider restricts `allowed_prefixes` —
   this tool LISTS, so a prefixless call is denied on a prefix-scoped provider.
-- `head_object` on `_SUCCESS` / part files — confirm what the job actually wrote.
+- `inspect_object` on `_SUCCESS` / part files — confirm what the job actually wrote.
 
 ## Ask the user (only what tools can't reveal)
 

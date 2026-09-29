@@ -26,12 +26,13 @@ fails. This is how you keep answers correct, grounded, and safe.
   not a superficial keyword? (e.g. a valid-but-denied request is permission, not
   protocol.)
 - **Grounded** — every factual claim traces to a tool result you actually ran
-  (`test_credentials`, `head_bucket`, `review_bucket_*`, …) or to the session
+  (`list_buckets`, `head_bucket`, `review_bucket_config`, …) or to the session
   summary. No invented buckets, configs, numbers, or behaviors. And you reached
   for the PURPOSE-BUILT tool rather than asking the user or hand-waving: a
   presigned-URL 403 → `diagnose_presigned_url`; "is this object public?" →
-  `get_object_acl`; "am I seeing stale data?" → `test_conditional_get`;
-  account-wide "which buckets lack X?" → `query_account_profile`.
+  `inspect_object` (aspect `acl`); "am I seeing stale data?" → `test_object_read`
+  (mode `conditional`);
+  account-wide "which buckets lack X?" → `query_estate` with `survey_filter`.
 - **Facts vs. inference** — tool-verified facts are clearly separated from
   hypotheses, and provider-specific assumptions (pricing, class thresholds,
   addressing) are flagged as assumptions to confirm.
