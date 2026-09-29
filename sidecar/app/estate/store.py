@@ -187,10 +187,38 @@ def ingest_review(conn: sqlite3.Connection, provider_id: str, bucket: str, outpu
         details.update(d)
     if not any(isinstance(out, dict) and out.get("success") is not False for out in outputs.values()):
         return []  # every check failed (a typo, NoSuchBucket, no access): nothing was learned
-    upsert_bucket(conn, provider_id, bucket, task_id=task_id)
+    upsert_bucket(conn, provider_id, bucket, posture=_reviewed_posture(conn, provider_id, bucket, verdicts),
+                  task_id=task_id, source=source)
     changes = observe(conn, provider_id, bucket, verdicts, details, source=source, task_id=task_id)
     conn.commit()
     return changes
+
+
+# What a decided review verdict says about the posture projection: a review that
+# resolved "no default encryption" has seen encryption, so the configuration the
+# bucket sheet shows must agree with the Issue list. Only certain inferences:
+# a public access block or lifecycle that is present may still be incomplete.
+_POSTURE_FROM_VERDICT: dict[str, dict[bool, dict[str, Any]]] = {
+    "no_default_encryption": {True: {"encryption_status": "not_configured"},
+                              False: {"encryption_status": "available"}},
+    "public_access_block_missing": {False: {"public_access_block_status": "available"}},
+    "no_abort_mpu": {False: {"lifecycle_status": "available"}},
+    "public_exposure": {False: {"publicly_exposed": False}},
+}
+
+
+def _reviewed_posture(conn: sqlite3.Connection, provider_id: str, bucket: str,
+                      verdicts: dict[str, rules.Verdict]) -> dict[str, Any] | None:
+    updates: dict[str, Any] = {}
+    for code, verdict in verdicts.items():
+        if verdict is not None:
+            updates.update(_POSTURE_FROM_VERDICT.get(code, {}).get(bool(verdict), {}))
+    if not updates:
+        return None  # nothing the review decided changes the recorded posture
+    row = conn.execute("SELECT posture FROM estate_buckets WHERE provider_id = ? AND bucket = ?",
+                       (provider_id, bucket)).fetchone()
+    current = loads(row["posture"], {}) if row else {}
+    return {**(current if isinstance(current, dict) else {}), **updates}
 
 
 # --- reads ------------------------------------------------------------------------------

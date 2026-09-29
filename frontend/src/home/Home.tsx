@@ -83,13 +83,12 @@ function Attention() {
     const timer = setInterval(() => void reload(), 60_000);
     return () => clearInterval(timer);
   }, [reload]);
-  // The sheet may have changed an issue (verify, accept): read again when it closes.
-  const paneOpen = app.pane?.tab === "bucket";
-  const wasOpen = useRef(paneOpen);
+  // The sheet changed an issue (verify, accept): read again at once.
+  const first = useRef(true);
   useEffect(() => {
-    if (wasOpen.current && !paneOpen) void reload();
-    wasOpen.current = paneOpen;
-  }, [paneOpen, reload]);
+    if (first.current) { first.current = false; return; }
+    void reload();
+  }, [app.estateRev]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!estate || estate.providers.length === 0) return null;
   const groups = groupIssues(estate.issues);
   const checked = estate.providers.some((p) => p.last_checked_at);

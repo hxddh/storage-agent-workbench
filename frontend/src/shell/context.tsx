@@ -37,6 +37,9 @@ type Ctx = {
   reloadProviders: () => Promise<void>;
   online: boolean;
   setOnline: (online: boolean) => void;
+  /** Bumped when something changes an Issue (Verify, Accept): the home re-reads. */
+  estateRev: number;
+  estateChanged: () => void;
 };
 
 const AppContext = createContext<Ctx | null>(null);
@@ -47,7 +50,13 @@ function readRoute(): Route {
   return m ? { kind: "task", id: m[1] } : { kind: "home" };
 }
 
+/** Below 720 px the sidebar overlays the page: it starts closed and its state is not saved. */
+export function isNarrow(): boolean {
+  return typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 720px)").matches;
+}
+
 function storedSidebar(): boolean {
+  if (isNarrow()) return false;
   try {
     return localStorage.getItem("sa.sidebar") !== "0";
   } catch {
@@ -65,6 +74,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [models, setModels] = useState<ModelProvider[] | null>(null);
   const [clouds, setClouds] = useState<CloudProvider[] | null>(null);
   const [online, setOnline] = useState(true);
+  const [estateRev, setEstateRev] = useState(0);
 
   useEffect(() => {
     const onHash = () => setRoute(readRoute());
@@ -104,12 +114,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     route,
     openTask: (id) => navigate(`#/task/${id}`, { kind: "task", id }),
     goHome: () => navigate("#/", { kind: "home" }),
-    openBucket: (providerId, bucket) => setPane({ tab: "bucket", providerId, bucket }),
+    openBucket: (providerId, bucket) => {
+      if (isNarrow()) setSidebarState(false); // one overlay at a time in a narrow window
+      setPane({ tab: "bucket", providerId, bucket });
+    },
     pane,
-    setPane,
+    setPane: (p) => {
+      if (p && isNarrow()) setSidebarState(false);
+      setPane(p);
+    },
     sidebar,
     setSidebar: (open) => {
       setSidebarState(open);
+      if (isNarrow()) return; // the overlay's state is not the window's preference
       try { localStorage.setItem("sa.sidebar", open ? "1" : "0"); } catch { /* per-device only */ }
     },
     settings,
@@ -124,7 +141,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     reloadProviders,
     online,
     setOnline,
-  }), [route, navigate, pane, sidebar, settings, editing, draft, models, clouds, reloadProviders, online]);
+    estateRev,
+    estateChanged: () => setEstateRev((n) => n + 1),
+  }), [route, navigate, pane, sidebar, settings, editing, draft, models, clouds, reloadProviders, online, estateRev]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

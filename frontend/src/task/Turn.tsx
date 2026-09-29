@@ -233,8 +233,11 @@ function Outcome({ section, taskId, running }: { section: Section; taskId: strin
     return (
       <div className="turn-outcome" data-testid="attention">
         <StatusDot tone={st === "failed" ? "danger" : "warn"} />
-        <span>{section.error?.message ?? (st === "interrupted" ? t("turn.interrupted") : t("turn.failed"))}</span>
-        {section.error?.action === "settings"
+        {/* The reason, when the runtime recorded one; a failure points at the model settings,
+            an interruption (a restart) can simply continue. */}
+        <span className="turn-outcome-text">{section.error?.message ?? section.turn.error
+          ?? (st === "interrupted" ? t("turn.interrupted") : t("turn.failed"))}</span>
+        {st === "failed"
           ? <Button size="sm" onClick={() => app.openSettings("models")}>{t("turn.openSettings")}</Button>
           : <Button size="sm" onClick={() => void api.resume(taskId, section.turn.id).catch((e) => toast.error(String(e)))}>{t("turn.resume")}</Button>}
       </div>

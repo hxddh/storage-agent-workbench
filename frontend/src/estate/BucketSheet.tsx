@@ -27,7 +27,7 @@ export function BucketSheet({ providerId, bucket }: { providerId: string; bucket
   const account = app.clouds?.find((c) => c.id === providerId)?.name ?? "";
   // An issue this visit touched stays where it was, so its Verify result stays readable.
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
-  const changed = (id: string) => { setTouched((s) => new Set(s).add(id)); reload(); };
+  const changed = (id: string) => { setTouched((s) => new Set(s).add(id)); reload(); app.estateChanged(); };
   const care = page?.issues.filter((i) => i.status !== "resolved" || touched.has(i.id)) ?? [];
   const past = page?.issues.filter((i) => i.status === "resolved" && !touched.has(i.id)) ?? [];
   const ask = () => {

@@ -104,6 +104,8 @@ export function Shell() {
   return (
     <div className="window" data-traffic-lights={hasNativeTrafficLights() ? "true" : undefined} data-sidebar={app.sidebar ? "open" : "closed"} data-pane={app.pane ? "open" : "closed"}>
       <Sidebar />
+      {/* Narrow window only (CSS): tapping outside the overlaid sidebar closes it. */}
+      {app.sidebar ? <div className="scrim" aria-hidden onClick={() => app.setSidebar(false)} /> : null}
       <main className="main" aria-busy={busy}>
         <header className="titlebar" data-tauri-drag-region>
           <div className="titlebar-start">

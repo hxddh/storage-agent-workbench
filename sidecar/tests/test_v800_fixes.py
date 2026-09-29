@@ -141,3 +141,21 @@ def test_a_shorter_watch_interval_brings_the_next_run_closer(conn):
     watch.set_watch(conn, "p1", enabled=True, interval_hours=6)
     nxt = conn.execute("SELECT next_run_at FROM watch_schedules WHERE provider_id = 'p1'").fetchone()[0]
     assert nxt < "2999-01-01T00:00:00Z"
+
+
+def test_a_verified_resolution_updates_the_bucket_configuration(conn):
+    _provider(conn)
+    estate.upsert_bucket(conn, "p1", "b", posture={"encryption_status": "not_configured", "versioning_status": "Enabled"})
+    estate.observe(conn, "p1", "b", {"no_default_encryption": True}, source="survey")
+    conn.commit()
+    # A review that sees encryption now (the Verify path goes through ingest_review).
+    from app.estate import rules
+    orig = rules.evaluate_review
+    rules.evaluate_review = lambda check, out: ({"no_default_encryption": False}, {})
+    try:
+        estate.ingest_review(conn, "p1", "b", {"security": {"success": True}})
+    finally:
+        rules.evaluate_review = orig
+    posture = estate.loads(conn.execute("SELECT posture FROM estate_buckets").fetchone()["posture"])
+    assert posture["encryption_status"] == "available" and posture["versioning_status"] == "Enabled"
+    assert conn.execute("SELECT status FROM issues").fetchone()["status"] == "resolved"
