@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { seedSession } from "./seed";
+import { boot as bootApp, delegate, reset, settled } from "./app";
+import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
 
 /**
  * Audit the rendered Agent product, not token-pair assumptions. Every visible
@@ -7,7 +8,8 @@ import { seedSession } from "./seed";
  */
 const AA_BODY = 4.5;
 const AA_LARGE = 3.0;
-const EXEMPT = "[data-contrast-exempt]";
+// WCAG 1.4.3 exempts inactive controls: a disabled button is not text to read.
+const EXEMPT = "[data-contrast-exempt], button:disabled, [aria-disabled=\"true\"]";
 
 type Violation = {
   ratio: number;
@@ -121,39 +123,43 @@ function report(name: string, v: Violation[]): string {
 }
 
 async function boot(page: Page, theme: "dark" | "light", seeded: boolean) {
-  const seed = seeded ? seedSession(3, `contrast ${theme} ${Date.now()}`, "tall") : null;
-  await page.addInitScript((t) => {
-    localStorage.setItem("saw.lang", "en");
-    localStorage.setItem("saw.onboarded", "1");
-    localStorage.setItem("saw.theme", t);
-  }, theme);
-  await page.goto("/");
-  await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible({ timeout: 30_000 });
-  if (seed) {
-    await page.getByTestId("agent-task-navigation").getByText(seed.title, { exact: true }).first().click();
-    await expect(page.locator(".task-item").first()).toBeVisible({ timeout: 30_000 });
-  }
+  await reset();
+  await bootApp(page, { theme });
+  if (!seeded) return;
+  const model = await startFakeModel([
+    toolTurn("list_uploaded_files", {}),
+    toolTurn("record_conclusion", { answer: "Nothing is attached yet.", next_steps: ["Attach a log"],
+      findings: [{ title: "No evidence", severity: "high", detail: "Attach an access log." },
+        { title: "Low", severity: "low", detail: "" }, { title: "Info", severity: "info", detail: "" }] }),
+    textTurn("| a | b |\n|---|---|\n| 1 | 2 |"),
+  ]);
+  const id = await useFakeModel(model.baseUrl);
+  await delegate(page, `contrast ${theme}`);
+  await expect(page.getByTestId("result")).toBeVisible({ timeout: 30_000 });
+  await settled(page);
+  await dropModelProvider(id);
+  await model.close();
 }
 
 for (const theme of ["dark", "light"] as const) {
   test.describe(`every word on screen is readable — ${theme}`, () => {
-    test("the Agent task start surface", async ({ page }) => {
+    test("the home", async ({ page }) => {
       await boot(page, theme, false);
       const v = await audit(page);
-      expect(v, report(`task start (${theme})`, v)).toEqual([]);
+      expect(v, report(`home (${theme})`, v)).toEqual([]);
     });
 
-    test("a Work Result with data and Execution disclosure", async ({ page }) => {
+    test("a Result with findings", async ({ page }) => {
       test.setTimeout(90_000);
       await boot(page, theme, true);
       const v = await audit(page);
-      expect(v, report(`Work Result (${theme})`, v)).toEqual([]);
+      expect(v, report(`Result (${theme})`, v)).toEqual([]);
     });
 
-    test("the settings drawer", async ({ page }) => {
+    test("Settings", async ({ page }) => {
       await boot(page, theme, false);
-      await page.getByTestId("task-navigation-settings").click();
-      await expect(page.getByTestId("settings-dialog")).toBeVisible();
+      await page.getByTestId("open-settings").click();
+      await expect(page.getByTestId("settings")).toBeVisible();
       await page.waitForTimeout(500);
       const v = await audit(page);
       expect(v, report(`settings (${theme})`, v)).toEqual([]);

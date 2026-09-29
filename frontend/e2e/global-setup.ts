@@ -48,9 +48,8 @@ export default async function globalSetup(): Promise<void> {
     ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(SIDECAR_PORT)],
     {
       cwd: sidecarDir,
-      // Due revisits are caught up by the Sidecar's own scheduler (never by a
-      // read); tick fast so a seeded due schedule settles inside a test.
-      env: { ...process.env, STORAGE_AGENT_DATA_DIR: dataDir, STORAGE_AGENT_REVISIT_TICK_SECONDS: "5" },
+      // The watch runs on the Sidecar's own clock; tick fast so a due sweep settles inside a test.
+      env: { ...process.env, STORAGE_AGENT_DATA_DIR: dataDir, STORAGE_AGENT_WATCH_TICK_SECONDS: "5" },
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
     },
@@ -72,7 +71,7 @@ export default async function globalSetup(): Promise<void> {
   // interrupted run still holds the port, uvicorn then exits with "address
   // already in use", and the health probe passes against the stranger — so the
   // suite talks to one process while seeding the data dir of another, and fails
-  // as `no such table: sessions` several layers away from the cause. Cost an
+  // as `no such table` several layers away from the cause. Cost an
   // afternoon once; the check is two lines.
   let exited = false;
   child.on("exit", () => {
@@ -94,9 +93,9 @@ export default async function globalSetup(): Promise<void> {
     // when that flag is read. The run then proceeds, seeds the data dir of a
     // process nobody is talking to, and fails four specs several layers away.
     //
-    // So confirm IDENTITY rather than timing: our sidecar creates `app.db` in
+    // So confirm IDENTITY rather than timing: our sidecar creates `storage-agent.db` in
     // the data dir we just made for it. A stranger never touches it.
-    const ourDb = path.join(dataDir, "app.db");
+    const ourDb = path.join(dataDir, "storage-agent.db");
     for (let i = 0; i < 50 && !fs.existsSync(ourDb); i++) {
       await new Promise((r) => setTimeout(r, 100));
     }

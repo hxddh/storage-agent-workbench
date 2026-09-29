@@ -127,23 +127,38 @@ function requestSignature(body: unknown): string {
     .join("|");
 }
 
-/** The runtime's title step marks its one bounded request with this token
- * (sidecar `task_runtime/titling.py`). The fake answers it out of band —
- * never consuming a scripted turn, never appearing in `requests` — so every
- * existing script keeps its turn order. `opts.title` is what it answers; an
- * empty answer keeps the deterministic seed title. */
-const TITLE_MARKER = "[[storage-agent:title]]";
+/** The runtime's tool-less side steps are recognised by their instructions
+ * (sidecar `app/agent/prompt.py`: TITLE_INSTRUCTIONS, COMPACT_INSTRUCTIONS,
+ * FINALIZE_INSTRUCTIONS) and answered out of band — never consuming a
+ * scripted turn, never appearing in `requests`. */
+const TITLE_MARKER = "Name this storage task in at most 8 words";
+const COMPACT_MARKER = "Summarize this storage investigation";
+const FINALIZE_MARKER = "You have finished working and are now writing the answer";
 
-/** The runtime's compaction step (sidecar `agent_runtime/compaction.py`) is
- * another marked, tool-less request — automatic at 80 % of the window, or on
- * demand from the palette. Answered out of band like the title step, never
- * consuming a scripted turn. `opts.compaction` is the summary it returns; an
- * empty answer makes the runtime report "nothing to compact". */
-const COMPACT_MARKER = "[[storage-agent:compact]]";
+/** A non-streamed chat.completion with the same content as a scripted stream
+ * (the side steps run through `Runner.run`, which does not stream). */
+function assemble(chunks: string[]): string {
+  let content = "";
+  const calls: Record<number, unknown> = {};
+  let finish = "stop";
+  for (const c of chunks) {
+    const choice = JSON.parse(c.slice("data: ".length)).choices[0];
+    content += choice.delta.content ?? "";
+    for (const tc of choice.delta.tool_calls ?? []) calls[tc.index] = { id: tc.id, type: "function", function: tc.function };
+    finish = choice.finish_reason ?? finish;
+  }
+  const tool_calls = Object.values(calls);
+  return JSON.stringify({
+    id: "chatcmpl-fake", object: "chat.completion", created: 0, model: "fake-model",
+    choices: [{ index: 0, finish_reason: finish,
+      message: { role: "assistant", content: content || null, ...(tool_calls.length ? { tool_calls } : {}) } }],
+    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+  });
+}
 
 export async function startFakeModel(
   turns: Turn[],
-  opts: { deltaDelayMs?: number; title?: string; compaction?: string } = {},
+  opts: { deltaDelayMs?: number; title?: string; compaction?: string; finalize?: string } = {},
 ): Promise<FakeModel> {
   const requests: unknown[] = [];
   const titleRequests: unknown[] = [];
@@ -165,11 +180,19 @@ export async function startFakeModel(
         parsed = {};
       }
       const marked = JSON.stringify(parsed);
-      if (marked.includes(TITLE_MARKER) || marked.includes(COMPACT_MARKER)) {
-        const isTitle = marked.includes(TITLE_MARKER);
-        (isTitle ? titleRequests : compactionRequests).push(parsed);
+      const streamed = Boolean((parsed as { stream?: boolean }).stream);
+      const side = marked.includes(TITLE_MARKER) ? "title" : marked.includes(COMPACT_MARKER) ? "compaction"
+        : marked.includes(FINALIZE_MARKER) ? "finalize" : null;
+      if (side) {
+        (side === "title" ? titleRequests : compactionRequests).push(parsed);
+        const chunks = textTurn((side === "title" ? opts.title : side === "compaction" ? opts.compaction : opts.finalize) ?? "");
+        if (!streamed) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(assemble(chunks));
+          return;
+        }
         res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-        for (const c of textTurn((isTitle ? opts.title : opts.compaction) ?? "")) res.write(c);
+        for (const c of chunks) res.write(c);
         res.write("data: [DONE]\n\n");
         res.end();
         return;
@@ -185,6 +208,11 @@ export async function startFakeModel(
             : chosen;
         replay.set(signature, take);
         if (i < turns.length) i += 1;
+      }
+      if (!streamed) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(assemble(take));
+        return;
       }
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
@@ -216,16 +244,10 @@ const SIDECAR = `http://127.0.0.1:${process.env.E2E_SIDECAR_PORT || 8799}`;
 
 /** Point the app at the fake model; returns the created provider id. */
 export async function useFakeModel(baseUrl: string): Promise<string> {
-  const res = await fetch(`${SIDECAR}/model-providers`, {
+  const res = await fetch(`${SIDECAR}/providers/models`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      name: "fake",
-      provider_type: "openai-compatible",
-      base_url: baseUrl,
-      model: "fake-model",
-      api_key: "not-a-real-key",
-    }),
+    body: JSON.stringify({ name: "fake", kind: "openai-compatible", base_url: baseUrl, model: "fake-model" }),
   });
   if (!res.ok) throw new Error(`could not configure the fake model: ${res.status} ${await res.text()}`);
   return ((await res.json()) as { id: string }).id;
@@ -233,5 +255,5 @@ export async function useFakeModel(baseUrl: string): Promise<string> {
 
 /** Remove it again, so the other specs keep their no-model fresh install. */
 export async function dropModelProvider(id: string): Promise<void> {
-  await fetch(`${SIDECAR}/model-providers/${id}`, { method: "DELETE" }).catch(() => undefined);
+  await fetch(`${SIDECAR}/providers/models/${id}`, { method: "DELETE" }).catch(() => undefined);
 }
