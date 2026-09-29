@@ -36,7 +36,7 @@ from ..providers import models as model_providers
 from ..security.redaction import redact_text
 from . import budget, errors, models, prompt, safety, tracing
 from .recorder import Recorder
-from .session import to_input
+from .session import ItemsSession, to_input
 from .tools import registry
 
 logger = logging.getLogger(__name__)
@@ -202,10 +202,9 @@ class Runtime:
         active = store.active_turns(conn, task_id)
         running = next((t["id"] for t in active if t["status"] == "running"), None)
         queued = [t["id"] for t in active if t["status"] == "queued"]
-        last = conn.execute("SELECT status FROM turns WHERE task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
-                            (task_id,)).fetchone()
+        last = store.head_status(conn, task_id)
         hub.state(task_id, {"state": store.task_state("running" if running else ("queued" if queued else None),
-                                                      last["status"] if last else None),
+                                                      last),
                             "running_turn_id": running, "queued_turn_ids": queued})
 
     # -- worker ------------------------------------------------------------------------------
@@ -268,6 +267,7 @@ class Runtime:
                            rec: Recorder, live: _Live, clients: list[Any]) -> dict[str, Any]:
         from agents import Agent, RunConfig, Runner
         from agents.extensions import ToolOutputTrimmer
+        from agents.run_error_handlers import RunErrorHandlerResult
         from agents.run_config import ToolExecutionConfig
 
         responses = models.is_responses(creds)
@@ -297,7 +297,6 @@ class Runtime:
             return md
 
         turn_ctx = registry.TurnContext(task_id, turn_id, live.cancel, rec, lang=lang)
-        history = _history(conn, task_id, turn_id)
         run_config = RunConfig(
             call_model_input_filter=model_input,
             tool_not_found_behavior="return_error_to_model",
@@ -307,8 +306,25 @@ class Runtime:
             trace_metadata={"task_id": task_id, "turn_id": turn_id},
             trace_include_sensitive_data=False,
         )
-        result = Runner.run_streamed(agent, history, context=turn_ctx, max_turns=MAX_TURN_STEPS,
-                                     run_config=run_config)
+        # The SDK's own error handlers end a run that ran out of steps (or that the
+        # model refused) with an answer instead of an exception.
+        finalized: dict[str, str] = {}
+
+        async def on_max_turns(data: Any) -> Any:
+            text = await self._final_answer(creds, clients, list(data.run_data.history), reason="budget")
+            finalized.update(text=text, reason="budget")
+            return RunErrorHandlerResult(final_output=text, include_in_history=False)
+
+        async def on_refusal(data: Any) -> Any:
+            text = safety.clean_message(str(data.error))[:600] or "The model declined to continue with this request."
+            finalized.update(text=text, reason="refusal")
+            return RunErrorHandlerResult(final_output=text, include_in_history=False)
+
+        # History comes from the item stream through the SDK's Session protocol
+        # (read-only: the Recorder is the only writer).
+        result = Runner.run_streamed(agent, [], context=turn_ctx, max_turns=MAX_TURN_STEPS, run_config=run_config,
+                                     session=ItemsSession(task_id, turn_id),
+                                     error_handlers={"max_turns": on_max_turns, "model_refusal": on_refusal})
         live.result = result
         try:
             async for event in result.stream_events():
@@ -328,41 +344,43 @@ class Runtime:
                 models.NO_PARALLEL.add(models.endpoint_key(creds))
             if errors.is_usage_refusal(exc):
                 models.NO_USAGE.add(models.endpoint_key(creds))
+            if errors.is_websocket_failure(exc):
+                models.NO_WEBSOCKET.add(models.endpoint_key(creds))
             if live.cancel.is_set():
                 return {"status": "cancelled", "usage": _usage(result)}
             if errors.recoverable(exc):
-                await self._finalize(conn, task_id, turn_id, creds, rec, clients,
-                                     reason="budget" if errors.is_max_turns(exc) else "provider")
+                text = await self._final_answer(creds, clients, _history(conn, task_id, turn_id), reason="provider")
+                rec.notice("finalized", reason="provider")
+                rec._append("agent_message", {"text": text})
                 return {"status": "completed", "usage": _usage(result)}
             return {"status": "failed", "error": errors.user_message(exc), "usage": _usage(result)}
         rec.close_segment()
         if live.cancel.is_set():
             rec.notice("stopped")
             return {"status": "cancelled", "usage": _usage(result)}
+        if finalized:
+            rec.notice("finalized", reason=finalized["reason"])
+            rec._append("agent_message", {"text": finalized["text"]})
         return {"status": "completed", "usage": _usage(result)}
 
-    async def _finalize(self, conn: Any, task_id: str, turn_id: str, creds: dict[str, Any], rec: Recorder,
-                        clients: list[Any], *, reason: str) -> None:
-        """Write the answer from the work so far, with no tools."""
+    async def _final_answer(self, creds: dict[str, Any], clients: list[Any], history: list[Any], *,
+                            reason: str) -> str:
+        """The answer the work so far supports, written with no tools."""
         from agents import Agent, Runner
         model, settings = models.build(creds, clients, tools_allowed=False)
         agent = Agent(name="Storage Agent", instructions=prompt.FINALIZE_INSTRUCTIONS, model=model,
                       model_settings=settings)
-        history = _history(conn, task_id, turn_id)
-        history.append({"role": "user", "content": (
+        history = list(history) + [{"role": "user", "content": (
             "[Your step budget ran out]" if reason == "budget" else "[The model call failed mid-work]")
-            + " Write the best answer the work above supports, and say what remains."})
+            + " Write the best answer the work above supports, and say what remains."}]
         try:
             out = await Runner.run(agent, history, max_turns=1)
             text = safety.clean_message(str(out.final_output or ""))
         except Exception as exc:  # noqa: BLE001
             text = ""
             logger.info("finalize failed: %s", redact_text(str(exc))[:200])
-        if not text:
-            text = ("I could not finish this in one go. The work so far is above — ask me to continue "
-                    "and I will pick up from there.")
-        rec.notice("finalized", reason=reason)
-        rec._append("agent_message", {"text": text})
+        return text or ("I could not finish this in one go. The work so far is above — ask me to continue "
+                        "and I will pick up from there.")
 
     async def _maybe_compact(self, conn: Any, task_id: str, turn_id: str, creds: dict[str, Any],
                              rec: Recorder, clients: list[Any]) -> None:

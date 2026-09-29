@@ -107,6 +107,6 @@ def import_evidence(provider_id: str, bucket: str, source_type: str, time_range_
         return evidence.import_source(ctx.conn(), task_id=ctx.task_id, provider_id=provider_id, bucket=bucket,
                                       source_type=source_type, time_range_start=time_range_start or None,
                                       time_range_end=time_range_end or None, max_files=max_files,
-                                      max_bytes=max_bytes, on_file=on_file, cancel_event=ctx.turn.cancel)
+                                      max_bytes=max_bytes, on_file=on_file, cancel_event=ctx.stop)
     except evidence.ImportRefused as exc:
         return {"error": str(exc)}

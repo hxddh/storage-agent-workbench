@@ -94,14 +94,13 @@ def snapshot(conn: Any, task_id: str) -> dict[str, Any]:
     items = [public_item(i) for i in store.items_for_turns(conn, [t["id"] for t in chain])]
     forks = {parent: kids for parent, kids in store.siblings(conn, task_id).items() if len(kids) > 1}
     active = store.active_turns(conn, task_id)
-    last = conn.execute("SELECT status FROM turns WHERE task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
-                        (task_id,)).fetchone()
+    last = store.head_status(conn, task_id)
     running = next((t["id"] for t in active if t["status"] == "running"), None)
     queued = [t for t in active if t["status"] == "queued"]
     return {
         "task": task,
         "state": store.task_state("running" if running else ("queued" if queued else None),
-                                  last["status"] if last else None),
+                                  last),
         "running_turn_id": running,
         "queued": [{"turn_id": t["id"], "direction": t["direction"], "created_at": t["created_at"]} for t in queued],
         "turns": [{k: t[k] for k in ("id", "parent_turn_id", "kind", "direction", "status", "error", "created_at",

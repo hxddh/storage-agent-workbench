@@ -72,3 +72,9 @@ def user_message(exc: BaseException) -> str:
     if "connection" in name.lower() or "connect" in str(exc).lower()[:200]:
         return "The model endpoint could not be reached. Check the base URL and your network."
     return "The Agent stopped with an error: " + redact_text(str(exc))[:300]
+
+
+def is_websocket_failure(exc: BaseException) -> bool:
+    """The Responses websocket transport could not be used (a proxy, a firewall)."""
+    text = f"{type(exc).__name__} {exc}".lower()
+    return "websocket" in text or "wss://" in text
