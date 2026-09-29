@@ -10,13 +10,13 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 - **Review**: one bucket's configuration, or a survey of every bucket in an account — exposure, encryption, public access block, lifecycle, versioning, logging.
 - **Analyze**: an access log or inventory the user attaches, or evidence the Agent imports from a source the survey discovered (bounded).
 - **Estimate**: storage-class mix over time under candidate lifecycle rules; dollars only with a price table the user confirmed.
-- **Look after**: the estate keeps known buckets and Issues; a watch can sweep an account on a schedule and open a task only when something new turns up.
+- **Look after**: the estate keeps known accounts, buckets, how their posture changed, Issues and notes; each Issue has a fix to apply (CLI, Terraform or the document) with a preview of what it would change, a read-only Verify that closes it, and it reopens when the problem comes back. A watch can sweep an account on a schedule and open a task only when something new turns up.
 
 ## The window
 
 **Sidebar · title bar · one document · one Composer**, plus one closable side pane.
 
-- The **sidebar** is the task list (grouped by day, searchable in place), New task, Home and Settings. A row shows state as a mark: working (pulsing), queued, needs attention; a task the watch opened carries a shield.
+- The **sidebar** is the task list (grouped by day, searchable in place), New task, Home, **Estate** and Settings. In a narrow window it overlays the document. A row shows state as a mark: working (pulsing), queued, needs attention; a task the watch opened carries a shield.
 - The **title bar** names the task and shows its real state; a hairline runs under it while work is live; its right-hand button opens the side pane.
 - The **Composer** is the only way to give the Agent work: *Delegate* at rest, *Steer* and *Stop* while it works. Files attach by button or drop (access logs, inventories); a file always makes a new Direction. The model chip shows which model the next turn uses.
 
@@ -25,8 +25,16 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 The greeting, the Composer, three starters (*Diagnose an access error*, *Survey my storage account*, *Analyze an access log*) that only fill the Composer, then:
 
 - **Before the first task** — when no model or no storage account is configured, one card each, opening the right Settings pane.
-- **Your storage** — each account with its known buckets, when it was last checked and whether it is watched.
-- **Needs care** — open Issues, most severe first. Each expands to its detail, the generated fix (a command to copy, never applied), **Verify** (a read-only re-check that can resolve it), **Open task** (the task that found it) and **Accept risk**.
+- **Your storage** — each account with its known buckets, when it was last checked and whether it is watched; an account opens the estate.
+- **Needs care** — open Issues, most severe first. Each expands to its detail, the generated fix (never applied), **Verify** (a read-only re-check that can resolve it), **Open task** (the task that found it), **Accept risk** (with an optional reason, kept as a note) and **Open bucket**.
+
+### The estate
+
+The estate is where the storage itself is the subject: every account, an account's buckets (most in need of care first), and a **bucket page** — what needs care (the resolved Issues folded below), what is known (its posture, as last checked), the notes kept about it, and how it changed (posture changes and Issue events, newest first, each with its source and the task behind it). *Ask about this bucket* fills the Composer with the bucket; it never submits.
+
+An Issue's **fix pack** shows the fix as the AWS CLI command, a Terraform resource or the API document — copy whichever you apply changes with — with its notes, and an **impact preview**: what applying it would change, from the evidence the estate holds. For a public access block it counts the anonymous requests in the bucket's attached S3 server access logs; for lifecycle rules it says whether the bucket's existing rules would be replaced. When the evidence cannot tell, it says so and what would answer it.
+
+**Notes** are what you and the Agent want remembered — an owner, an intent, why a setting is deliberate. You write, edit and delete them on the estate, an account or a bucket; the Agent keeps them with its `note` tool; accepting a risk with a reason keeps the reason. Every task starts with the most recent notes as context.
 
 ### The Task page — result-first
 
@@ -52,8 +60,8 @@ General (theme, language, the safety floor in three points) · Models (presets f
 
 ## Principles
 
-- **The estate outlives the task.** Every task starts knowing the accounts, the known buckets and the open Issues.
+- **The estate outlives the task.** Every task starts knowing the accounts, the known buckets, the open Issues and the notes.
 - **Nothing is invented.** Findings, Issues, progress and figures come from tool results and deterministic engines; a gap stays a gap.
-- **Read-only, bounded, stoppable.** No approval prompts: the one data-moving tool runs inside hard server-side bounds, and Stop ends any work.
+- **Read-only, bounded, stoppable.** No approval prompts, no plan mode, no modes: the one data-moving tool runs inside hard server-side bounds, and Stop ends any work — a stopped or timed-out tool ends at its next check.
 - **One of everything**: one Agent, one submit path, one stream, one Composer, one side pane.
 - **Native and quiet**: the platform's own chrome, one accent colour, English and Chinese throughout.

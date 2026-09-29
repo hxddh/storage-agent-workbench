@@ -45,7 +45,7 @@ const conclusion = {
   next_steps: ["Show me the fix for acme-www", "Watch this account daily", "Review acme-data lifecycle"],
 };
 
-test("the v5 contact sheet", async ({ page }) => {
+test("the v6 contact sheet", async ({ page }) => {
   test.setTimeout(240_000);
   fs.rmSync(OUT, { recursive: true, force: true });
   await reset();
@@ -95,6 +95,22 @@ test("the v5 contact sheet", async ({ page }) => {
     await expect(page.getByTestId("needs-care")).toBeVisible();
     await page.getByTestId("issue").first().locator(".issue-head").click();
     await shot(page, "home-estate-dark-en");
+    await page.getByTestId("nav-estate").click();
+    await page.getByTestId("estate-account").first().click();
+    await expect(page.getByTestId("bucket-row").first()).toBeVisible();
+    await shot(page, "estate-account-dark-en");
+    await page.getByTestId("bucket-row").filter({ hasText: "acme-www" }).click();
+    await expect(page.getByTestId("timeline")).toBeVisible();
+    await page.getByTestId("note-input").fill("Serves the marketing site; owned by the growth team.");
+    await page.getByTestId("note-add").click();
+    await shot(page, "estate-bucket-dark-en");
+    const bucketIssue = page.getByTestId("bucket-page").getByTestId("issue").first();
+    await bucketIssue.locator(".issue-head").click();
+    const showFix = bucketIssue.getByRole("button", { name: "Show the fix" });
+    if (await showFix.count()) await showFix.click();
+    await expect(bucketIssue.getByTestId("impact")).toHaveAttribute("data-verdict", /./);
+    await bucketIssue.evaluate((el) => el.scrollIntoView({ block: "start" }));
+    await shot(page, "fix-pack-dark-en");
     await page.keyboard.press("Control+k");
     await shot(page, "palette-dark-en");
     await page.keyboard.press("Escape");
@@ -110,11 +126,22 @@ test("the v5 contact sheet", async ({ page }) => {
     await expect(page.getByTestId("result")).toBeVisible();
     await shot(page, "task-light-en");
 
+    await page.getByTestId("nav-estate").click();
+    await page.getByTestId("estate-account").first().click();
+    await page.getByTestId("bucket-row").filter({ hasText: "acme-www" }).click();
+    await expect(page.getByTestId("timeline")).toBeVisible();
+    await shot(page, "estate-bucket-light-en");
+
     await open(page, "dark", "zh");
     await shot(page, "home-dark-zh");
     await page.getByTestId("task-list").getByText("Account survey · acme-prod").click();
     await expect(page.getByTestId("result")).toBeVisible();
     await shot(page, "task-dark-zh");
+    await page.getByTestId("nav-estate").click();
+    await page.getByTestId("estate-account").first().click();
+    await page.getByTestId("bucket-row").filter({ hasText: "acme-www" }).click();
+    await expect(page.getByTestId("timeline")).toBeVisible();
+    await shot(page, "estate-bucket-dark-zh");
   } finally {
     await api("/settings", { method: "PATCH", body: JSON.stringify({ language: "en", theme: "dark" }) });
     await dropModelProvider(modelId);

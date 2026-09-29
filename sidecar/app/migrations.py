@@ -225,8 +225,42 @@ CREATE INDEX idx_spans_trace ON spans (trace_id);
 CREATE INDEX idx_spans_turn ON spans (turn_id);
 """
 
+# v6: notes the user and the Agent keep about the estate (visible, editable), and
+# a bounded posture history per bucket so a bucket page can show how it changed.
+_V2 = """
+CREATE TABLE notes (
+    id           TEXT PRIMARY KEY,
+    provider_id  TEXT REFERENCES cloud_providers(id) ON DELETE CASCADE,
+    bucket       TEXT,
+    text         TEXT NOT NULL,
+    source       TEXT NOT NULL,   -- user | agent | accept
+    task_id      TEXT,
+    issue_id     TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+CREATE INDEX idx_notes_scope ON notes (provider_id, bucket, updated_at);
+
+CREATE TABLE posture_history (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id  TEXT NOT NULL REFERENCES cloud_providers(id) ON DELETE CASCADE,
+    bucket       TEXT NOT NULL,
+    posture      TEXT NOT NULL,
+    source       TEXT NOT NULL,
+    task_id      TEXT,
+    observed_at  TEXT NOT NULL
+);
+CREATE INDEX idx_posture_history_bucket ON posture_history (provider_id, bucket, id);
+-- What was known before v6 is the first observation, dated when it was last checked.
+INSERT INTO posture_history (provider_id, bucket, posture, source, task_id, observed_at)
+    SELECT provider_id, bucket, posture, 'import', source_task_id, last_checked_at
+    FROM estate_buckets WHERE posture IS NOT NULL;
+CREATE INDEX idx_issues_bucket ON issues (provider_id, bucket);
+"""
+
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "v5_items_estate", _V1),
+    (2, "v6_notes_posture_history", _V2),
 ]
 
 HEAD = MIGRATIONS[-1][0]

@@ -42,8 +42,26 @@ def fingerprint(provider_id: str, bucket: str, code: str) -> str:
 
 # --- buckets ------------------------------------------------------------------------
 
+_HISTORY_PER_BUCKET = 50
+
+
+def _record_posture(conn: sqlite3.Connection, provider_id: str, bucket: str, posture_json: str, *,
+                    source: str, task_id: str | None) -> None:
+    """Append the posture when it changed since the last observation; keep the last 50."""
+    last = conn.execute("SELECT posture FROM posture_history WHERE provider_id = ? AND bucket = ? "
+                        "ORDER BY id DESC LIMIT 1", (provider_id, bucket)).fetchone()
+    if last is not None and last["posture"] == posture_json:
+        return
+    conn.execute("INSERT INTO posture_history (provider_id, bucket, posture, source, task_id, observed_at) "
+                 "VALUES (?, ?, ?, ?, ?, ?)", (provider_id, bucket, posture_json, source, task_id, utcnow()))
+    conn.execute("DELETE FROM posture_history WHERE provider_id = ? AND bucket = ? AND id NOT IN "
+                 "(SELECT id FROM posture_history WHERE provider_id = ? AND bucket = ? ORDER BY id DESC LIMIT ?)",
+                 (provider_id, bucket, provider_id, bucket, _HISTORY_PER_BUCKET))
+
+
 def upsert_bucket(conn: sqlite3.Connection, provider_id: str, bucket: str, *, region: str | None = None,
-                  posture: dict[str, Any] | None = None, task_id: str | None = None) -> None:
+                  posture: dict[str, Any] | None = None, task_id: str | None = None,
+                  source: str = "survey") -> None:
     task_id = task_id or None  # a call outside a task (the MCP bridge) never unlinks the one that found it
     existing = conn.execute("SELECT posture, region FROM estate_buckets WHERE provider_id = ? AND bucket = ?",
                             (provider_id, bucket)).fetchone()
@@ -56,6 +74,8 @@ def upsert_bucket(conn: sqlite3.Connection, provider_id: str, bucket: str, *, re
         "last_checked_at = excluded.last_checked_at, "
         "source_task_id = COALESCE(excluded.source_task_id, estate_buckets.source_task_id)",
         (provider_id, bucket, region or (existing["region"] if existing else None), posture_json, utcnow(), task_id))
+    if posture is not None and posture_json is not None:
+        _record_posture(conn, provider_id, bucket, posture_json, source=source, task_id=task_id)
 
 
 def _forget_bucket(conn: sqlite3.Connection, provider_id: str, bucket: str, *, source: str) -> list[dict[str, Any]]:
@@ -65,6 +85,7 @@ def _forget_bucket(conn: sqlite3.Connection, provider_id: str, bucket: str, *, s
         _transition(conn, row["id"], "resolved", source=source, detail={"reason": "bucket_no_longer_listed"})
         changes.append({"issue_id": row["id"], "change": "resolved"})
     conn.execute("DELETE FROM estate_buckets WHERE provider_id = ? AND bucket = ?", (provider_id, bucket))
+    conn.execute("DELETE FROM posture_history WHERE provider_id = ? AND bucket = ?", (provider_id, bucket))
     return changes
 
 
@@ -140,7 +161,8 @@ def ingest_survey(conn: sqlite3.Connection, provider_id: str, profile: dict[str,
         if not name:
             continue
         seen.add(name)
-        upsert_bucket(conn, provider_id, name, region=bucket.get("region"), posture=bucket, task_id=task_id)
+        upsert_bucket(conn, provider_id, name, region=bucket.get("region"), posture=bucket, task_id=task_id,
+                      source=source)
         changes += observe(conn, provider_id, name, rules.evaluate_posture(bucket), source=source, task_id=task_id)
     if profile.get("whole_account"):
         for row in conn.execute("SELECT bucket FROM estate_buckets WHERE provider_id = ?", (provider_id,)).fetchall():
@@ -175,6 +197,11 @@ _ORDER = ("ORDER BY CASE i.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN
           "i.last_seen_at DESC, i.id")
 
 
+def _current_fix(row: sqlite3.Row) -> dict[str, Any] | None:
+    return rules.generate_fix(row["code"], row["bucket"], endpoint_url=row["endpoint_url"] or None,
+                              region=row["provider_region"] or None)
+
+
 def _issue_out(row: sqlite3.Row, lang: str = "en") -> dict[str, Any]:
     rule = rules.BY_CODE.get(row["code"])
     return {
@@ -184,7 +211,11 @@ def _issue_out(row: sqlite3.Row, lang: str = "en") -> dict[str, Any]:
         "severity": row["severity"], "status": row["status"], "detail": row["detail"],
         "first_seen_at": row["first_seen_at"], "last_seen_at": row["last_seen_at"],
         "resolved_at": row["resolved_at"], "resolved_by": row["resolved_by"],
-        "source_task_id": row["live_task_id"], "fix": loads(row["fix"]),
+        "source_task_id": row["live_task_id"],
+        # The stored fix only records that one was proposed: its text is always
+        # regenerated, so a fix written before quoting (v5, the v4 importer) is
+        # never served.
+        "fix": _current_fix(row) if row["fix"] else None,
         "fixable": rules.generate_fix(row["code"], row["bucket"]) is not None,
         "last_verified_at": row["last_verified_at"], "last_verify_result": row["last_verify_result"],
     }
@@ -245,14 +276,22 @@ def propose_fix(conn: sqlite3.Connection, issue_id: str) -> dict[str, Any] | Non
     return fix
 
 
-def set_accepted(conn: sqlite3.Connection, issue_id: str, accepted: bool) -> bool:
-    row = conn.execute("SELECT status FROM issues WHERE id = ?", (issue_id,)).fetchone()
+def set_accepted(conn: sqlite3.Connection, issue_id: str, accepted: bool, reason: str | None = None) -> bool:
+    row = conn.execute("SELECT status, provider_id, bucket FROM issues WHERE id = ?", (issue_id,)).fetchone()
     if row is None:
         return False
     if accepted and row["status"] in CARE:
         _transition(conn, issue_id, "accepted", source="user")
+        if reason and reason.strip():
+            # Why a risk was accepted is worth remembering: it is a note on the bucket.
+            from . import notes
+            notes.add(conn, reason, provider_id=row["provider_id"], bucket=row["bucket"], source="accept",
+                      issue_id=issue_id, commit=False)
     elif not accepted and row["status"] == "accepted":
         _transition(conn, issue_id, "open", source="user", detail={"reopened": True})
+        # The reason it was acceptable no longer holds: it leaves the notes (and the prompt).
+        from . import notes
+        notes.drop_accept_reasons(conn, issue_id)
     conn.commit()
     return True
 
@@ -297,6 +336,60 @@ def buckets(conn: sqlite3.Connection, provider_id: str | None = None, limit: int
     return [{"provider_id": r["provider_id"], "bucket": r["bucket"], "region": r["region"],
              "posture": loads(r["posture"], {}), "last_checked_at": r["last_checked_at"]}
             for r in conn.execute(sql, args).fetchall()]
+
+
+def bucket_page(conn: sqlite3.Connection, provider_id: str, bucket: str, lang: str = "en") -> dict[str, Any] | None:
+    """One bucket: what is known, every Issue it ever had, how its posture and
+    Issues changed (newest first), and the notes kept about it."""
+    from . import notes
+    row = conn.execute("SELECT * FROM estate_buckets WHERE provider_id = ? AND bucket = ?",
+                       (provider_id, bucket)).fetchone()
+    issues = list_issues(conn, status="all", provider_id=provider_id, bucket=bucket, limit=200, lang=lang)
+    if row is None and not issues:
+        return None
+    timeline: list[dict[str, Any]] = []
+    prev: dict[str, Any] | None = None
+    for h in conn.execute("SELECT * FROM posture_history WHERE provider_id = ? AND bucket = ? ORDER BY id",
+                          (provider_id, bucket)).fetchall():
+        cur = loads(h["posture"], {}) or {}
+        changed = sorted(k for k in set(cur) | set(prev or {}) if (prev or {}).get(k) != cur.get(k))
+        timeline.append({"kind": "posture", "at": h["observed_at"], "source": h["source"], "task_id": h["task_id"],
+                         "first": prev is None, "changed": changed[:20] if prev is not None else [],
+                         "posture": cur if prev is None else {k: cur.get(k) for k in changed[:20]}})
+        prev = cur
+    by_id = {i["id"]: i for i in issues}
+    if by_id:
+        marks = ",".join("?" * len(by_id))
+        for e in conn.execute(f"SELECT * FROM issue_events WHERE issue_id IN ({marks}) ORDER BY id",
+                              tuple(by_id)).fetchall():
+            i = by_id[e["issue_id"]]
+            timeline.append({"kind": "issue", "at": e["created_at"], "source": e["source"], "event": e["kind"],
+                             "issue_id": i["id"], "code": i["code"], "title": i["title"], "severity": i["severity"]})
+    # Newest first; within one second, the later observation first.
+    order = {id(t): n for n, t in enumerate(timeline)}
+    timeline.sort(key=lambda t: (t["at"] or "", order[id(t)]), reverse=True)
+    return {"provider_id": provider_id, "bucket": bucket,
+            "region": row["region"] if row else None,
+            "posture": loads(row["posture"], {}) if row else {},
+            "last_checked_at": row["last_checked_at"] if row else None,
+            "source_task_id": row["source_task_id"] if row else None,
+            "issues": issues, "timeline": timeline[:200],
+            "notes": notes.list_notes(conn, provider_id=provider_id, bucket=bucket)}
+
+
+def bucket_list(conn: sqlite3.Connection, provider_id: str, limit: int = 500) -> list[dict[str, Any]]:
+    """The buckets of one account with their open-issue counts, most in need of care first."""
+    rows = conn.execute(
+        "SELECT b.bucket, b.region, b.last_checked_at, "
+        " SUM(CASE WHEN i.status IN ('open','fix_proposed','recurred') AND i.severity = 'high' THEN 1 ELSE 0 END) AS high, "
+        " SUM(CASE WHEN i.status IN ('open','fix_proposed','recurred') AND i.severity = 'medium' THEN 1 ELSE 0 END) AS medium, "
+        " SUM(CASE WHEN i.status IN ('open','fix_proposed','recurred') AND i.severity = 'low' THEN 1 ELSE 0 END) AS low "
+        "FROM estate_buckets b LEFT JOIN issues i ON i.provider_id = b.provider_id AND i.bucket = b.bucket "
+        "WHERE b.provider_id = ? GROUP BY b.bucket ORDER BY high DESC, medium DESC, low DESC, b.bucket LIMIT ?",
+        (provider_id, max(1, min(500, int(limit))))).fetchall()
+    return [{"bucket": r["bucket"], "region": r["region"], "last_checked_at": r["last_checked_at"],
+             "open_issues": {"high": r["high"] or 0, "medium": r["medium"] or 0, "low": r["low"] or 0}}
+            for r in rows]
 
 
 def digest(conn: sqlite3.Connection) -> dict[str, Any] | None:

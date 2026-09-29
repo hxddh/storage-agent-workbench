@@ -112,7 +112,17 @@ export type TaskFeedEvent = { task_id: string; state?: TaskState; title?: string
 
 export type IssueStatus = "open" | "fix_proposed" | "resolved" | "recurred" | "accepted";
 
-export type Fix = { kind: string; command: string; document?: Record<string, unknown>; notes?: string[] };
+export type FixFormat = { format: "cli" | "terraform" | "json"; label: string; text: string };
+
+export type Fix = {
+  kind: string; command: string; document?: Record<string, unknown>; notes?: string[]; formats?: FixFormat[];
+};
+
+export type Impact = {
+  verdict: "low" | "caution" | "unknown";
+  points: Array<{ text: string; evidence: "posture" | "access_log" | "rule"; count?: number; total?: number }>;
+  gaps: string[];
+};
 
 export type Issue = {
   id: string;
@@ -164,6 +174,43 @@ export type Estate = {
   issues: Issue[];
   open_issue_count: number;
   last_watch_at: string | null;
+};
+
+export type Note = {
+  id: string;
+  provider_id: string | null;
+  bucket: string | null;
+  text: string;
+  source: "user" | "agent" | "accept";
+  task_id: string | null;
+  issue_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BucketRow = {
+  bucket: string;
+  region: string | null;
+  last_checked_at: string | null;
+  open_issues: { high: number; medium: number; low: number };
+};
+
+export type TimelineEntry =
+  | { kind: "posture"; at: string; source: string; task_id: string | null; first: boolean; changed: string[];
+      posture: Record<string, unknown> }
+  | { kind: "issue"; at: string; source: string | null; event: string; issue_id: string; code: string; title: string;
+      severity: Severity };
+
+export type BucketPage = {
+  provider_id: string;
+  bucket: string;
+  region: string | null;
+  posture: Record<string, unknown>;
+  last_checked_at: string | null;
+  source_task_id: string | null;
+  issues: Issue[];
+  timeline: TimelineEntry[];
+  notes: Note[];
 };
 
 // --- providers & settings ----------------------------------------------------------

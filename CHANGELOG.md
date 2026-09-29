@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [6.0.0] - 2026-09-29
+
+_The estate becomes the place you work from, and fixes close the loop — built on the v5 core (one native Agent, one item stream, one submit path, read-only storage), with no plan mode, approvals, modes or sub-agents._ See `docs/releases/6.0.0.md`.
+
+### Added
+
+- **Estate view** — accounts → buckets → a bucket page (Needs care, what is known, notes, how it changed: posture changes and Issue events on one timeline); an Estate entry in the sidebar; *Ask about this bucket* fills the Composer.
+- **Fix packs** — every fix as AWS CLI, Terraform and the API document; names shell-quoted / HCL-escaped.
+- **Impact preview** (`GET /issues/{id}/impact`) — from evidence the estate holds (anonymous requests in S3 server access logs, recorded lifecycle/versioning posture, what the change does), with an explicit *cannot tell*.
+- **Notes** (`/notes`, the `note` tool) — visible, editable, redacted, bounded, audited; accepting a risk keeps its reason; the most recent reach every task.
+- **`fix_preview`** tool — the Agent presents the fix pack and preview in a task without changing the Issue.
+- **Opt-in real-model eval** (`sidecar/tests/live_eval/`, the manual *Live model eval* workflow).
+- Migration **2**: `notes`, `posture_history`.
+
+### Changed
+
+- Step-budget overruns and model refusals finalize through the Agents SDK's `RunErrorHandlers`; the run reads its branch through an SDK `Session`.
+- The official OpenAI endpoint runs the main loop on the Responses websocket transport (HTTP fallback, remembered).
+- Tool calls stop at their next check on Stop **or** their own timeout.
+- Task state follows the branch being read.
+- Below 720 px the sidebar overlays the document.
+
+### Security
+
+- The generated fix command quoted the bucket name unescaped; a bucket name from a hostile endpoint could inject a second shell command into text the user copies. Names, endpoints and regions are now shell-quoted (CLI) and escaped (Terraform); a name outside `[A-Za-z0-9._-]` gets no command; stored fixes are regenerated on read, never served as stored.
+- Notes reach the model inside the untrusted-data envelope.
+
 ## [5.0.0] - 2026-09-29
 
 _A fully native Agent, rebuilt on one item stream — the estate is the object, Agent Tasks are how work is done, one stream is the truth. A fresh database (`storage-agent.db`) with a one-shot importer from v4; storage stays read-only; one Agent and one submit path._ See `docs/releases/5.0.0.md`.

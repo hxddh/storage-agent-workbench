@@ -3,6 +3,7 @@ import { api } from "../api";
 import { Composer } from "../composer/Composer";
 import { hasNativeTrafficLights, openExternal } from "../config";
 import { IconButton, StatusDot } from "../components/ui";
+import { EstatePage } from "../estate/EstatePage";
 import { Home } from "../home/Home";
 import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
@@ -94,7 +95,9 @@ export function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [app, command, taskId, busy]);
 
-  const title = taskId ? model.snapshot?.task.title ?? "" : t("nav.home");
+  const route = app.route;
+  const title = taskId ? model.snapshot?.task.title ?? ""
+    : route.kind === "estate" ? route.bucket ?? t("nav.estate") : t("nav.home");
   const state = taskId ? model.state : null;
 
   return (
@@ -128,7 +131,8 @@ export function Shell() {
           {busy ? <div className="titlebar-progress" aria-hidden /> : null}
         </header>
         <div className="document" data-testid="document">
-          {taskId ? <TaskPage key={taskId} model={model} setSnapshot={setSnapshot} /> : <Home />}
+          {taskId ? <TaskPage key={taskId} model={model} setSnapshot={setSnapshot} />
+            : route.kind === "estate" ? <EstatePage providerId={route.providerId} bucket={route.bucket} /> : <Home />}
         </div>
         {taskId ? (
           <div className="dock">

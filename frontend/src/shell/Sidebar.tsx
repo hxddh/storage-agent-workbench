@@ -72,8 +72,13 @@ export function Sidebar() {
         </button>
         <button type="button" className="sidebar-link" data-active={app.route.kind === "home" ? "true" : undefined}
           onClick={() => app.goHome()} data-testid="nav-home">
-          <Icon name="storage" size={16} />
+          <Icon name="list" size={16} />
           <span>{t("nav.home")}</span>
+        </button>
+        <button type="button" className="sidebar-link" data-active={app.route.kind === "estate" ? "true" : undefined}
+          onClick={() => app.openEstate()} data-testid="nav-estate">
+          <Icon name="storage" size={16} />
+          <span>{t("nav.estate")}</span>
         </button>
         <label className="sidebar-search">
           <Icon name="search" size={14} />

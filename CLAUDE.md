@@ -1,12 +1,14 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v5.0.0.**
+> **Implementation contract for Storage Agent v6.0.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md` and `docs/security.md`. Current code and the
-> executable contracts (`frontend/src/contracts.test.ts`, `sidecar/tests/test_v500_*.py`)
-> are authoritative. v5 is a clean rewrite: do not reconstruct earlier
-> information architecture, tables or routes from git history or release notes.
+> executable contracts (`frontend/src/contracts.test.ts`, `sidecar/tests/test_v500_*.py`,
+> `sidecar/tests/test_v600_kernel.py`) are authoritative. v5 was a clean rewrite and v6
+> builds on it: do not reconstruct earlier information architecture, tables or routes
+> from git history or release notes. No plan mode, todo lists, approvals, mode switches,
+> sub-agents or workflow builders — new capability lands on Task, item stream and estate.
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
@@ -21,17 +23,19 @@ What the Agent learns about the user's storage — accounts, buckets, their post
 - A **Task** is a tree of **Turns**. A Turn is one **Direction** and the work it caused. `turns.parent_turn_id` links a branch; `tasks.head_turn_id` is the branch being read. Editing a Direction submits a new Turn with the same parent — a **fork** — and the reader can switch between versions (`‹ 1 of 2 ›`).
 - **Items** (`items`, global monotonic `seq`) are the only record of work: `user_message`, `agent_message`, `tool_call`, `tool_progress`, `tool_output`, `conclusion`, `steer`, `compaction`, `notice`, `error`. Turn lifecycle is `notice` items (`started`, `completed`, `failed`, `cancelled`, `interrupted`, `resumed`, `stopped`, `finalized`, `compacted`, `titled`, `imported`). Nothing else is a source of truth for what happened.
 - The model's history for a Turn is the item chain from that Turn to the root of its branch, converted to model input by `agent/session.py:to_input` (completed tool calls and outputs included; a dangling call gets an "interrupted" output; the latest `compaction` stands in for the Turns it folded).
-- The **estate** sits beside tasks: `estate_buckets`, `issues` + `issue_events`, `watch_schedules`. Issues are opened, resolved and marked `recurred` only by deterministic observations (`estate/rules.py`) — never by model prose. A read that could not see something decides nothing.
+- The **estate** sits beside tasks and is a primary surface (v6): `estate_buckets` (+ a bounded `posture_history`, appended only when the posture changed, last 50 per bucket), `issues` + `issue_events`, `watch_schedules`, and `notes`. Issues are opened, resolved and marked `recurred` only by deterministic observations (`estate/rules.py`) — never by model prose. A read that could not see something decides nothing.
+- **Fixes** are text the user applies — Storage Agent never writes to storage. Each generated fix (`rules.generate_fix`; none for a bucket name outside `[A-Za-z0-9._-]`, which no shell quoting protects everywhere) is regenerated on every read — stored text is never served — and carries **formats** (the AWS CLI command, a Terraform resource, the API document; `estate/fixpacks.py`) with the bucket name, endpoint and region shell-quoted / HCL-escaped, and an **impact preview** (`GET /issues/{id}/impact`) built only from evidence the estate holds (it reads access logs already analyzed; it never ingests) — anonymous requests counted from attached S3 server access logs (aggregates only), the recorded posture, and what the change itself does — with verdict `low | caution | unknown` and an explicit gap when the evidence cannot tell. Verify (read-only) resolves an Issue; the next observation that sees it again marks it `recurred`.
+- **Notes** are what the user and the Agent want remembered about the estate, an account or a bucket: written by the user, by the Agent (`note` tool) or as the reason a risk was accepted; visible, editable and deletable; redacted with eager secret masking, ≤ 1 000 chars, ≤ 500 kept (the Agent's oldest trimmed first, audited), audited. The 12 most recent reach every turn as an `estate_notes` block inside the untrusted-data envelope — remembered context, never instructions (a hostile source could talk a model into keeping a note). Un-accepting a risk drops its reason.
 
 ## 2. Runtime architecture
 
 - Desktop shell: **Tauri v2** (menu bar, tray, Quick Ask window, deep links, notifications, global shortcuts).
 - Frontend: **React 19 + Vite + TypeScript + Tailwind CSS v4**.
 - Local backend: **Python + FastAPI + Uvicorn** Sidecar.
-- Agent runtime: **OpenAI Agents SDK for Python** (0.22.x) — the thin layer only: `Runner.run_streamed`, `FunctionTool` with input guardrails and timeouts, `RunConfig.call_model_input_filter`, `ToolOutputTrimmer`, model retry, tracing processors; on the Responses backend `tool_namespace` + `defer_loading` + `ToolSearchTool` and server-side compaction.
+- Agent runtime: **OpenAI Agents SDK for Python** (0.22.x) — the thin layer only: `Runner.run_streamed` over an SDK `Session` (`agent/session.py:ItemsSession`, the branch read from items), `FunctionTool` with input guardrails and timeouts, `RunConfig.call_model_input_filter`, `RunErrorHandlers` (`max_turns`, `model_refusal`), `ToolOutputTrimmer`, model retry, tracing processors; on the Responses backend the websocket transport (`OpenAIResponsesWSModel`, falling back to HTTP once refused; side steps stay HTTP), `tool_namespace` + `defer_loading` + `ToolSearchTool` and server-side compaction.
 - Model backends: **Responses API** for the official OpenAI endpoint (`api_style = responses`), **Chat Completions** for every other OpenAI-compatible endpoint (hosted or local).
 - S3-compatible access: **boto3 / botocore**. Analytics: **DuckDB + PyArrow + pandas**.
-- Metadata: **SQLite** (`storage-agent.db`, WAL), append-only migrations (head **1**).
+- Metadata: **SQLite** (`storage-agent.db`, WAL), append-only migrations (head **2**).
 - Secrets: **AES-256-GCM encrypted local vault** through `security/keyring_store`.
 - Streaming: **Server-Sent Events** via `sse-starlette`, resumable by item `seq`.
 - MCP: the **official MCP Python SDK** (2.x) serves an opt-in read-only bridge.
@@ -53,9 +57,10 @@ There is one model-driven Agent: `sidecar/app/agent/runtime.py` (`RUNTIME`). It 
 
 - **Submit** (`POST /tasks`, `POST /tasks/{id}/turns`) creates a Turn and records the Direction as a `user_message` item at once; a Direction submitted while another runs is **queued** durably and can be withdrawn (`DELETE /tasks/{id}/turns/{turn_id}`). There is no other submit path; the watch opens its task through `RUNTIME.submit` too.
 - **Steer** (`POST /tasks/{id}/steer`) records a `steer` item and is injected into the running loop by the model-input filter (re-inserted at a stable position on every model call). With nothing running, a steer is a new Direction.
-- **Stop** (`POST /tasks/{id}/stop`) sets the Turn's cancel event and cancels the SDK run; tools check it between units of work; the partial work is kept (`cancelled`).
+- **Stop** (`POST /tasks/{id}/stop`) sets the Turn's cancel event and cancels the SDK run; each tool call carries a `StopSignal` set by the Turn's Stop **or** that call's own timeout, and bodies check it between units of work (a bucket, a file, a check); the partial work is kept (`cancelled`).
+- **Task state** follows the Turn the task is read at (`tasks.head_turn_id`): a failure on a branch the user has moved away from never makes the task need attention.
 - **Recovery**: on start, Turns left `running` are stamped `interrupted` and continued **once** as a `resume` Turn on the same branch (never a crash loop); without a usable model the task offers **Resume**.
-- **Finalize**: when the step budget (60) runs out or a recoverable provider error ends the loop, one tool-less call writes the answer from the work so far (`finalized`).
+- **Finalize**: when the step budget (60) runs out (the SDK's `max_turns` error handler) or a recoverable provider error ends the loop, one tool-less call writes the answer from the work so far; a model refusal becomes the answer as recorded (`model_refusal` handler); both are marked `finalized`.
 - **Compaction**: before a Turn, when the branch history nears 80 % of the context window, one tool-less summary step folds the older Turns into a `compaction` item (the two latest Turns stay verbatim). The Responses backend also compacts server-side inside a long Turn.
 - **Title**: after a task's first answer, one tool-less step names it (≤ 8 words); a user rename wins forever (`title_source`).
 - **Conclusion**: the model records a turn's conclusion with the typed tool `record_conclusion` (answer ≤ 400 chars, ≤ 8 findings with severity `high|medium|low|info`, ≤ 4 next steps). It becomes a `conclusion` item, never a tool row. A turn without it has no conclusion; nothing is guessed from prose.
@@ -72,13 +77,13 @@ Tools are declared once with `@tool(group=…, scope=Scope(…), bounds=…, tim
 3. is recorded as `tool_call` → (`tool_progress`…) → `tool_output` items and one `audit` row;
 4. returns a redacted result, bounded for the model (≤ 60 000 chars) and the UI (≤ 24 000 chars), inside the untrusted-data envelope.
 
-Storage tools are read-only. `import_evidence` is the only data-moving tool: a survey-discovered inventory or access-log source only, ≤ 500 files / 256 MiB per call (clamped), refused without 1 GiB free disk after the download, audited `approved_by=agent`, stoppable between files. `survey_account` is capped at 500 buckets and reports coverage. `docs/tools.md` must agree with the registry.
+Storage tools are read-only. `import_evidence` is the only data-moving tool: a survey-discovered inventory or access-log source only, ≤ 500 files / 256 MiB per call (clamped), refused without 1 GiB free disk after the download, audited `approved_by=agent`, stoppable between files. `survey_account` is capped at 500 buckets and reports coverage. Core estate tools: `query_estate`, `fix_preview` (the generated fix in every format plus its impact preview; read-only, never changes an Issue), `note` (≤ 5 per turn; never exposed over MCP). `docs/tools.md` must agree with the registry.
 
 ## 5. Sidecar API
 
 - `/tasks` — list/create/rename/delete; `POST …/turns` (submit, `parent_turn_id` forks), `…/steer`, `…/stop`, `DELETE …/turns/{id}` (withdraw queued), `…/turns/{id}/resume`, `PUT …/head` (switch branch), `…/files` (upload an access log or inventory), `…/artifacts/{id}`, `…/report?lang=en|zh`, `…/trace`.
 - `GET /tasks/{id}` — the snapshot (task, branch turns, items, forks, live segment, files, artifacts, `last_seq`); `GET /tasks/{id}/events?after=<seq>` — SSE: durable `item` events (id = seq), live `delta`, `state`, `live`. `GET /events` — the global task feed for the sidebar. Items served to the UI never carry `model_output`.
-- `/estate`, `/issues` (list · one · `fix` · `verify` · `accept`), `/estate/watch/{provider_id}` (`GET` / `PUT {enabled, interval_hours}` / `POST …/run`).
+- `/estate`, `/estate/providers/{id}/buckets` (an account's buckets with open-issue counts, + its notes), `/estate/providers/{id}/buckets/{bucket}` (the bucket page: posture, every Issue, the timeline of posture changes and Issue events, notes), `/issues` (list · one · `fix` · `impact` · `verify` · `accept {accepted, reason}` — a reason is kept as a note), `/notes` (list · create · edit · delete), `/estate/watch/{provider_id}` (`GET` / `PUT {enabled, interval_hours}` / `POST …/run`).
 - `/providers/models` (+ `activate`, `test`), `/providers/clouds` (+ `test`).
 - `/settings` (language, theme, vault status, standing-instructions status), `/settings/price-table`, `/skills`, `/health`, `/health/selfcheck`.
 - `/mcp` — only with `STORAGE_AGENT_ENABLE_MCP=1`: Streamable HTTP (stateless) over the registry's stateless read-only subset + `list_providers`, audited as `actor=mcp`.
@@ -91,7 +96,7 @@ When `STORAGE_AGENT_AUTH_TOKEN` is set (the packaged app), every route except `/
 2. Never persist plaintext secrets in SQLite, items, logs, reports, traces, screenshots, or frontend state.
 3. Store secrets only through `security/keyring_store`; SQLite stores opaque `keyring://…` references only.
 4. No generic shell, raw subprocess, raw boto3 client, unrestricted filesystem, terminal, browser/computer control, or arbitrary SQL for the Agent.
-5. Storage is read-only. There is no destructive/mutating S3 tool. An Issue's fix is text the user applies.
+5. Storage is read-only. There is no destructive/mutating S3 tool. An Issue's fix is text the user applies; names from a listing are shell-quoted / HCL-escaped in that text.
 6. Provider bucket/prefix scopes are enforced server-side (tool guardrail, Verify, MCP bridge).
 7. Data movement runs inside hard server-side bounds (above); a survey never exceeds 500 buckets; the watch is opt-in per provider, off by default, read-only, bounded (≤ 500 buckets surveyed, ≤ 25 re-checked) and stops between phases when turned off.
 8. Tool inputs/outputs, items, audit rows, reports and model context are sanitized and bounded; tool output reaches the model inside the untrusted-data envelope.
@@ -106,9 +111,10 @@ See `docs/security.md`.
 
 The main window is **sidebar · title bar · one document · one Composer**, plus one closable, resizable **side pane**.
 
-- **Sidebar**: New task, Home, an in-place title search (Esc clears), one chronological list grouped by day, Settings. State is a mark on the row (Working pulses, Queued, Needs attention; Ready paints nothing; a watch-opened task carries the shield). Rename (double-click / More) and Delete. ↑/↓ move between tasks.
+- **Sidebar**: New task, Home, **Estate**, an in-place title search (Esc clears), one chronological list grouped by day, Settings. State is a mark on the row (Working pulses, Queued, Needs attention; Ready paints nothing; a watch-opened task carries the shield). Rename (double-click / More) and Delete. ↑/↓ move between tasks.
 - **Title bar**: the task name and its real state pill, centred; the side-pane toggle; a thin progress hairline while work is live.
-- **Home** ("what to care about now"): the greeting as the page's one `<h1>`, one sub line, the Composer, three starters that only fill it, a readiness check when a model or storage account is missing, then **Your storage** (accounts · buckets · last checked · watch) and **Needs care** (open Issues most severe first; each expands to detail, the fix, Verify, Open task, Accept risk). Nothing on the home submits work except the Composer.
+- **Home** ("what to care about now"): the greeting as the page's one `<h1>`, one sub line, the Composer, three starters that only fill it, a readiness check when a model or storage account is missing, then **Your storage** (accounts · buckets · last checked · watch) and **Needs care** (open Issues most severe first; each expands to detail, the fix, Verify, Open task, Accept risk with an optional reason, Open bucket). An account opens the estate. Nothing on the home submits work except the Composer.
+- **Estate** (`#/estate[/<provider>[/<bucket>]]`, `estate/`): the accounts; an account's buckets, most in need of care first, and its notes; a **bucket page** — Needs care (and the resolved ones folded), What is known (the posture, localized), Notes, and How it changed (posture changes and Issue events, newest first, each naming its source and task). *Ask about this bucket* only fills the Composer. An Issue's **fix pack** shows CLI · Terraform · the document with Copy, the fix's notes, and the impact preview with each point's evidence (Access log · Last check · The change · Gap). Below 720 px the sidebar overlays the document.
 - **Task page** (result-first): banners (queued Directions with Withdraw; Resume / Open Settings when the last Turn needs attention), the **work in progress** (its Direction, commentary, live "Working · t" tool groups kept open, the live text, the conclusion as soon as it is recorded), the latest **Result** (accent badge + one meta line; the recorded conclusion's answer at 20px; findings with severity badges; next steps as cards that fill the Composer; the full answer; figures from deterministic analyses; the outputs bar), then the **Work log** — every earlier Direction as a document section (heading = the user's words, commentary, folded "Worked for …" groups, the answer folded to one line). A one-Direction task has no Work log; its work sits in the Result above the outputs. A Direction heading offers Edit (a fork) and the version switcher.
 - **Tool rows** read as what the Agent did (a localized verb, the target in mono, the result as a muted note; the raw tool name on `data-tool`); running survey/import rows show real counts and a hairline meter.
 - **Side pane**: Evidence (the unified findings — every recorded conclusion's findings, deduplicated, most severe first — and attached evidence), Report (the task report in the reader's language), Activity (every tool call; one opens as a document with its arguments and output). ⌘I toggles it; Esc closes it; drag its edge (352–880 px).
@@ -117,7 +123,7 @@ The main window is **sidebar · title bar · one document · one Composer**, plu
 - **Quick Ask**: a second, small always-on-top window (⌘⇧Space, the tray, the View menu). One question becomes one ordinary task (`origin = quick_ask`) through the same submit path; the answer streams there; *Open in the main window* hands the task over via the deep-link event.
 - **Native shell**: menu bar (App · Edit · Task · View · Window · Help) emitting `menu-command`, `storage-agent://task/<id>` deep links, OS notifications when a followed task settles in the background or the watch opens a task, a tray item (Open · Quick Ask · Quit, tooltip = what needs care), global shortcuts (⌘⇧S summon, ⌘⇧Space Quick Ask). All of it reaches the window through `frontend/src/hooks/useNativeAgent.ts`; a plain browser is a no-op.
 
-Frontend structure: `api/` (the only module that talks to the Sidecar), `store/task.ts` (one reducer over snapshot + SSE), `store/derive.ts` (pure projections: sections, tool rows, latest Result, unified findings, figures, versions), `shell/`, `home/`, `task/`, `composer/`, `inspector/`, `settings/`, `quick/`.
+Frontend structure: `api/` (the only module that talks to the Sidecar), `store/task.ts` (one reducer over snapshot + SSE), `store/derive.ts` (pure projections: sections, tool rows, latest Result, unified findings, figures, versions), `shell/`, `home/`, `estate/`, `task/`, `composer/`, `inspector/`, `settings/`, `quick/`.
 
 ## 8. Design system
 
@@ -139,7 +145,7 @@ Work in focused PRs. For architecture or behavior changes: inspect the implement
 
 ## 12. Verification expectations
 
-Run the checks relevant to the change and never claim checks you did not execute. CI gates: frontend typecheck, Vitest (unit + contracts + surfaces), production build; Sidecar `ruff` + `pytest` (including the live golden estate/watch tasks against moto S3 and the fake OpenAI-compatible model); packaged Sidecar smoke; real-Sidecar Playwright E2E and the visual contact sheet; macOS, Linux and Windows desktop builds. Dependency versions actually verified are pinned in `sidecar/requirements.lock` (`scripts/lock-sidecar-deps.py`).
+Run the checks relevant to the change and never claim checks you did not execute. CI gates: frontend typecheck, Vitest (unit + contracts + surfaces), production build; Sidecar `ruff` + `pytest` (including the live golden estate/watch tasks against moto S3 and the fake OpenAI-compatible model); an opt-in eval against a **real** model (`sidecar/tests/live_eval/`, `STORAGE_AGENT_LIVE_EVAL=1` + `STORAGE_AGENT_EVAL_API_KEY`, the manual `Live model eval` workflow; storage is still moto) — never in the default gates; packaged Sidecar smoke; real-Sidecar Playwright E2E and the visual contact sheet; macOS, Linux and Windows desktop builds. Dependency versions actually verified are pinned in `sidecar/requirements.lock` (`scripts/lock-sidecar-deps.py`).
 
 When reporting completion include: what changed; what contract it changes or preserves; what checks ran and their result; what was not run; known gaps.
 

@@ -107,12 +107,33 @@ class TurnContext:
     lang: str = "en"
 
 
+class StopSignal:
+    """Set when the user stops the turn OR this one call timed out. Tool bodies
+    check it between units of work (a bucket, a file, a check) and return what
+    they have — a thread cannot be killed, so a call ends at its next check."""
+
+    def __init__(self, turn_cancel: threading.Event) -> None:
+        self._turn = turn_cancel
+        self._own = threading.Event()
+
+    def set(self) -> None:
+        self._own.set()
+
+    def is_set(self) -> bool:
+        return self._own.is_set() or self._turn.is_set()
+
+
 @dataclass
 class CallContext:
     turn: TurnContext
     call_id: str
     tool: str
     _conn: Any = None
+    stop: StopSignal | None = None
+
+    def __post_init__(self) -> None:
+        if self.stop is None:
+            self.stop = StopSignal(self.turn.cancel)
 
     @property
     def task_id(self) -> str:
@@ -124,7 +145,7 @@ class CallContext:
 
     @property
     def cancelled(self) -> bool:
-        return self.turn.cancel.is_set()
+        return self.stop.is_set()  # type: ignore[union-attr]
 
     def conn(self):
         if self._conn is None:
@@ -329,7 +350,9 @@ async def invoke(td: ToolDef, tool_ctx: Any, raw_args: str) -> str:
     try:
         result = await asyncio.to_thread(contextvars.copy_context().run, run)
     except asyncio.CancelledError:
-        # Timeout or Stop: the SDK cancelled us. Record it, then let it propagate.
+        # Timeout or Stop: the SDK cancelled us. Tell the body to stop at its next
+        # check, record it, then let the cancellation propagate.
+        call.stop.set()  # type: ignore[union-attr]
         turn.recorder.tool_finished(call_id, td.name, False, "cancelled or timed out", None,
                                     int((time.monotonic() - started) * 1000))
         raise

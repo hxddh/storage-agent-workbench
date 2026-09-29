@@ -23,11 +23,12 @@ Sources of truth: `sidecar/app/migrations.py`, `sidecar/app/config.py`,
 ## Migrations
 
 `sidecar/app/migrations.py` holds an ordered list of `(version, name, sql)`
-entries. There is one entry today, so the head is **1**:
+entries. The head is **2**:
 
 | Version | Name |
 | --- | --- |
 | 1 | `v5_items_estate` |
+| 2 | `v6_notes_posture_history` — `notes`, `posture_history`, `idx_issues_bucket` |
 
 `apply_migrations` creates `schema_migrations (version INTEGER PRIMARY KEY,
 name TEXT NOT NULL, applied_at TEXT NOT NULL)` if it is missing. It then runs
@@ -283,12 +284,12 @@ not truncated, stopped, scope-filtered or narrowed.
 | `first_seen_at`, `last_seen_at` | TEXT NOT NULL | |
 | `resolved_at`, `resolved_by` | TEXT | `resolved_by` is the source: `survey`, `review`, `verify` or `watch` |
 | `source_task_id` | TEXT | the task that found the issue (for a watch, the task it opened) |
-| `fix` | TEXT | JSON `{kind: "public_access_block" \| "default_encryption" \| "lifecycle", document, command, notes: []}` |
+| `fix` | TEXT | JSON `{kind: "public_access_block" \| "default_encryption" \| "lifecycle", document, command, notes: [], formats: [{format: "cli" \| "terraform" \| "json", label, text}]}` |
 | `last_verified_at` | TEXT | |
 | `last_verify_result` | TEXT | `still_present`, `resolved` or `inconclusive` |
 | `updated_at` | TEXT NOT NULL | |
 
-Index: `idx_issues_status (status, severity)`.
+Indexes: `idx_issues_status (status, severity)`, `idx_issues_bucket (provider_id, bucket)`.
 
 **Rules** (`estate/rules.py`):
 
@@ -331,6 +332,37 @@ the same set without `accepted`.
 | `created_at` | TEXT NOT NULL | |
 
 Index: `idx_issue_events_issue (issue_id, id)`. The table is append-only.
+
+### `posture_history`
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | INTEGER PK AUTOINCREMENT | |
+| `provider_id` | TEXT NOT NULL → `cloud_providers(id)` ON DELETE CASCADE | |
+| `bucket` | TEXT NOT NULL | |
+| `posture` | TEXT NOT NULL | the same JSON posture projection as `estate_buckets.posture` |
+| `source` | TEXT NOT NULL | `survey` or `watch` |
+| `task_id` | TEXT | the task whose survey observed it |
+| `observed_at` | TEXT NOT NULL | |
+
+A row is appended only when the projection differs from the bucket's latest
+row; the last 50 per bucket are kept. A bucket forgotten by a whole-account
+survey loses its history too. Index: `idx_posture_history_bucket (provider_id, bucket, id)`.
+
+### `notes`
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | TEXT PK | |
+| `provider_id` | TEXT → `cloud_providers(id)` ON DELETE CASCADE | `NULL` for an estate-wide note |
+| `bucket` | TEXT | set only with `provider_id` |
+| `text` | TEXT NOT NULL | redacted, eager secret masking, ≤ 1 000 chars |
+| `source` | TEXT NOT NULL | `user`, `agent` (the `note` tool) or `accept` (the reason a risk was accepted) |
+| `task_id` | TEXT | the task that wrote it (agent notes) |
+| `issue_id` | TEXT | the accepted issue (accept notes) |
+| `created_at`, `updated_at` | TEXT NOT NULL | |
+
+At most 500 notes are kept. Index: `idx_notes_scope (provider_id, bucket, updated_at)`.
 
 ### `watch_schedules`
 

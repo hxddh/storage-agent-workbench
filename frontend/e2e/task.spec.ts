@@ -74,6 +74,8 @@ test("⌘K finds the task again", async ({ page }) => {
   await page.getByTestId("nav-home").click();
   await page.keyboard.press("Control+k");
   await page.getByRole("combobox").fill("evidence");
+  // The palette loads recent tasks asynchronously: press Enter once the match is selected.
+  await expect(page.getByRole("option", { selected: true })).toContainText(/evidence/i);
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("result-answer")).toBeVisible();
 });

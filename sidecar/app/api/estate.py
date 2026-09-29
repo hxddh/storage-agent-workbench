@@ -12,10 +12,10 @@ from __future__ import annotations
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..db import get_conn
-from ..estate import store, verify
+from ..estate import notes, store, verify
 from ..providers import clouds
 
 router = APIRouter(tags=["estate"])
@@ -57,6 +57,19 @@ def propose_fix(issue_id: str, lang: str | None = None, conn: sqlite3.Connection
     return store.get_issue(conn, issue_id, _lang(lang))
 
 
+@router.get("/issues/{issue_id}/impact")
+def issue_impact(issue_id: str, lang: str | None = None, conn: sqlite3.Connection = Depends(get_conn)):
+    """What the fix would change, from the evidence the estate holds (never a guess)."""
+    from ..estate import fixpacks
+    issue = store.get_issue(conn, issue_id)
+    if issue is None:
+        raise HTTPException(404, "issue not found")
+    out = fixpacks.impact(conn, issue, _lang(lang))
+    if out is None:
+        raise HTTPException(409, "this issue has no generated fix")
+    return out
+
+
 @router.post("/issues/{issue_id}/verify")
 def verify_issue(issue_id: str, lang: str | None = None, conn: sqlite3.Connection = Depends(get_conn)):
     if store.get_issue(conn, issue_id) is None:
@@ -71,12 +84,13 @@ def verify_issue(issue_id: str, lang: str | None = None, conn: sqlite3.Connectio
 
 class AcceptBody(BaseModel):
     accepted: bool = True
+    reason: str | None = Field(default=None, max_length=1000)
 
 
 @router.post("/issues/{issue_id}/accept")
 def accept_issue(issue_id: str, body: AcceptBody, lang: str | None = None,
                  conn: sqlite3.Connection = Depends(get_conn)):
-    if not store.set_accepted(conn, issue_id, body.accepted):
+    if not store.set_accepted(conn, issue_id, body.accepted, body.reason):
         raise HTTPException(404, "issue not found")
     return store.get_issue(conn, issue_id, _lang(lang))
 
@@ -115,3 +129,64 @@ def run_watch(provider_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     from ..estate import watch
     _provider_or_404(conn, provider_id)
     return {"started": watch.run_now(provider_id)}
+
+
+# --- the estate view: accounts, buckets, notes --------------------------------
+
+@router.get("/estate/providers/{provider_id}/buckets")
+def provider_buckets(provider_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+    _provider_or_404(conn, provider_id)
+    return {"buckets": store.bucket_list(conn, provider_id),
+            "notes": notes.list_notes(conn, provider_id=provider_id, exact=True)}
+
+
+@router.get("/estate/providers/{provider_id}/buckets/{bucket}")
+def bucket_page(provider_id: str, bucket: str, lang: str | None = None,
+                conn: sqlite3.Connection = Depends(get_conn)):
+    _provider_or_404(conn, provider_id)
+    page = store.bucket_page(conn, provider_id, bucket, _lang(lang))
+    if page is None:
+        raise HTTPException(404, "bucket not known")
+    return page
+
+
+class NoteBody(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+    provider_id: str | None = None
+    bucket: str | None = Field(default=None, max_length=255)
+
+
+class NoteEdit(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
+@router.get("/notes")
+def list_notes(provider_id: str | None = None, bucket: str | None = None, exact: bool = False,
+               conn: sqlite3.Connection = Depends(get_conn)):
+    """``exact=true`` lists only the notes on that scope (no scope: the estate-wide ones)."""
+    return notes.list_notes(conn, provider_id=provider_id, bucket=bucket, exact=exact)
+
+
+@router.post("/notes", status_code=201)
+def add_note(body: NoteBody, conn: sqlite3.Connection = Depends(get_conn)):
+    try:
+        return notes.add(conn, body.text, provider_id=body.provider_id, bucket=body.bucket, source="user")
+    except notes.NoteError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.patch("/notes/{note_id}")
+def edit_note(note_id: str, body: NoteEdit, conn: sqlite3.Connection = Depends(get_conn)):
+    try:
+        out = notes.update(conn, note_id, body.text)
+    except notes.NoteError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if out is None:
+        raise HTTPException(404, "note not found")
+    return out
+
+
+@router.delete("/notes/{note_id}", status_code=204)
+def delete_note(note_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+    if not notes.delete(conn, note_id):
+        raise HTTPException(404, "note not found")

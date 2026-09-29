@@ -21,6 +21,7 @@ def _reset_singletons() -> None:
     hub._reset_for_tests()
     models.NO_PARALLEL.clear()
     models.NO_USAGE.clear()
+    models.NO_WEBSOCKET.clear()
 
 
 @pytest.fixture(autouse=True)

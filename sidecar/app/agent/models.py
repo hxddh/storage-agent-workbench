@@ -1,6 +1,8 @@
 """Model backends (v5): Responses first, Chat Completions for everything else.
 
 ``responses`` (official OpenAI endpoint):
+- the websocket transport: one warm connection for every step of a turn
+  (HTTP when the endpoint or a proxy refuses it — remembered per endpoint);
 - deferred tool namespaces behind hosted tool search (the model loads a group
   of tools only when it needs it);
 - server-side compaction inside a long turn (``context_management``);
@@ -28,6 +30,8 @@ MODEL_CALL_TIMEOUT_S = 600.0
 # a strict endpoint that rejects an optional parameter is asked without it.
 NO_PARALLEL: set[str] = set()
 NO_USAGE: set[str] = set()
+# Endpoints whose Responses websocket transport failed: they get HTTP instead.
+NO_WEBSOCKET: set[str] = set()
 
 
 def endpoint_key(creds: dict[str, Any]) -> str:
@@ -38,6 +42,7 @@ def forget_refusals(creds: dict[str, Any]) -> None:
     key = endpoint_key(creds)
     NO_PARALLEL.discard(key)
     NO_USAGE.discard(key)
+    NO_WEBSOCKET.discard(key)
 
 
 def is_responses(creds: dict[str, Any]) -> bool:
@@ -71,7 +76,13 @@ def build(creds: dict[str, Any], clients: list[Any], *, tools_allowed: bool = Tr
         from openai.types.shared import Reasoning
         settings["reasoning"] = Reasoning(effort=creds["reasoning_effort"])
     if is_responses(creds):
-        model = OpenAIResponsesModel(model=creds["model"], openai_client=client)
+        if tools_allowed and key not in NO_WEBSOCKET:
+            # One warm websocket per turn: every step of the loop reuses it.
+            from agents.models.openai_responses import OpenAIResponsesWSModel
+            model = OpenAIResponsesWSModel(model=creds["model"], openai_client=client)
+            clients.append(model)
+        else:
+            model = OpenAIResponsesModel(model=creds["model"], openai_client=client)
         settings["store"] = False
         if budget.is_reasoning_model(creds.get("model")):
             settings["response_include"] = ["reasoning.encrypted_content"]

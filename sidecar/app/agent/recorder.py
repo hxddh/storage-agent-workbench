@@ -62,6 +62,7 @@ class Recorder:
         self._calls: dict[str, dict[str, Any]] = {}
         self.tool_count = 0
         self.last_text = ""
+        self._produced = False  # any model output (text or a tool call) this Turn
 
     def close(self) -> None:
         try:
@@ -73,8 +74,15 @@ class Recorder:
     def _append(self, type_: str, payload: dict[str, Any], *, item_id: str | None = None) -> dict[str, Any]:
         with self._lock:
             item = store.append_item(self._conn, self.task_id, self.turn_id, type_, payload, item_id=item_id)
+            if type_ in ("agent_message", "tool_call", "conclusion"):
+                self._produced = True
         hub.item(self.task_id, item)
         return item
+
+    def has_output(self) -> bool:
+        """Whether the model produced anything this Turn (so a transport retry would repeat it)."""
+        with self._lock:
+            return self._produced or self._open is not None
 
     def notice(self, event: str, **fields: Any) -> dict[str, Any]:
         return self._append("notice", {"event": event, **fields})

@@ -25,7 +25,9 @@ def test_responses_backend_defers_tool_groups_behind_tool_search(conn):
     clients: list = []
     model, settings = models.build(_creds("responses"), clients)
     try:
-        assert type(model).__name__ == "OpenAIResponsesModel"
+        # One warm websocket for every step of a turn.
+        assert type(model).__name__ == "OpenAIResponsesWSModel"
+        assert model in clients  # closed with the turn
         assert settings.store is False
         assert settings.context_management == [{"type": "compaction", "compact_threshold": 320_000}]
         assert "reasoning.encrypted_content" in (settings.response_include or [])
@@ -66,3 +68,21 @@ def test_a_refused_optional_parameter_is_not_sent_again(conn):
     assert settings.parallel_tool_calls is False and settings.include_usage is None
     models.forget_refusals(creds)
     assert models.endpoint_key(creds) not in models.NO_PARALLEL
+
+
+def test_a_refused_websocket_falls_back_to_http(conn):
+    creds = _creds("responses")
+    models.NO_WEBSOCKET.add(models.endpoint_key(creds))
+    clients: list = []
+    model, _ = models.build(creds, clients)
+    asyncio.run(models.close_clients(clients))
+    assert type(model).__name__ == "OpenAIResponsesModel"
+    models.forget_refusals(creds)
+    assert models.endpoint_key(creds) not in models.NO_WEBSOCKET
+
+
+def test_side_steps_never_open_a_websocket(conn):
+    clients: list = []
+    model, _ = models.build(_creds("responses"), clients, tools_allowed=False)
+    asyncio.run(models.close_clients(clients))
+    assert type(model).__name__ == "OpenAIResponsesModel"

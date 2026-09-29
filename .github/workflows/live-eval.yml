@@ -1,0 +1,41 @@
+name: Live model eval
+
+# Manual only. Drives real Agent turns against a REAL model endpoint and a local
+# moto S3 server (never real cloud). Needs the repository secret
+# STORAGE_AGENT_EVAL_API_KEY; without it every case is skipped.
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "Provider kind (openai, anthropic, deepseek, openrouter, openai-compatible)"
+        default: "openai"
+      model:
+        description: "Model name"
+        default: "gpt-5.1"
+      base_url:
+        description: "Base URL (optional)"
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  live-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install sidecar
+        run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]"
+      - name: Run live evals
+        working-directory: sidecar
+        env:
+          STORAGE_AGENT_LIVE_EVAL: "1"
+          STORAGE_AGENT_EVAL_API_KEY: ${{ secrets.STORAGE_AGENT_EVAL_API_KEY }}
+          STORAGE_AGENT_EVAL_KIND: ${{ inputs.kind }}
+          STORAGE_AGENT_EVAL_MODEL: ${{ inputs.model }}
+          STORAGE_AGENT_EVAL_BASE_URL: ${{ inputs.base_url }}
+        run: pytest -q -rs tests/live_eval

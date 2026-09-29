@@ -117,8 +117,12 @@ older than the last 2 turns in the model input (to 4 000 chars, with a
    set in a context variable. The body reads it through `current()`, which
    provides task and turn IDs, a lazily opened per-call DB connection,
    `progress()`, `budget()` and `cancelled`.
-   - If the SDK cancels the call (timeout or Stop), record `tool_output` with
-     `ok: false` and summary `cancelled or timed out`, then re-raise.
+   - If the SDK cancels the call (timeout or Stop), set the call's
+     `StopSignal`, record `tool_output` with `ok: false` and summary
+     `cancelled or timed out`, then re-raise. A worker thread cannot be
+     killed: the body stops at its next `ctx.cancelled` check (between
+     buckets, files or checks), which reads the call's own signal **or** the
+     Turn's Stop.
    - A `TypeError` (bad arguments) becomes `{"error": "Invalid arguments: …"}`.
    - Any other exception becomes
      `{"success": false, "error_code": <ExceptionType>, "error_message_sanitized": <redacted, ≤ 500 chars>}`.
@@ -207,6 +211,8 @@ tool's model output is bounded to 60 000 chars.
 | `head_bucket` | `provider_id: str, bucket: str` | bucket | yes | 30 s |
 | `read_skill` | `name: str` | none | no | 15 s |
 | `query_estate` | `provider_id: str = "", bucket: str = "", status: str = "active"` | none | yes | 15 s |
+| `fix_preview` | `issue_id: str` | none | yes | 30 s |
+| `note` | `text: str, provider_id: str = "", bucket: str = ""` | none | no | 10 s |
 | `record_conclusion` | `answer: str, findings: list[Finding], next_steps: list[str]` | none | no | 10 s |
 
 - **`list_buckets`**: read-only `ListBuckets` for the account.
@@ -224,6 +230,27 @@ tool's model output is bounded to 60 000 chars.
     `resolved`, `recurred` or `accepted`. Anything else falls back to
     `active`.
   - Issue titles follow the `language` setting.
+- **`fix_preview`**: the generated fix for an estate Issue and what applying
+  it would change. No storage call, and it never changes the Issue (only the
+  user proposes a fix).
+  - Returns `formats` (`cli` — the AWS CLI command against the Issue's
+    provider endpoint and region; `terraform` — a resource, with a custom
+    endpoint noted for the user's provider block; `json` — the API
+    document), the fix's `notes`, and `impact`
+    (`{verdict: low|caution|unknown, points: [{text, evidence}], gaps}`) —
+    see `estate/fixpacks.py`.
+  - An Issue whose fix depends on intent returns `fixable: false`.
+  - The bucket name, endpoint and region are shell-quoted in the command and
+    HCL-escaped in Terraform.
+- **`note`**: keeps a note about the estate, an account (`provider_id`) or a
+  bucket (`provider_id` + `bucket`) for later tasks.
+  - Stored with `source = agent` and the task id; the user sees, edits and
+    deletes every note.
+  - Redacted with eager masking of secret-shaped tokens; ≤ 1 000 chars.
+  - Budget: 5 per turn. An unknown provider or a bucket without a provider
+    → `error`.
+  - The 12 most recent notes reach every turn inside the untrusted-data envelope (`estate_notes`) as
+    remembered context.
 - **`record_conclusion`**: records the turn's conclusion (see
   [Execution](#execution-invoketd-tool_ctx-raw_args), step 2). The arguments
   are validated by the recorder's `Conclusion` model:
@@ -469,5 +496,7 @@ tools through `call_direct` with actor `mcp`:
 - every `probes`, `objects` and `config` tool except `review_bucket_config`;
 - plus `list_buckets`, `head_bucket`, `read_skill`, `query_estate` and
   `triage_error`.
+
+`note` (it writes local state) and `fix_preview` are never exposed.
 
 See [api.md](api.md#mcp-server).

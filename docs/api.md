@@ -202,8 +202,11 @@ with `zh` selects Chinese issue titles. Anything else selects English.
 | `GET` | `/issues` | `status` (default `active`), `provider_id`, `limit` 1–500 (default 200), `lang` | `200 [issue]`, ordered high → medium → low → info, then by newest `last_seen_at` | `422 unknown status` |
 | `GET` | `/issues/{id}` | `lang` | `200` issue plus `events: [{kind, source, at, detail}]` (newest first, at most 50) | `404 issue not found` |
 | `POST` | `/issues/{id}/fix` | `lang` | `200` issue. Generates and stores the deterministic fix text. An `open` or `recurred` issue moves to `fix_proposed`. | `404`; `409 no generated fix for this issue` |
+| `GET` | `/issues/{id}/impact` | `lang` | `200 {verdict: "low" \| "caution" \| "unknown", points: [{text, evidence: "access_log" \| "posture" \| "rule", count?, total?}], gaps: [text]}` — what applying the fix would change, from evidence the estate holds (`estate/fixpacks.py`): anonymous requests counted from attached or imported S3 server access logs for the bucket (aggregates only — counts, a time range, at most 3 key prefixes; never a requester, IP or raw line), the recorded lifecycle and versioning posture, and what the change itself does. Only logs already analyzed are read (the preview never ingests); an import must match the issue's provider and bucket, an upload is matched by the bucket named in each line (said in `gaps`); the same log attached twice counts once; unanalyzed or unreadable logs are named in `gaps`. When the evidence cannot answer, `verdict` is `unknown` and `gaps` says why. Reads only local data. | `404`; `409 this issue has no generated fix` |
 | `POST` | `/issues/{id}/verify` | `lang` | `200 {"result": "still_present" \| "resolved" \| "inconclusive", "issue"}`. Re-runs the rule's read-only review (`review_bucket_security` or `review_bucket_lifecycle`). The bucket is scope-checked, the call is audited as `tool.review_bucket_<check>` (actor `user`), and the verdict goes through the issue lifecycle (source `verify`). | `404`; `409` with the reason (the storage account is gone, the bucket is out of scope, or the rule has no read-only check) |
-| `POST` | `/issues/{id}/accept` | `{"accepted": bool = true}`, `lang` | `200` issue. `true` moves an `open`, `fix_proposed` or `recurred` issue to `accepted`. `false` moves an `accepted` issue back to `open`. Any other combination leaves the status unchanged. | `404` |
+| `POST` | `/issues/{id}/accept` | `{"accepted": bool = true, "reason": str ≤ 1000 \| null}`, `lang` | `200` issue. `true` moves an `open`, `fix_proposed` or `recurred` issue to `accepted`; a non-empty `reason` is kept as a note on the bucket (`source = accept`, with the issue id). `false` moves an `accepted` issue back to `open`. Any other combination leaves the status unchanged. | `404`, `422` |
+| `GET` | `/estate/providers/{provider_id}/buckets` | — | `200 {buckets: [{bucket, region, last_checked_at, open_issues: {high, medium, low}}], notes: [note]}` — the account's known buckets, most in need of care first (≤ 500), and its account-level notes. | `404 cloud provider not found` |
+| `GET` | `/estate/providers/{provider_id}/buckets/{bucket}` | `lang` | `200` bucket page: `{provider_id, bucket, region, posture, last_checked_at, source_task_id, issues: [issue] (every status), timeline: [entry] (newest first, ≤ 200), notes: [note]}`. A timeline entry is `{kind: "posture", at, source, task_id, first, changed: [key], posture}` (the first observation, then each change of the posture projection) or `{kind: "issue", at, source, event, issue_id, code, title, severity}` (an `issue_events` row). | `404` (provider, or a bucket the estate does not know) |
 
 `status` for `GET /issues` accepts `active` (open, fix_proposed, recurred,
 accepted), `care` (open, fix_proposed, recurred), `all`, or one status:
@@ -215,12 +218,31 @@ An **issue** is:
 { "id", "provider_id", "provider_name", "bucket", "code", "title", "severity", "status", "detail",
   "first_seen_at", "last_seen_at", "resolved_at", "resolved_by",
   "source_task_id",            // null when that task no longer exists
-  "fix": { "kind", "document", "command", "notes": [] } | null,
+  "fix": { "kind", "document", "command", "notes": [],
+           "formats": [{ "format": "cli" | "terraform" | "json", "label", "text" }] } | null,
   "fixable": bool,             // a deterministic fix exists for this code
   "last_verified_at", "last_verify_result" }
 ```
 
-No estate route writes to storage. A fix is text for the user to apply.
+No estate route writes to storage. A fix is text for the user to apply: the
+bucket name, endpoint and region are shell-quoted in the CLI command and
+HCL-escaped in the Terraform resource, so a hostile listing cannot inject a
+second command. A bucket name outside `[A-Za-z0-9._-]` gets no generated fix at all (`fixable: false`), because no quoting is safe in every shell. The `fix` served is always regenerated from the rule and the provider's current endpoint; stored text is never served.
+
+### Notes
+
+| Method | Path | Body / query | Success | Errors |
+| --- | --- | --- | --- | --- |
+| `GET` | `/notes` | `provider_id`, `bucket` | `200 [note]`, newest first (≤ 200) | — |
+| `POST` | `/notes` | `{"text": 1–1000 chars, "provider_id": str \| null, "bucket": str ≤ 255 \| null}` | `201` note (`source = user`) | `422` (no text, a bucket without a provider, an unknown provider) |
+| `PATCH` | `/notes/{id}` | `{"text": 1–1000 chars}` | `200` note | `404`, `422` |
+| `DELETE` | `/notes/{id}` | — | `204` | `404` |
+
+A **note** is `{id, provider_id, bucket, text, source: "user" | "agent" | "accept", task_id, issue_id, created_at, updated_at}`.
+Text is redacted (secret-shaped tokens are masked even without an access-key
+hint). At most 500 notes are kept (oldest first out). Every add, edit and
+delete writes an audit row (`note.add`, `note.edit`, `note.delete`). The 12
+most recent reach every turn as an `estate_notes` block inside the untrusted-data envelope — remembered context, never instructions. `GET /notes?exact=true` lists only that scope's own notes (no scope: the estate-wide ones). The oldest Agent notes are trimmed first (audit `note.trim`); un-accepting an issue deletes its accept-reason notes.
 
 ### Watch
 
