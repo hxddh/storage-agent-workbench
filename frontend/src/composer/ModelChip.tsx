@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { ModelProvider } from "../api/types";
 import { Icon } from "../components/icons";
+import { useToast } from "../components/Toast";
 import { StatusDot } from "../components/ui";
 import { useI18n } from "../i18n";
 import { useApp } from "../shell/context";
@@ -14,6 +15,7 @@ import { useApp } from "../shell/context";
 export function ModelChip() {
   const { t } = useI18n();
   const app = useApp();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -49,6 +51,8 @@ export function ModelChip() {
     try {
       await api.activateModel(m.id);
       await app.reloadProviders();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
       setOpen(false);
@@ -59,6 +63,8 @@ export function ModelChip() {
     try {
       await api.updateModel(active.id, { reasoning_effort: effort });
       await app.reloadProviders();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }

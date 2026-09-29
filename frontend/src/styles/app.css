@@ -369,6 +369,9 @@ dialog::backdrop { background: var(--scrim); }
 .pref-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .pref-group { display: grid; gap: var(--space-3); }
 .pref-group-title { margin: 0; color: var(--gray-300); font-size: var(--text-2xs); font-weight: 600; }
+.pref-advanced { border-top: 1px solid var(--edge); padding-top: var(--space-4); }
+.pref-advanced > summary { color: var(--gray-400); font-size: var(--text-sm); cursor: pointer; }
+.pref-advanced[open] > summary { margin-bottom: var(--space-4); }
 .pref-warn { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
 .safety-points { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .safety-points li { display: flex; align-items: center; gap: var(--space-3); color: var(--gray-200); }
