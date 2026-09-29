@@ -251,6 +251,10 @@ CREATE TABLE posture_history (
     observed_at  TEXT NOT NULL
 );
 CREATE INDEX idx_posture_history_bucket ON posture_history (provider_id, bucket, id);
+-- What was known before v6 is the first observation, dated when it was last checked.
+INSERT INTO posture_history (provider_id, bucket, posture, source, task_id, observed_at)
+    SELECT provider_id, bucket, posture, 'import', source_task_id, last_checked_at
+    FROM estate_buckets WHERE posture IS NOT NULL;
 CREATE INDEX idx_issues_bucket ON issues (provider_id, bucket);
 """
 

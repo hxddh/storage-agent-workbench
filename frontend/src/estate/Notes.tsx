@@ -33,7 +33,7 @@ export function Notes({ scope, initial, accountOnly = false }: { scope: Scope; i
   }, [scope.providerId, scope.bucket, initial, accountOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
-  const shown = (notes ?? []).filter((n) => scope.providerId || !n.provider_id);
+  const shown = notes ?? [];
 
   const add = async () => {
     const text = draft.trim();
@@ -106,6 +106,7 @@ function listNotes(scope: Scope): Promise<Note[]> {
   const q = new URLSearchParams();
   if (scope.providerId) q.set("provider_id", scope.providerId);
   if (scope.bucket) q.set("bucket", scope.bucket);
+  q.set("exact", "true"); // only this scope's own notes, filtered by the Sidecar
   return api.notes(q.toString());
 }
 

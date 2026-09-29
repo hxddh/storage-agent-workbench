@@ -137,7 +137,7 @@ def run_watch(provider_id: str, conn: sqlite3.Connection = Depends(get_conn)):
 def provider_buckets(provider_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     _provider_or_404(conn, provider_id)
     return {"buckets": store.bucket_list(conn, provider_id),
-            "notes": [n for n in notes.list_notes(conn, provider_id=provider_id) if not n["bucket"]]}
+            "notes": notes.list_notes(conn, provider_id=provider_id, exact=True)}
 
 
 @router.get("/estate/providers/{provider_id}/buckets/{bucket}")
@@ -161,9 +161,10 @@ class NoteEdit(BaseModel):
 
 
 @router.get("/notes")
-def list_notes(provider_id: str | None = None, bucket: str | None = None,
+def list_notes(provider_id: str | None = None, bucket: str | None = None, exact: bool = False,
                conn: sqlite3.Connection = Depends(get_conn)):
-    return notes.list_notes(conn, provider_id=provider_id, bucket=bucket)
+    """``exact=true`` lists only the notes on that scope (no scope: the estate-wide ones)."""
+    return notes.list_notes(conn, provider_id=provider_id, bucket=bucket, exact=exact)
 
 
 @router.post("/notes", status_code=201)

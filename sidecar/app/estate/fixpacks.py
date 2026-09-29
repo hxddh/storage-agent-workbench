@@ -108,6 +108,10 @@ _T = {
         "log_format": "Attached access logs for this bucket are not in the S3 server access log format, "
                       "so anonymous requests cannot be told apart.",
         "logs_truncated": "The access logs were truncated at ingest; counts are a lower bound.",
+        "logs_uploaded": "Uploaded logs carry no account: their lines were matched by bucket name.",
+        "logs_unread": "{n} access log(s) could not be read just now; they are not counted.",
+        "logs_pending": "{n} attached access log(s) have not been analyzed yet, so they were not read — "
+                        "ask the Agent to analyze them.",
         "public_now": "The bucket is publicly exposed now (last check {when}).",
         "sse_new_only": "Only objects written after the change are encrypted; existing objects stay as they "
                         "are until rewritten. Reads are unaffected.",
@@ -129,6 +133,9 @@ _T = {
         "no_logs": "无法判断谁在匿名读取此存储桶：尚未附加或导入它的 S3 服务器访问日志。可以让 Agent 导入访问日志，或手动附加。",
         "log_format": "此存储桶附带的访问日志不是 S3 服务器访问日志格式，无法区分匿名请求。",
         "logs_truncated": "访问日志在导入时被截断；计数为下限。",
+        "logs_uploaded": "上传的日志不含账号信息：按每行中的存储桶名匹配。",
+        "logs_unread": "有 {n} 份访问日志暂时无法读取，未计入。",
+        "logs_pending": "有 {n} 份附加的访问日志尚未分析，因此未读取——可以让 Agent 先分析它们。",
         "public_now": "此存储桶当前处于公开暴露状态（上次检查 {when}）。",
         "sse_new_only": "只有变更后写入的对象会被加密；已有对象在重写前保持不变。读取不受影响。",
         "sse_writers": "自行设置加密请求头的写入方不受影响。",
@@ -150,26 +157,40 @@ _MAX_DATASETS = 20
 
 
 def _anonymous_requests(conn: sqlite3.Connection, provider_id: str, bucket: str) -> dict[str, Any]:
-    """Aggregate anonymous-request counts for one bucket across its access logs."""
+    """Aggregate anonymous-request counts for one bucket across its access logs.
+
+    Reads only logs already analyzed (a preview never ingests); an import for
+    this provider + bucket, or an upload (which carries no account, so it is
+    matched by the bucket named in each line — said so in the gaps). A log
+    imported twice counts once; a log that cannot be read is a gap."""
     from ..analysis import access_logs, duck
     from ..engines import datasets
 
     rows = conn.execute(
-        "SELECT * FROM datasets WHERE dataset_type = 'access_log' AND status IN ('ready', 'analyzed') "
-        "AND (bucket IS NULL OR (bucket = ? AND (provider_id IS NULL OR provider_id = ?))) "
-        "ORDER BY created_at DESC LIMIT ?", (bucket, provider_id, _MAX_DATASETS)).fetchall()
+        "SELECT * FROM datasets WHERE dataset_type = 'access_log' "
+        "AND ((provider_id = ? AND bucket = ?) OR (provider_id IS NULL AND (bucket IS NULL OR bucket = ?))) "
+        "ORDER BY created_at DESC LIMIT ?", (provider_id, bucket, bucket, _MAX_DATASETS)).fetchall()
     out: dict[str, Any] = {"datasets": 0, "total": 0, "anonymous": 0, "first": None, "last": None,
-                           "prefixes": [], "other_format": False, "truncated": False}
+                           "prefixes": [], "other_format": False, "truncated": False, "uploads": 0,
+                           "unread": 0, "pending": 0}
     prefixes: dict[str, int] = {}
+    seen: set[tuple[str, int]] = set()
     table = access_logs.TABLE_NAME
     for r in rows:
         ds = datasets.get(conn, r["id"])
         if ds is None:
             continue
+        if ds["status"] != "analyzed":
+            out["pending"] += 1
+            continue
+        key = (str(ds["filename"]), int(ds["size_bytes"] or 0))
+        if key in seen:
+            continue  # the same log imported or attached again
+        seen.add(key)
         try:
-            ds = datasets.ensure_ingested(conn, ds)
             con = duck.connect(datasets.duckdb_path(ds), read_only=True)
-        except Exception:  # noqa: BLE001 — an unreadable dataset is no evidence
+        except Exception:  # noqa: BLE001
+            out["unread"] += 1
             continue
         try:
             q = (f"SELECT count(*) FILTER (WHERE regexp_extract(raw_sanitized, '{_S3_LOG}', 1) = ?), "
@@ -181,6 +202,7 @@ def _anonymous_requests(conn: sqlite3.Connection, provider_id: str, bucket: str)
             total, anon, first, last, unparsed = con.execute(q, [bucket] * 4).fetchone()
             if total:
                 out["datasets"] += 1
+                out["uploads"] += 1 if ds.get("origin") == "upload" else 0
                 out["total"] += int(total)
                 out["anonymous"] += int(anon or 0)
                 out["first"] = min(filter(None, [out["first"], first])) if first else out["first"]
@@ -188,17 +210,20 @@ def _anonymous_requests(conn: sqlite3.Connection, provider_id: str, bucket: str)
                 out["truncated"] = out["truncated"] or bool((ds.get("detail") or {}).get("truncated"))
                 if anon:
                     for prefix, n in con.execute(
-                            f"SELECT regexp_extract(raw_sanitized, '{_S3_KEY}', 1) p, count(*) c FROM {table} WHERE regexp_extract(raw_sanitized, "
-                            f"'{_S3_LOG}', 1) = ? AND regexp_extract(raw_sanitized, '{_S3_LOG}', 2) = '-' "
-                            f"GROUP BY p ORDER BY c DESC LIMIT 3", [bucket]).fetchall():
-                        prefixes[str(prefix)] = prefixes.get(str(prefix), 0) + int(n)
+                            f"SELECT regexp_extract(raw_sanitized, '{_S3_KEY}', 1) p, count(*) c FROM {table} "
+                            f"WHERE regexp_extract(raw_sanitized, '{_S3_LOG}', 1) = ? "
+                            f"AND regexp_extract(raw_sanitized, '{_S3_LOG}', 2) = '-' "
+                            f"GROUP BY p ORDER BY c DESC LIMIT 5", [bucket]).fetchall():
+                        # Only real folders: a bucket-level call has key "-", a top-level object no folder.
+                        if prefix and prefix.endswith("/"):
+                            prefixes[str(prefix)] = prefixes.get(str(prefix), 0) + int(n)
             elif unparsed and r["bucket"] == bucket:
                 out["other_format"] = True  # a log for this bucket we cannot read requesters from
-        except Exception:  # noqa: BLE001
-            continue
+        except Exception:  # noqa: BLE001 — e.g. a file locked by a running analysis
+            out["unread"] += 1
         finally:
             con.close()
-    out["prefixes"] = [redact_text(p)[:120] or "/" for p, _ in sorted(prefixes.items(), key=lambda x: -x[1])[:3]]
+    out["prefixes"] = [redact_text(p)[:120] for p, _ in sorted(prefixes.items(), key=lambda x: -x[1])[:3]]
     return out
 
 
@@ -243,9 +268,18 @@ def impact(conn: sqlite3.Connection, issue: dict[str, Any], lang: str = "en") ->
                                "evidence": "access_log", "count": 0, "total": a["total"]})
             if a["truncated"]:
                 gaps.append(t["logs_truncated"])
+            if a["uploads"]:
+                gaps.append(t["logs_uploaded"])
         else:
             verdict = "unknown"
-            gaps.append(t["log_format"] if a["other_format"] else t["no_logs"])
+            if a["other_format"]:
+                gaps.append(t["log_format"])
+            elif not a["pending"] and not a["unread"]:
+                gaps.append(t["no_logs"])
+        if a["unread"]:
+            gaps.append(t["logs_unread"].format(n=a["unread"]))
+        if a["pending"]:
+            gaps.append(t["logs_pending"].format(n=a["pending"]))
     elif fix["kind"] == "default_encryption":
         points.append({"text": t["sse_new_only"], "evidence": "rule"})
         points.append({"text": t["sse_writers"], "evidence": "rule"})

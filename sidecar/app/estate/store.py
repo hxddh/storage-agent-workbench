@@ -197,6 +197,11 @@ _ORDER = ("ORDER BY CASE i.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN
           "i.last_seen_at DESC, i.id")
 
 
+def _current_fix(row: sqlite3.Row) -> dict[str, Any] | None:
+    return rules.generate_fix(row["code"], row["bucket"], endpoint_url=row["endpoint_url"] or None,
+                              region=row["provider_region"] or None)
+
+
 def _issue_out(row: sqlite3.Row, lang: str = "en") -> dict[str, Any]:
     rule = rules.BY_CODE.get(row["code"])
     return {
@@ -206,7 +211,11 @@ def _issue_out(row: sqlite3.Row, lang: str = "en") -> dict[str, Any]:
         "severity": row["severity"], "status": row["status"], "detail": row["detail"],
         "first_seen_at": row["first_seen_at"], "last_seen_at": row["last_seen_at"],
         "resolved_at": row["resolved_at"], "resolved_by": row["resolved_by"],
-        "source_task_id": row["live_task_id"], "fix": loads(row["fix"]),
+        "source_task_id": row["live_task_id"],
+        # The stored fix only records that one was proposed: its text is always
+        # regenerated, so a fix written before quoting (v5, the v4 importer) is
+        # never served.
+        "fix": _current_fix(row) if row["fix"] else None,
         "fixable": rules.generate_fix(row["code"], row["bucket"]) is not None,
         "last_verified_at": row["last_verified_at"], "last_verify_result": row["last_verify_result"],
     }
@@ -280,6 +289,9 @@ def set_accepted(conn: sqlite3.Connection, issue_id: str, accepted: bool, reason
                       issue_id=issue_id, commit=False)
     elif not accepted and row["status"] == "accepted":
         _transition(conn, issue_id, "open", source="user", detail={"reopened": True})
+        # The reason it was acceptable no longer holds: it leaves the notes (and the prompt).
+        from . import notes
+        notes.drop_accept_reasons(conn, issue_id)
     conn.commit()
     return True
 
@@ -386,13 +398,10 @@ def digest(conn: sqlite3.Connection) -> dict[str, Any] | None:
     rows = conn.execute("SELECT provider_id, COUNT(*) AS n, MAX(last_checked_at) AS at FROM estate_buckets "
                         "WHERE provider_id IN (SELECT id FROM cloud_providers) GROUP BY provider_id").fetchall()
     issues = list_issues(conn, status="care", limit=12)
-    from . import notes
-    kept = notes.digest(conn)
-    if not rows and not issues and not kept:
+    if not rows and not issues:
         return None
     return {"providers": [{"provider_id": r["provider_id"], "known_buckets": r["n"], "last_checked_at": r["at"]}
                           for r in rows],
             "open_issues": [{"bucket": i["bucket"], "provider_id": i["provider_id"], "code": i["code"],
                              "title": i["title"], "severity": i["severity"], "status": i["status"],
-                             "last_seen_at": i["last_seen_at"]} for i in issues],
-            **({"notes": kept} if kept else {})}
+                             "last_seen_at": i["last_seen_at"]} for i in issues]}

@@ -249,7 +249,7 @@ tool's model output is bounded to 60 000 chars.
   - Redacted with eager masking of secret-shaped tokens; ≤ 1 000 chars.
   - Budget: 5 per turn. An unknown provider or a bucket without a provider
     → `error`.
-  - The 12 most recent notes reach every turn's `estate_digest` as
+  - The 12 most recent notes reach every turn inside the untrusted-data envelope (`estate_notes`) as
     remembered context.
 - **`record_conclusion`**: records the turn's conclusion (see
   [Execution](#execution-invoketd-tool_ctx-raw_args), step 2). The arguments

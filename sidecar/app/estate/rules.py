@@ -15,6 +15,7 @@ cannot see is never resolved by that silence.
 from __future__ import annotations
 
 import json
+import re
 import shlex
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -187,6 +188,11 @@ def _q(value: dict[str, Any]) -> str:
     return "'" + json.dumps(value, separators=(",", ":")) + "'"
 
 
+# Characters that need no quoting in POSIX shells, PowerShell or cmd.exe. Real
+# S3 bucket names are a subset; anything else came from an unusual endpoint.
+SAFE_BUCKET = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}")
+
+
 def generate_fix(code: str, bucket: str, *, endpoint_url: str | None = None,
                  region: str | None = None) -> dict[str, Any] | None:
     """A deterministic fix for one rule on one bucket, or None when the fix
@@ -196,6 +202,10 @@ def generate_fix(code: str, bucket: str, *, endpoint_url: str | None = None,
     The command targets the provider the issue was observed on: a custom
     endpoint (MinIO, R2, …) and its region are part of it, so the AWS CLI
     never falls back to its default AWS endpoint for a same-named bucket."""
+    if not SAFE_BUCKET.fullmatch(bucket or ""):
+        # A name with shell metacharacters cannot be put in a command that is
+        # safe to paste into every shell (POSIX quoting does not protect cmd.exe).
+        return None
     fix = _fix(code, bucket)
     if fix is None:
         return None

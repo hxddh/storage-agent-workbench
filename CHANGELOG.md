@@ -28,7 +28,8 @@ _The estate becomes the place you work from, and fixes close the loop — built 
 
 ### Security
 
-- The generated fix command quoted the bucket name unescaped; a bucket name from a hostile endpoint could inject a second shell command into text the user copies. Names, endpoints and regions are now shell-quoted (CLI) and escaped (Terraform).
+- The generated fix command quoted the bucket name unescaped; a bucket name from a hostile endpoint could inject a second shell command into text the user copies. Names, endpoints and regions are now shell-quoted (CLI) and escaped (Terraform); a name outside `[A-Za-z0-9._-]` gets no command; stored fixes are regenerated on read, never served as stored.
+- Notes reach the model inside the untrusted-data envelope.
 
 ## [5.0.0] - 2026-09-29
 

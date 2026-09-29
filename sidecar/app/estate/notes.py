@@ -64,12 +64,29 @@ def add(conn: sqlite3.Connection, text: str, *, provider_id: str | None = None, 
                   task_id or None, issue_id or None, now, now))
     core_store.audit(conn, actor="agent" if source == "agent" else "user", action="note.add", task_id=task_id,
                      target=nid, commit=False)
-    # Bounded: the oldest notes go first.
-    conn.execute("DELETE FROM notes WHERE id NOT IN (SELECT id FROM notes ORDER BY updated_at DESC, id LIMIT ?)",
-                 (MAX_NOTES,))
+    _trim(conn)
     if commit:
         conn.commit()
     return get(conn, nid) or {}
+
+
+def _trim(conn: sqlite3.Connection) -> None:
+    """Keep at most MAX_NOTES: the Agent's oldest notes go first, the user's only
+    when nothing else is left to trim. Every trimmed note is audited."""
+    over = conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0] - MAX_NOTES
+    if over <= 0:
+        return
+    rows = conn.execute("SELECT id FROM notes ORDER BY CASE source WHEN 'agent' THEN 0 ELSE 1 END, updated_at, id "
+                        "LIMIT ?", (over,)).fetchall()
+    for r in rows:
+        conn.execute("DELETE FROM notes WHERE id = ?", (r["id"],))
+        core_store.audit(conn, actor="system", action="note.trim", target=r["id"], commit=False)
+
+
+def drop_accept_reasons(conn: sqlite3.Connection, issue_id: str) -> None:
+    for r in conn.execute("SELECT id FROM notes WHERE source = 'accept' AND issue_id = ?", (issue_id,)).fetchall():
+        conn.execute("DELETE FROM notes WHERE id = ?", (r["id"],))
+        core_store.audit(conn, actor="user", action="note.delete", target=r["id"], commit=False)
 
 
 def get(conn: sqlite3.Connection, note_id: str) -> dict[str, Any] | None:
@@ -95,9 +112,15 @@ def delete(conn: sqlite3.Connection, note_id: str) -> bool:
 
 
 def list_notes(conn: sqlite3.Connection, *, provider_id: str | None = None, bucket: str | None = None,
-               limit: int = 200) -> list[dict[str, Any]]:
-    """Notes for a scope. A provider scope includes its bucket notes; no scope lists all."""
+               limit: int = 200, exact: bool = False) -> list[dict[str, Any]]:
+    """Notes for a scope. A provider scope includes its bucket notes and no scope
+    lists all — unless ``exact``: then only the notes on that very scope (the
+    estate-wide notes, or an account's own notes)."""
     where, args = [], []
+    if exact and not provider_id:
+        where.append("provider_id IS NULL")
+    if exact and not bucket:
+        where.append("bucket IS NULL")
     if provider_id:
         where.append("provider_id = ?")
         args.append(provider_id)

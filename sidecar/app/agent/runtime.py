@@ -244,6 +244,12 @@ class Runtime:
                 return
             await self._maybe_compact(conn, task_id, turn_id, creds, rec, clients)
             outcome = await self._stream_turn(conn, task_id, turn_id, creds, rec, live, clients)
+            if outcome.get("status") == "retry_http":
+                # The websocket was refused before anything streamed: the same Turn
+                # runs again over HTTP (the endpoint is remembered in NO_WEBSOCKET).
+                outcome = await self._stream_turn(conn, task_id, turn_id, creds, rec, live, clients)
+                if outcome.get("status") == "retry_http":
+                    outcome = {"status": "failed", "error": outcome.get("error"), "usage": outcome.get("usage")}
             status, error, usage = outcome["status"], outcome.get("error"), outcome.get("usage")
         except Exception as exc:  # noqa: BLE001
             status, error = "failed", errors.user_message(exc)
@@ -311,7 +317,9 @@ class Runtime:
         finalized: dict[str, str] = {}
 
         async def on_max_turns(data: Any) -> Any:
-            text = await self._final_answer(creds, clients, list(data.run_data.history), reason="budget")
+            # The branch history from items carries the steers the model input
+            # filter injected (the SDK's run history does not).
+            text = await self._final_answer(creds, clients, _history(conn, task_id, turn_id), reason="budget")
             finalized.update(text=text, reason="budget")
             return RunErrorHandlerResult(final_output=text, include_in_history=False)
 
@@ -326,12 +334,14 @@ class Runtime:
                                      session=ItemsSession(task_id, turn_id),
                                      error_handlers={"max_turns": on_max_turns, "model_refusal": on_refusal})
         live.result = result
+        streamed = False
         try:
             async for event in result.stream_events():
                 if live.cancel.is_set():
                     result.cancel()
                     break
                 etype = getattr(event, "type", "")
+                streamed = streamed or etype == "run_item_stream_event"
                 if etype == "raw_response_event":
                     data = event.data
                     if getattr(data, "type", "") == "response.output_text.delta":
@@ -345,7 +355,11 @@ class Runtime:
             if errors.is_usage_refusal(exc):
                 models.NO_USAGE.add(models.endpoint_key(creds))
             if errors.is_websocket_failure(exc):
-                models.NO_WEBSOCKET.add(models.endpoint_key(creds))
+                key = models.endpoint_key(creds)
+                first_refusal = key not in models.NO_WEBSOCKET
+                models.NO_WEBSOCKET.add(key)
+                if first_refusal and not streamed and not rec.has_output() and not live.cancel.is_set():
+                    return {"status": "retry_http", "error": errors.user_message(exc), "usage": _usage(result)}
             if live.cancel.is_set():
                 return {"status": "cancelled", "usage": _usage(result)}
             if errors.recoverable(exc):

@@ -102,6 +102,7 @@ export function IssueCard({ issue: initial, onChange, showBucket = true }: {
             <form className="issue-accept" onSubmit={(e) => {
               e.preventDefault();
               setAccepting(false);
+              setReason("");
               void act("accept", () => api.acceptIssue(issue.id, true, lang, reason.trim())).then(onChange);
             }}>
               <TextInput value={reason} maxLength={1000} autoFocus placeholder={t("issue.acceptReason")}
