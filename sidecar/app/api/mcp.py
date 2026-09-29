@@ -38,7 +38,8 @@ def _bridge(name: str) -> Any:
 
     call.__name__ = name
     call.__doc__ = td.fn.__doc__
-    call.__signature__ = inspect.signature(td.fn)  # type: ignore[attr-defined]
+    # Resolved in the tool's own module: its annotations (Literal choices) name types defined there.
+    call.__signature__ = inspect.signature(td.fn, eval_str=True)  # type: ignore[attr-defined]
     return call
 
 

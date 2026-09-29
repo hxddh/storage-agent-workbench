@@ -154,7 +154,7 @@ turn's `Recorder`, which also publishes each item to open streams.
 | `tool_progress` | `{call_id, name, done, total, unit}` | An engine reports counts (survey buckets, import files). Throttled to at most one per second and 120 per call. The final count (`done >= total`) is always written. `unit` is at most 24 chars. |
 | `tool_output` | `{call_id, name, ok, summary, duration_ms, detail, detail_truncated, model_output}` | A tool finishes. `summary` is at most 240 chars. `detail` is the redacted result as JSON, at most 24 000 chars, and is what the UI reads. `model_output` is the same, at most 60 000 chars, is removed from every HTTP/SSE response, and is replayed to the model as the call's output in later history. A call stopped before it ran, or cancelled or timed out, has `ok: false`, a `summary` saying so, and `detail` and `model_output` set to `null`. |
 | `tool_output` (refused) | `{call_id, name, ok: false, refused: true, summary, model_output}` | The scope guardrail rejected the call. A `tool_call` item precedes it. |
-| `conclusion` | `{call_id, answer, findings: [{title, severity, detail?}], next_steps}` | The model called `record_conclusion` with valid arguments. `answer` ≤ 400 chars; ≤ 8 findings (title ≤ 240, severity `high`/`medium`/`low`/`info`, detail ≤ 600); ≤ 4 next steps, each cut to 200 chars. Redacted. No `tool_call` or `tool_output` item is written for it. |
+| `conclusion` | `{call_id, findings: [{title, severity, detail?}], next_steps}` | The model called `record_conclusion` with valid arguments: ≤ 8 findings (title ≤ 240, severity `high`/`medium`/`low`/`info`, detail ≤ 600) and ≤ 4 next steps, each cut to 200 chars; either may be empty, not both. Redacted. No `tool_call` or `tool_output` item is written for it. v9 dropped `answer` (the answer is the Turn's final `agent_message`): an item recorded earlier — or imported from v4 — may still carry `answer` (≤ 400 chars); readers treat it as optional and history replay leaves it out. |
 | `steer` | `{text}` | The user steered a running turn. The text is redacted, and the open segment is closed first. |
 | `compaction` | `{summary, turns_folded, folded: [turn_id]}` | The branch history neared 80 % of the context window (estimated at about 4 chars per token). It is recorded on the oldest kept turn: the last three turns stay unfolded. `summary` is at most 8 000 chars. When the model's history is built, only the latest compaction counts: it stands in for the turns it folded. |
 | `notice` | `{event, …}` | A runtime note. The events are listed below. |
@@ -386,7 +386,7 @@ At most 500 notes are kept. Index: `idx_notes_scope (provider_id, bucket, update
 | `base_url` | TEXT | `NULL` means the kind's default |
 | `api_key_ref` | TEXT | `keyring://model_provider/<id>/api_key` |
 | `api_style` | TEXT NOT NULL, default `'chat'` | `responses` or `chat` |
-| `context_window`, `max_output_tokens` | INTEGER | `NULL` means derived from the model |
+| `context_window`, `max_output_tokens` | INTEGER | `NULL` means derived: the window is 16 384 for a local / self-hosted kind off the official OpenAI host, otherwise from the model name (as is `max_output_tokens`) |
 | `reasoning_effort` | TEXT | `low`, `medium`, `high` or `NULL` |
 | `active` | INTEGER NOT NULL, default 0 | Exactly one row is active whenever any exist; the oldest row becomes active by default. |
 | `created_at`, `updated_at` | TEXT NOT NULL | |

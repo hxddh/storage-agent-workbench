@@ -1,99 +1,67 @@
-"""Model-elastic budgets.
+"""Model windows and the completion budget.
 
-The per-turn tool-output budget is the PRIMARY governor of how deep an
-investigation goes — but it was a single hardcoded constant (200k chars ≈ 50k
-tokens) chosen for "a modern 200k-token context". That throttles a 1M-context
-model to a quarter of the depth its window supports, and doesn't shrink for a
-small-context model. This module derives the budget from the active model's
-context window instead, with the previous hardcoded values as a HARD FLOOR — so
-no existing deployment ever regresses, and larger models get proportionally
-deeper turns.
+The context window decides when history is compacted, how much of one tool
+output the model reads, and how many completion tokens a request may ask for.
+An operator-declared window (Settings › Models) always wins; otherwise a
+substring table of known model families decides (the longest matching entry);
+a local endpoint without a declared window is assumed small
+(``LOCAL_DEFAULT_WINDOW``: a local server's configured context is usually far
+below what the model supports).
 
-Security note: this only scales how much *tool output* (already sanitized,
-bounded, no raw rows/bodies) the model may consume in one turn, and its
-completion size. It does NOT touch any security-floor bound (preview/range byte
-caps, list caps, sample caps, ingest caps) — those stay fixed.
+Security note: this scales only how much already-sanitized, bounded text the
+model reads and writes. It does NOT touch any security-floor bound (preview /
+range byte caps, list caps, sample caps, ingest caps) — those stay fixed.
 """
 
 from __future__ import annotations
 
-# Context windows in TOKENS, keyed on lowercased model-name SUBSTRINGS. Order
-# matters — most-specific substrings first (the first containing match wins).
-# Conservative where a family's members vary. An unknown model falls to
-# _DEFAULT_CONTEXT, which yields exactly the historical floor.
-_CONTEXT_WINDOWS: tuple[tuple[str, int], ...] = (
-    ("gpt-4.1", 1_000_000), ("gpt-4o", 128_000), ("gpt-4-turbo", 128_000),
-    ("gpt-4", 128_000), ("gpt-3.5", 16_385),
-    ("o1", 200_000), ("o3", 200_000), ("o4", 200_000),
-    ("claude-3-5", 200_000), ("claude-3-7", 200_000),
-    ("claude-sonnet-4", 200_000), ("claude-opus-4", 200_000),
-    ("claude-haiku-4", 200_000), ("claude", 200_000),
-    ("deepseek-reasoner", 128_000), ("deepseek", 128_000),
-    ("gemini-1.5", 1_000_000), ("gemini-2", 1_000_000), ("gemini", 1_000_000),
-    ("qwen2.5", 128_000), ("qwen-max", 32_768), ("qwen", 32_768),
-    ("llama-3", 128_000), ("llama", 128_000),
-    ("mixtral", 32_768), ("mistral", 32_768),
-    # Local / open models (Ollama, LM Studio, vLLM, llama.cpp) — conservative defaults.
-    ("qwen3", 32_768), ("gemma-3", 128_000), ("gemma", 8_192),
-    ("phi-3", 128_000), ("phi", 4_096),
-    ("mistral-nemo", 128_000),
-    ("codellama", 16_384),
-    ("ollama", 32_768), ("lmstudio", 32_768), ("vllm", 32_768),
-    ("llama", 32_768),
-)
-_DEFAULT_CONTEXT = 128_000  # unknown model → yields exactly the current floor
+# Context windows in TOKENS, keyed on lowercased model-name substrings. The
+# LONGEST matching substring wins, so a specific entry (codellama, qwen3,
+# mistral-nemo) is never shadowed by its family (llama, qwen, mistral),
+# whatever the order here. Conservative where a family's members vary.
+_CONTEXT_WINDOWS: dict[str, int] = {
+    # Hosted families.
+    "gpt-4.1": 1_000_000, "gpt-4o": 128_000, "gpt-4-turbo": 128_000, "gpt-4": 128_000, "gpt-3.5": 16_385,
+    "o1": 200_000, "o3": 200_000, "o4": 200_000,
+    "claude": 200_000,
+    "deepseek": 128_000,
+    "gemini": 1_000_000,
+    # Open families (also served locally by Ollama, LM Studio, vLLM, llama.cpp).
+    "qwen": 32_768, "qwen2.5": 128_000, "qwen3": 32_768, "qwen-max": 32_768,
+    "llama": 128_000, "llama3": 128_000, "llama-3": 128_000, "llama2": 4_096, "llama-2": 4_096,
+    "codellama": 16_384,
+    "mistral": 32_768, "mixtral": 32_768, "mistral-nemo": 128_000,
+    "gemma": 8_192, "gemma2": 8_192, "gemma-2": 8_192, "gemma3": 128_000, "gemma-3": 128_000,
+    "phi": 4_096, "phi-3": 128_000, "phi3": 128_000, "phi-4": 16_384, "phi4": 16_384,
+}
+_DEFAULT_CONTEXT = 128_000  # an unknown hosted model
+LOCAL_DEFAULT_WINDOW = 16_384  # a local / self-hosted endpoint whose window was not declared
 
-# Per-model MAX OUTPUT (completion) tokens, keyed on lowercased substrings, most
-# specific first. Several providers cap output well below what window//8 implies —
-# passing max_tokens above the cap is a hard 400. The completion budget is clamped
-# to this so we never over-request. Unknown model → _DEFAULT_MAX_OUTPUT.
-_MAX_OUTPUT_TOKENS: tuple[tuple[str, int], ...] = (
-    ("gpt-4-turbo", 4_096), ("gpt-4o", 16_384), ("gpt-4.1", 32_768), ("gpt-4", 8_192),
-    ("gpt-3.5", 4_096),
-    ("o1", 100_000), ("o3", 100_000), ("o4", 100_000),
-    ("claude-3-5", 8_192), ("claude-3-7", 64_000),
-    ("claude-sonnet-4", 64_000), ("claude-opus-4", 32_000), ("claude-haiku-4", 32_000),
-    ("claude", 8_192),
-    # gemini-2.5 raised max output to 64k; 1.5/2.0 are 8k. Most-specific first.
-    ("gemini-2.5", 64_000), ("gemini-1.5", 8_192), ("gemini-2", 8_192), ("gemini", 8_192),
-    # deepseek-reasoner supports far larger outputs than deepseek-chat's 8k.
-    ("deepseek-reasoner", 64_000), ("deepseek", 8_192),
-    ("qwen", 8_192), ("llama", 4_096), ("mixtral", 4_096), ("mistral", 4_096),
-)
-# Unknown model → the historical completion floor, so v0.27.0 behavior is
-# preserved (no regression): only KNOWN small-output models are clamped down.
+# Per-model MAX OUTPUT (completion) tokens, same longest-match rule. Several
+# providers cap output well below what window//8 implies — passing max_tokens
+# above the cap is a hard 400.
+_MAX_OUTPUT_TOKENS: dict[str, int] = {
+    "gpt-4-turbo": 4_096, "gpt-4o": 16_384, "gpt-4.1": 32_768, "gpt-4": 8_192, "gpt-3.5": 4_096,
+    "o1": 100_000, "o3": 100_000, "o4": 100_000,
+    "claude": 8_192, "claude-3-5": 8_192, "claude-3-7": 64_000,
+    "claude-sonnet-4": 64_000, "claude-opus-4": 32_000, "claude-haiku-4": 32_000,
+    "gemini": 8_192, "gemini-1.5": 8_192, "gemini-2": 8_192, "gemini-2.5": 64_000,
+    "deepseek": 8_192, "deepseek-reasoner": 64_000,
+    "qwen": 8_192, "llama": 4_096, "mixtral": 4_096, "mistral": 4_096,
+}
 _DEFAULT_MAX_OUTPUT = 16_384
 
-# Fraction of the window we let tool output consume, and chars/token.
-_TOOL_OUTPUT_FRACTION = 0.25
-_CHARS_PER_TOKEN = 4
-
-# Floors == the historical hardcoded values. Budgets NEVER go below these, so an
-# existing 128k/200k deployment is byte-for-byte unchanged.
-TOOL_OUTPUT_CHARS_FLOOR = 200_000       # was session_agent._MAX_TOOL_OUTPUT_CHARS
-# Ceiling on the tool-output budget: an absurd operator-declared context_window
-# must not yield an effectively unbounded per-turn budget (2M chars ≈ a 2M-token
-# window's fair share — no shipping model exceeds that usefully today).
-TOOL_OUTPUT_CHARS_CEILING = 2_000_000
-COMPLETION_TOKENS_FLOOR = 16_384        # was session_agent._MAX_COMPLETION_TOKENS
-# The floors above are COMPAT guarantees for the 128k/200k models the app
-# shipped against — not licenses to exceed a small window. An operator-declared
-# 8k/16k window (local llama.cpp / vLLM / Ollama) must never be handed a budget
-# larger than the window itself: vLLM hard-400s max_tokens ≥ context, and a
-# 200k-char tool budget against a 16k window voids the "never blow the
-# provider's context window" contract. Both budgets are therefore clamped to
-# half the window (with tiny absolute minimums so a degenerate declared window
-# still yields a workable turn). Windows ≥ ~33k tokens are byte-for-byte
-# unchanged by the clamp.
-_SMALL_WINDOW_MIN_CHARS = 8_192
+COMPLETION_TOKENS_FLOOR = 16_384
+# The floor is a compat guarantee for large windows, never a licence to exceed a
+# small one: the completion budget is clamped to half the window (vLLM rejects
+# max_tokens ≥ context), with a tiny minimum for a degenerate declared window.
 _COMPLETION_TOKENS_MIN = 1_024
 
 
 # Models known to accept a reasoning-effort knob on Chat Completions
-# (``reasoning_effort``). Substring match on the lowercased model name, like the
-# window table above. Unknown → False: the Composer paints no effort control and
-# the runtime sends nothing, which is the only safe default against an endpoint
-# that would 400 on an unknown parameter.
+# (``reasoning_effort``). Unknown → False: the Composer paints no effort control
+# and the runtime sends nothing, the only safe default against an endpoint that
+# would 400 on an unknown parameter.
 _REASONING_MODELS: tuple[str, ...] = (
     "o1", "o3", "o4", "gpt-5", "gpt-oss", "deepseek-reasoner", "deepseek-r1",
     "-r1", "qwq", "qwen3", "thinking", "grok-3-mini", "grok-4", "glm-4.5", "glm-4.6",
@@ -101,116 +69,43 @@ _REASONING_MODELS: tuple[str, ...] = (
 )
 
 
-def is_reasoning_model(model: str | None) -> bool:
-    """Whether ``model`` is known to accept ``reasoning_effort`` (v1.10.0)."""
+def _longest_match(model: str | None, table: dict[str, int]) -> int | None:
     m = (model or "").strip().lower()
-    if not m:
-        return False
-    return any(sub in m for sub in _REASONING_MODELS)
+    hits = [sub for sub in table if sub in m]
+    return table[max(hits, key=len)] if hits else None
+
+
+def is_reasoning_model(model: str | None) -> bool:
+    """Whether ``model`` is known to accept ``reasoning_effort``."""
+    m = (model or "").strip().lower()
+    return bool(m) and any(sub in m for sub in _REASONING_MODELS)
+
+
+def known_context_window(model: str | None) -> int | None:
+    """The table's window for ``model``, or None when the model is not known."""
+    return _longest_match(model, _CONTEXT_WINDOWS)
 
 
 def context_window(model: str | None, explicit: int | None = None) -> int:
-    """The active model's approximate input context window in tokens.
-
-    ``explicit`` (an operator-declared window from the model-provider config) wins
-    when positive — so a newly-shipped model absent from the substring table isn't
-    throttled to the default. Otherwise the table decides; unknown → default.
-    """
+    """The model's input context window in tokens: the declared one when
+    positive, else the table, else the default for an unknown hosted model."""
     if explicit and explicit > 0:
         return explicit
-    m = (model or "").lower()
-    for sub, win in _CONTEXT_WINDOWS:
-        if sub in m:
-            return win
-    return _DEFAULT_CONTEXT
+    return known_context_window(model) or _DEFAULT_CONTEXT
 
 
 def max_output_tokens(model: str | None, explicit_max: int | None = None) -> int:
-    """The active model's provider-imposed MAX output tokens (best-effort). Used to
-    clamp the completion budget so we never send a max_tokens the provider rejects.
-
-    ``explicit_max`` (an operator-declared cap from the model-provider config) wins
-    when positive — so a third-party/unknown model whose real ceiling is below the
-    substring-table default isn't handed a max_tokens its endpoint 400s on."""
+    """The model's provider-imposed max output tokens (best effort); a declared cap wins."""
     if explicit_max and explicit_max > 0:
         return explicit_max
-    m = (model or "").lower()
-    for sub, cap in _MAX_OUTPUT_TOKENS:
-        if sub in m:
-            return cap
-    return _DEFAULT_MAX_OUTPUT
-
-
-def tool_output_char_budget(model: str | None, explicit_window: int | None = None) -> int:
-    """Per-turn tool-output character budget, scaled to the model's window but
-    never below the historical floor. 128k/200k models → 200_000 (unchanged);
-    1M models → 1_000_000."""
-    window = context_window(model, explicit_window)
-    tokens = int(window * _TOOL_OUTPUT_FRACTION)
-    scaled = max(TOOL_OUTPUT_CHARS_FLOOR, tokens * _CHARS_PER_TOKEN)
-    # Small-window clamp (see _SMALL_WINDOW_MIN_CHARS above): never budget more
-    # tool-output chars than half the window can hold.
-    half_window_chars = max(_SMALL_WINDOW_MIN_CHARS, (window * _CHARS_PER_TOKEN) // 2)
-    return min(TOOL_OUTPUT_CHARS_CEILING, scaled, half_window_chars)
-
-
-# Per-turn TOKEN budget — the only bound denominated in the thing that costs
-# money (v0.54.0).
-#
-# Every other bound in this module is a CHARACTER or STEP count, and neither
-# tracks the bill, because the SDK re-sends the whole accumulated conversation on
-# every step. Measured: the same 200,000-char tool-output budget costs ~406k
-# tokens spread over 10 steps, ~781k over 20, and ~1.55M over 40 — and the code's
-# step ceiling (60) permitted ~3.5M input tokens for ONE question. The budget was
-# linear; the bill is quadratic.
-#
-# 600k is ~3x a healthy deep investigation (an 8-tool turn measures ~199k) and
-# roughly a 6x cut to the permitted worst case. Scaled by window so a
-# large-context model, which legitimately carries more per step, is not held to a
-# small model's ceiling.
-TURN_TOKEN_BUDGET_FLOOR = 600_000
-TURN_TOKEN_BUDGET_CEILING = 4_000_000
-# Full context re-sends a turn may pay for. A turn that has re-sent its whole
-# window this many times has stopped converging.
-_WINDOW_RESENDS = 5
-
-
-def turn_token_budget(model: str | None, explicit_window: int | None = None,
-                      explicit_budget: int | None = None) -> int:
-    """Total tokens (input + output, summed across every request) one turn may
-    spend before the agent is told to synthesize from what it has.
-
-    ``explicit_budget`` is an operator override; anything else is derived from
-    the model's window so the ceiling scales with what a step legitimately
-    costs."""
-    if explicit_budget and explicit_budget > 0:
-        return int(explicit_budget)
-    window = context_window(model, explicit_window)
-    return max(TURN_TOKEN_BUDGET_FLOOR,
-               min(TURN_TOKEN_BUDGET_CEILING, window * _WINDOW_RESENDS))
+    return _longest_match(model, _MAX_OUTPUT_TOKENS) or _DEFAULT_MAX_OUTPUT
 
 
 def completion_token_budget(model: str | None, explicit_window: int | None = None,
                             explicit_max: int | None = None) -> int:
-    """Completion (max_tokens) budget: raised only where the window clearly
-    supports it, floored at the historical value, and capped by the model's real
-    provider max-output so we never trigger a 400.
-
-    The per-model max-output clamp is the SOLE upper bound — there is no second
-    module-wide ceiling. (There was: 32_768, and since the provider clamp already
-    existed it only ever bit DOWNWARD on models whose real output ceiling is
-    higher — claude-3-7 / gemini-2.5 at 64k, o-series at 100k — starving long
-    enumeration answers on exactly the models that could hold them, worst on
-    reasoning models whose thinking spends part of the same budget.)
-
-    The provider cap is applied only when it's *below* the floor for a genuinely
-    small-output model — the floor otherwise wins (an existing deployment is
-    unchanged), but a 4k-output model like gpt-4-turbo is clamped down to 4096
-    rather than being handed the 16384 floor it would reject."""
+    """max_tokens for a request: window//8 floored at 16 384, never above half
+    the window, and never above the model's real max output."""
     window = context_window(model, explicit_window)
     scaled = max(COMPLETION_TOKENS_FLOOR, window // 8)
-    # Small-window clamp (see _COMPLETION_TOKENS_MIN above): never request more
-    # output tokens than half the window — the 16_384 floor against an 8k local
-    # endpoint is a guaranteed 400 (vLLM rejects max_tokens ≥ context).
     scaled = min(scaled, max(_COMPLETION_TOKENS_MIN, window // 2))
     return min(scaled, max_output_tokens(model, explicit_max))

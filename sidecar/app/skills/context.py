@@ -30,6 +30,7 @@ from . import loader
 _FRONTMATTER = re.compile(r"\A﻿?\s*---\s*\n.*?\n---\s*\n?", re.DOTALL)
 
 MAX_CHARS_PER_SKILL = 8000
+_BUNDLED_PREFIX = "storageops-"
 
 
 def strip_frontmatter(body: str) -> str:
@@ -90,17 +91,9 @@ def catalog_text() -> str:
     items = catalog()
     if not items:
         return ""
-    lines = [
-        "STORAGEOPS SKILLS — expert diagnostic methods available to you.",
-        "Each entry is name: when-to-use. When a skill fits the user's problem, "
-        "call read_skill(name) to load its full method, then apply it with your "
-        "read-only tools — a survey, a review or a bounded evidence import "
-        "where the method calls for heavier analysis. You do "
-        "not have to use a skill if none applies.",
-        "",
-    ]
+    lines = ["skills (expert methods; when one fits, load it with read_skill and apply it):"]
     for it in items:
-        lines.append(f"- {it['name']}: {routing_line(it['description'])}")
+        lines.append(f"- {it['name'].removeprefix(_BUNDLED_PREFIX)}: {routing_line(it['description'])}")
     return "\n".join(lines)
 
 
@@ -111,6 +104,8 @@ def read_skill_text(name: str, limit: int = MAX_CHARS_PER_SKILL) -> str | None:
     no references/scripts — only the bundled SKILL.md guidance text.
     """
     raw = loader.load_skill_body(name)
+    if not raw and not name.startswith(_BUNDLED_PREFIX):
+        raw = loader.load_skill_body(_BUNDLED_PREFIX + name)  # the catalog shows bundled names short
     if not raw:
         return None
     return _bounded(strip_frontmatter(raw), limit)

@@ -32,10 +32,11 @@ Every event of a Turn is an **item** appended to `items` with a global, monotoni
 `agent/runtime.py` owns one asyncio loop on its own thread and one worker per task that drains queued Turns in order. A Turn:
 
 1. **resolves the model** (`providers/models.credentials`): no usable model → the Turn fails with an `error` item whose action is *Open Settings*;
-2. **compacts** when the branch history nears 80 % of the context window: one tool-less summary step folds all but the two latest Turns into a `compaction` item;
+2. **compacts** when the request — the fixed prefix every call carries (instructions + tool definitions, `registry.schema_chars`) plus the branch history — nears 80 % of the context window (`runtime.needs_compaction`): one tool-less summary step folds all but the two latest Turns into a `compaction` item. The window is the declared one, else the model table (longest matching family name wins), else 128k for a hosted model; a local / self-hosted endpoint (Ollama, LM Studio, vLLM, llama.cpp, OpenAI-compatible off the official host) without a declared window is planned as **16 384** tokens (`providers/models.context_window`);
 3. **runs the SDK loop** — `Runner.run_streamed(agent, [], context=TurnContext, max_turns=60, run_config, session=ItemsSession(task, turn), error_handlers={max_turns, model_refusal})`:
    - the SDK reads the history from `ItemsSession` — `session.to_input(items of the branch)`: messages, function calls with their recorded outputs (what the model read, `model_output`), the recorded conclusion as a `record_conclusion` call/output pair, the latest compaction first;
-   - `RunConfig.call_model_input_filter` applies the SDK's `ToolOutputTrimmer` (older tool outputs shortened) and injects **steer** messages at a stable position on every call;
+   - `RunConfig.call_model_input_filter` applies the SDK's `ToolOutputTrimmer` (older tool outputs shortened; harder below a 64k window) and injects **steer** messages at a stable position on every call;
+   - one tool output reaches the model bounded to a quarter of the window (≥ 4 000, ≤ 60 000 chars; `runtime.tool_output_chars`);
    - `ToolExecutionConfig(max_function_tool_concurrency=6)` bounds parallel calls;
    - tracing metadata carries the task and turn ids to the local trace processor;
 4. **streams**: text deltas go to the hub as the live segment; a segment closes into an `agent_message` item when a tool call or message boundary arrives (the `StreamSanitizer` holds back a tail and masks secret-shaped strings before anything is published);
@@ -46,7 +47,7 @@ Every event of a Turn is an **item** appended to `items` with a global, monotoni
 
 ## Tools
 
-`agent/tools/registry.py` — see `docs/tools.md`. `build_sdk_tools(responses)` turns each registered function into an SDK `FunctionTool` with its JSON schema from the signature, a scope **input guardrail**, and a timeout. On the Responses backend every non-core group becomes a deferred `tool_namespace` behind the hosted `ToolSearchTool`; on Chat Completions every tool is sent. `invoke()` clamps arguments, records `tool_call`/`tool_output` items and an audit row through the Turn's `Recorder`, redacts the result, and returns it bounded inside the untrusted-data envelope. `record_conclusion` is special: it validates and records a `conclusion` item. Each call's `CallContext` carries a `StopSignal` that the Turn's Stop or the call's own timeout sets; tool bodies check `ctx.cancelled` between units of work, because a worker thread cannot be killed.
+`agent/tools/registry.py` — see `docs/tools.md`. `build_sdk_tools(responses)` turns each registered function into an SDK `FunctionTool` with its JSON schema from the signature (not strict: optional arguments stay optional; slimmed — no titles, real enums, one-line descriptions), a scope **input guardrail**, and a timeout. On the Responses backend every core tool (including `survey_account`) is loaded and the rest of each group becomes a deferred `tool_namespace` behind the hosted `ToolSearchTool`; on Chat Completions every tool is sent. With one storage account an omitted `provider_id` is that account. `invoke()` clamps arguments, records `tool_call`/`tool_output` items and an audit row through the Turn's `Recorder`, redacts the result, and returns it bounded inside the untrusted-data envelope. `record_conclusion` is special: it validates and records a `conclusion` item (findings and/or next steps; the answer is the Turn's final message). Each call's `CallContext` carries a `StopSignal` that the Turn's Stop or the call's own timeout sets; tool bodies check `ctx.cancelled` between units of work, because a worker thread cannot be killed.
 
 ## Models
 
@@ -78,7 +79,7 @@ The frontend's `store/task.ts` is one reducer over the snapshot (`GET /tasks/{id
 
 ## The report
 
-`reports/report.py` renders Markdown from the branch's items: title and one meta line, Goal, Conclusion, one Findings list, Next steps, the record of each Direction, Coverage and gaps (failed or refused calls), tools used, outputs, attached evidence, usage and an always-present Safety section — only the module's own words localized (en/zh).
+`reports/report.py` renders Markdown from the branch's items: title and one meta line, Goal, Conclusion (only a pre-v9 conclusion's `answer`), one Findings list, Next steps, the record of each Direction, Coverage and gaps (failed or refused calls), tools used, outputs, attached evidence, usage and an always-present Safety section — only the module's own words localized (en/zh).
 
 ## The shell
 

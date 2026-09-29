@@ -63,7 +63,7 @@ def test_a_user_rename_wins_over_the_title_step(client):
 
 
 def test_tools_and_the_conclusion_are_items_and_the_ui_never_gets_model_output(client):
-    conclusion = {"answer": "No files are attached yet.", "findings": [
+    conclusion = {"findings": [
         {"title": "Nothing to analyze", "severity": "info", "detail": ""}], "next_steps": ["Attach a log"]}
     with FakeModel([commentary_tool_turn("Let me look.", "list_uploaded_files", {}),
                     tool_turn("record_conclusion", conclusion),
@@ -80,7 +80,7 @@ def test_tools_and_the_conclusion_are_items_and_the_ui_never_gets_model_output(c
     assert call["payload"]["name"] == "list_uploaded_files" and out["payload"]["ok"] is True
     assert "model_output" not in out["payload"] and "datasets" in out["payload"]["detail"]
     concl = next(i for i in snap["items"] if i["type"] == "conclusion")["payload"]
-    assert concl["answer"] == "No files are attached yet." and concl["next_steps"] == ["Attach a log"]
+    assert "answer" not in concl and concl["next_steps"] == ["Attach a log"]
     # The model read the tool output inside the untrusted-data envelope.
     tool_msgs = [m for m in fake.requests[1]["messages"] if m.get("role") == "tool"]
     assert tool_msgs and "untrusted" in tool_msgs[0]["content"].lower()
@@ -216,7 +216,7 @@ def test_a_refused_scope_is_a_tool_output_the_model_reads(client):
 
 
 def test_the_report_is_a_document_with_safety(client):
-    conclusion = {"answer": "Everything is fine.", "findings": [
+    conclusion = {"findings": [
         {"title": "Public bucket", "severity": "high", "detail": "acme-www is public"}], "next_steps": []}
     with FakeModel([tool_turn("record_conclusion", conclusion), text_turn("Fine.")]) as fake:
         _use(client, fake)
@@ -224,8 +224,8 @@ def test_the_report_is_a_document_with_safety(client):
         _settle(client, tid)
     en = client.get(f"/tasks/{tid}/report").text
     zh = client.get(f"/tasks/{tid}/report?lang=zh").text
-    assert "## Conclusion" in en and "Everything is fine." in en and "**HIGH** — Public bucket" in en
-    assert "## Safety" in en and "## 安全" in zh and "## 结论" in zh
+    assert "## Findings" in en and "**HIGH** — Public bucket" in en and "## Conclusion" not in en
+    assert "## Safety" in en and "## 安全" in zh and "## 发现" in zh
 
 
 def test_the_stream_replays_then_follows(client):

@@ -106,6 +106,9 @@ snapshot of the task's current branch:
   the root.
 - An item is `{seq, id, task_id, turn_id, type, payload, created_at}`.
   `payload.model_output` is removed from every item served over HTTP or SSE.
+  Item payloads are specified in [data-model.md](data-model.md#items). A
+  `conclusion` item's payload is `{call_id, findings, next_steps}` (v9);
+  one recorded before v9 may also carry `answer` — read it as optional.
   That field holds the text the model read; the UI reads `detail` instead.
 
 ### Routes
@@ -292,7 +295,7 @@ Router prefix `/providers`. Secrets go in and never come out: responses carry
 | `model` | `str`, 1–200 | required |
 | `api_key` | `str \| null` | Stored in the vault. Local kinds work without one. |
 | `api_style` | `responses` \| `chat` \| `null` | Default: `responses` only for `kind = openai` on `api.openai.com` (or no base URL). Otherwise `chat`. |
-| `context_window` | `int ≥ 0 \| null` | `0` or `null`: derived from the model name |
+| `context_window` | `int ≥ 0 \| null` | `0` or `null`: derived — 16 384 for a local / self-hosted kind (`ollama`, `lmstudio`, `vllm`, `llamacpp`, `openai-compatible`) not on the official OpenAI host; otherwise from the model name |
 | `max_output_tokens` | `int ≥ 0 \| null` | |
 | `reasoning_effort` | `low` \| `medium` \| `high` \| `""` \| `null` | Sent only to models recognized as reasoning models. |
 

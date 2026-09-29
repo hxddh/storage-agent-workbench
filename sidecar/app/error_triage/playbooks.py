@@ -37,7 +37,8 @@ _ASK = {"action_type": "ask_user_for_context", "title": "Ask for more context",
 # applies. Deterministic triage has no model, so it can't `read_skill` itself —
 # but surfacing the pointer lets a session agent (which does have the catalog)
 # jump straight to the right method, and tells an offline user which skill covers
-# their case. Categories are stable; anything unmapped falls back to triage.
+# their case. Categories are stable; an unmapped one points at no skill (v9: the
+# first-contact routing lives in the Agent's instructions, not in a skill).
 _CATEGORY_SKILL: dict[str, str] = {
     "auth": "storageops-s3-protocol-compatibility",
     "authz": "storageops-security-iam-policy",
@@ -50,13 +51,12 @@ _CATEGORY_SKILL: dict[str, str] = {
     # v0.62.0 — "this configuration does not exist" is not a fault, so it maps to
     # the skill that explains what the configuration would DO, not to triage.
     "not_configured": "storageops-observability-audit",
-    "unknown": "storageops-triage",
 }
 
 
-def skill_for_category(category: str) -> str:
-    """The specialist skill a triage category maps to (defaults to triage)."""
-    return _CATEGORY_SKILL.get(category, "storageops-triage")
+def skill_for_category(category: str) -> str | None:
+    """The specialist skill a triage category maps to (None when no skill covers it)."""
+    return _CATEGORY_SKILL.get(category)
 
 
 # Keyed by S3 error code.

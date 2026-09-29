@@ -11,24 +11,6 @@
 version: "1.0"
 
 skills:
-  - name: storageops-triage
-    path: skills/storageops-triage/SKILL.md
-    auto_route: true
-    priority: 0
-    description: >
-      First-contact triage for any object-storage issue with no clear category.
-      Classify the domain (permission, performance, protocol, network, cost,
-      CLI/SDK, consistency, notification, replication),
-      gauge severity and evidence, then load the matching specialist skill. Use
-      first when a user reports an S3/BOS/OSS/COS/GCS error without an obvious
-      category.
-    trigger_keywords:
-      - object storage
-      - S3 error
-      - storage issue
-      - bucket issue
-    domains: [triage]
-
   - name: storageops-security-iam-policy
     path: skills/storageops-security-iam-policy/SKILL.md
     priority: 10
@@ -243,7 +225,8 @@ skills:
       — which exist, which have logging / inventory / lifecycle / replication /
       public-access-block, and where to look first. Use for an account-wide
       overview or audit entry point with NO specific error. A concrete error
-      symptom goes to triage; one bucket's deep config goes to review_bucket_*.
+      symptom goes to its specialist skill; one bucket's deep config goes to
+      review_bucket_config.
     trigger_keywords:
       - account overview
       - map my buckets
@@ -252,23 +235,6 @@ skills:
       - posture
       - where to start
     domains: [account, posture, audit]
-
-  - name: storageops-workbench-investigation
-    path: skills/storageops-workbench-investigation/SKILL.md
-    priority: 5
-    description: >
-      The general method for running any object-storage investigation in this
-      workbench: turn a vague ask into a grounded answer by chaining read-only
-      tools, recording findings, and proposing next steps. Load when the request
-      has no single obvious category, spans several buckets/providers, or you must
-      decide which specialist skill to open next.
-    trigger_keywords:
-      - investigate
-      - where do I start
-      - overall health
-      - audit my storage
-      - not sure what's wrong
-    domains: [method]
 
   - name: storageops-observability-audit
     path: skills/storageops-observability-audit/SKILL.md
