@@ -10,9 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
-# Allowed proposal action types for triage (subset of the Phase 17 allowlist).
-# run_diagnostic, run_bucket_config_review, plan_access_log_import,
-# ask_user_for_context, generate_session_report.
+# A proposal names the read-only tool that takes the next step (or asks the
+# user): list_buckets, review_bucket_config, import_evidence, ask_user_for_context.
 
 
 def _entry(code, category, title, confidence, likely_causes, evidence, next_checks,
@@ -25,11 +24,11 @@ def _entry(code, category, title, confidence, likely_causes, evidence, next_chec
     }
 
 
-_DIAG = {"action_type": "run_diagnostic", "title": "Run a diagnostic",
+_DIAG = {"action_type": "list_buckets", "title": "Check credentials and reachability",
          "reason": "Read-only credential / reachability / addressing checks.", "confidence": "medium"}
-_CFG = {"action_type": "run_bucket_config_review", "title": "Review bucket configuration",
+_CFG = {"action_type": "review_bucket_config", "title": "Review bucket configuration",
         "reason": "Inspect policy / ACL / encryption / public access posture.", "confidence": "medium"}
-_LOGS = {"action_type": "plan_access_log_import", "title": "Import recent access logs",
+_LOGS = {"action_type": "import_evidence", "title": "Import recent access logs",
          "reason": "Correlate the errors with request/throttle patterns over time.", "confidence": "medium"}
 _ASK = {"action_type": "ask_user_for_context", "title": "Ask for more context",
         "reason": "A few details would disambiguate the likely cause.", "confidence": "low"}

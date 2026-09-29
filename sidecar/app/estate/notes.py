@@ -56,6 +56,10 @@ def add(conn: sqlite3.Connection, text: str, *, provider_id: str | None = None, 
         raise NoteError("a bucket note names its provider")
     if provider_id and conn.execute("SELECT 1 FROM cloud_providers WHERE id = ?", (provider_id,)).fetchone() is None:
         raise NoteError("unknown provider")
+    if source == "agent" and conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0] >= MAX_NOTES \
+            and conn.execute("SELECT 1 FROM notes WHERE source = 'agent' LIMIT 1").fetchone() is None:
+        # Only the user's notes are left and they are never trimmed for the Agent's.
+        raise NoteError("the notes are full of the user's notes; nothing was kept")
     now = utcnow()
     nid = uuid.uuid4().hex
     conn.execute("INSERT INTO notes (id, provider_id, bucket, text, source, task_id, issue_id, created_at, updated_at) "
@@ -64,20 +68,21 @@ def add(conn: sqlite3.Connection, text: str, *, provider_id: str | None = None, 
                   task_id or None, issue_id or None, now, now))
     core_store.audit(conn, actor="agent" if source == "agent" else "user", action="note.add", task_id=task_id,
                      target=nid, commit=False)
-    _trim(conn)
+    _trim(conn, keep=nid)
     if commit:
         conn.commit()
     return get(conn, nid) or {}
 
 
-def _trim(conn: sqlite3.Connection) -> None:
+def _trim(conn: sqlite3.Connection, keep: str = "") -> None:
     """Keep at most MAX_NOTES: the Agent's oldest notes go first, the user's only
     when nothing else is left to trim. Every trimmed note is audited."""
     over = conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0] - MAX_NOTES
     if over <= 0:
         return
-    rows = conn.execute("SELECT id FROM notes ORDER BY CASE source WHEN 'agent' THEN 0 ELSE 1 END, updated_at, id "
-                        "LIMIT ?", (over,)).fetchall()
+    rows = conn.execute("SELECT id FROM notes WHERE id != ? "
+                        "ORDER BY CASE source WHEN 'agent' THEN 0 ELSE 1 END, updated_at, id LIMIT ?",
+                        (keep, over)).fetchall()
     for r in rows:
         conn.execute("DELETE FROM notes WHERE id = ?", (r["id"],))
         core_store.audit(conn, actor="system", action="note.trim", target=r["id"], commit=False)

@@ -61,16 +61,22 @@ class Recorder:
         self._progress: dict[str, tuple[float, int]] = {}
         self._calls: dict[str, dict[str, Any]] = {}
         self._produced = False  # any model output (text or a tool call) this Turn
+        self._closed = False
 
     def close(self) -> None:
-        try:
-            self._conn.close()
-        except Exception:  # noqa: BLE001
-            pass
+        with self._lock:
+            self._closed = True
+            try:
+                self._conn.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     # -- the one append --------------------------------------------------------------
     def _append(self, type_: str, payload: dict[str, Any], *, item_id: str | None = None) -> dict[str, Any]:
         with self._lock:
+            if self._closed:
+                # A tool thread that outlived its Stop or timeout: the turn's record is closed.
+                return {}
             item = store.append_item(self._conn, self.task_id, self.turn_id, type_, payload, item_id=item_id)
             if type_ in ("agent_message", "tool_call", "conclusion"):
                 self._produced = True
@@ -164,6 +170,8 @@ class Recorder:
                     pass
 
     def progress(self, call_id: str, name: str, done: int, total: int, unit: str) -> None:
+        if call_id not in self._calls:
+            return  # the call already settled (stopped or timed out): no progress after its output
         now = time.monotonic()
         last_at, count = self._progress.get(call_id, (0.0, 0))
         final = total > 0 and done >= total

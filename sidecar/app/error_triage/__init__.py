@@ -8,5 +8,5 @@ removed); interpretation, when wanted, comes from the conversational session
 agent in-thread over the already-sanitized triage context. No raw sensitive log,
 secret, or chain-of-thought is ever persisted or sent to the model; triage itself
 performs NO S3 call, run, download, or mutation. Suggested next actions are
-proposals that flow through the review/prepare hand-off.
+proposals that name the read-only tool for the next step.
 """

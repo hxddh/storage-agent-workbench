@@ -105,6 +105,8 @@ class TurnContext:
     recorder: Any  # agent.recorder.Recorder
     budgets: dict[str, dict[str, int]] = field(default_factory=dict)
     lang: str = "en"
+    # Parallel calls run in worker threads: spending from a budget is one step.
+    budget_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 class StopSignal:
@@ -161,11 +163,12 @@ class CallContext:
 
     def budget(self, key: str, limit: int, cost: int = 1) -> bool:
         """Spend from a per-turn budget; False when it would go over."""
-        spent = self.turn.budgets.setdefault(self.tool, {}).get(key, 0)
-        if spent + cost > limit:
-            return False
-        self.turn.budgets[self.tool][key] = spent + cost
-        return True
+        with self.turn.budget_lock:
+            spent = self.turn.budgets.setdefault(self.tool, {}).get(key, 0)
+            if spent + cost > limit:
+                return False
+            self.turn.budgets[self.tool][key] = spent + cost
+            return True
 
     def close(self) -> None:
         if self._conn is not None:

@@ -110,8 +110,7 @@ def test_no_new_playbook_suggests_a_mutating_action(code: str):
     """Rules never emit a mutating command — the module says so, and this is the
     half of the release most likely to break it, since several of these codes
     come FROM write operations."""
-    allowed = {"run_diagnostic", "run_bucket_config_review", "plan_access_log_import",
-               "ask_user_for_context", "generate_session_report"}
+    allowed = {"list_buckets", "review_bucket_config", "import_evidence", "ask_user_for_context"}
     for p in pb._BY_CODE[code]["proposals"]:
         assert p["action_type"] in allowed, f"{code} proposes {p['action_type']}"
 
