@@ -47,7 +47,7 @@ def _db() -> sqlite3.Connection:
 
 
 def _provider(client, endpoint: str, name: str) -> str:
-    return client.post("/cloud-providers", json={
+    return client.post("/providers/clouds", json={
         "name": name,
         "provider_type": "s3-compatible",
         "endpoint_url": endpoint,
@@ -192,19 +192,20 @@ def test_endpoint_matrix(client, endpoints, behaviour, tool):
 def test_the_matrix_actually_covers_the_tools():
     """A matrix that silently stops covering a tool is worse than no matrix.
 
-    Pinned against the agent's own gated-tool table so that adding a tool to a
+    Pinned against the registry's object-forensics group so that adding a tool to a
     group without adding it here is a test failure rather than a silent hole.
     """
-    from app.agent_runtime.session_agent import _TOOL_GROUPS
+    from app.agent.tools import registry
 
-    live_groups = ("object_forensics", "storage_pileup")
-    expected = {t for g in live_groups for t in _TOOL_GROUPS[g][1]}
+    # list_objects is the agent-facing name of the S3 layer's list_objects_v2 row.
+    expected = {n for n, td in registry.REGISTRY.items() if td.group == "objects"} - {"list_objects"}
+    assert "list_objects_v2" in TOOLS
     # These two are covered but named differently at the S3 layer, and
     # `diagnose_presigned_url` / `inspect_endpoint_tls` make no S3 call at all.
     covered = set(TOOLS)
     missing = expected - covered
     assert not missing, (
-        f"tools in {live_groups} with no row in the endpoint matrix: {sorted(missing)}"
+        f"object tools with no row in the endpoint matrix: {sorted(missing)}"
     )
 
 

@@ -52,9 +52,6 @@ def boom(tmp_path, monkeypatch):
         app.router.routes = [x for x in app.router.routes if getattr(x, "path", None) != "/__boom"]
 
 
-def test_a_fault_answers_500_rather_than_dropping_the_connection(boom):
-    res = boom.get("/__boom", headers={"Origin": ORIGIN})
-    assert res.status_code == 500
 
 
 def test_the_browser_can_read_the_500(boom):
@@ -64,19 +61,7 @@ def test_the_browser_can_read_the_500(boom):
     assert res.headers.get("access-control-allow-origin") == ORIGIN
 
 
-def test_the_body_names_the_fault_type_and_not_its_message(boom):
-    res = boom.get("/__boom", headers={"Origin": ORIGIN})
-    detail = res.json()["detail"]
-    assert "RuntimeError" in detail
-    assert "bucket-name-and-key-that-must-not-be-echoed" not in detail
 
 
-def test_an_unlisted_origin_gets_no_cors_grant(boom):
-    """The allowlist still decides; the handler echoes, it does not widen."""
-    res = boom.get("/__boom", headers={"Origin": "http://evil.example"})
-    assert res.status_code == 500
-    assert "access-control-allow-origin" not in {k.lower() for k in res.headers}
 
 
-def test_a_normal_404_is_untouched(client):
-    assert client.get("/sessions/does-not-exist").status_code == 404

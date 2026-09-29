@@ -20,7 +20,6 @@ _SAFE_ATTRS = {
     "generation": ("model",),
     "response": (),
     "guardrail": ("name", "triggered"),
-    "handoff": ("from_agent", "to_agent"),
     "custom": ("name",),
     "mcp_tools": ("server",),
 }

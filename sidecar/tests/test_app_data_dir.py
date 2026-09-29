@@ -17,11 +17,11 @@ def test_all_artifacts_under_data_dir(monkeypatch, tmp_path):
     data = config.data_dir()
     assert data == tmp_path
 
-    # SQLite DB, per-run dir (raw uploads + analysis.duckdb + report.md live here)
-    assert config.db_path() == tmp_path / "app.db"
-    run = config.run_dir("run123")
-    assert run == tmp_path / "runs" / "run123"
-    assert str(run).startswith(str(tmp_path))
+    # The v5 database; the v4 one beside it is only ever read by the importer.
+    assert config.db_path() == tmp_path / "storage-agent.db"
+    assert config.legacy_db_path() == tmp_path / "app.db"
+    from app.engines import datasets
+    assert str(datasets.dataset_dir("t1", "d1")).startswith(str(tmp_path / "tasks" / "t1"))
 
 
 def test_storage_agent_data_dir_takes_precedence(monkeypatch, tmp_path):

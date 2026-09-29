@@ -94,6 +94,21 @@ class Runtime:
             if live.result is not None:
                 self._call_soon(live.result.cancel)
 
+    def _reset_for_tests(self) -> None:
+        """Stop what runs and forget it; wait briefly so no turn outlives its test's database."""
+        self.stop_all()
+        workers = list(self._workers.values())
+        if self._loop is not None and workers:
+            async def settle() -> None:
+                await asyncio.wait(workers, timeout=5)
+            try:
+                asyncio.run_coroutine_threadsafe(settle(), self._loop).result(6)
+            except Exception:  # noqa: BLE001
+                pass
+        with self._lock:
+            self._live.clear()
+        self._workers.clear()
+
     def _call_soon(self, fn: Any, *args: Any) -> None:
         if self._loop is not None:
             self._loop.call_soon_threadsafe(fn, *args)
@@ -355,10 +370,7 @@ class Runtime:
         older = [t["id"] for t in chain[:-(_KEEP_RECENT_TURNS + 1)]]
         from agents import Agent, Runner
         model, settings = models.build(creds, clients, tools_allowed=False)
-        agent = Agent(name="Summarizer", model=model, model_settings=settings, instructions=(
-            "Summarize this storage investigation for your own later reference: the goal, every fact the "
-            "tools established (bucket names, settings, numbers), findings with severity, what was ruled "
-            "out and what is still open. Bullets, no chain-of-thought, at most 600 words."))
+        agent = Agent(name="Summarizer", model=model, model_settings=settings, instructions=prompt.COMPACT_INSTRUCTIONS)
         items = to_input(store.items_for_turns(conn, older))
         try:
             out = await Runner.run(agent, items + [{"role": "user", "content": "Write the summary now."}],
@@ -388,9 +400,7 @@ class Runtime:
             try:
                 from agents import Agent, Runner
                 model, settings = models.build(creds, clients, tools_allowed=False)
-                agent = Agent(name="Titler", model=model, model_settings=settings, instructions=(
-                    "Name this storage task in at most 8 words, in the language of the request. "
-                    "Plain text, no quotes, no trailing period."))
+                agent = Agent(name="Titler", model=model, model_settings=settings, instructions=prompt.TITLE_INSTRUCTIONS)
                 out = await Runner.run(agent, f"Request: {direction[:600]}\n\nResult: {answer[:1200]}",
                                        max_turns=1)
                 title = safety.clean_message(str(out.final_output or "")).strip().strip('"').splitlines()

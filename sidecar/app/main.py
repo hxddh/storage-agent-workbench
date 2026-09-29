@@ -1,165 +1,76 @@
-"""FastAPI sidecar entrypoint for Storage Agent Workbench.
+"""The Storage Agent Sidecar (v5).
 
-This exposes: a local data layer (SQLite), keyring-based secret storage,
-model/cloud provider CRUD, a whitelisted READ-ONLY S3-compatible tool layer,
-deterministic Analysis Runs (diagnostic, access_log_analysis, inventory_analysis,
-bucket_config_review, account_discovery) with SSE streaming, DuckDB-backed local
-analysis, read-only bucket configuration review, local Markdown reports, and the
-single conversational session agent (the only LLM in the product). The agent can
-only call the existing whitelisted, read-only tools; it never sees credentials.
-There is no auto-remediation, no generic shell execution, no destructive/mutating
-S3 operation. An opt-in read-only MCP bridge and user skills are available
-as modern native-agent extensions (gated, bounded, same redaction/scope floor);
-multi-agent orchestration remains disabled.
-
-Security note: this service binds to localhost only (``127.0.0.1``). Secrets
-submitted to provider endpoints are written to the encrypted local vault; SQLite
-and logs store only ``keyring://`` references. API responses never return
-plaintext secrets.
+A local FastAPI service the desktop shell starts on 127.0.0.1. It owns the one
+Agent runtime, the durable items stream every surface projects, the storage
+estate, and the provider settings. Storage is read-only; secrets live in the
+encrypted vault and never leave this process.
 
 Local-process isolation: binding to ``127.0.0.1`` keeps the socket off the
-network, but any *other* process on the same machine can still reach it, and CORS
-does nothing against non-browser clients. So when the launcher (Tauri) provides a
-shared secret via ``STORAGE_AGENT_AUTH_TOKEN``, every request must carry it (an
-``X-Sidecar-Token`` header, or a ``token`` query param for the header-less SSE
-``EventSource``). When the variable is unset — plain dev/browser runs and the
-test suite — auth is left open so the local workflow keeps working.
+network, but other local processes can still reach it. When the launcher sets
+``STORAGE_AGENT_AUTH_TOKEN`` every request must carry it (``X-Sidecar-Token``,
+or ``?token=`` for the header-less ``EventSource``). Unset — dev and tests —
+auth stays open.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hmac
 import logging
 import os
 from contextlib import asynccontextmanager
-from importlib import metadata
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from . import __version__
+from .agent import tools as _tools  # noqa: F401  (registers every tool)
+from .agent.runtime import RUNTIME
+from .api import estate, health, mcp, providers, settings, tasks
 from .db import init_db
 from .security.redaction import redact_text
-from .routers import (
-    agent_tasks,
-    cloud_providers,
-    datasets,
-    error_triage,
-    estate,
-    evidence_imports,
-    health,
-    mcp,
-    model_providers,
-    observability,
-    reports,
-    runs,
-    sessions,
-    settings,
-    skills,
-    tools,
-)
 
 SERVICE_NAME = health.SERVICE_NAME
-
 logger = logging.getLogger(__name__)
 
-
-def _service_version() -> str:
-    """Resolve the packaged version rather than hardcoding it.
-
-    Kept in lockstep with ``pyproject`` by ``scripts/stamp-version.py``; falls
-    back to a sentinel when the package metadata isn't installed (e.g. running
-    straight from source without ``pip install -e``).
-    """
-    try:
-        return metadata.version("storage-agent-sidecar")
-    except metadata.PackageNotFoundError:
-        return "0.0.0+source"
-
-
-# Shared-secret gate. Enforced only when the launcher sets the variable; unset
-# means dev/test and auth stays open. Paths that must stay reachable without the
-# token (liveness) are listed here.
 _AUTH_TOKEN = os.environ.get("STORAGE_AGENT_AUTH_TOKEN") or None
 _AUTH_EXEMPT_PATHS = {"/health"}
 
 
 def watch_tick_seconds() -> int:
     """How often the estate watch looks for due sweeps
-    (`STORAGE_AGENT_WATCH_TICK_SECONDS`, default 60, floor 5)."""
-    raw = os.environ.get("STORAGE_AGENT_WATCH_TICK_SECONDS", "60")
+    (``STORAGE_AGENT_WATCH_TICK_SECONDS``, default 60, floor 5)."""
     try:
-        return max(5, int(raw))
+        return max(5, int(os.environ.get("STORAGE_AGENT_WATCH_TICK_SECONDS", "60")))
     except ValueError:
         return 60
 
 
-def revisit_tick_seconds() -> int:
-    """How often the revisit scheduler looks for due schedules
-    (`STORAGE_AGENT_REVISIT_TICK_SECONDS`, default 60, floor 5)."""
-    raw = os.environ.get("STORAGE_AGENT_REVISIT_TICK_SECONDS", "60")
+def _import_v4() -> None:
+    from . import importer
+    from .db import connect
+    conn = connect()
     try:
-        return max(5, int(raw))
-    except ValueError:
-        return 60
+        importer.run_once(conn)
+    except Exception:  # noqa: BLE001 — an import problem never blocks startup
+        logger.exception("v4 import failed")
+    finally:
+        conn.close()
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Create the database and apply migrations on startup.
     init_db()
-    # Fail any run left pending/running by a prior process — in-process run
-    # threads don't survive a restart, so such rows are orphans.
-    from . import run_service
-    run_service.reconcile_interrupted_runs()
-    # Durable execution recovery: executions a prior process left in flight are
-    # stamped `interrupted` durably, then (v2.1) continued automatically — one
-    # continuation each, no crash loop; without a model they wait for Resume.
-    from .task_runtime import recovery as task_recovery
-    task_recovery.resume_interrupted(task_recovery.reconcile_interrupted_executions())
-    # Reclaim disk/rows that accumulate over long-lived installs: purge the
-    # internal ('agent'-origin) runs of already-deleted sessions (rows + dirs),
-    # and age out the write-only audit trail. Both are bounded, best-effort, and
-    # never touch user-authored report runs.
-    from . import data_maintenance
-    data_maintenance.run_startup_maintenance()
-    from .analysis import prices as price_mod
-    from .db import connect as db_connect
-    _price_conn = db_connect()
-    try:
-        price_mod.ensure_default(_price_conn)
-    finally:
-        _price_conn.close()
-    from .task_runtime import revisit as revisit_sched
-    revisit_sched.tick()
+    await asyncio.to_thread(_import_v4)
+    RUNTIME.start()
+    # Turns a previous process left running are stamped interrupted and
+    # continued once each; queued turns are picked up again.
+    await asyncio.to_thread(RUNTIME.recover)
 
-    async def _periodic():
-        raw = os.environ.get("STORAGE_AGENT_MAINTENANCE_INTERVAL_SECONDS", "3600")
-        try:
-            interval = max(60, int(raw))
-        except ValueError:
-            interval = 3600
-        while True:
-            await asyncio.sleep(interval)
-            await asyncio.to_thread(data_maintenance.run_periodic_maintenance)
-
-    async def _revisits():
-        # The revisit scheduler (v1.18): due revisits are submitted by the
-        # Sidecar on its own clock through the one runtime path — never by a
-        # read. `tick()` is one indexed query when nothing is due.
-        interval = revisit_tick_seconds()
-        while True:
-            await asyncio.sleep(interval)
-            try:
-                await asyncio.to_thread(revisit_sched.tick)
-            except Exception:  # noqa: BLE001 — a failed tick retries next time
-                pass
-
-    async def _watch():
-        # v4.0 — the estate watch: opt-in per provider, off by default; due
-        # sweeps run on the Sidecar's own clock, read-only and bounded.
+    async def _watch() -> None:
         from .estate import watch as estate_watch
         interval = watch_tick_seconds()
         while True:
@@ -167,28 +78,23 @@ async def lifespan(_app: FastAPI):
             try:
                 await asyncio.to_thread(estate_watch.tick)
             except Exception:  # noqa: BLE001 — a failed tick retries next time
-                pass
+                logger.exception("watch tick failed")
 
-    loop_tasks = [asyncio.create_task(_periodic()), asyncio.create_task(_revisits()),
-                  asyncio.create_task(_watch())]
-    try:
-        yield
-    finally:
-        for loop_task in loop_tasks:
-            loop_task.cancel()
-        for loop_task in loop_tasks:
-            try:
-                await loop_task
-            except asyncio.CancelledError:
-                pass
+    ticker = asyncio.create_task(_watch())
+    async with contextlib.AsyncExitStack() as stack:
+        if mcp.SERVER is not None:
+            await stack.enter_async_context(mcp.SERVER.session_manager.run())
+        try:
+            yield
+        finally:
+            ticker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await ticker
+            RUNTIME.stop_all()
 
 
-app = FastAPI(
-    title="Storage Agent Sidecar",
-    version=_service_version(),
-    description="Local-first sidecar for Storage Agent Workbench.",
-    lifespan=lifespan,
-)
+app = FastAPI(title="Storage Agent Sidecar", version=__version__,
+              description="Local-first Agent for object storage.", lifespan=lifespan)
 
 
 @app.exception_handler(RequestValidationError)
@@ -281,20 +187,11 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
-app.include_router(model_providers.router)
-app.include_router(cloud_providers.router)
-app.include_router(tools.router)
-app.include_router(runs.router)
-app.include_router(reports.router)
-app.include_router(datasets.router)
-app.include_router(evidence_imports.router)
-app.include_router(sessions.router)
-app.include_router(agent_tasks.router)
-app.include_router(error_triage.router)
-app.include_router(settings.router)
-# v4.0 — the storage estate
+app.include_router(tasks.router)
+app.include_router(tasks.events_router)
 app.include_router(estate.router)
-# Modern native-agent extensions (read-only, bounded, opt-in where gated)
-app.include_router(skills.router)
-app.include_router(observability.router)
-app.include_router(mcp.router)
+app.include_router(providers.router)
+app.include_router(settings.router)
+if mcp.SERVER is not None:
+    app.mount("/mcp", mcp.SERVER.streamable_http_app(streamable_http_path="/", stateless_http=True,
+                                                     json_response=True))

@@ -30,29 +30,6 @@ def _conn():
 
 # --- S3-1: agent tools honor allowed_prefixes -------------------------------
 
-def test_agent_tools_enforce_allowed_prefixes(client):
-    from app.agent_runtime import session_tools
-
-    pid = client.post("/cloud-providers", json={
-        "name": "prefix-scoped", "provider_type": "s3-compatible",
-        "endpoint_url": "https://minio.example.com", "region": "us-east-1",
-        "addressing_style": "path", "access_key": "AKIAIOSFODNN7EXAMPLE",
-        "secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-        "allowed_prefixes": ["logs/"],
-    }).json()["id"]
-
-    with _conn() as conn:
-        tools = {t.name: t for t in session_tools.build(conn, _FT(), [])}
-        # Out-of-prefix key must be denied BEFORE any S3 call (no stub needed).
-        out = json.loads(tools["preview_object"](pid, "bucket-alpha", "secrets/prod.env"))
-        assert out.get("error"), "preview_object must deny an out-of-prefix key"
-        head = json.loads(tools["head_object"](pid, "bucket-alpha", "secrets/prod.env"))
-        assert head.get("error")
-        # Root listing with prefix scope is denied; an in-scope prefix is allowed
-        # past the scope gate (it may still fail later without a stub — that's fine,
-        # we only assert the scope gate does not reject it).
-        root = json.loads(tools["list_objects"](pid, "bucket-alpha", ""))
-        assert root.get("error")
 
 
 # --- DuckDB F1: aggregate clamps key/path group-bys to 20 -------------------

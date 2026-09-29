@@ -43,7 +43,7 @@ def _db() -> sqlite3.Connection:
 def provider(client, live_s3_endpoint):  # noqa: F811
     """A provider row pointing at the live server — the app resolves the
     credentials and builds the client itself, as it would in production."""
-    return client.post("/cloud-providers", json={
+    return client.post("/providers/clouds", json={
         "name": "live-gate", "provider_type": "s3-compatible",
         "endpoint_url": live_s3_endpoint, "region": "us-east-1",
         "addressing_style": "path", "access_key": ACCESS, "secret_key": SECRET,

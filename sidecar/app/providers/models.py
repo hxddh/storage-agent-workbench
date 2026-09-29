@@ -22,7 +22,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from ..agent import budget
-from ..repositories import has_value, utcnow
+from ..core.clock import has_value, utcnow
 from ..security import keyring_store
 
 KEYRING_SCOPE = "model_provider"

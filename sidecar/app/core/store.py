@@ -16,7 +16,7 @@ import sqlite3
 import uuid
 from typing import Any, Iterable
 
-from ..repositories import utcnow
+from ..core.clock import utcnow
 
 ITEM_TYPES = frozenset({
     "user_message",     # the Direction (or a steer, see "steer")

@@ -13,7 +13,7 @@ import sqlite3
 import uuid
 from typing import Any
 
-from ..repositories import utcnow
+from ..core.clock import utcnow
 from ..security.redaction import redact_text
 from . import rules
 

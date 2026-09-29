@@ -32,7 +32,7 @@ def provider(client, tmp_path):
     """A cloud provider pointed at a live fake S3; yields (conn, id, fake)."""
     with FakeS3(buckets={"acme-logs": ["logs/2026/a.parquet", "logs/2026/b.parquet"],
                          "acme-backups": ["db/full.dump"]}) as fake:
-        created = client.post("/cloud-providers", json={
+        created = client.post("/providers/clouds", json={
             "name": "acme", "provider_type": "s3-compatible",
             "endpoint_url": fake.endpoint_url, "region": "us-east-1",
             "addressing_style": "path",
@@ -182,7 +182,7 @@ def test_the_sample_is_capped_however_many_keys_come_back(client):
     """Rule 16: at most 20 sample keys. Checked against a bucket that really
     returns 100, over HTTP, rather than against a hand-built response."""
     with FakeS3(buckets={"big": [f"data/part-{i:04d}.parquet" for i in range(100)]}) as fake:
-        pid = client.post("/cloud-providers", json={
+        pid = client.post("/providers/clouds", json={
             "name": "big", "provider_type": "s3-compatible",
             "endpoint_url": fake.endpoint_url, "region": "us-east-1",
             "addressing_style": "path", "access_key": ACCESS, "secret_key": SECRET,

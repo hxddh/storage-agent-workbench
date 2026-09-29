@@ -1,9 +1,8 @@
 """Shared test fixtures.
 
-- Points the encrypted secret vault at a fresh temp data dir per test (via
-  ``SAW_DATA_DIR``) so tests never touch a real user's vault and stay isolated.
-- The ``client`` fixture overrides ``SAW_DATA_DIR``/``SAW_DB_PATH`` with its own
-  temp dir; it runs after the autouse fixture below, so its paths win.
+- Every test gets a fresh data dir (``SAW_DATA_DIR``), database
+  (``SAW_DB_PATH``) and secret vault, so nothing touches a real install.
+- The runtime and the live hub are process singletons: reset between tests.
 """
 
 from __future__ import annotations
@@ -11,36 +10,46 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.fixture(autouse=True)
-def _secret_vault(tmp_path, monkeypatch):
-    """Isolate the encrypted secret vault to a per-test temp directory."""
+def _reset_singletons() -> None:
+    from app.agent import models
+    from app.agent.runtime import RUNTIME
+    from app.core import hub
     from app.security import keyring_store
 
-    monkeypatch.setenv("SAW_DATA_DIR", str(tmp_path / "vault"))
     keyring_store._reset_for_tests()
-    from app.agent_runtime import turn_guard
-    from app.task_runtime import hub as task_hub
-    from app.task_runtime import runtime as task_runtime_mod
-    turn_guard._reset_for_tests()
-    task_hub._reset_for_tests()
-    task_runtime_mod._reset_for_tests()
+    RUNTIME._reset_for_tests()
+    hub._reset_for_tests()
+    models.NO_PARALLEL.clear()
+    models.NO_USAGE.clear()
+
+
+@pytest.fixture(autouse=True)
+def _isolated(tmp_path, monkeypatch):
+    monkeypatch.setenv("SAW_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SAW_DB_PATH", str(tmp_path / "db" / "storage-agent.db"))
+    _reset_singletons()
+    from app.db import init_db
+    init_db()
     try:
         yield
     finally:
-        keyring_store._reset_for_tests()
-        turn_guard._reset_for_tests()
-        task_hub._reset_for_tests()
-        task_runtime_mod._reset_for_tests()
+        _reset_singletons()
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
-    """A TestClient bound to a fresh temp database (lifespan runs migrations)."""
-    from fastapi.testclient import TestClient
+def conn():
+    from app.db import connect
+    c = connect()
+    try:
+        yield c
+    finally:
+        c.close()
 
-    monkeypatch.setenv("SAW_DB_PATH", str(tmp_path / "test_app.db"))
-    # Keep generated artifacts (run reports) inside the temp dir, not the repo.
-    monkeypatch.setenv("SAW_DATA_DIR", str(tmp_path))
+
+@pytest.fixture()
+def client():
+    """A TestClient over the app (the lifespan runs: migrations, runtime, recovery)."""
+    from fastapi.testclient import TestClient
 
     from app.main import app
 

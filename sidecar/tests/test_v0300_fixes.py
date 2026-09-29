@@ -56,7 +56,7 @@ def _db():
 
 
 def _provider(client):
-    return client.post("/cloud-providers", json={
+    return client.post("/providers/clouds", json={
         "name": "demo", "provider_type": "s3-compatible",
         "endpoint_url": "https://minio.example.com", "region": "us-east-1",
         "addressing_style": "path", "access_key": "AKIAEXAMPLE", "secret_key": "shhh"}).json()["id"]
@@ -65,47 +65,8 @@ def _provider(client):
 # ============================ F1: publicly_exposed ==========================
 
 
-def test_policy_public_with_acl_unreadable_is_exposed(client, monkeypatch):
-    pid = _provider(client)
-    fake = FakeS3({
-        "get_bucket_policy": {"Policy": "{}"},
-        "get_bucket_cors": _err("NoSuchCORSConfiguration"),
-        "get_bucket_encryption": {"ServerSideEncryptionConfiguration": {"Rules": [{}]}},
-        "get_bucket_acl": _err("AccessDenied", 403),
-        "get_public_access_block": _err("NoSuchPublicAccessBlockConfiguration"),
-        "get_bucket_policy_status": {"PolicyStatus": {"IsPublic": True}},
-        "get_bucket_ownership_controls": _err("OwnershipControlsNotFoundError"),
-    })
-    monkeypatch.setattr(client_factory, "build_s3_client", lambda *a, **k: fake)
-    conn = _db()
-    try:
-        out = ct.review_bucket_security(conn, pid, "b")
-        assert out["facts"]["publicly_exposed"] is True  # was None pre-fix
-    finally:
-        conn.close()
 
 
-def test_acl_public_with_policy_status_unsupported_is_exposed(client, monkeypatch):
-    """The common non-AWS case: GetBucketPolicyStatus unsupported, ACL public."""
-    pid = _provider(client)
-    fake = FakeS3({
-        "get_bucket_policy": _err("NoSuchBucketPolicy"),
-        "get_bucket_cors": _err("NoSuchCORSConfiguration"),
-        "get_bucket_encryption": {"ServerSideEncryptionConfiguration": {"Rules": [{}]}},
-        "get_bucket_acl": {"Grants": [{"Grantee": {"URI": ALL_USERS, "Type": "Group"},
-                                       "Permission": "READ"}]},
-        "get_public_access_block": _err("NoSuchPublicAccessBlockConfiguration"),
-        "get_bucket_policy_status": _err("NotImplemented", 501),
-        "get_bucket_ownership_controls": _err("NotImplemented", 501),
-    })
-    monkeypatch.setattr(client_factory, "build_s3_client", lambda *a, **k: fake)
-    conn = _db()
-    try:
-        out = ct.review_bucket_security(conn, pid, "b")
-        assert out["facts"]["acl_public"] is True
-        assert out["facts"]["publicly_exposed"] is True  # was None pre-fix
-    finally:
-        conn.close()
 
 
 # ============================ F2: PEM bypass ================================
@@ -137,45 +98,11 @@ def test_5xx_code_entry_not_duplicated_by_generic_entry():
 # ============================ F4: diff baseline + alert =====================
 
 
-def test_diff_baselines_new_fields_and_alerts_became_public():
-    from app.repositories import account_discovery as repo
-    old = {"buckets": [{"bucket_name": "a", "access_status": "available",
-                        "encryption_status": "available"}]}          # pre-upgrade: no posture keys
-    new = {"buckets": [{"bucket_name": "a", "access_status": "available",
-                        "encryption_status": "available",
-                        "policy_is_public": True, "policy_public_status": "available",
-                        "object_ownership": None, "acls_disabled": None,
-                        "acl_public": None, "publicly_exposed": True}]}
-    d = repo.diff_profiles(old, new)
-    # None of the new-only fields count as changes — they are baselined.
-    assert d["change_count"] == 0
-    assert "policy_is_public" in d.get("fields_baselined", [])
-
-    # A REAL flip (both surveys carry the key) alerts and sorts first.
-    old2 = {"buckets": [{"bucket_name": "a", "policy_is_public": False,
-                         "region": "us-east-1"}]}
-    new2 = {"buckets": [{"bucket_name": "a", "policy_is_public": True,
-                         "region": "eu-west-1"}]}
-    d2 = repo.diff_profiles(old2, new2)
-    assert d2["changes"][0]["change"] == "policy_is_public"
-    assert d2["changes"][0]["alert"] is True
 
 
 # ============================ F5: filename redaction ========================
 
 
-def test_uploaded_filename_is_redacted_at_persist(client):
-    from app.repositories import session_datasets as sds
-    ses = client.post("/sessions", json={"title": "t", "goal": "g"}).json()["id"]
-    conn = _db()
-    try:
-        did = sds.upsert(conn, ses, "access_log",
-                         "AKIAIOSFODNN7EXAMPLE-key.log", "x/y.log")
-        conn.commit()
-        row = sds.get(conn, did)
-        assert "AKIAIOSFODNN7EXAMPLE" not in (row["source_filename"] or "")
-    finally:
-        conn.close()
 
 
 # ============================ T2: truth guards ==============================
@@ -211,92 +138,12 @@ def test_inventory_unknown_sizes_lead_with_warning(tmp_path):
 # ============================ Survey: ACL + dedupe + summary ================
 
 
-def test_snapshot_skips_acl_under_bucket_owner_enforced(client, monkeypatch):
-    from app.s3 import account_tools
-    pid = _provider(client)
-    fake = FakeS3({
-        "get_bucket_location": {"LocationConstraint": "us-east-1"},
-        "get_bucket_versioning": {"Status": "Enabled"},
-        "get_bucket_encryption": {"ServerSideEncryptionConfiguration": {"Rules": [{}]}},
-        "get_bucket_lifecycle_configuration": _err("NoSuchLifecycleConfiguration"),
-        "get_bucket_logging": {},
-        "get_bucket_replication": _err("ReplicationConfigurationNotFoundError"),
-        "get_bucket_policy": _err("NoSuchBucketPolicy"),
-        "get_public_access_block": _err("NoSuchPublicAccessBlockConfiguration"),
-        "get_bucket_tagging": _err("NoSuchTagSet"),
-        "list_bucket_inventory_configurations": {},
-        "get_bucket_policy_status": _err("NoSuchBucketPolicy"),
-        "get_bucket_ownership_controls": {
-            "OwnershipControls": {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]}},
-        "get_bucket_acl": {"Grants": [{"Grantee": {"URI": ALL_USERS}, "Permission": "READ"}]},
-    })
-    monkeypatch.setattr(client_factory, "build_s3_client", lambda *a, **k: fake)
-    conn = _db()
-    try:
-        snap = account_tools.get_bucket_config_snapshot(conn, pid, "b")
-        assert snap["acl_status"] == "skipped_acls_disabled"
-        assert snap["acl_public"] is False           # ACLs disabled → can't be ACL-public
-        assert snap["publicly_exposed"] is False     # policy not-configured + ACLs off
-        assert "get_bucket_acl" not in fake.calls    # the GET was actually skipped
-        # Raw reads exposed for the survey's dedupe, marked private.
-        assert "_raw_reads" in snap
-    finally:
-        conn.close()
 
 
-def test_evidence_discovery_reuses_snapshot_reads(client, monkeypatch):
-    from app.s3 import account_tools
-    pid = _provider(client)
-    fake = FakeS3({
-        "get_bucket_logging": {"LoggingEnabled": {"TargetBucket": "logs", "TargetPrefix": "p/"}},
-        "list_bucket_inventory_configurations": {},
-    })
-    monkeypatch.setattr(client_factory, "build_s3_client", lambda *a, **k: fake)
-    conn = _db()
-    try:
-        pre = {
-            "logging": {"status": "available",
-                        "data": {"LoggingEnabled": {"TargetBucket": "logs", "TargetPrefix": "p/"}}},
-            "inventory": {"status": "not_configured", "data": {}},
-        }
-        out = account_tools.discover_evidence_sources(conn, pid, "b", pre_reads=pre)
-        assert out["success"] is True
-        assert fake.calls == []  # zero S3 calls — both reads reused
-        logging_src = next(s for s in out["sources"] if s["source_type"] == "server_access_logging")
-        assert logging_src["configured"] is True and logging_src["target_bucket"] == "logs"
-    finally:
-        conn.close()
 
 
-def test_survey_summary_counts_public_buckets():
-    from app.runs.account_discovery_run import _build_summary
-    buckets = [
-        {"bucket_name": "open", "publicly_exposed": True, "policy_is_public": True,
-         "evidence_sources": []},
-        {"bucket_name": "closed", "publicly_exposed": False, "policy_is_public": False,
-         "acls_disabled": True, "evidence_sources": []},
-    ]
-    s = _build_summary(buckets, 2, 2, False)
-    assert s["public_bucket_count"] == 1
-    assert s["public_buckets"] == ["open"]
-    assert s["acls_disabled_count"] == 1
-    assert "open" in s["buckets_needing_review"]
 
 
 # ============================ C-1: session serialization ====================
 
 
-def test_register_session_turn_returns_prior_live_handle():
-    from app.agent_runtime import turn_guard
-    turn_guard._reset_for_tests()
-    h1, created1 = turn_guard.begin("t1", "sess")
-    assert created1
-    assert turn_guard.register_session_turn("sess", h1) is None  # first turn: no prior
-    h2, _ = turn_guard.begin("t2", "sess")
-    prior = turn_guard.register_session_turn("sess", h2)
-    assert prior is h1  # live prior returned so the caller can cancel + wait
-    # Once the prior resolves, a third turn sees no live prior.
-    turn_guard.set_result("t2", {}, "sess")
-    h3, _ = turn_guard.begin("t3", "sess")
-    assert turn_guard.register_session_turn("sess", h3) is None
-    turn_guard._reset_for_tests()

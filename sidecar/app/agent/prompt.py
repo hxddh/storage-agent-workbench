@@ -60,6 +60,14 @@ TOOL_SEARCH_NOTE = (
     "your list (groups: probes, objects, config, account, files, advice)."
 )
 
+COMPACT_INSTRUCTIONS = (
+    "Summarize this storage investigation for your own later reference: the goal, every fact the tools "
+    "established (bucket names, settings, numbers), findings with severity, what was ruled out and what is "
+    "still open. Bullets, no chain-of-thought, at most 600 words.")
+
+TITLE_INSTRUCTIONS = ("Name this storage task in at most 8 words, in the language of the request. "
+                      "Plain text, no quotes, no trailing period.")
+
 FINALIZE_INSTRUCTIONS = (
     "You are Storage Agent. You have finished working and are now writing the answer. No tools are "
     "available — do not say you will check something. Answer from the history, and say plainly what "

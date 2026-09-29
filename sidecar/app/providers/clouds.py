@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from ..repositories import has_value, utcnow
+from ..core.clock import has_value, utcnow
 from ..security import keyring_store
 
 KEYRING_SCOPE = "cloud_provider"

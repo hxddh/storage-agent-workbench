@@ -1,6 +1,6 @@
 """Local storage-class price table — ordinary config, not a secret.
 
-Ships an example schedule labelled as such. Dollar simulation stays a gap until
+Stored in the settings table under ``price_table``. Ships an example schedule labelled as such. Dollar simulation stays a gap until
 the operator confirms they have calibrated the table against their bill.
 Credentials never belong here.
 """
@@ -11,7 +11,7 @@ import json
 import sqlite3
 from typing import Any
 
-from ..repositories import utcnow
+from ..core.clock import utcnow
 from ..security.redaction import redact_text
 
 PRICE_TABLE_ID = "default"
@@ -62,63 +62,44 @@ def example_document() -> dict[str, Any]:
     }
 
 
-def _row_to_doc(row: sqlite3.Row | None) -> dict[str, Any]:
-    if row is None:
+_KEY = "price_table"
+
+
+def _doc(stored: dict[str, Any] | None, updated_at: str | None = None) -> dict[str, Any]:
+    if not isinstance(stored, dict):
         return example_document()
-    try:
-        rates = json.loads(row["rates_json"])
-    except (TypeError, ValueError, json.JSONDecodeError):
-        rates = DEFAULT_RATES
-    if not isinstance(rates, dict):
-        rates = DEFAULT_RATES
-    confirmed = bool(row["confirmed"])
-    return {
-        "id": row["id"],
-        "confirmed": confirmed,
-        "example": not confirmed,
-        "note": row["note"] or EXAMPLE_NOTE,
-        "rates": rates,
-        "updated_at": row["updated_at"],
-    }
-
-
-def ensure_default(conn: sqlite3.Connection) -> dict[str, Any]:
-    row = conn.execute(
-        "SELECT * FROM storage_price_table WHERE id = ?", (PRICE_TABLE_ID,)
-    ).fetchone()
-    if row is not None:
-        return _row_to_doc(row)
-    now = utcnow()
-    conn.execute(
-        "INSERT INTO storage_price_table (id, confirmed, rates_json, note, updated_at) "
-        "VALUES (?, 0, ?, ?, ?)",
-        (PRICE_TABLE_ID, json.dumps(DEFAULT_RATES, ensure_ascii=False), EXAMPLE_NOTE, now),
-    )
-    conn.commit()
-    return example_document() | {"updated_at": now}
+    rates = stored.get("rates") if isinstance(stored.get("rates"), dict) else DEFAULT_RATES
+    confirmed = bool(stored.get("confirmed"))
+    return {"id": PRICE_TABLE_ID, "confirmed": confirmed, "example": not confirmed,
+            "note": stored.get("note") or EXAMPLE_NOTE, "rates": rates, "updated_at": updated_at}
 
 
 def load(conn: sqlite3.Connection) -> dict[str, Any]:
+    """The price table from the settings store (the example schedule until saved)."""
     try:
-        return ensure_default(conn)
+        row = conn.execute("SELECT value, updated_at FROM settings WHERE key = ?", (_KEY,)).fetchone()
     except sqlite3.OperationalError:
         return example_document()
+    if row is None:
+        return example_document()
+    try:
+        stored = json.loads(row["value"])
+    except (TypeError, ValueError):
+        stored = None
+    return _doc(stored, row["updated_at"])
 
 
 def save(conn: sqlite3.Connection, *, rates: dict[str, Any] | None = None,
          confirmed: bool | None = None, note: str | None = None) -> dict[str, Any]:
-    current = ensure_default(conn)
-    next_rates = rates if isinstance(rates, dict) else current["rates"]
-    next_confirmed = current["confirmed"] if confirmed is None else bool(confirmed)
-    next_note = redact_text(note if note is not None else current["note"] or EXAMPLE_NOTE)[:800]
-    now = utcnow()
-    conn.execute(
-        "UPDATE storage_price_table SET confirmed = ?, rates_json = ?, note = ?, "
-        "updated_at = ? WHERE id = ?",
-        (1 if next_confirmed else 0,
-         json.dumps(next_rates, ensure_ascii=False),
-         next_note, now, PRICE_TABLE_ID),
-    )
+    current = load(conn)
+    doc = {
+        "rates": rates if isinstance(rates, dict) else current["rates"],
+        "confirmed": current["confirmed"] if confirmed is None else bool(confirmed),
+        "note": redact_text(note if note is not None else current["note"] or EXAMPLE_NOTE)[:800],
+    }
+    conn.execute("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) "
+                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                 (_KEY, json.dumps(doc, ensure_ascii=False), utcnow()))
     conn.commit()
     return load(conn)
 

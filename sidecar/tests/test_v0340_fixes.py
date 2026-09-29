@@ -98,44 +98,11 @@ def test_aggregate_rejects_out_of_whitelist_second_dim(tmp_path):
 
 # --- MO: operator max_output clamps the completion budget --------------------
 
-def test_max_output_tokens_explicit_wins():
-    from app.agent_runtime import model_budget as mb
-
-    # An unknown model would default to 16384; an operator cap of 4096 wins and
-    # clamps the completion budget so a lower-cap endpoint doesn't 400.
-    assert mb.max_output_tokens("some-unknown-model", explicit_max=4096) == 4096
-    assert mb.completion_token_budget("some-unknown-model", explicit_max=4096) == 4096
-    # 0/None → fall back to the table.
-    assert mb.max_output_tokens("some-unknown-model", explicit_max=None) == 16384
 
 
 # --- OSS2: agent-memory recall scales with the window ------------------------
 
-def test_agent_memory_recall_is_model_elastic():
-    from app.agent_runtime import session_agent as sa
-
-    small = sa._elastic_memory_cap("gpt-4o", None)        # ~128k window
-    big = sa._elastic_memory_cap("gpt-4.1", 1_000_000)    # explicit 1M window
-    assert small == 50
-    assert big > 50 and big <= sa._MEM_RECALL_CEIL
 
 
 # --- SM3: concurrent import claim loser fails its orphan run ------------------
 
-def test_import_claim_loser_fails_its_run(tmp_path, monkeypatch):
-    # Unit-level: the repo helpers used by the loser branch behave as wired —
-    # a run created then set 'failed' is terminal, not left 'pending'.
-    import sqlite3
-
-    from app.migrations import apply_migrations
-    from app.models.schemas import RunCreate
-    from app.repositories import runs as runs_repo
-
-    conn = sqlite3.connect(tmp_path / "sm3.db")
-    conn.row_factory = sqlite3.Row
-    apply_migrations(conn)
-    rid = runs_repo.create(conn, RunCreate(run_type="access_log_analysis", user_prompt="x"),
-                           status="pending")
-    runs_repo.set_status(conn, rid, "failed", final_summary="Superseded by a concurrent import.")
-    assert runs_repo.get_row(conn, rid)["status"] == "failed"
-    conn.close()

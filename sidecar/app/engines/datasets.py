@@ -18,7 +18,7 @@ from typing import Any, Iterable
 
 from .. import config
 from ..analysis import access_logs, aggregate as agg, inventory
-from ..repositories import utcnow
+from ..core.clock import utcnow
 from ..security.redaction import redact, redact_text
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
@@ -55,6 +55,22 @@ def get(conn: Any, dataset_id: str) -> dict[str, Any] | None:
 def list_for_task(conn: Any, task_id: str) -> list[dict[str, Any]]:
     return [_row(r) for r in conn.execute("SELECT * FROM datasets WHERE task_id = ? ORDER BY created_at",
                                           (task_id,)).fetchall()]
+
+
+def sniff_type(filename: str, head: bytes) -> str:
+    """access_log or inventory, from the name and the first bytes."""
+    name = (filename or "").lower()
+    if name.endswith((".parquet", ".orc")) or "inventory" in name:
+        return "inventory"
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".sniff", delete=True) as tmp:
+        tmp.write(head)
+        tmp.flush()
+        try:
+            fmt = access_logs.detect_log_format(tmp.name).get("format")
+        except Exception:  # noqa: BLE001 — undecidable: treat as a log, the analysis says so
+            fmt = "unknown"
+    return "inventory" if fmt == "inventory" else "access_log"
 
 
 def save_upload(conn: Any, task_id: str, filename: str, dataset_type: str, chunks: Iterable[bytes]) -> dict[str, Any]:
@@ -153,7 +169,7 @@ def analyze(conn: Any, ds: dict[str, Any]) -> dict[str, Any]:
         notes.append(f"Only the first {detail.get('ingest_cap')} rows were loaded — figures cover a sample, "
                      "say so.")
     if detail.get("format") == "unknown":
-        notes.append("The log format was not recognized; some fields may be empty.")
+        notes.append("The log format was not recognized; some fields may be blank.")
     return {"success": True, "dataset_id": ds["id"], "dataset_type": ds["dataset_type"],
             "filename": ds["filename"], "rows": ds.get("row_count"), "metrics": _clamp_lists(metrics),
             "findings": findings[:30], "notes": notes}

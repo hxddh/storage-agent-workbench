@@ -157,7 +157,7 @@ def test_two_writing_connections_do_not_deadlock_each_other(tmp_path, monkeypatc
 
         def writer_a():
             try:
-                a.execute("INSERT INTO sessions (id, title, created_at, updated_at) "
+                a.execute("INSERT INTO tasks (id, title, created_at, updated_at) "
                           "VALUES (?,?,?,?)", rows("a"))
                 a_wrote.set()
                 b_started.wait(5)
@@ -170,7 +170,7 @@ def test_two_writing_connections_do_not_deadlock_each_other(tmp_path, monkeypatc
             try:
                 a_wrote.wait(5)
                 b_started.set()
-                b.execute("INSERT INTO sessions (id, title, created_at, updated_at) "
+                b.execute("INSERT INTO tasks (id, title, created_at, updated_at) "
                           "VALUES (?,?,?,?)", rows("b"))
                 b.commit()
             except BaseException as exc:  # noqa: BLE001
@@ -187,7 +187,7 @@ def test_two_writing_connections_do_not_deadlock_each_other(tmp_path, monkeypatc
         assert not errors, f"a writer failed: {errors[0]!r}"
         # Under the deadlock this is the full busy_timeout; without it, instant.
         assert elapsed < 1.5, f"the two writers stalled on each other for {elapsed:.1f}s"
-        assert a.execute("SELECT count(*) FROM sessions").fetchone()[0] == 2
+        assert a.execute("SELECT count(*) FROM tasks").fetchone()[0] == 2
     finally:
         a.close()
         b.close()

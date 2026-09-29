@@ -117,3 +117,10 @@ def live_snapshot(task_id: str) -> dict[str, Any] | None:
 def state(task_id: str, data: dict[str, Any]) -> None:
     publish(task_id, "state", data)
     publish_global("task", {"task_id": task_id, **data})
+
+
+def _reset_for_tests() -> None:
+    with _lock:
+        _subs.clear()
+        _live.clear()
+        _global.clear()

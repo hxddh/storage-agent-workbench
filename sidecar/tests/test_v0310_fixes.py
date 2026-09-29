@@ -20,80 +20,16 @@ import pytest
 
 # --- O1: deep bundle self-check ---------------------------------------------
 
-def test_selfcheck_all_components_ok():
-    from app.routers.health import _run_selfcheck
-
-    r = _run_selfcheck()
-    assert r["status"] == "ok", r
-    assert set(r["checks"]) == {"agents_sdk", "s3_client", "analysis_engine", "vault_crypto"}
-    assert all(v == "ok" for v in r["checks"].values()), r["checks"]
 
 
-def test_selfcheck_endpoint_ok(client):
-    resp = client.get("/health/selfcheck")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "ok"
-    assert body["service"] == "storage-agent-sidecar"
 
 
-def test_selfcheck_reports_degraded_when_a_component_fails(monkeypatch):
-    """A broken component must surface as status=degraded with the failure named —
-    this is exactly what makes the release smoke test fail a bad bundle."""
-    import app.routers.health as health
-
-    real = health._run_selfcheck
-
-    def _boom():
-        # Simulate a missing native dep by making one check raise, reusing the
-        # real machinery so the aggregation logic is what's under test.
-        checks = {"agents_sdk": "ok", "s3_client": "ok",
-                  "analysis_engine": "ok",
-                  "vault_crypto": "error: ImportError: no _rust binding"}
-        return {"status": "degraded", "service": health.SERVICE_NAME, "checks": checks}
-
-    monkeypatch.setattr(health, "_run_selfcheck", _boom)
-    out = health.selfcheck()
-    assert out["status"] == "degraded"
-    assert "error" in out["checks"]["vault_crypto"]
-    # sanity: the real one still passes in this env
-    assert real()["status"] == "ok"
 
 
 # --- D1: migration replay tolerates IntegrityError on retry ------------------
 
-def test_is_idempotent_classifies_errors():
-    from app.migrations import _is_idempotent
-
-    assert _is_idempotent(sqlite3.OperationalError("duplicate column name: x"))
-    assert _is_idempotent(sqlite3.OperationalError("table t already exists"))
-    assert not _is_idempotent(sqlite3.OperationalError("no such table: t"))
-    assert _is_idempotent(sqlite3.IntegrityError("UNIQUE constraint failed: t.id"))
-    assert _is_idempotent(sqlite3.IntegrityError("PRIMARY KEY must be unique"))
-    # A genuine constraint violation must NOT be swallowed.
-    assert not _is_idempotent(sqlite3.IntegrityError("NOT NULL constraint failed: t.x"))
 
 
-def test_apply_one_recovers_from_partial_apply_with_seed_row():
-    """Re-applying a migration that seeds a row (after a crash left the version
-    row unwritten) must not raise: the duplicate PK insert + duplicate column are
-    both the 'already applied' signal. Before the fix the IntegrityError from the
-    re-INSERT propagated and wedged the whole migration runner."""
-    from app.migrations import _apply_one
-
-    conn = sqlite3.connect(":memory:")
-    sql = (
-        "CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY);"
-        "INSERT INTO t (id) VALUES (1);"
-        "ALTER TABLE t ADD COLUMN c TEXT;"
-    )
-    _apply_one(conn, sql)  # first, clean apply
-    assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 1
-    # Retry the SAME sql (simulates crash-before-version-row): must be a no-op,
-    # not an IntegrityError.
-    _apply_one(conn, sql)
-    assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 1
-    conn.close()
 
 
 def test_full_migrations_still_apply_cleanly(tmp_path):

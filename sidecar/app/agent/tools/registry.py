@@ -342,3 +342,57 @@ async def invoke(td: ToolDef, tool_ctx: Any, raw_args: str) -> str:
     text = clean if isinstance(clean, str) else compact_json(clean)
     text = _bounded_for_model(text, td.max_model_chars)
     return safety.envelope(text) if td.untrusted else text
+
+
+def run_direct(conn: Any, name: str, args: dict[str, Any], fn: Callable[[], Any], *, actor: str) -> Any:
+    """Run one read-only engine call outside a turn (a Settings test, a Verify):
+    same redaction as a tool call, audited with its actor."""
+    from ...core import store
+    started = time.monotonic()
+    try:
+        result = fn()
+    except Exception as exc:  # noqa: BLE001 — returned as a sanitized failure
+        result = {"success": False, "error_code": type(exc).__name__,
+                  "error_message_sanitized": redact_text(str(exc))[:300]}
+    result = redact(result)
+    store.audit(conn, actor=actor, action=f"tool.{name}", target=_target(args), ok=_ok(result),
+                duration_ms=int((time.monotonic() - started) * 1000), detail={"args": redact(args)})
+    return result
+
+
+class _DetachedRecorder:
+    """A recorder for calls made outside a turn (the MCP bridge): nothing to stream."""
+
+    def progress(self, *_a: Any, **_k: Any) -> None:
+        return None
+
+
+def call_direct(name: str, args: dict[str, Any], *, actor: str, allowed: frozenset[str]) -> Any:
+    """Run one registered tool outside a turn — same scope check, bounds and
+    redaction as inside one, audited with its actor. Only ``allowed`` tools."""
+    from ...core import store
+    td = REGISTRY.get(name)
+    if td is None or name not in allowed:
+        return {"error": f"Unknown tool: {name}"}
+    args = _clamp(dict(args or {}), td.bounds)
+    denial = scope_denial(td, args)
+    conn = db.connect()
+    try:
+        if denial:
+            store.audit(conn, actor=actor, action=f"tool.{name}", target=_target(args), ok=False,
+                        detail={"refused": denial})
+            return {"error": f"Refused: {denial}"}
+        turn = TurnContext("", "", threading.Event(), _DetachedRecorder())
+        call = CallContext(turn, f"{actor}-{time.monotonic_ns()}", name)
+
+        def fn() -> Any:
+            token = _current.set(call)
+            try:
+                return td.fn(**args)
+            finally:
+                _current.reset(token)
+                call.close()
+
+        return run_direct(conn, name, args, fn, actor=actor)
+    finally:
+        conn.close()

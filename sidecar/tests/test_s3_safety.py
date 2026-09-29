@@ -32,7 +32,7 @@ def test_inspect_tls_uses_ssl_not_shell():
 def test_no_destructive_s3_operations():
     # Exclude the agent guardrails module, which lists these names as a DENIAL
     # allowlist (forbidden examples), not as implementations.
-    src = _read_all(APP_DIR, exclude=("agent_runtime/guardrails.py",)).lower()
+    src = _read_all(APP_DIR, exclude=("agent/safety.py",)).lower()
     for forbidden in (
         "put_object",
         "delete_object",
@@ -50,12 +50,13 @@ def test_no_destructive_s3_operations():
 
 
 def test_forbidden_runtimes_absent():
-    # Phase 07 adds the OpenAI Agents SDK, but MCP runtime, multi-agent
-    # orchestration, LangGraph, and LiteLLM remain forbidden.
-    src = _read_all(APP_DIR).lower()
+    # One Agent on the OpenAI Agents SDK: no multi-agent handoffs, LangGraph or
+    # LiteLLM. The official MCP SDK serves the opt-in read-only bridge and lives
+    # in exactly one module; the Agent never consumes MCP servers.
+    src = _read_all(APP_DIR, exclude=("api/mcp.py",)).lower()
     for forbidden in (
         "import langgraph", "from langgraph", "import litellm", "from litellm",
-        "mcpserver", "import mcp", "from mcp", "handoff",
+        "mcpserver", "import mcp", "from mcp", "handoff", "mcpserverstreamablehttp",
     ):
         assert forbidden not in src, f"forbidden runtime present: {forbidden}"
 
@@ -65,7 +66,7 @@ def test_agents_sdk_is_imported_lazily():
     # deterministic mode run without it / without a key). It is imported inside
     # functions only (build_agent / the loop seam), which are indented — so a
     # top-level import would be an UNINDENTED line at column 0.
-    svc = (APP_DIR / "agent_runtime" / "agent_service.py").read_text()
+    svc = "\n".join((APP_DIR / "agent" / name).read_text() for name in ("runtime.py", "models.py"))
     for line in svc.splitlines():
         assert not line.startswith("from agents import"), (
             "Agents SDK must be imported lazily inside a function, not at module top"

@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from .. import db
 from ..core import store as core_store
-from ..repositories import utcnow
+from ..core.clock import utcnow
 from ..security.redaction import redact_text
 from . import rules, store
 

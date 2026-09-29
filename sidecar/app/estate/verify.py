@@ -14,7 +14,7 @@ from typing import Any
 
 from ..core import store as core_store
 from ..providers import clouds
-from ..repositories import utcnow
+from ..core.clock import utcnow
 from ..s3 import config_tools as ct
 from ..s3.scope import check_scope
 from ..security.redaction import redact, redact_text

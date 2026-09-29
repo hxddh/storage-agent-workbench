@@ -41,7 +41,7 @@ def cloud_id(client):
         "addressing_style": "path", "access_key": ACCESS, "secret_key": SECRET,
         "mode": "readonly",
     }
-    return client.post("/cloud-providers", json=body).json()["id"]
+    return client.post("/providers/clouds", json=body).json()["id"]
 
 
 @pytest.fixture()

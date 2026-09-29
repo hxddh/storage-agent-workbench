@@ -1,20 +1,15 @@
 """A local OpenAI-compatible endpoint, so a real agent turn can be driven.
 
-Every existing session test either stubs `SESSION_LOOP` or asserts on pieces of
-the turn in isolation. Nothing ever ran the actual loop — SDK, tool dispatch,
-contract parsing, persistence, and then a read of the session — because that
-needed a model, and a model needed an API key.
+A provider of kind ``openai-compatible`` talks ``/chat/completions`` to its
+``base_url``, so a socket that speaks that protocol is a model as far as the
+runtime is concerned. This one serves a scripted conversation: whatever turns
+you hand it, in order — through the real SDK loop, tool dispatch, recorder,
+items and API.
 
-It does not. `agent_service.build_agent` puts the provider's `base_url` on a
-per-session `AsyncOpenAI` client and talks `/chat/completions`, so a socket that
-speaks that protocol is a model as far as this app is concerned. This one serves
-a scripted conversation: whatever turns you hand it, in order.
-
-This is a TEST DOUBLE and deliberately minimal — it validates nothing, and it
-speaks only the subset the SDK actually sends for a streamed chat completion.
-What it buys is the seam no unit test can reach: the row `session_tools.note()`
-really writes, persisted by the real writer, read back through the real
-response model.
+The runtime's tool-less side steps (title, compaction, finalize) are recognised
+by their instructions and answered without consuming a scripted turn. Streamed
+requests get SSE chunks; non-streamed ones (``Runner.run``) a JSON completion
+assembled from the same chunks.
 """
 from __future__ import annotations
 
@@ -24,8 +19,11 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from app.agent_runtime.compaction import COMPACT_MARKER
-from app.task_runtime.titling import TITLE_MARKER
+from app.agent.prompt import COMPACT_INSTRUCTIONS, FINALIZE_INSTRUCTIONS, TITLE_INSTRUCTIONS
+
+TITLE_MARKER = TITLE_INSTRUCTIONS[:40]
+COMPACT_MARKER = COMPACT_INSTRUCTIONS[:40]
+FINALIZE_MARKER = FINALIZE_INSTRUCTIONS[:60]
 
 
 def _chunk(delta: dict, finish: str | None = None) -> bytes:
@@ -87,6 +85,24 @@ def commentary_tool_turn(text: str, name: str, arguments: dict) -> list[bytes]:
     ]
 
 
+def _assemble(chunks: list[bytes]) -> dict:
+    """A non-streamed chat.completion equivalent to a scripted stream."""
+    content, calls, finish = "", {}, "stop"
+    for c in chunks:
+        choice = json.loads(c[len(b"data: "):])["choices"][0]
+        d = choice["delta"]
+        content += d.get("content") or ""
+        for tc in d.get("tool_calls") or []:
+            calls[tc["index"]] = {"id": tc["id"], "type": "function", "function": tc["function"]}
+        finish = choice.get("finish_reason") or finish
+    msg = {"role": "assistant", "content": content or None}
+    if calls:
+        msg["tool_calls"] = [calls[i] for i in sorted(calls)]
+    return {"id": "chatcmpl-fake", "object": "chat.completion", "created": 0, "model": "fake-model",
+            "choices": [{"index": 0, "message": msg, "finish_reason": finish}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
+
+
 class FakeModel:
     """Serves `turns` one per request; the last one repeats if asked again.
 
@@ -95,7 +111,7 @@ class FakeModel:
     """
 
     def __init__(self, turns: list[list[bytes]], delay_s: float = 0.0,
-                 title: str | None = None, compaction: str | None = None):
+                 title: str | None = None, compaction: str | None = None, finalize: str = "Final answer."):
         self.turns = turns
         self.delay_s = delay_s
         # v1.10.0 — the runtime's title step is a separate bounded request
@@ -108,6 +124,8 @@ class FakeModel:
         # v1.12 — the compaction step is another marked, tool-less request.
         self.compaction = compaction
         self.compaction_requests: list[dict] = []
+        self.finalize = finalize
+        self.finalize_requests: list[dict] = []
         self.requests: list[dict] = []
         self._i = 0
         self._lock = threading.Lock()
@@ -132,12 +150,23 @@ class FakeModel:
                 elif COMPACT_MARKER in text_body:
                     fake.compaction_requests.append(parsed)
                     chunks = text_turn(fake.compaction or "")
+                elif FINALIZE_MARKER in text_body:
+                    fake.finalize_requests.append(parsed)
+                    chunks = text_turn(fake.finalize)
                 else:
                     fake.requests.append(parsed)
                     with fake._lock:
                         i = min(fake._i, len(fake.turns) - 1)
                         fake._i += 1
                     chunks = fake.turns[i]
+                if not parsed.get("stream"):
+                    out = json.dumps(_assemble(chunks)).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(out)))
+                    self.end_headers()
+                    self.wfile.write(out)
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")
