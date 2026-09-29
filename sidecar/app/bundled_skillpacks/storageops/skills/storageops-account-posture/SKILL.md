@@ -5,8 +5,8 @@ description: >
   which buckets exist, which have logging / inventory / lifecycle / replication /
   public-access-block configured, and where to look first. Use when the user wants
   an account-wide overview or audit entry point and has NO specific error. A
-  concrete error symptom goes to the triage skill; a single bucket's deep config
-  goes to the review_bucket_* tools.
+  concrete error symptom goes to the specialist skill for that error; a single
+  bucket's deep config goes to review_bucket_config.
 domains: [account, posture, audit]
 trigger_keywords:
   - account overview
@@ -22,8 +22,8 @@ trigger_keywords:
 
 Give the user the account-level picture and a sensible place to start — not a
 deep audit of every bucket. This is the entry point when there's no specific
-error: `storageops-triage` is for "I have an error, classify it"; this skill is
-for "show me the landscape / what should I look at first".
+error (an error goes to the specialist skill for it); this skill is for "show
+me the landscape / what should I look at first".
 
 ## Decision tree
 
@@ -35,7 +35,7 @@ Account-wide question (no specific error) →
   │     and inventory is also what feeds capacity analysis)
   ├─ lifecycle absent + cost concern                → storageops-lifecycle-cost
   ├─ replication / versioning question              → storageops-replication-versioning
-  └─ a bucket shows a concrete error                → storageops-triage
+  └─ a bucket shows a concrete error                → the specialist skill for that error
 ```
 
 Pick what the user's goal calls for — **do not reflexively review every bucket**.

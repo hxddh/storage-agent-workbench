@@ -111,6 +111,7 @@ def render(conn: Any, task_id: str, *, lang: str = "en") -> str:
 
     first = next((i["payload"]["text"] for i in items if i["type"] == "user_message"), "")
     section("goal", [_clip(first)] if first else [])
+    # Only a pre-v9 conclusion carries an answer of its own; a v9 one is findings and next steps.
     section("conclusion", [_clip(latest.get("answer"), 400)] if latest and latest.get("answer") else [])
     section("findings", [
         f"- **{f.get('severity', 'info').upper()}** — {_oneline(f.get('title'), 240)}"

@@ -124,7 +124,9 @@ def to_input(items: list[dict[str, Any]], *, skip_steers_of: str | None = None) 
                                          "output": p.get("model_output") or p.get("summary") or ""}
         elif t == "conclusion":
             add_call({"type": "function_call", "call_id": p["call_id"], "name": "record_conclusion",
-                      "arguments": json.dumps({k: p.get(k) for k in ("answer", "findings", "next_steps")},
+                      # The call as the v9 tool takes it; a pre-v9 item's `answer`
+                      # is its Turn's final message, which replays on its own.
+                      "arguments": json.dumps({k: p[k] for k in ("findings", "next_steps") if p.get(k)},
                                               separators=(",", ":"))})
             outputs[p["call_id"]] = {"type": "function_call_output", "call_id": p["call_id"],
                                      "output": "Conclusion recorded."}

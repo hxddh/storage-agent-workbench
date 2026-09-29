@@ -2,24 +2,37 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ...estate import notes as estate_notes
 from ...estate import rules
 from ...estate import store as estate
 from ...skills import context as skill_context
 from ..recorder import Finding
-from .registry import current, tool
+from .registry import current, plural, tool
+
+IssueStatus = Literal["active", "care", "all", "open", "fix_proposed", "resolved", "recurred", "accepted"]
+SurveyFilter = Literal["all", "public_buckets", "missing_encryption", "missing_public_access_block",
+                       "missing_lifecycle", "missing_logging", "no_versioning", "access_denied"]
+
+
+def _estate_summary(r: Any) -> str:
+    if not isinstance(r, dict) or r.get("error"):
+        return str((r or {}).get("error") or "could not read")
+    if "has_survey" in r:
+        if not r.get("has_survey"):
+            return "no survey yet"
+        return f"{int(r.get('matched_count') or 0)} of {plural(int(r.get('total_buckets') or 0), 'bucket')} match"
+    return f"{plural(int(r.get('bucket_count') or 0), 'bucket')}, {plural(len(r.get('issues') or []), 'issue')}"
 
 
 @tool(group="core", core=True, untrusted=False, timeout=15,
-      summarize=lambda r: "loaded" if isinstance(r, str) else str((r or {}).get("error", "loaded"))[:80])
+      summarize=lambda r: "loaded" if isinstance(r, str) else str((r or {}).get("error", "loaded")))
 def read_skill(name: str) -> Any:
-    """Load the full method of a StorageOps expert skill by name. Pick a name from the skills catalog in
-    your instructions; apply the method with your read-only tools.
+    """Load the full method of a skill from the skills catalog.
 
     Args:
-        name: The skill name, e.g. storageops-security-iam-policy.
+        name: A skill name from the catalog.
     """
     ctx = current()
     if not ctx.budget("loads", 20):
@@ -30,26 +43,27 @@ def read_skill(name: str) -> Any:
     return body
 
 
-@tool(group="core", core=True, timeout=15)
-def query_estate(provider_id: str = "", bucket: str = "", status: str = "active",
-                 survey_filter: str = "") -> dict[str, Any]:
-    """What earlier work established about the storage estate: known buckets (region, posture flags, when
-    last checked) and issues with their lifecycle (open, fix proposed, resolved, came back, accepted).
-    With survey_filter (and provider_id) it instead answers a posture question from that account's latest
-    stored survey — no new scan; buckets the survey could not decide are listed as undetermined.
-    Re-check before relying on an old observation.
+def _only_account(conn: Any) -> str:
+    rows = conn.execute("SELECT id FROM cloud_providers LIMIT 2").fetchall()
+    return rows[0]["id"] if len(rows) == 1 else ""
+
+
+@tool(group="core", core=True, timeout=15, summarize=_estate_summary)
+def query_estate(provider_id: str = "", bucket: str = "", status: IssueStatus = "active",
+                 survey_filter: SurveyFilter | None = None) -> dict[str, Any]:
+    """What earlier work established: known buckets and issues (with ids and status). With survey_filter,
+    filters the account's latest stored survey by posture instead (no new scan).
 
     Args:
-        provider_id: Narrow to one provider (required with survey_filter).
+        provider_id: Narrow to one storage account.
         bucket: Narrow to one bucket.
-        status: Issue status: active, care, all, open, fix_proposed, resolved, recurred, accepted.
-        survey_filter: One of all, public_buckets, missing_encryption, missing_public_access_block,
-            missing_lifecycle, missing_logging, no_versioning, access_denied.
+        status: Which issues (active: still to act on).
+        survey_filter: Filter the latest survey's buckets by posture.
     """
     conn = current().conn()
     lang = current().turn.lang
     if survey_filter:
-        return _survey_query(conn, provider_id, survey_filter)
+        return _survey_query(conn, provider_id or _only_account(conn), survey_filter)
     if status not in ("active", "care", "all", *estate.STATUSES):
         status = "active"
     known = estate.buckets(conn, provider_id or None, limit=300)
@@ -67,22 +81,22 @@ def _survey_query(conn: Any, provider_id: str, survey_filter: str) -> dict[str, 
     if survey_filter not in survey.FILTERS:
         return {"error": f"Unknown survey_filter. Use one of: {', '.join(survey.FILTERS)}."}
     if not provider_id:
-        return {"error": "survey_filter needs a provider_id."}
+        return {"error": "Several storage accounts are configured: survey_filter needs a provider_id."}
     surveys = latest_surveys(conn, provider_id, 1)
     if not surveys:
         return {"success": True, "has_survey": False, "note": "No survey of this account yet; run survey_account."}
     return {"has_survey": True, "surveyed_at": surveys[0]["surveyed_at"], **survey.query(surveys[0], survey_filter)}
 
 
-@tool(group="core", core=True, timeout=30)
+@tool(group="core", core=True, timeout=15,
+      summarize=lambda r: ("fix ready" if r.get("fixable") else "no generated fix") if isinstance(r, dict)
+      and r.get("success") else str((r or {}).get("error") or "could not read"))
 def fix_preview(issue_id: str) -> dict[str, Any]:
-    """The generated fix for an estate issue — AWS CLI, Terraform and the API document — and what applying
-    it would change, from the evidence the estate holds (posture, attached access logs). Present the fix as
-    text the user applies with their own credentials; you never apply it. Say plainly what the preview
-    cannot tell. Get issue ids from query_estate or the estate digest.
+    """An issue's generated fix (AWS CLI, Terraform, API document) and what applying it would change, from
+    the evidence the estate holds. The user applies it; say what the preview cannot tell.
 
     Args:
-        issue_id: The issue id.
+        issue_id: From query_estate.
     """
     from ...estate import fixpacks
     ctx = current()
@@ -103,15 +117,15 @@ def fix_preview(issue_id: str) -> dict[str, Any]:
 
 
 @tool(group="core", core=True, untrusted=False, timeout=10,
-      summarize=lambda r: "kept" if (r or {}).get("success") else str((r or {}).get("error", ""))[:80])
+      summarize=lambda r: "kept" if (r or {}).get("success") else str((r or {}).get("error", "")))
 def note(text: str, provider_id: str = "", bucket: str = "") -> dict[str, Any]:
-    """Keep a short note about the estate that later tasks should remember — an owner, an intent, why a
-    setting is deliberate. The user sees and can edit or delete every note. Never note secrets or raw data.
+    """Keep a durable note later tasks should remember (an owner, an intent, why a setting is deliberate).
+    Never secrets or raw data.
 
     Args:
-        text: The note, at most 1000 characters.
-        provider_id: The account it is about (optional).
-        bucket: The bucket it is about (optional; needs provider_id).
+        text: The note (at most 1000 characters).
+        provider_id: The storage account it is about.
+        bucket: The bucket it is about (needs provider_id).
     """
     ctx = current()
     if not ctx.budget("notes", 5):
@@ -125,13 +139,12 @@ def note(text: str, provider_id: str = "", bucket: str = "") -> dict[str, Any]:
 
 
 @tool(group="core", core=True, untrusted=False, special="conclusion", timeout=10)
-def record_conclusion(answer: str, findings: list[Finding], next_steps: list[str]) -> str:
-    """Record the conclusion of an investigation, diagnosis, review or estimate — once, right before your
-    final answer. The user sees it at the top of the task.
+def record_conclusion(findings: list[Finding] | None = None, next_steps: list[str] | None = None) -> str:
+    """Record the turn's findings (most severe first) and/or next steps, right before your final answer.
+    Shown under the answer.
 
     Args:
-        answer: The direct answer in one or two sentences (at most 400 characters).
-        findings: The findings that support it, most severe first (at most 8); severity is high, medium, low or info.
-        next_steps: Up to four next steps the user can ask you to take.
+        findings: At most 8; only what your tools showed.
+        next_steps: At most 4 short requests the user could send you next.
     """
     return "recorded"  # handled by the registry (special="conclusion")

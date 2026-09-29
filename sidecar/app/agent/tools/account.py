@@ -6,25 +6,51 @@ from typing import Any
 
 from ...core import store as core_store
 from ...engines import survey
+from ...estate import rules
 from ...estate import store as estate
 from ...providers import clouds
-from .registry import Scope, current, tool
+from .registry import Scope, current, plural, tool
 
 _ACCOUNT = Scope(bucket=None)
 _MODEL_BUCKET_ROWS = 150
 
 
-def _compact(profile: dict[str, Any]) -> dict[str, Any]:
-    """What the model reads: the summary plus one short row per bucket."""
+def _survey_summary(r: Any) -> str:
+    """"12 buckets, 2 unreadable; 1 public" — what the user needs from the row."""
+    if not isinstance(r, dict) or not r.get("success"):
+        return str((r or {}).get("error_code") or (r or {}).get("error") or "could not survey")
+    rows = r.get("buckets") or []
+    n = int(r.get("processed") or len(rows))
+    unreadable = sum(1 for b in rows if b.get("access_status") not in ("available", None))
+    head = plural(n, "bucket") + (f", {unreadable} unreadable" if unreadable else ", all readable" if n else "")
+    s = r.get("summary") or {}
+    public, unknown = int(s.get("public_bucket_count") or 0), int(s.get("exposure_unknown_count") or 0)
+    tail = f"{public} public" if public else f"public unknown for {unknown}" if unknown else "none public"
+    return f"{head}; {tail}" if n else head
+
+
+def _compact(profile: dict[str, Any], lang: str) -> dict[str, Any]:
+    """What the model reads: the summary plus one short row per bucket, with the
+    estate issue each row asserts (the estate's own title and severity)."""
     rows = []
+    found: dict[str, dict[str, str]] = {}
     for b in (profile.get("buckets") or [])[:_MODEL_BUCKET_ROWS]:
-        rows.append({k: b.get(k) for k in ("bucket_name", "region", "access_status", "publicly_exposed",
-                                           "encryption_status", "public_access_block_status", "lifecycle_status",
-                                           "versioning_status", "logging_status", "inventory_status")})
+        row = {k: b.get(k) for k in ("bucket_name", "region", "access_status", "publicly_exposed",
+                                     "encryption_status", "public_access_block_status", "lifecycle_status",
+                                     "versioning_status", "logging_status", "inventory_status")}
+        codes = [code for code, present in rules.evaluate_posture(b).items() if present]
+        if codes:
+            row["issues"] = codes
+            for code in codes:
+                rule = rules.BY_CODE[code]
+                found[code] = {"title": rules.title(rule, lang), "severity": rule.severity}
+        rows.append(row)
     out = {k: profile.get(k) for k in ("success", "visible", "processed", "truncated", "whole_account",
                                        "summary_text", "summary", "list_status", "error_code",
                                        "error_message_sanitized")}
     out["buckets"] = rows
+    if found:
+        out["issues"] = found
     if len(profile.get("buckets") or []) > _MODEL_BUCKET_ROWS:
         out["buckets_note"] = (f"{len(profile['buckets']) - _MODEL_BUCKET_ROWS} more bucket rows are stored; "
                                "use query_estate with survey_filter to filter them.")
@@ -37,18 +63,14 @@ def latest_surveys(conn: Any, provider_id: str, n: int = 2) -> list[dict[str, An
     return [{**core_store.loads(r["payload"], {}), "surveyed_at": r["created_at"]} for r in rows]
 
 
-@tool(group="account", scope=_ACCOUNT, timeout=900, bounds={"max_buckets": (1, survey.HARD_MAX_BUCKETS)},
-      summarize=lambda r: (r.get("summary_text") or "surveyed")[:200] if isinstance(r, dict) else "surveyed")
-def survey_account(provider_id: str, max_buckets: int = 100) -> dict[str, Any]:
-    """Survey every bucket of a storage account (read-only, bounded to 500 buckets, 4 in parallel): region,
-    public exposure, encryption, public access block, lifecycle, versioning, logging and evidence sources
-    (inventory / access logs). Honest about coverage: unreadable or unsupported checks are reported as
-    undetermined, never as fine. Updates the estate and its issues. Use compare_to_last_survey afterwards
-    to say what changed.
+@tool(group="account", core=True, scope=_ACCOUNT, timeout=900,
+      bounds={"max_buckets": (1, survey.HARD_MAX_BUCKETS)}, summarize=_survey_summary)
+def survey_account(max_buckets: int = 100, provider_id: str = "") -> dict[str, Any]:
+    """Survey every bucket of the account: region, exposure, encryption, public access block, lifecycle,
+    versioning, logging, evidence sources. Unreadable checks are undetermined, never fine. Updates the estate.
 
     Args:
-        provider_id: The provider.
-        max_buckets: How many buckets to survey (1-500, default 100).
+        max_buckets: How many buckets to survey (1-500).
     """
     ctx = current()
     conn = ctx.conn()
@@ -64,17 +86,16 @@ def survey_account(provider_id: str, max_buckets: int = 100) -> dict[str, Any]:
         profile["estate_changes"] = {"opened": sum(1 for c in changes if c["change"] == "opened"),
                                      "recurred": sum(1 for c in changes if c["change"] == "recurred"),
                                      "resolved": sum(1 for c in changes if c["change"] == "resolved")}
-    return {**_compact(profile), **({"estate_changes": profile["estate_changes"]} if "estate_changes" in profile else {})}
+    return {**_compact(profile, ctx.turn.lang),
+            **({"estate_changes": profile["estate_changes"]} if "estate_changes" in profile else {})}
 
 
-@tool(group="account", scope=_ACCOUNT, timeout=30)
-def compare_to_last_survey(provider_id: str) -> dict[str, Any]:
-    """What changed since the previous survey of this account: buckets added or removed, posture changes
-    per bucket (a bucket that became public is flagged first), evidence-source changes. Reuses stored
-    surveys — no new scan. Truncated surveys make membership changes unverified, and the result says so.
-
-    Args:
-        provider_id: The provider.
+@tool(group="account", scope=_ACCOUNT, timeout=30,
+      summarize=lambda r: ("compared" if r.get("comparable") else "no earlier survey")
+      if isinstance(r, dict) and r.get("success") else "could not compare")
+def compare_to_last_survey(provider_id: str = "") -> dict[str, Any]:
+    """What changed since the previous survey of this account (buckets added or removed, posture changes),
+    from stored surveys; no new scan.
     """
     surveys = latest_surveys(current().conn(), provider_id, 2)
     if len(surveys) < 2:

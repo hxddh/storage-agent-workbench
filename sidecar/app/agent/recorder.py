@@ -15,9 +15,9 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from .. import db
 from ..core import hub, store
@@ -41,14 +41,28 @@ def on_tool_output(hook: ToolOutputHook) -> ToolOutputHook:
 
 class Finding(BaseModel):
     title: str = Field(min_length=1, max_length=240)
-    severity: str = Field(pattern="^(high|medium|low|info)$")
+    severity: Literal["high", "medium", "low", "info"]
     detail: str | None = Field(default=None, max_length=600)
 
 
 class Conclusion(BaseModel):
-    answer: str = Field(min_length=1, max_length=400)
+    """v9: findings and/or next steps. The answer is the Turn's final message;
+    items recorded before v9 may still carry an ``answer`` (read, never written)."""
     findings: list[Finding] = Field(default_factory=list, max_length=8)
     next_steps: list[str] = Field(default_factory=list, max_length=4)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _nulls_are_empty(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            data = {**data, **{k: [] for k in ("findings", "next_steps") if data.get(k) is None}}
+        return data
+
+    @model_validator(mode="after")
+    def _not_empty(self) -> Conclusion:
+        if not self.findings and not self.next_steps:
+            raise ValueError("a conclusion needs at least one finding or next step")
+        return self
 
 
 class Recorder:
@@ -188,7 +202,6 @@ class Recorder:
         except ValidationError as exc:
             return f"Not recorded: {redact_text(str(exc))[:400]}. Fix the fields and call again."
         data = redact({
-            "answer": safety.clean_message(c.answer),
             "findings": [{"title": f.title, "severity": f.severity,
                           **({"detail": f.detail} if f.detail else {})} for f in c.findings],
             "next_steps": [s[:200] for s in c.next_steps],

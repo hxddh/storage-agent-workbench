@@ -166,6 +166,11 @@ def test_query_estate_answers_posture_from_the_latest_survey(pid, conn):
     out = _call("query_estate", {"provider_id": pid, "survey_filter": "public_buckets"})
     assert out["has_survey"] is True and "surveyed_at" in out
     assert "error" in _call("query_estate", {"provider_id": pid, "survey_filter": "nonsense"})
+    # One storage account: it is the default. With several, the account must be named.
+    assert _call("query_estate", {"survey_filter": "all"})["has_survey"] is True
+    conn.execute("INSERT INTO cloud_providers (id, name, provider_type, created_at, updated_at) "
+                 "SELECT 'other', 'other', provider_type, created_at, updated_at FROM cloud_providers WHERE id = ?", (pid,))
+    conn.commit()
     assert "error" in _call("query_estate", {"survey_filter": "all"})
     plain = _call("query_estate", {"provider_id": pid})
     assert plain["success"] is True and "issues" in plain
