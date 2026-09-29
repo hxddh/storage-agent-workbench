@@ -5,6 +5,7 @@ import { Icon } from "../components/icons";
 import { IconButton, Kbd, StatusDot } from "../components/ui";
 import { notifyNative } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
+import { useDismiss } from "../lib/useDismiss";
 import { localDayKey, previousDayKey } from "../lib/time";
 import { useTaskList } from "../store/tasks";
 import { useApp } from "./context";
@@ -21,6 +22,7 @@ export function Sidebar() {
   const { tasks, online } = useTaskList(query.trim());
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
+  const menuRef = useDismiss<HTMLLIElement>(menu !== null, () => setMenu(null));
   const listRef = useRef<HTMLDivElement>(null);
   const activeId = app.route.kind === "task" ? app.route.id : null;
 
@@ -71,7 +73,7 @@ export function Sidebar() {
           onClick={() => app.goHome()} data-testid="new-task">
           <Icon name="compose" size={16} />
           <span>{t("nav.newTask")}</span>
-          <Kbd keys={["⌘", "N"]} />
+          <Kbd keys={["Mod", "N"]} />
         </button>
         <label className="sidebar-search">
           <Icon name="search" size={14} />
@@ -96,7 +98,8 @@ export function Sidebar() {
             <h2 className="sidebar-day">{t(g.label)}</h2>
             <ul>
               {g.tasks.map((task) => (
-                <li key={task.id} className="sidebar-row" data-active={task.id === activeId ? "true" : undefined}>
+                <li key={task.id} className="sidebar-row" ref={menu === task.id ? menuRef : undefined}
+                  data-active={task.id === activeId ? "true" : undefined}>
                   {renaming === task.id ? (
                     <RenameField task={task} onDone={() => setRenaming(null)} />
                   ) : (
@@ -113,8 +116,8 @@ export function Sidebar() {
                       <StateMark task={task} />
                     </button>
                   )}
-                  <IconButton icon="more" label={t("nav.more")} className="sidebar-more"
-                    onClick={() => setMenu(menu === task.id ? null : task.id)} />
+                  <IconButton icon="more" label={t("nav.more")} className="sidebar-more" aria-haspopup="menu"
+                    aria-expanded={menu === task.id} onClick={() => setMenu(menu === task.id ? null : task.id)} />
                   {menu === task.id ? (
                     <div className="ui-menu sidebar-menu" role="menu" onKeyDown={(e) => e.key === "Escape" && setMenu(null)}>
                       <button type="button" role="menuitem" className="ui-menu-item" autoFocus

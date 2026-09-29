@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { useI18n } from "../i18n";
 import { IconButton } from "./ui";
 
 /**
@@ -44,6 +45,7 @@ export function useToast(): ToastApi {
 }
 
 function ToastViewport({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
+  const { t } = useI18n();
   if (toasts.length === 0) return null;
   return (
     <div
@@ -53,15 +55,15 @@ function ToastViewport({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id:
       data-testid="toast-viewport"
       className="pointer-events-none fixed bottom-4 right-4 z-toast flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2"
     >
-      {toasts.map((t) => (
-        <div key={t.id} data-kind="error" className="toast-card animate-scale-in">
+      {toasts.map((item) => (
+        <div key={item.id} data-kind="error" className="toast-card animate-scale-in">
           <span className="toast-icon">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
               <circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="13" /><line x1="12" y1="16.5" x2="12" y2="16.5" />
             </svg>
           </span>
-          <span className="toast-message">{t.message}</span>
-          <IconButton icon="close" label="Dismiss" size="sm" onClick={() => onDismiss(t.id)} />
+          <span className="toast-message">{item.message}</span>
+          <IconButton icon="close" label={t("common.close")} size="sm" onClick={() => onDismiss(item.id)} />
         </div>
       ))}
     </div>

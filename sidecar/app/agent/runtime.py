@@ -514,15 +514,20 @@ class Runtime:
                     "SELECT id FROM turns WHERE parent_turn_id = ? AND status = 'queued'", (r["id"],)).fetchall()]
                 # Not started yet: the queued follow-ups are re-parented first
                 # (the loop below starts every task with queued turns).
+                task = store.get_task(conn, r["task_id"])
+                was_head = task["head_turn_id"] if task else None
                 resume = self.submit(conn, r["task_id"], r["direction"], kind="resume", parent_turn_id=r["id"],
                                      resumed_from=r["id"], kick=False)
                 # Directions queued after the interrupted turn now follow its
-                # continuation (and wait for it), and the reader stays on their tip.
+                # continuation (and wait for it).
                 for cid in queued:
                     conn.execute("UPDATE turns SET parent_turn_id = ? WHERE id = ?", (resume["id"], cid))
-                if queued:
-                    conn.commit()
+                conn.commit()
+                if was_head in (r["id"], *queued):
+                    # The reader was on this branch: follow it to its tip.
                     store.set_head(conn, r["task_id"], store.leaf_of(conn, r["task_id"], resume["id"]))
+                elif was_head:
+                    store.set_head(conn, r["task_id"], was_head)  # a reader on another version stays there
             for r in conn.execute("SELECT DISTINCT task_id FROM turns WHERE status = 'queued'").fetchall():
                 self._kick(r["task_id"])
         finally:

@@ -212,10 +212,12 @@ export function StackedHorizon({
   days,
   series,
   values,
+  label,
 }: {
   days: number[];
   series: string[];
   values: number[][];
+  label: string;
 }) {
   const [ref, width] = useMeasuredWidth();
   const [tip, setTip] = useState<Tip | null>(null);
@@ -229,7 +231,7 @@ export function StackedHorizon({
   const barW = Math.max(8, Math.min(48, slot * 0.56));
   return (
     <div ref={ref} className="viz-plot" onMouseLeave={() => setTip(null)}>
-      <svg width={width} height={height + PAD.top + PAD.bottom} role="img" aria-label="Storage class mix by simulator horizon">
+      <svg width={width} height={height + PAD.top + PAD.bottom} role="img" aria-label={label}>
         <Axis ticks={ticks} max={max} width={width} height={height} format={formatBytesShort} />
         {days.map((day, i) => {
           const x = PAD.left + i * slot + (slot - barW) / 2;

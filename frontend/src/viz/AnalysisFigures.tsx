@@ -56,6 +56,7 @@ export function AnalysisFigures({
               days={cost.horizons.map((h) => h.day)}
               series={cost.classes}
               values={cost.horizons.map((h) => cost.classes.map((name) => h.classes[name] ?? 0))}
+              label={t("viz.horizonsTitle")}
             />
           </ChartFrame>
         )

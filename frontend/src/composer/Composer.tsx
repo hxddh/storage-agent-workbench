@@ -30,6 +30,13 @@ export function Composer({ taskId, busy, onCreated, autoFocus = false }: {
   const [sending, setSending] = useState(false);
   const [dragging, setDragging] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
+  // Focus on arrival only when nothing else holds focus (⌘K may have just
+  // moved it to the search field while this page was mounting).
+  useEffect(() => {
+    if (!autoFocus) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) area.current?.focus();
+  }, [autoFocus]);
   const picker = useRef<HTMLInputElement>(null);
   const editing = app.editing;
 
@@ -157,7 +164,6 @@ export function Composer({ taskId, busy, onCreated, autoFocus = false }: {
         ref={area}
         value={text}
         rows={1}
-        autoFocus={autoFocus}
         aria-label={busy ? t("composer.placeholderBusy") : t("composer.placeholder")}
         placeholder={busy && !editing ? t("composer.placeholderBusy") : t("composer.placeholder")}
         onChange={(e) => setText(e.target.value)}

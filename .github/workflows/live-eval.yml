@@ -2,7 +2,7 @@ name: Live model eval
 
 # Manual only. Drives real Agent turns against a REAL model endpoint and a local
 # moto S3 server (never real cloud). Needs the repository secret
-# STORAGE_AGENT_EVAL_API_KEY; without it every case is skipped.
+# STORAGE_AGENT_EVAL_API_KEY; without it the run fails rather than skip every case.
 on:
   workflow_dispatch:
     inputs:
@@ -28,6 +28,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Require the eval key
+        # A run without the key would skip every case and still read "success".
+        env:
+          KEY: ${{ secrets.STORAGE_AGENT_EVAL_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::Repository secret STORAGE_AGENT_EVAL_API_KEY is not set; nothing was evaluated."
+            exit 1
+          fi
       - name: Install sidecar
         run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]"
       - name: Run live evals

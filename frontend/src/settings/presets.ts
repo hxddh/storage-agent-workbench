@@ -46,19 +46,20 @@ export type CloudPreset = {
   regionPlaceholder?: string;
   addressing: "virtual" | "path";
   signature: string;
-  hint?: string;
+  /** Whether `preset.hint.<id>` explains the variable field. */
+  hint?: boolean;
 };
 
 export const CLOUD_PRESETS: CloudPreset[] = [
   { id: "aws", label: "AWS S3", providerType: "aws-s3", endpointTemplate: "", variable: "region", regionDefault: "us-east-1", addressing: "virtual", signature: "s3v4" },
-  { id: "r2", label: "Cloudflare R2", providerType: "cloudflare-r2", endpointTemplate: "https://{account}.r2.cloudflarestorage.com", variable: "account", regionDefault: "auto", addressing: "path", signature: "s3v4", hint: "Account ID is in your R2 dashboard URL." },
-  { id: "minio", label: "MinIO", providerType: "minio", endpointTemplate: "", variable: "endpoint", regionDefault: "us-east-1", addressing: "path", signature: "s3v4", hint: "The MinIO server URL, e.g. https://minio.example.com:9000." },
+  { id: "r2", label: "Cloudflare R2", providerType: "cloudflare-r2", endpointTemplate: "https://{account}.r2.cloudflarestorage.com", variable: "account", regionDefault: "auto", addressing: "path", signature: "s3v4", hint: true },
+  { id: "minio", label: "MinIO", providerType: "minio", endpointTemplate: "", variable: "endpoint", regionDefault: "us-east-1", addressing: "path", signature: "s3v4", hint: true },
   { id: "oss", label: "Alibaba Cloud OSS", providerType: "alibaba-oss", endpointTemplate: "https://oss-{region}.aliyuncs.com", variable: "region", regionDefault: "cn-hangzhou", addressing: "virtual", signature: "s3v4" },
   { id: "cos", label: "Tencent Cloud COS", providerType: "tencent-cos", endpointTemplate: "https://cos.{region}.myqcloud.com", variable: "region", regionDefault: "ap-guangzhou", addressing: "virtual", signature: "s3v4" },
   { id: "bos", label: "Baidu BOS", providerType: "baidu-bos", endpointTemplate: "https://s3.{region}.bcebos.com", variable: "region", regionDefault: "bj", addressing: "virtual", signature: "s3v4" },
   { id: "tos", label: "Volcengine TOS", providerType: "volcengine-tos", endpointTemplate: "https://tos-s3-{region}.volces.com", variable: "region", regionDefault: "cn-beijing", addressing: "virtual", signature: "s3v4" },
   { id: "b2", label: "Backblaze B2", providerType: "backblaze-b2", endpointTemplate: "https://s3.{region}.backblazeb2.com", variable: "region", regionDefault: "us-west-004", regionPlaceholder: "us-west-004", addressing: "virtual", signature: "s3v4" },
-  { id: "gcs", label: "Google Cloud Storage", providerType: "gcs-s3", endpointTemplate: "https://storage.googleapis.com", variable: "region", regionDefault: "auto", addressing: "path", signature: "s3v4", hint: "Use S3 interop (HMAC) keys — not a GCP service account." },
+  { id: "gcs", label: "Google Cloud Storage", providerType: "gcs-s3", endpointTemplate: "https://storage.googleapis.com", variable: "region", regionDefault: "auto", addressing: "path", signature: "s3v4", hint: true },
   { id: "custom", label: "Custom (S3-compatible)", providerType: "s3-compatible", endpointTemplate: "", variable: "endpoint", regionDefault: "", addressing: "virtual", signature: "s3v4" },
 ];
 

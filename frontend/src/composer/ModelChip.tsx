@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { api } from "../api";
 import type { ModelProvider } from "../api/types";
 import { Icon } from "../components/icons";
 import { useToast } from "../components/Toast";
 import { StatusDot } from "../components/ui";
 import { useI18n } from "../i18n";
+import { useDismiss } from "../lib/useDismiss";
 import { useApp } from "../shell/context";
 
 /**
@@ -18,16 +19,9 @@ export function ModelChip() {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
   const models = app.models ?? [];
   const active = models.find((m) => m.active) ?? null;
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
 
   if (!app.online) {
     return (

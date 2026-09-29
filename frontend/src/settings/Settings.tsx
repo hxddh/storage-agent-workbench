@@ -283,7 +283,7 @@ function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: (
       for (const k of ["access_key", "secret_key", "session_token"] as const) if (form[k].trim()) body[k] = form[k].trim();
       const saved = cloud ? await api.updateCloud(cloud.id, body) : await api.createCloud(body);
       const out = await api.testCloud(saved.id);
-      setProbe({ ok: Boolean(out.success), detail: out.success ? "OK" : (out.error_message_sanitized ?? out.error_code ?? "failed") });
+      setProbe({ ok: Boolean(out.success), detail: out.success ? t("settings.probeOk") : (out.error_message_sanitized ?? out.error_code ?? t("settings.probeFailed")) });
       setForm({ ...form, access_key: "", secret_key: "", session_token: "" });
       if (!cloud) onDone();
     } catch (err) {
@@ -307,10 +307,10 @@ function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: (
       </Field>
       <Field label={t("field.name")}><TextInput value={form.name} placeholder={p.label} onChange={set("name")} /></Field>
       {p.variable === "endpoint" ? (
-        <Field label={t("field.endpoint")} hint={p.hint}><TextInput required value={form.endpoint_url} onChange={set("endpoint_url")} /></Field>
+        <Field label={t("field.endpoint")} hint={p.hint ? t(`preset.hint.${p.id}`) : undefined}><TextInput required value={form.endpoint_url} onChange={set("endpoint_url")} /></Field>
       ) : null}
       {p.variable === "account" ? (
-        <Field label={t("field.accountId")} hint={p.hint}><TextInput required value={form.account} onChange={set("account")} /></Field>
+        <Field label={t("field.accountId")} hint={p.hint ? t(`preset.hint.${p.id}`) : undefined}><TextInput required value={form.account} onChange={set("account")} /></Field>
       ) : null}
       <Field label={t("field.region")}><TextInput value={form.region} placeholder={p.regionPlaceholder ?? p.regionDefault} onChange={set("region")} /></Field>
       <Field label={t("field.accessKey")} hint={cloud?.has_access_key ? t("field.keepKey") : undefined}>

@@ -6,6 +6,7 @@ import { Button, IconButton, Segmented, StatusDot, TextInput } from "../componen
 import { useToast } from "../components/Toast";
 import { useCopy } from "../hooks/useCopy";
 import { useI18n } from "../i18n";
+import { useDismiss } from "../lib/useDismiss";
 import { SEVERITY_TONE } from "../lib/severity";
 import { useApp } from "../shell/context";
 
@@ -22,6 +23,7 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
   const [issue, setIssue] = useState(initial);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
+  const menuRef = useDismiss<HTMLSpanElement>(menu, () => setMenu(false));
   const [busy, setBusy] = useState<string | null>(null);
   const [verdict, setVerdict] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
@@ -84,8 +86,8 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
             <Button size="sm" disabled={!!busy} onClick={() => void verify()}>
               {busy === "verify" ? t("issue.verifying") : t("issue.verify")}
             </Button>
-            <span className="issue-more">
-              <IconButton icon="more" size="sm" label={t("issue.more")} aria-expanded={menu} onClick={() => setMenu(!menu)} />
+            <span className="issue-more" ref={menuRef}>
+              <IconButton icon="more" size="sm" label={t("issue.more")} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} />
               {menu ? (
                 <div className="ui-menu issue-menu" role="menu" onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setMenu(false); } }}>
                   {issue.source_task_id ? (
