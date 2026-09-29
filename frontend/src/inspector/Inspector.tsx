@@ -31,7 +31,12 @@ export function Pane({ title, children, testId }: { title: string; children: Rea
   const [width, setWidth] = useState(storedWidth);
   const drag = useRef<{ x: number; w: number } | null>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !app.settings && !app.palette) app.setPane(null); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || app.settings || app.palette) return;
+      // Escape in a field or a menu belongs to that field or menu, not to the pane.
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [role=menu], [role=listbox]")) return;
+      app.setPane(null);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [app]);

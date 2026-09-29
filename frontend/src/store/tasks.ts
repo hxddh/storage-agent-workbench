@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, streamUrl } from "../api";
 import type { TaskFeedEvent, TaskRow } from "../api/types";
 
@@ -10,18 +10,24 @@ export function useTaskList(query: string) {
   const [tasks, setTasks] = useState<TaskRow[] | null>(null);
   const [online, setOnline] = useState(true);
 
+  // The latest query wins: the feed reloads with it, and a slow answer for an
+  // older query never overwrites a newer one.
+  const latest = useRef(query);
+  latest.current = query;
   const reload = useCallback(async () => {
+    const q = latest.current;
     try {
-      setTasks((await api.tasks(query || undefined)).tasks);
+      const rows = (await api.tasks(q || undefined)).tasks;
+      if (q === latest.current) setTasks(rows);
       setOnline(true);
     } catch {
       setOnline(false);
     }
-  }, [query]);
+  }, []);
 
   useEffect(() => {
     void reload();
-  }, [reload]);
+  }, [query, reload]);
 
   useEffect(() => {
     let closed = false;

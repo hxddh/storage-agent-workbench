@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { tauriInvoke } from "../config";
 
 /**
@@ -79,11 +79,15 @@ function isMenuCommand(value: unknown): value is MenuCommand {
  * URL the app was launched with, and argv forwarded by single-instance), and
  * the global summon shortcut. No-op in a browser.
  */
-export function useNativeShell({ onOpenTask, onMenuCommand, onSummon }: {
+export function useNativeShell(handlers: {
   onOpenTask: (taskId: string) => void;
   onMenuCommand: (command: MenuCommand) => void;
   onSummon: () => void;
 }) {
+  // Subscribed once for the window's life; the latest handlers are read at event
+  // time, so a re-render never tears the listeners down or re-reads the launch URL.
+  const latest = useRef(handlers);
+  latest.current = handlers;
   useEffect(() => {
     const openUrls = (payload: unknown) => {
       const urls = Array.isArray(payload)
@@ -91,22 +95,22 @@ export function useNativeShell({ onOpenTask, onMenuCommand, onSummon }: {
         : ((payload as { urls?: unknown })?.urls ?? []);
       for (const url of Array.isArray(urls) ? urls : []) {
         const id = typeof url === "string" ? taskIdFromDeepLink(url) : null;
-        if (id) onOpenTask(id);
+        if (id) latest.current.onOpenTask(id);
       }
     };
     const offs = [
       tauriListen("deep-link-request", openUrls),
       tauriListen("menu-command", (payload) => {
         const id = (payload as { id?: unknown })?.id ?? payload;
-        if (isMenuCommand(id)) onMenuCommand(id);
+        if (isMenuCommand(id)) latest.current.onMenuCommand(id);
       }),
-      tauriListen("shortcut-event", () => onSummon()),
+      tauriListen("shortcut-event", () => latest.current.onSummon()),
     ];
     // The URL the app was cold-started with (macOS hands it over after launch).
     const invoke = tauriInvoke();
     if (invoke) invoke("plugin:deep_link|get_current").then(openUrls).catch(() => {});
     return () => { for (const off of offs) off?.(); };
-  }, [onOpenTask, onMenuCommand, onSummon]);
+  }, []);
 }
 
 /** One OS notification. Resolves false in a browser or when the shell refuses. */

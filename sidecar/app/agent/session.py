@@ -64,6 +64,18 @@ def to_input(items: list[dict[str, Any]], *, skip_steers_of: str | None = None) 
 
     calls: list[dict[str, Any]] = []          # the open batch, in call order
     outputs: dict[str, dict[str, Any]] = {}   # call_id -> its output item
+    held: list[dict[str, Any]] = []           # steers that arrived while the batch was running
+
+    # Steers the runtime carried into the next Direction are read there, not twice.
+    carried: dict[str, int] = {}
+    for it in items:
+        if it["type"] == "notice" and it["payload"].get("event") == "carried":
+            carried[it.get("turn_id", "")] = int(it["payload"].get("steers") or 0)
+    steer_total: dict[str, int] = {}
+    for it in items:
+        if it["type"] == "steer":
+            steer_total[it.get("turn_id", "")] = steer_total.get(it.get("turn_id", ""), 0) + 1
+    steer_seen: dict[str, int] = {}
 
     def flush() -> None:
         if not calls:
@@ -74,6 +86,8 @@ def to_input(items: list[dict[str, Any]], *, skip_steers_of: str | None = None) 
                        {"type": "function_call_output", "call_id": c["call_id"], "output": _INTERRUPTED_OUTPUT})
         calls.clear()
         outputs.clear()
+        out.extend(held)
+        held.clear()
 
     def add_call(call: dict[str, Any]) -> None:
         # A new call after every call of the batch has returned starts a new response.
@@ -94,10 +108,18 @@ def to_input(items: list[dict[str, Any]], *, skip_steers_of: str | None = None) 
                 text += f"\n[Attached: {names} — see list_uploaded_files]"
             out.append({"role": "user", "content": text})
         elif t == "steer":
-            if skip_steers_of and it.get("turn_id") == skip_steers_of:
+            tid = it.get("turn_id", "")
+            steer_seen[tid] = steer_seen.get(tid, 0) + 1
+            if skip_steers_of and tid == skip_steers_of:
                 continue
-            flush()
-            out.append({"role": "user", "content": "[The user steered while you worked] " + p.get("text", "")})
+            if steer_seen[tid] > steer_total[tid] - carried.get(tid, 0):
+                continue
+            msg = {"role": "user", "content": "[The user steered while you worked] " + p.get("text", "")}
+            if calls and not all(c["call_id"] in outputs for c in calls):
+                held.append(msg)  # a tool still running: its result comes first
+            else:
+                flush()
+                out.append(msg)
         elif t == "agent_message":
             flush()
             if p.get("text"):

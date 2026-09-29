@@ -47,7 +47,9 @@ def set_watch(conn: Any, provider_id: str, *, enabled: bool, interval_hours: int
     row = conn.execute("SELECT enabled, next_run_at FROM watch_schedules WHERE provider_id = ?",
                        (provider_id,)).fetchone()
     if enabled:
-        next_run = row["next_run_at"] if row and row["enabled"] and row["next_run_at"] else now
+        soonest = _stamp(datetime.now(timezone.utc) + timedelta(hours=hours))
+        # A running schedule keeps its next run unless the new interval brings it closer.
+        next_run = min(row["next_run_at"], soonest) if row and row["enabled"] and row["next_run_at"] else now
     else:
         next_run = None
     conn.execute(

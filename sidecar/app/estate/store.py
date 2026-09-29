@@ -144,6 +144,10 @@ def observe(conn: sqlite3.Connection, provider_id: str, bucket: str, verdicts: d
                 changes.append({"issue_id": row["id"], "change": "recurred", "code": code, "bucket": bucket,
                                 "severity": rule.severity})
         elif row is not None and row["status"] in ACTIVE:
+            if row["status"] == "accepted":
+                # The risk is gone: why it was acceptable no longer belongs in the prompt.
+                from . import notes
+                notes.drop_accept_reasons(conn, row["id"])
             _transition(conn, row["id"], "resolved", source=source)
             changes.append({"issue_id": row["id"], "change": "resolved", "code": code, "bucket": bucket,
                             "severity": rule.severity})
@@ -181,6 +185,8 @@ def ingest_review(conn: sqlite3.Connection, provider_id: str, bucket: str, outpu
         v, d = rules.evaluate_review(check, out)
         verdicts.update(v)
         details.update(d)
+    if not any(isinstance(out, dict) and out.get("success") is not False for out in outputs.values()):
+        return []  # every check failed (a typo, NoSuchBucket, no access): nothing was learned
     upsert_bucket(conn, provider_id, bucket, task_id=task_id)
     changes = observe(conn, provider_id, bucket, verdicts, details, source=source, task_id=task_id)
     conn.commit()

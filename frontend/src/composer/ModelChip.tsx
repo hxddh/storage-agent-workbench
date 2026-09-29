@@ -75,10 +75,10 @@ export function ModelChip() {
         <Icon name="chevron" size={14} className="model-chip-caret" />
       </button>
       {open ? (
-        <div className="ui-menu model-menu" onKeyDown={(e) => e.key === "Escape" && setOpen(false)}>
+        <div className="ui-menu model-menu" onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } }}>
           <div role="listbox" aria-label={t("chip.title")}>
             {models.map((m) => (
-              <button key={m.id} role="option" aria-selected={m.active} className="ui-menu-item"
+              <button key={m.id} type="button" role="option" aria-selected={m.active} className="ui-menu-item"
                 autoFocus={m.active} onClick={() => void choose(m)}>
                 <span>{m.model}</span>
                 <small>{m.name}</small>
@@ -101,7 +101,7 @@ export function ModelChip() {
             </>
           ) : null}
           <div className="ui-menu-sep" />
-          <button className="ui-menu-item" onClick={() => { setOpen(false); app.openSettings("models"); }}>
+          <button type="button" className="ui-menu-item" onClick={() => { setOpen(false); app.openSettings("models"); }}>
             {t("chip.settings")}
           </button>
         </div>

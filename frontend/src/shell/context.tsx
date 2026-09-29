@@ -80,6 +80,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (window.location.hash !== hash) window.history.pushState(null, "", hash || "#/");
       setRoute(next);
       setEditing(null);
+      setDraft({ text: "", nonce: 0 }); // a draft belongs to the page it was written on
     };
     const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;

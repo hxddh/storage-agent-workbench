@@ -135,7 +135,7 @@ export function Shell() {
         </div>
         {taskId ? (
           <div className="dock">
-            <Composer taskId={taskId} busy={busy} />
+            <Composer key={taskId} taskId={taskId} busy={busy} />
           </div>
         ) : null}
       </main>

@@ -77,6 +77,17 @@ function persisted(items: Item[], segmentId: string): boolean {
   return false;
 }
 
+/** The task's state as the server derives it: working, queued, or the head's outcome. */
+function stateOf(turns: Record<string, Turn>, head: string | null | undefined) {
+  const mine = Object.values(turns);
+  const running = mine.find((t) => t.status === "running");
+  const queued = mine.filter((t) => t.status === "queued").map((t) => t.id);
+  const headStatus = head ? turns[head]?.status : undefined;
+  const state: TaskState = running ? "working" : queued.length ? "queued"
+    : headStatus === "failed" || headStatus === "interrupted" ? "needs_attention" : "ready";
+  return { state, runningTurnId: running?.id ?? null, queuedTurnIds: queued };
+}
+
 function applyNotice(allTurns: Record<string, Turn>, it: Item): Record<string, Turn> {
   if (it.type !== "notice" || !it.turn_id) return allTurns;
   const status = NOTICE_STATUS[it.payload.event];
@@ -109,7 +120,9 @@ export function reduce(m: TaskModel, a: Action): TaskModel {
       const live = liveSrc && !persisted(items, liveSrc.segment_id) ? liveSrc : null;
       return withBranch({
         ...m, id: s.task.id, snapshot: s, allTurns: turns, head: s.head_turn_id ?? s.task.head_turn_id, items, live,
-        state: s.state, runningTurnId: s.running_turn_id, queuedTurnIds: s.queued.map((q) => q.turn_id),
+        // With newer items replayed, the snapshot's state may be behind: read it off the turns.
+        ...(newer.length ? stateOf(turns, s.head_turn_id ?? s.task.head_turn_id)
+          : { state: s.state, runningTurnId: s.running_turn_id, queuedTurnIds: s.queued.map((q) => q.turn_id) }),
         lastSeq: Math.max(m.lastSeq, s.last_seq), error: null,
       });
     }

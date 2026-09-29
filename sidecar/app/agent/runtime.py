@@ -149,21 +149,16 @@ class Runtime:
 
     def steer(self, conn: Any, task_id: str, text: str) -> dict[str, Any]:
         """Give the running turn a new instruction; with nothing running, it is a new Direction."""
+        # Recorded and queued for the loop under the runtime lock: the turn cannot
+        # finish in between, so a steer is either read by the model or carried
+        # into a follow-up Direction when the turn ends first — never dropped.
         with self._lock:
             live = self._live.get(task_id)
-        if live is None:
-            return {"steered": False, "turn": self.submit(conn, task_id, text)}
-        if live.recorder is not None:
-            live.recorder.steer(text)  # closes the segment being written, then records the steer
-        else:
-            rec = Recorder(task_id, live.turn_id)
-            try:
-                rec.steer(text)
-            finally:
-                rec.close()
-        with self._lock:
-            live.steers.append(redact_text(text))
-        return {"steered": True, "turn_id": live.turn_id}
+            if live is not None and live.recorder is not None:
+                live.recorder.steer(text)  # closes the segment being written, then records the steer
+                live.steers.append(redact_text(text))
+                return {"steered": True, "turn_id": live.turn_id}
+        return {"steered": False, "turn": self.submit(conn, task_id, text)}
 
     def stop(self, task_id: str) -> bool:
         with self._lock:
@@ -177,9 +172,12 @@ class Runtime:
 
     def cancel_queued(self, conn: Any, task_id: str, turn_id: str) -> bool:
         turn = store.get_turn(conn, turn_id)
-        if turn is None or turn["task_id"] != task_id or turn["status"] != "queued":
+        if turn is None or turn["task_id"] != task_id:
             return False
-        store.set_turn_status(conn, turn_id, "cancelled")
+        # Only a turn still queued can be withdrawn; the worker claims it the same
+        # way, so exactly one of the two wins.
+        if not store.transition(conn, turn_id, "queued", "cancelled"):
+            return False
         rec = Recorder(task_id, turn_id)
         try:
             rec.notice("cancelled", queued=True)
@@ -247,8 +245,15 @@ class Runtime:
         clients: list[Any] = []
         status, error = "completed", None
         usage: dict[str, Any] | None = None
+        if not store.transition(conn, turn_id, "queued", "running"):
+            # Withdrawn between the pick and the claim: nothing runs.
+            with self._lock:
+                self._live.pop(task_id, None)
+            rec.close()
+            conn.close()
+            return
+        carried: list[str] = []
         try:
-            store.set_turn_status(conn, turn_id, "running")
             self._publish_turn(conn, task_id, turn_id)
             rec.notice("started")
             self._publish_state(conn, task_id)
@@ -274,14 +279,21 @@ class Runtime:
             rec.close_segment()
             with self._lock:
                 self._live.pop(task_id, None)
+                carried, live.steers[:] = list(live.steers), []
             await models.close_clients(clients)
             store.set_turn_status(conn, turn_id, status, error=error, usage=usage)
             store.touch_task(conn, task_id)
             conn.commit()
             rec.notice(status, **({"error": error} if error else {}))
+            if carried and status == "completed":
+                # Steers that arrived after the model's last call: they become the
+                # next Direction instead of a steer the model never read.
+                rec.notice("carried", steers=len(carried))
             self._publish_turn(conn, task_id, turn_id)
             self._publish_state(conn, task_id)
             rec.close()
+            if carried and status == "completed":
+                self.submit(conn, task_id, "\n\n".join(carried), parent_turn_id=turn_id)
             conn.close()
         if status == "completed":
             await self._maybe_title(task_id, turn_id)
@@ -521,6 +533,8 @@ class Runtime:
         turn = store.get_turn(conn, turn_id)
         if turn is None or turn["task_id"] != task_id or turn["status"] not in ("interrupted", "failed", "cancelled"):
             return None
+        if turn["status"] == "cancelled" and not turn.get("started_at"):
+            return None  # a withdrawn Direction never ran: there is nothing to continue
         note = RESUME_NOTE if turn["status"] == "interrupted" else (
             "[Continue this work from where it stopped; do not repeat calls that already returned.]")
         return self.submit(conn, task_id, turn["direction"], kind="resume", parent_turn_id=turn_id,
