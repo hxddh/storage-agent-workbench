@@ -32,18 +32,21 @@ def history_items(conn, task_id: str, before_turn_id: str | None) -> list[dict[s
 
 
 def to_input(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    # Only the latest compaction counts: everything before it is its summary.
-    start = 0
+    # Only the latest compaction counts: it stands in for the turns it folded
+    # (earlier summaries are folded into it), and comes first.
+    folded: set[str] = set()
     summary: str | None = None
-    for i, it in enumerate(items):
+    for it in items:
         if it["type"] == "compaction":
-            start = i + 1
+            folded = set(it["payload"].get("folded") or [])
             summary = it["payload"].get("summary")
     out: list[dict[str, Any]] = []
     if summary:
         out.append({"role": "user", "content": "[Summary of the earlier work in this task]\n" + summary})
     open_calls: dict[str, dict[str, Any]] = {}
-    for it in items[start:]:
+    for it in items:
+        if it["type"] == "compaction" or it.get("turn_id") in folded:
+            continue
         p = it["payload"]
         t = it["type"]
         if t == "user_message":

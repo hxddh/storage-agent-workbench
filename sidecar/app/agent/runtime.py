@@ -379,9 +379,9 @@ class Runtime:
         except Exception:  # noqa: BLE001 — compaction is an optimization, never a failure
             return
         if summary:
-            # Recorded on the OLDEST kept turn's predecessor position: history reads it first.
+            # Recorded on the oldest kept turn; history reads it first and skips the folded turns.
             store.append_item(conn, task_id, chain[-(_KEEP_RECENT_TURNS + 1)]["id"], "compaction",
-                              {"summary": summary, "turns_folded": len(older)})
+                              {"summary": summary, "turns_folded": len(older), "folded": older})
             rec.notice("compacted", turns_folded=len(older))
 
     async def _maybe_title(self, task_id: str, turn_id: str) -> None:
