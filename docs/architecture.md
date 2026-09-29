@@ -58,13 +58,13 @@ Every event of a Turn is an **item** appended to `items` with a global, monotoni
 | Context | server-side compaction at 80 % of the window; portable compaction between Turns | portable compaction between Turns |
 | Storage | `store=False`; encrypted reasoning carried within a Turn only | — |
 | Usage | reported | requested (`include_usage`) unless refused |
-| Always | temperature 0.2, bounded `max_tokens`, 600 s timeout, SDK retry ×2, reasoning effort for known-reasoning models, parallel tool calls unless refused |
+| Always | temperature 0.2 (none for reasoning models, which reject it), bounded `max_tokens`, 600 s timeout, SDK retry ×2, reasoning effort for known-reasoning models, parallel tool calls unless refused |
 
 ## Streaming
 
-`core/hub.py` is an in-process fan-out: each follower (an SSE response) owns a bounded asyncio queue fed with `call_soon_threadsafe` from the agent thread. It carries durable items, live deltas of the segment being written, task state (`working` / `queued` / `needs_attention` / `ready`, the running Turn, the queue) and a global feed of task changes. `GET /tasks/{id}/events?after=<seq>` subscribes first, replays items after `seq` from SQLite, sends the live snapshot, then follows; items are de-duplicated by `seq` and a follower that fell behind re-reads the table. Losing the hub loses nothing durable.
+`core/hub.py` is an in-process fan-out: each follower (an SSE response) owns a bounded asyncio queue fed with `call_soon_threadsafe` from the agent thread. It carries durable items, live deltas of the segment being written, task state (`working` / `queued` / `needs_attention` / `ready`, the running Turn, the queue, the head), Turn rows as they change and a global feed of task changes. `GET /tasks/{id}/events?after=<seq>` subscribes first, replays items after `seq` from SQLite, sends the live snapshot and the current state, then follows; items are de-duplicated by `seq` and a follower that fell behind re-reads the table. Losing the hub loses nothing durable.
 
-The frontend's `store/task.ts` is one reducer over the snapshot (`GET /tasks/{id}`) and those events; `store/derive.ts` projects sections, tool rows, the latest Result, the unified findings, figures and versions. `store/tasks.ts` follows `GET /events` for the sidebar.
+The frontend's `store/task.ts` is one reducer over the snapshot (`GET /tasks/{id}`) and those events. The reducer keeps every turn it has seen (`turn` events) and the head, inserts items by `seq`, and merges a reloaded snapshot rather than replacing it; the stream opens `after` the snapshot's `last_seq`. `store/derive.ts` projects sections (one per Turn on the branch, oldest first — the conversation), tool rows, findings, figures and versions. `store/tasks.ts` follows `GET /events` for the sidebar.
 
 ## The estate
 
@@ -72,7 +72,7 @@ The frontend's `store/task.ts` is one reducer over the snapshot (`GET /tasks/{id
 - `estate/store.py` — `ingest_survey` / `ingest_review` project tool results onto `estate_buckets` and `issues` (+ `issue_events`); a survey that saw the whole account forgets buckets it no longer lists; `digest()` is the bounded block every Turn's instructions carry (known buckets per account, ≤ 12 open Issues); the 12 most recent notes follow it as an enveloped `estate_notes` block.
 - `estate/fixpacks.py` — each fix's formats (CLI · Terraform · document; names shell-quoted / HCL-escaped) and the **impact preview**: anonymous-request counts from the bucket's S3 server access logs in DuckDB (aggregates only), the recorded lifecycle/versioning posture, and what the change does; `unknown` with a gap when the evidence cannot tell.
 - `estate/notes.py` — notes (user · agent · accept), redacted, bounded, audited; the 12 most recent reach the prompt inside the untrusted-data envelope.
-- `estate/store.py` also keeps `posture_history` (appended on change, last 50 per bucket) and serves the bucket page's timeline (posture changes + `issue_events`).
+- `estate/store.py` also keeps `posture_history` (appended on change, last 50 per bucket) and serves the bucket sheet's history (posture changes + `issue_events`).
 - `estate/verify.py` — `POST /issues/{id}/verify` re-runs the rule's read-only review, scope-checked and audited.
 - `estate/watch.py` — opt-in per account, off by default, interval 1 h – 7 d; the Sidecar's clock (`STORAGE_AGENT_WATCH_TICK_SECONDS`, default 60 s) runs due sweeps: the survey engine (≤ 500 buckets), a read-only re-check of what posture cannot decide (≤ 25 buckets), and only when a high or medium Issue opened or came back, one task (`origin = watch`) through `RUNTIME.submit`. Turning the watch off stops a scheduled sweep between phases. The last three watch surveys per account are kept.
 

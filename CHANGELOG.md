@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [7.0.0] - 2026-09-29
+
+_Simpler to use, exact when you follow up: a task is one conversation, the estate folds into the home and a bucket sheet, one Details pane — on the same native core (one Agent, one item stream, one submit path, read-only storage)._ See `docs/releases/7.0.0.md`.
+
+### Changed
+
+- **The task page is one conversation, oldest first** — message, one activity line, the answer with findings and figures; suggestions from the last answer fill the Composer. The Result, outputs bar and Work log are removed.
+- **Home** shows one readiness sentence and *Needs attention*; a row opens the **bucket sheet** in the side pane. The Estate area and the sidebar's Home entry are removed.
+- **Details** replaces Evidence · Report · Activity: Save report, usage, calls, files.
+- Plainer copy: Send, Add to the request, Stop, Needs attention, Continue. Notes on accounts and all storage move to Settings.
+- The window follows the system language until one is chosen (`language: null`).
+
+### Fixed
+
+- Follow-up history replays in branch order with parallel calls batched (calls, then outputs) and commentary as assistant output messages; strict Chat Completions endpoints accept it.
+- Recovery runs the continuation before queued follow-ups; withdrawing a queued request re-parents the ones after it; a steer reaches the model once; one stop notice; no temperature for reasoning models; a new follower gets each delta once.
+- The window merges snapshots, streams after `last_seq`, learns turns from a new `turn` event and the current `state` sent on every stream open — no lost, repeated or stuck turns; an edited request's versions show at once.
+- Tool rows name the storage account instead of its id; the conversation reflows beside the pane; the message bubble reads in the light theme.
+
 ## [6.0.0] - 2026-09-29
 
 _The estate becomes the place you work from, and fixes close the loop — built on the v5 core (one native Agent, one item stream, one submit path, read-only storage), with no plan mode, approvals, modes or sub-agents._ See `docs/releases/6.0.0.md`.

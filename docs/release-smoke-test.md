@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v2.2.0.**
+> **Current baseline: Storage Agent v7.0.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -19,91 +19,47 @@
 
 ## B. Agent Task product smoke
 
-A user must be able to recognize and use the v1.09 product model without reading source code.
+A user must be able to recognize and use the product without reading source code.
 
-### Start and task navigation
+### Home and navigation
 
-- [ ] The product identity is **Storage Agent** in the window/release-facing UI.
-- [ ] A fresh install exposes the greeting (the page's one heading), one sub line, a **Composer**, and three starters (v3.0) — not a wizard. A starter only fills the Composer; nothing is sent until the user delegates.
-- [ ] The window is sidebar · title bar · document, plus the side pane only while an output is open (v3.0). There is no activity bar, status bar, or permanent inspector column.
-- [ ] The Composer shows the active model as a chip backed by the real provider list; switching it activates that provider. With the Sidecar unreachable the chip reads **Runtime offline** (danger dot, not clickable), never *Set up a model…*.
-- [ ] The Composer does not paint a persistent keyboard legend (`⏎ Delegate` / `⇧⏎`).
-- [ ] Global navigation is a single chronological Agent Task title list in the sidebar; collapsing it moves the toggle and New task into the title bar.
-- [ ] The New task button is labelled **New task**; ⌘N / Ctrl+N still works and is not painted on the button.
-- [ ] Task rows support Rename and Delete without turning navigation into a backend-record browser.
-- [ ] Creating/delegating initial work creates a durable Task that remains available after reload/restart.
+- [ ] A fresh install shows the greeting (the page's one heading), the **Composer** and three starters — not a wizard. A starter only fills the Composer. Without a model or storage account one sentence says what to add, each part a link to Settings; the survey starter is hidden without storage.
+- [ ] The UI follows the system language on first run (Chinese on a Chinese system) until the user picks one.
+- [ ] The sidebar is New task, search, the task list grouped by day, and Settings — no Home or Estate entries. Rows show Working (pulsing), Queued, Needs attention; Rename and Delete work; ↑/↓ move between tasks.
+- [ ] With storage configured, **Needs attention** lists open Issues most severe first (six, then a count), each naming its bucket; a row opens the **bucket sheet** in the side pane. One quiet line per account shows buckets, last check and watch.
+- [ ] ⌘K opens the palette (Recent tasks and Actions); ⌘I toggles Details; Esc closes the pane; its edge drags (352–880 px). Dark and light themes are both first-class.
 
 ### One control path
 
-- [ ] There is exactly one primary Agent composer/control.
-- [ ] At rest it represents **Delegate**.
-- [ ] During active execution it exposes real **Steer** and **Stop** behavior for the same Task.
-- [ ] Opening the side pane does not create another Agent input.
-- [ ] ⌘K / Ctrl+K opens a command overlay over the Task; it is not a new destination.
-- [ ] Dark and light themes are both first-class; switching language does not change product semantics.
+- [ ] There is exactly one Composer. At rest it sends; while work is live it offers **Add to the request** (a steer) and **Stop**. A file always makes a new, queued request.
+- [ ] The model chip is backed by the real provider list; with the Sidecar unreachable it reads **Runtime offline**.
 
-### Direction → Execution → Work Result
+### A task is one conversation
 
-- [ ] User input is presented as **Direction** / task intent, not as an old chat-product shell.
-- [ ] Active work enters **Working** based on real runtime state.
-- [ ] Real Tool activity becomes visible as one **Worked for …** group of tool rows that read as localized verbs (e.g. *Checked bucket*) with the target quiet and status only in the glyph; in the live work in progress every group stays open until the turn settles; no plan card, worker or sub-agent UI is invented.
-- [ ] Reload mid-run: the Direction is already in the document (persisted when its execution started) and heads the work in progress; the answer lands under it.
-- [ ] A running `survey_account` / `import_evidence` row shows real counts (*120 of 500 buckets* / *120 / 500 个桶*) and a hairline meter; nothing is a time-based percentage.
-- [ ] A completed turn produces a durable **Work Result** that survives reload.
-- [ ] Tool rows remain linked to the Work Result that produced them.
-- [ ] Structured storage errors render as storage/error artifacts where applicable rather than losing useful fields in generic prose.
+- [ ] Requests read top to bottom, oldest first: the message, one activity line (*the running tool* or *Thinking* while live; *n steps · t* when done, expanding to commentary and each call), the streaming text, then the answer with findings as severity dots and figures from the deterministic analyses.
+- [ ] Send four follow-ups in a row, some while the previous one works: each answer lands under its own request; nothing is reordered, duplicated or left showing *Working*. Reload mid-run and after: the page is identical.
+- [ ] A request queued behind running work shows *Queued* with **Withdraw**; withdrawing removes it and later requests still run.
+- [ ] Editing a message sends a new version; *1 / 2* switches between versions without a reload.
+- [ ] After the latest answer, up to three recorded next steps appear as suggestions; one fills the Composer and is not sent.
+- [ ] A running `survey_account` / `import_evidence` row shows real counts; a tool row names the storage account, not its id.
+- [ ] **Details** shows Save report (the report in the UI language, conclusion first), usage, every tool call (one opens with arguments and output) and attached files. The conversation reflows beside it; nothing is clipped.
 
-### Steering and stopping
+### Steering, stopping and recovery
 
-- [ ] While a real execution is in flight, entering a steering Direction changes the active work through the runtime steering path rather than creating a second task/input.
-- [ ] **Stop** cancels the active turn promptly (including a queued Direction).
-- [ ] A stopped execution leaves a truthful durable partial/stopped result/state as implemented and the Task becomes controllable again.
-- [ ] A `needs_attention` Task whose last Execution is interrupted/failed and could not continue automatically exposes **Resume** in a quiet note (no card fill; Resume is a default button beside **Open Settings**; its copy says the Agent could not continue on its own and that completed calls are not started over); Resume follows the new execution event stream.
-- [ ] Settings contains model, storage credentials, language, and theme as a centered dialog (General · Model Providers · Cloud Providers · Skills & bridges; General states the read-only safety floor as three points: vault, read-only storage, and imports bounded to 500 files / 256 MiB per call) — no Safety section, no approval policy, not a storage price table.
-- [ ] Composer has no `/checkup` `/cost` `/drift` SKU menu. Typing `/` is ordinary text.
-- [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar centres name + state as one group between the sidebar toggle and the side-pane toggle; Find (⌘F) and the palette (⌘K) are keyboard. The palette lists Recent tasks and Actions only (no engine catalog).
-- [ ] Cost-review numbers in a Work Result are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
-- [ ] Cost / inventory / Drift / access-log figures render from runtime artifacts with coverage and Estimate; unconfirmed prices withhold the cost axis; missing series are gap states, never interpolated.
-- [ ] A finding with a provenance chain ends in an **Evidence** link: hover previews the source call, click opens the side pane on Evidence anchored to that finding; a finding without a chain reads *No direct evidence*, never an implied source. There is no separate list of provenance marks under the figures.
-- [ ] A Direction queued behind a running Execution is visible in the Task and can be cancelled.
-
-### Durable task switching / concurrent state
-
-- [ ] Start real work in Task A, switch to Task B, then return to Task A.
-- [ ] Task A retains/reconnects to the same real in-flight or completed execution state rather than being reset because it was not visible.
-- [ ] Navigation reflects Working / Needs attention (warn mark) / Ready truth for relevant Tasks; no Task ever shows a decision state.
-- [ ] The UI does not describe this as a fleet of hidden autonomous background Agents.
+- [ ] Adding to a running request reaches the model once, in the running turn; with nothing running it becomes a new request.
+- [ ] **Stop** ends the turn promptly and keeps the partial work (one *Stopped* note).
+- [ ] Kill the Sidecar during a running turn and relaunch: the work continues once on its own as a `resume` turn, before any queued follow-up; if that is interrupted too, the task shows *Needs attention* with **Continue** / **Open Settings** — no crash loop.
 
 ### Bounded evidence import
 
-- [ ] When the Agent calls `import_evidence`, the import runs inside the turn: no approval card appears, the title bar stays **Working**, and nothing waits for the user.
-- [ ] The tool row shows what moved (files, bytes); a request larger than 500 files / 256 MiB is clamped and the result says coverage is partial.
-- [ ] A source the task's survey did not discover is refused; with less than 1 GiB free in the data directory the call is refused and nothing downloads.
-- [ ] **Stop** during the import ends it between files; no further download starts and nothing from the stopped import is kept.
-- [ ] The import is audited (`approved_by=agent`) and its Evidence attaches to the Task.
+- [ ] `import_evidence` runs inside the turn without an approval card; a request larger than 500 files / 256 MiB is clamped and the result says coverage is partial.
+- [ ] A source the survey did not discover is refused; with less than 1 GiB free nothing downloads; **Stop** ends the import between files; the import is audited (`approved_by=agent`).
 
-### Automatic continuation after restart
+### A bucket
 
-- [ ] Kill the Sidecar during a running Execution and relaunch: the interrupted work continues on its own as a new execution (`kind=resume`) without a click; the Direction in the document reads exactly as the user wrote it (no `[resume]` note), and the continuation does not repeat calls that already completed.
-- [ ] If that continuation is itself interrupted, it is not continued again (no crash loop); with no usable model the Task shows **Needs attention** and the manual **Resume** banner.
-
-### Result and side pane (v2.0; side pane v3.0; one findings list v3.1)
-
-- [ ] A Task opens at its top, on the latest **Result**: an accent *Result* badge and one meta line (*when · Evidence n · Gaps n · Tool calls n*), then, after an investigative Direction, the recorded conclusion (the answer at 20px, findings most severe first with severity badges, next steps as suggestion cards).
-- [ ] The Result's findings and the Evidence tab show the same list (the conclusion's findings joined by those recorded while working, deduplicated, most severe first); the Evidence count equals that list plus attached files; the Evidence tab reads Findings → Current understanding → Attached evidence, and each finding expands to its detail and source. A Result without a recorded conclusion shows the answer, then the recorded findings.
-- [ ] A next step fills the Composer and is not sent until the user delegates it.
-- [ ] Evidence / Report / Execution are buttons in the outputs bar under the Result (each only when something is behind it) and open in **one side pane** on the right (⌘I or the title-bar toggle) with a tab per output; ⌘I toggles it (opening on the first output the Task has; on a Task without Evidence it shows the Report, never *No report has been generated*); the close button and Esc close it; dragging its left edge resizes it (352–880px, double-click resets, the width survives reload); below ~1100px it overlays the document. There are no Plans / Baselines entries and no overlay dialog.
-- [ ] The one Composer remains logically owned by the active Task while the side pane is open, and stays docked: opening the pane never moves the window or the Composer. Execution detail opens inside the pane with one Back.
-- [ ] A one-Direction Task has no Work log: its commentary and *Worked for …* line sit under the Result above the outputs bar. While a newer Direction works, the previous Result stays in place.
-- [ ] Execution detail shows no empty *no findings* section and no kind label for an ordinary Direction.
-- [ ] Evidence/Execution details display persisted sanitized truth.
-- [ ] Markdown Report is a durable Task Artifact and survives reload. It reads in the UI language (EN/ZH) and conclusion first — Goal · Conclusion · Findings · Next steps · the per-Direction record · Coverage and gaps · the record · Safety — with no empty sections; the Agent's own words are not translated.
-
-### Task paging/search/navigation
-
-- [ ] A long Task loads recent durable work first and can fetch older history without losing current execution state.
-- [ ] Find/semantic step navigation works on Task-native content.
-- [ ] Narrow-window behavior preserves access to Task navigation and the active Task without restoring retired layout contracts.
+- [ ] The bucket sheet shows its Issues (resolved folded), configuration (deviations first, *Show all*), notes (Enter adds) and history (folded). *Ask about this bucket* only fills the Composer.
+- [ ] **Show fix** offers CLI · Terraform · JSON with Copy and a plain-sentence impact preview; **Verify** re-checks read-only; the menu offers Open task and Accept risk (a reason is kept as a note).
+- [ ] Settings › Storage accounts keeps notes on each account and on all storage, and each account's Watch (Off · 6 h · Daily · Weekly, Check now).
 
 ## C. Storage capability smoke
 

@@ -16,12 +16,13 @@ Behaviour is pinned by executable tests that drive the real code paths. There is
 | The v4 importer; attached logs analyzed without raw rows reaching the model; undiscovered import sources refused; triage redacts; compaction folds by Turn | `test_v500_importer_files.py` |
 | Every read-only tool against every hostile endpoint shape never raises, never leaks a credential, never claims a verdict after a failure | `test_v076_endpoint_matrix.py`, `test_v066_s3_over_http.py`, `test_v084_live_s3.py` |
 | The MCP server exposes only the stateless read-only subset, scope-checked and audited | `test_v113_mcp_bridge.py` |
-| v6: a call's stop signal (Stop or its own timeout); task state follows the head branch; the bucket page (posture history, timeline); notes (redaction, audit, the digest); accept with a reason; fix packs (CLI · Terraform · document, hostile names quoted); the impact preview from an S3 server access log and its honest gaps; the Agent's `note` and `fix_preview` in a real streamed turn | `test_v600_kernel.py` |
+| v6: a call's stop signal (Stop or its own timeout); task state follows the head branch; the bucket history (posture changes, timeline); notes (redaction, audit, the digest); accept with a reason; fix packs (CLI · Terraform · document, hostile names quoted); the impact preview from an S3 server access log and its honest gaps; the Agent's `note` and `fix_preview` in a real streamed turn | `test_v600_kernel.py` |
 | A real model, opt-in: survey + review leave a grounded estate with a conclusion and no secret echoed; a scope refusal is honoured | `tests/live_eval/` (`STORAGE_AGENT_LIVE_EVAL=1`, `STORAGE_AGENT_EVAL_API_KEY`; the manual *Live model eval* workflow) |
 | The window contract (one submit path, the window's parts, no raw colours, copy parity, native menu parity, Quick Ask) | `frontend/src/contracts.test.ts` |
-| The reducer and projections; the Result, Work log, Resume, versions, the Composer's Delegate/Steer/Stop | `frontend/src/store/*.test.ts`, `frontend/src/surfaces.test.tsx` |
-| The estate view: an account's buckets, the bucket page, notes, *Ask about this bucket* never submits, accept with a reason, the fix pack and its impact preview | `frontend/src/estate/estate.test.tsx` |
-| The real window against the real Sidecar: first run, result-first task with side pane, ⌘K, steer/stop, fork, estate, settings, Chinese, WCAG AA contrast in both themes | `frontend/e2e/*.spec.ts` |
+| v7: follow-ups replay exactly (branch order, strict Chat Completions, parallel batches, conclusions); queued and withdrawn Directions; recovery ordering; one stop notice; a steer reaches the model once; no temperature for reasoning models; each delta once; a tool row names the account | `test_v700_followups.py` |
+| The reducer (merged snapshots, turns, items by seq) and projections; the conversation, activity line, Continue, versions, the Composer's Send/Add/Stop | `frontend/src/store/*.test.ts`, `frontend/src/surfaces.test.tsx` |
+| The home's Needs attention; the bucket sheet, notes, *Ask about this bucket* never submits, accept with a reason, the fix and its impact preview | `frontend/src/estate/estate.test.tsx` |
+| The real window against the real Sidecar: first run, the conversation with Details, ⌘K, add-to-request/stop, a four-turn follow-up across a reload, an edited version, the bucket sheet, settings, Chinese, WCAG AA contrast in both themes | `frontend/e2e/*.spec.ts` |
 
 ## Adding a case
 

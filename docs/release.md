@@ -44,12 +44,12 @@ A green build is not sufficient if the packaged frontend regresses to an older p
 For every release candidate, `release-smoke-test.md` is the product acceptance contract. At minimum verify that the candidate preserves:
 
 - Agent Task as the primary application object;
-- one Delegate / Steer / Stop control path;
+- one Send / Add to the request / Stop control path;
 - real Execution rather than synthetic Agent chrome;
-- durable Work Results;
+- durable answers that survive reload, in one conversation, oldest first;
 - no approval pause and no plan card: the one data-moving tool (`import_evidence`) runs inside its server-side bounds and Stop ends it;
 - automatic continuation of interrupted work after a restart (manual Resume only when no model is usable);
-- the result-first Task with detail rows under the Result (Evidence / Report / Execution detail);
+- exact follow-ups (nothing reordered, dropped or duplicated) and one Details pane (report, usage, calls);
 - real per-task in-flight state across task switching;
 - current safety/secret boundaries.
 
