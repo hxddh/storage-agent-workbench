@@ -26,7 +26,7 @@ A user must be able to recognize and use the product without reading source code
 - [ ] A fresh install shows the greeting (the page's one heading), the **Composer** and three starters — not a wizard. A starter only fills the Composer. Without a model or storage account one sentence says what to add, each part a link to Settings; the survey starter is hidden without storage.
 - [ ] The UI follows the system language on first run (Chinese on a Chinese system) until the user picks one.
 - [ ] The sidebar is New task, search, the task list grouped by day, and Settings — no Home or Estate entries. Rows show Working (pulsing), Queued, Needs attention; Rename and Delete work; ↑/↓ move between tasks.
-- [ ] With storage configured, **Needs attention** shows one row per kind of Issue, most severe first, naming every bucket (three, then *+N*); a bucket opens the **bucket sheet**. Storage never checked says so and offers the survey. One quiet line per account shows buckets, last check and watch.
+- [ ] With storage configured, **Needs attention** shows one row per kind of Issue, most severe first, naming every bucket (three, then *+N*); a bucket opens the **bucket sheet**. One quiet line per account shows buckets, last check and watch; storage never checked reads *name · not checked yet · Survey* with no bucket count.
 - [ ] ⌘K focuses the sidebar search; ⌘I toggles Details; Esc closes the pane; its edge drags (352–880 px). Dark and light themes are both first-class.
 
 ### One control path
