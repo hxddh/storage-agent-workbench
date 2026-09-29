@@ -331,7 +331,7 @@ def overview(conn: sqlite3.Connection, lang: str = "en") -> dict[str, Any]:
     last_watch = conn.execute("SELECT MAX(last_run_at) AS at FROM watch_schedules").fetchone()["at"]
     return {"providers": providers, "bucket_count": sum(p["bucket_count"] for p in providers),
             "open_issue_count": count_issues(conn, status="care"),
-            "issues": list_issues(conn, status="care", limit=20, lang=lang),
+            "issues": list_issues(conn, status="care", limit=200, lang=lang),
             "last_watch_at": last_watch}
 
 

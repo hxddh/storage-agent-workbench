@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { Estate, Issue } from "../api/types";
 import { Composer } from "../composer/Composer";
@@ -63,7 +63,8 @@ function Readiness() {
   );
 }
 
-/** What needs attention, most severe first; each opens its bucket beside the Composer. */
+/** What needs attention, most severe first: one row per kind of issue, naming
+ * every bucket it was found on; a bucket opens beside the Composer. */
 function Attention() {
   const { t, lang } = useI18n();
   const app = useApp();
@@ -84,19 +85,29 @@ function Attention() {
   }, [reload]);
   // The sheet may have changed an issue (verify, accept): read again when it closes.
   const paneOpen = app.pane?.tab === "bucket";
-  useEffect(() => { if (!paneOpen) void reload(); }, [paneOpen, reload]);
+  const wasOpen = useRef(paneOpen);
+  useEffect(() => {
+    if (wasOpen.current && !paneOpen) void reload();
+    wasOpen.current = paneOpen;
+  }, [paneOpen, reload]);
   if (!estate || estate.providers.length === 0) return null;
-  const shown = estate.issues.slice(0, 6);
-  const more = estate.open_issue_count - shown.length;
+  const groups = groupIssues(estate.issues);
+  const checked = estate.providers.some((p) => p.last_checked_at);
   return (
     <section className="attention" aria-labelledby="attention-label" data-testid="needs-care">
       <h2 id="attention-label" className="attention-title">{t("home.care")}</h2>
-      {shown.length ? (
+      {groups.length ? (
         <ul className="attention-list">
-          {shown.map((i) => <AttentionRow key={i.id} issue={i} />)}
+          {groups.map((g) => <AttentionRow key={g.key} group={g} />)}
         </ul>
-      ) : <p className="quiet-note">{t("home.careEmpty")}</p>}
-      {more > 0 ? <p className="quiet-note">{t("home.careMore", { n: more })}</p> : null}
+      ) : checked ? <p className="quiet-note">{t("home.careEmpty")}</p> : (
+        <p className="quiet-note" data-testid="not-checked">
+          {t("home.notChecked")}{" "}
+          <button type="button" className="link" onClick={() => app.prefill(t("home.starter.surveyPrompt"))}>
+            {t("home.checkNow")}
+          </button>
+        </p>
+      )}
       <p className="accounts" data-testid="estate">
         {estate.providers.map((p) => [
           p.name,
@@ -109,21 +120,48 @@ function Attention() {
   );
 }
 
-function AttentionRow({ issue }: { issue: Issue }) {
+type Group = { key: string; title: string; severity: Issue["severity"]; recurred: boolean; issues: Issue[] };
+
+/** Issues arrive most severe first; the first of each kind places its row. */
+function groupIssues(issues: Issue[]): Group[] {
+  const out = new Map<string, Group>();
+  for (const i of issues) {
+    const key = `${i.code}:${i.severity}`;
+    const g = out.get(key) ?? { key, title: i.title, severity: i.severity, recurred: false, issues: [] };
+    g.issues.push(i);
+    g.recurred ||= i.status === "recurred";
+    out.set(key, g);
+  }
+  return [...out.values()];
+}
+
+const SHOWN_BUCKETS = 3;
+
+function AttentionRow({ group }: { group: Group }) {
   const { t } = useI18n();
   const app = useApp();
-  const tone = SEVERITY_TONE[issue.severity];
+  const [all, setAll] = useState(false);
+  const tone = SEVERITY_TONE[group.severity];
+  const shown = all ? group.issues : group.issues.slice(0, SHOWN_BUCKETS);
+  const rest = group.issues.length - shown.length;
   return (
-    <li>
-      <button type="button" className="attention-row" data-testid="issue" data-severity={issue.severity}
-        aria-pressed={app.pane?.tab === "bucket" && app.pane.bucket === issue.bucket}
-        onClick={() => app.openBucket(issue.provider_id, issue.bucket)}>
-        <StatusDot tone={tone === "outline" ? "neutral" : tone} />
-        <span className="sr-only">{t(`sev.${issue.severity}`)}: </span>
-        <span className="attention-issue">{issue.title}</span>
-        <span className="attention-where">{issue.bucket}</span>
-        {issue.status === "recurred" ? <span className="attention-where">{t("issue.status.recurred")}</span> : null}
-      </button>
+    <li className="attention-row" data-testid="issue" data-severity={group.severity}>
+      <StatusDot tone={tone === "outline" ? "neutral" : tone} />
+      <span className="sr-only">{t(`sev.${group.severity}`)}: </span>
+      <span className="attention-issue">{group.title}</span>
+      {group.recurred ? <span className="attention-note">{t("issue.status.recurred")}</span> : null}
+      <span className="attention-where">
+        {shown.map((i) => (
+          <button key={i.id} type="button" className="attention-bucket" data-testid="issue-bucket"
+            aria-pressed={app.pane?.tab === "bucket" && app.pane.providerId === i.provider_id && app.pane.bucket === i.bucket}
+            onClick={() => app.openBucket(i.provider_id, i.bucket)}>{i.bucket}</button>
+        ))}
+        {rest > 0 ? (
+          <button type="button" className="attention-bucket" data-more="true" onClick={() => setAll(true)}>
+            {t("home.moreBuckets", { n: rest })}
+          </button>
+        ) : null}
+      </span>
     </li>
   );
 }

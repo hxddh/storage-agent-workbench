@@ -171,14 +171,18 @@ button.model-chip:hover { background: var(--hover); color: var(--gray-100); }
 .attention-title { margin: 0 0 var(--space-2); color: var(--gray-400); font-size: var(--text-sm); font-weight: 500; }
 .attention-list { display: grid; margin: 0; padding: 0; list-style: none; }
 .attention-row {
-  display: flex; align-items: center; gap: var(--space-3); width: 100%; min-width: 0;
-  height: 2.25rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius);
-  background: transparent; color: var(--gray-200); font: inherit; text-align: left; cursor: pointer;
+  display: flex; align-items: center; gap: var(--space-3); min-width: 0; min-height: 2.25rem;
+  padding: var(--space-1) var(--space-3); border-radius: var(--radius); color: var(--gray-200);
 }
-.attention-row:hover, .attention-row[aria-pressed="true"] { background: var(--hover); color: var(--gray-100); }
 .attention-issue { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.attention-where { margin-left: auto; flex: none; color: var(--gray-400); }
-.attention-where + .attention-where { margin-left: 0; }
+.attention-note { flex: none; color: var(--gray-400); font-size: var(--text-sm); }
+.attention-where { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); margin-left: auto; min-width: 0; }
+.attention-bucket {
+  padding: 2px var(--space-2); border: 0; border-radius: var(--radius); background: transparent;
+  color: var(--gray-400); font: inherit; font-size: var(--text-sm); cursor: pointer;
+}
+.attention-bucket:hover, .attention-bucket[aria-pressed="true"] { background: var(--hover); color: var(--gray-100); }
+.attention-bucket[data-more="true"] { color: var(--gray-500); }
 .accounts { margin: var(--space-3) var(--space-3) 0; color: var(--gray-500); font-size: var(--text-sm); white-space: pre-wrap; }
 .attention > .quiet-note { margin: var(--space-2) var(--space-3) 0; }
 
