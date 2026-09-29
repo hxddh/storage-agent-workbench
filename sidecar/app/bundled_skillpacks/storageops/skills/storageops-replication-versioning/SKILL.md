@@ -41,10 +41,10 @@ Replication / versioning issue →
 
 ## Investigate with your read-only tools
 
-- `review_bucket_security` / `get_bucket_config_summary` — read versioning state
+- `review_bucket_config` (aspects `summary`, `security`) — read versioning state
   and (where the provider exposes it) replication/object-lock configuration on
   the source and destination buckets; mismatched versioning is the #1 cause.
-- `head_object` — inspect a specific object's version/metadata to confirm whether
+- `inspect_object` — inspect a specific object's version/metadata to confirm whether
   it exists on the destination and its state. Its `replication_status`
   (PENDING / COMPLETED / FAILED / REPLICA) answers "did this object replicate /
   is it a replica?" directly, and `version_id` (with the `version_id` arg) lets
@@ -52,9 +52,10 @@ Replication / versioning issue →
 - `get_bucket_config_detail` (aspect `replication`) — the actual per-rule status,
   prefix/tag filter, delete-marker replication, and destination bucket, so you
   read the replication config instead of asking for it.
-- `get_object_attributes` — checksum + part count when confirming a replicated
-  object matches the source byte-for-byte (provider_unsupported → head_object).
-- `get_object_lock_status` — when the confusion is "why can't I delete/overwrite
+- `inspect_object` with aspect `attributes` — checksum + part count when confirming
+  a replicated object matches the source byte-for-byte (provider_unsupported →
+  aspect `head`).
+- `inspect_object` with aspect `lock` — when the confusion is "why can't I delete/overwrite
   this object?", this reads the OBJECT's actual retention mode + retain-until date
   and legal-hold status (COMPLIANCE can't be shortened; a legal hold blocks delete
   regardless of retention). Read `success` FIRST: `success: false` with the
@@ -84,5 +85,5 @@ Replication / versioning issue →
 The failure class (rule-filter / dest-versioning / role-permission / not-
 retroactive / delete-marker / lag), grounded in the config you could read vs.
 what the user must supply, the fix (manual-only), and how to verify — e.g. re-
-checking versioning via `get_bucket_config_summary` and comparing a `head_object`
+checking versioning via `review_bucket_config` and comparing an `inspect_object`
 on both sides.

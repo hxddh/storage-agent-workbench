@@ -87,20 +87,20 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
             <span className="issue-more">
               <IconButton icon="more" size="sm" label={t("issue.more")} aria-expanded={menu} onClick={() => setMenu(!menu)} />
               {menu ? (
-                <div className="ui-menu issue-menu" role="menu" onKeyDown={(e) => e.key === "Escape" && setMenu(false)}>
+                <div className="ui-menu issue-menu" role="menu" onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setMenu(false); } }}>
                   {issue.source_task_id ? (
-                    <button role="menuitem" className="ui-menu-item" autoFocus
+                    <button type="button" role="menuitem" className="ui-menu-item" autoFocus
                       onClick={() => { setMenu(false); app.setPane(null); app.openTask(issue.source_task_id!); }}>
                       {t("issue.openTask")}
                     </button>
                   ) : null}
                   {issue.status === "accepted" ? (
-                    <button role="menuitem" className="ui-menu-item"
+                    <button type="button" role="menuitem" className="ui-menu-item"
                       onClick={() => { setMenu(false); void act("accept", () => api.acceptIssue(issue.id, false, lang)); }}>
                       {t("issue.unaccept")}
                     </button>
                   ) : !settled ? (
-                    <button role="menuitem" className="ui-menu-item" onClick={() => { setMenu(false); setAccepting(true); }}>
+                    <button type="button" role="menuitem" className="ui-menu-item" onClick={() => { setMenu(false); setAccepting(true); }}>
                       {t("issue.accept")}
                     </button>
                   ) : null}
@@ -118,7 +118,7 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
             }}>
               <TextInput value={reason} maxLength={1000} autoFocus placeholder={t("issue.acceptReason")}
                 aria-label={t("issue.acceptReason")} onChange={(e) => setReason(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Escape") setAccepting(false); }} />
+                onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setAccepting(false); } }} />
               <Button size="sm" type="submit" disabled={!!busy}>{t("issue.acceptConfirm")}</Button>
             </form>
           ) : null}

@@ -152,7 +152,6 @@
   --shadow-elev: 0 0 0 1px var(--edge-strong), 0 8px 24px -8px rgba(0, 0, 0, 0.6);
   --shadow-pop: 0 0 0 1px var(--edge-strong), 0 24px 64px -16px rgba(0, 0, 0, 0.7), 0 8px 20px -8px rgba(0, 0, 0, 0.5);
   --shadow-glow: var(--shadow-pop);
-  --skeleton-shine: color-mix(in srgb, var(--hover) 75%, var(--gray-100) 6%);
 }
 
 :root[data-theme="light"] {
@@ -211,7 +210,6 @@
   --shadow-elev: 0 0 0 1px var(--edge), 0 8px 24px -10px rgba(24, 24, 27, 0.18);
   --shadow-pop: 0 0 0 1px var(--edge), 0 24px 64px -16px rgba(24, 24, 27, 0.22), 0 8px 20px -8px rgba(24, 24, 27, 0.12);
   --shadow-glow: var(--shadow-pop);
-  --skeleton-shine: color-mix(in srgb, var(--hover) 60%, white);
 }
 
 html,
@@ -248,30 +246,19 @@ body {
   line-break: strict;
   overflow-wrap: break-word;
 }
-.agent-prose p,
-.native-banner,
-.native-settings-list > li,
-.native-composer textarea {
+.agent-prose p {
   text-wrap: pretty;
 }
 .agent-prose h1,
-.agent-prose h2,
-.native-start-greeting {
+.agent-prose h2 {
   text-wrap: balance;
-}
-.native-settings-list > li > div,
-.native-settings-editor,
-.native-banner p {
-  overflow-wrap: break-word;
 }
 
 /* Reading and typing surfaces are selectable; chrome is not. */
 main,
 textarea,
 input,
-[role="dialog"],
-.agent-document,
-.native-document {
+[role="dialog"] {
   user-select: text;
 }
 
@@ -333,63 +320,11 @@ kbd {
   letter-spacing: 0.02em;
 }
 
-@keyframes native-pulse {
-  0%, 100% { opacity: .35; transform: scale(.8); }
-  50% { opacity: 1; transform: scale(1); }
-}
-
-@keyframes token-shimmer {
-  0% { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
-}
-
-.skeleton {
-  display: block;
-  border-radius: var(--radius-md);
-  background: linear-gradient(90deg, var(--elevated) 0%, var(--skeleton-shine) 46%, var(--elevated) 100%);
-  background-size: 220% 100%;
-  animation: token-shimmer 1.35s var(--ease-in-out) infinite;
-}
-
-/* Real activity: the dot pulses only while the runtime reports work. */
-.working-mark {
-  display: block;
-  width: 0.5rem;
-  height: 0.5rem;
-  flex: none;
-  border-radius: 999px;
-  background: var(--accent-text);
-  animation: native-pulse 1.4s var(--ease-in-out) infinite;
-}
-
-/* Streaming text shimmer, Codex-style: the label itself carries the motion. */
-.working-shimmer {
-  background: linear-gradient(90deg, var(--gray-400) 0%, var(--gray-100) 50%, var(--gray-400) 100%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: token-shimmer 1.8s linear infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
-  }
-  .skeleton {
-    animation: none;
-    background: var(--elevated);
-  }
-  .working-mark {
-    animation: none;
-    opacity: 1;
-  }
-  .working-shimmer {
-    animation: none;
-    color: var(--gray-300);
-    background: none;
   }
 }

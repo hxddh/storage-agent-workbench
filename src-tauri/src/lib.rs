@@ -36,7 +36,7 @@ const QUICK_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
 /// Menu commands the native menu bar dispatches to the webview as the
 /// `menu-command` event `{ id }`. The frontend (`hooks/useNativeAgent.ts`,
 /// `MENU_COMMANDS`) routes each id through the SAME handler the keyboard and
-/// the command palette use — the menu is not a second command path.
+/// the sidebar use — the menu is not a second command path.
 /// (id, label, accelerator)
 const MENU_COMMANDS: &[(&str, &str, Option<&str>)] = &[
     ("settings", "Settings…", Some("CmdOrCtrl+,")),
@@ -47,11 +47,10 @@ const MENU_COMMANDS: &[(&str, &str, Option<&str>)] = &[
     ("resume", "Resume Interrupted Execution", None),
     ("toggle-sidebar", "Toggle Sidebar", Some("CmdOrCtrl+\\")),
     ("review", "Show Details", Some("CmdOrCtrl+I")),
-    ("palette", "Command Palette", Some("CmdOrCtrl+K")),
+    ("search", "Search Tasks", Some("CmdOrCtrl+K")),
     ("focus-composer", "Focus Composer", Some("CmdOrCtrl+L")),
     ("theme", "Toggle Theme", None),
     ("quick-ask", "Quick Ask", None),
-    ("shortcuts", "Keyboard Shortcuts", None),
     ("release-notes", "Release Notes", None),
 ];
 
@@ -451,7 +450,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         true,
         &[
             &item("toggle-sidebar")?,
-            &item("palette")?,
+            &item("search")?,
             &item("quick-ask")?,
             &item("theme")?,
             &PredefinedMenuItem::separator(app)?,
@@ -473,7 +472,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         app,
         "Help",
         true,
-        &[&item("shortcuts")?, &item("release-notes")?],
+        &[&item("release-notes")?],
     )?;
     Menu::with_items(
         app,

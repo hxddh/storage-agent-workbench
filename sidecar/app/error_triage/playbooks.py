@@ -70,7 +70,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
          "presigned URL query was stripped or reordered", "S3-compatible signing incompatibility"],
         ["client region vs bucket region", "configured endpoint vs provider endpoint",
          "addressing style", "request timestamp vs server time"],
-        ["test_credentials", "inspect_endpoint_tls", "test_addressing_style",
+        ["list_buckets (credential check)", "inspect_endpoint_tls", "test_addressing_style",
          "get_bucket_location", "compare client region and endpoint", "check request time skew"],
         ["diagnostic", "bucket_config_review"],
         ["S3-compatible providers may differ in SigV4 canonicalization or require path-style."],
@@ -82,7 +82,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
          "cross-account access not granted", "provider-specific permission model"],
         ["which principal/credential was used", "bucket policy + ACL + public access block",
          "whether the operation requires extra permissions (e.g. kms:Decrypt)"],
-        ["test_credentials", "review bucket policy / ACL / public access block (read-only)",
+        ["list_buckets (credential check)", "review bucket policy / ACL / public access block (read-only)",
          "confirm the operation and resource the credential is allowed"],
         ["bucket_config_review", "diagnostic"],
         ["Some providers return AccessDenied for unsupported APIs; treat capability gaps separately."],
@@ -91,7 +91,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         "InvalidAccessKeyId", "auth", "Access key not recognized", "high",
         ["stale or rotated access key", "wrong credential profile", "wrong account/provider"],
         ["which credential profile is in use", "whether the key was rotated"],
-        ["test_credentials", "confirm the configured provider credentials"],
+        ["list_buckets (credential check)", "confirm the configured provider credentials"],
         ["diagnostic"], [], [_DIAG, _ASK]),
     "NoSuchBucket": _entry(
         "NoSuchBucket", "routing", "Bucket does not exist (from this endpoint/region)", "medium",
@@ -104,7 +104,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         "NoSuchKey", "client", "Object key not found", "high",
         ["key typo or wrong prefix", "object not yet written / already expired", "wrong bucket"],
         ["the exact key/prefix requested", "whether a lifecycle rule expired it"],
-        ["head_object on the exact key", "list a bounded prefix to confirm naming"],
+        ["inspect_object on the exact key", "list a bounded prefix to confirm naming"],
         ["diagnostic"], [], [_ASK]),
     "PermanentRedirect": _entry(
         "PermanentRedirect", "routing", "Bucket is in a different region/endpoint", "high",
@@ -118,7 +118,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         "AuthorizationHeaderMalformed", "routing", "Authorization header region/format mismatch", "high",
         ["region in the request differs from the bucket region", "malformed/altered Authorization header"],
         ["region declared in the request vs bucket region"],
-        ["get_bucket_location", "align the signing region", "test_credentials"],
+        ["get_bucket_location", "align the signing region", "list_buckets (credential check)"],
         ["diagnostic"], [], [_DIAG, _ASK]),
     "RequestTimeTooSkewed": _entry(
         "RequestTimeTooSkewed", "auth", "Client clock skew", "high",
@@ -178,7 +178,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         ["the object's storage class is an archive tier, so GET is not allowed until restored",
          "a restore was requested but has not completed yet", "a completed restore already expired"],
         ["the object's storage class", "its restore status (in progress / expiry)"],
-        ["head_object on the exact key — it reports storage_class, archive_status, and the "
+        ["inspect_object on the exact key — it reports storage_class, archive_status, and the "
          "x-amz-restore state (restore in progress / restored-until)",
          "if not restored: initiate a restore from your own tooling (this app is read-only), "
          "then retry the GET after it completes"],
@@ -190,7 +190,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         ["STS/temporary credentials expired", "a long-running job outlived its session",
          "cached credentials not refreshed"],
         ["when the credentials were issued and their duration", "whether a refresh path exists"],
-        ["test_credentials — confirms the stored credential is rejected",
+        ["list_buckets — confirms the stored credential is rejected",
          "re-issue the session token / re-assume the role, then update the provider credentials"],
         ["diagnostic"], [], [_DIAG, _ASK]),
     "AccessControlListNotSupported": _entry(
@@ -223,18 +223,18 @@ _BY_CODE: dict[str, dict[str, Any]] = {
          "the object was replaced with a smaller version between HEAD and GET",
          "a zero-byte object requested with any Range"],
         ["the exact Range header sent vs the object's current size"],
-        ["head_object on the key — read the CURRENT size (and ETag: did it change?)",
-         "test_range_get with a bounded in-range read to confirm range reads work at all"],
+        ["inspect_object on the key — read the CURRENT size (and ETag: did it change?)",
+         "test_object_read (mode range) with a bounded in-range read to confirm range reads work at all"],
         ["diagnostic"], [], [_DIAG, _ASK]),
     "NotImplemented": _entry(
         "NotImplemented", "client", "Provider does not implement this API (capability gap)", "high",
         ["the S3-compatible provider does not support the API you called (rule: this is a "
          "capability gap, NOT a failure)", "an optional header/feature the provider ignores"],
         ["which API/operation returned 501", "the provider/endpoint in use"],
-        ["get_bucket_config_summary — its per-aspect statuses mark unsupported APIs as "
+        ["review_bucket_config (summary) — its per-aspect statuses mark unsupported APIs as "
          "provider_unsupported so you can see the provider's real surface",
-         "use the fallback the equivalent skill suggests (e.g. head_object instead of "
-         "get_object_attributes)"],
+         "use the fallback the equivalent skill suggests (e.g. inspect_object head instead of "
+         "its attributes aspect)"],
         ["bucket_config_review"],
         ["MinIO/Ceph/OSS/COS each omit different config APIs; design around provider_unsupported."],
         [_CFG, _ASK]),
@@ -246,9 +246,9 @@ _KMS = _entry(
     ["the caller lacks kms:Decrypt (or kms:GenerateDataKey for writes) on the object's KMS key",
      "the KMS key is disabled or scheduled for deletion", "the key policy does not grant the caller",
      "cross-account: the key policy must grant the external account explicitly"],
-    ["the object's SSE mode and KMS key (head_object shows SSE state)",
+    ["the object's SSE mode and KMS key (inspect_object shows SSE state)",
      "the caller's kms:Decrypt permission on that key", "the key's enabled/disabled state"],
-    ["head_object on the exact key — confirms it is SSE-KMS encrypted and which key id style applies",
+    ["inspect_object on the exact key — confirms it is SSE-KMS encrypted and which key id style applies",
      "review the key policy + caller IAM for kms:Decrypt (identity-side; share the policy redacted)"],
     ["bucket_config_review", "diagnostic"],
     ["S3-compatible providers may not surface KMS.* codes; a plain AccessDenied on an encrypted "
@@ -412,7 +412,7 @@ _BY_CODE.update({
         ["the exact operation and the parameter named in the message",
          "whether the same call works against AWS S3"],
         ["retry the same call with the optional parameter removed",
-         "test_credentials", "inspect_endpoint_tls"],
+         "list_buckets (credential check)", "inspect_endpoint_tls"],
         ["diagnostic"],
         ["The message text — not the code — names the offending parameter, and "
          "S3-compatible providers word it differently."],

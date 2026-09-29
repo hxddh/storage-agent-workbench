@@ -54,14 +54,14 @@ Slow transfer or 429/503 →
   endpoint (optionally on a specific key). Run this FIRST when the complaint is
   "slow" — it turns a vibe into numbers and tells you whether the floor is
   per-request latency at all before you reason about object size or concurrency.
-- `test_range_get` — measure first-byte latency and confirm ranged reads work
+- `test_object_read` (mode `range`) — measure first-byte latency and confirm ranged reads work
   (relevant for partial-read / CDN-origin workloads).
 - `inspect_endpoint_tls` / `test_addressing_style` — rule out a handshake or
   addressing cost masquerading as "slowness".
 
 For traffic-shaped throughput/error analysis over time, analyze an attached log
-with `analyze_uploaded_file`, or for logs still in a bucket propose
-`plan_access_log_import` (a confirmed import) — rather than guessing from a
+with `analyze_uploaded_file`, or for logs still in a bucket run
+`import_evidence(source_type="access_log", …)` — rather than guessing from a
 snapshot.
 
 ## Ask the user (only what tools can't reveal)

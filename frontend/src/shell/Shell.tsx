@@ -13,7 +13,6 @@ import { useTask } from "../store/task";
 import { TaskPage } from "../task/TaskPage";
 import { useTheme } from "../theme";
 import { useApp } from "./context";
-import { Palette } from "./Palette";
 import { Sidebar } from "./Sidebar";
 
 /**
@@ -50,13 +49,16 @@ export function Shell() {
     switch (c) {
       case "new-task": app.goHome(); break;
       case "settings": app.openSettings(); break;
-      case "palette": app.setPalette(true); break;
+      case "search": {
+        if (!app.sidebar) app.setSidebar(true);
+        requestAnimationFrame(() => document.querySelector<HTMLInputElement>("[data-testid=task-search]")?.focus());
+        break;
+      }
       case "toggle-sidebar": app.setSidebar(!app.sidebar); break;
       case "theme": theme.toggle(); break;
       case "stop": if (taskId) void api.stop(taskId); break;
       case "review": if (taskId) app.setPane(app.pane?.tab === "details" ? null : { tab: "details" }); break;
       case "focus-composer": document.querySelector<HTMLTextAreaElement>("[data-testid=composer-input]")?.focus(); break;
-      case "shortcuts": app.setPalette(true); break;
       case "release-notes": void openExternal("https://github.com/hxddh/storage-agent-workbench/releases"); break;
       case "rename-task": {
         const current = model.snapshot?.task.title;
@@ -85,7 +87,7 @@ export function Shell() {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
       const k = e.key.toLowerCase();
-      if (k === "k") { e.preventDefault(); app.setPalette(!app.palette); }
+      if (k === "k") { e.preventDefault(); command("search"); }
       else if (k === "n" && !e.shiftKey) { e.preventDefault(); command("new-task"); }
       else if (k === ",") { e.preventDefault(); command("settings"); }
       else if (k === "i" && taskId) { e.preventDefault(); command("review"); }
@@ -135,7 +137,7 @@ export function Shell() {
         </div>
         {taskId ? (
           <div className="dock">
-            <Composer taskId={taskId} busy={busy} />
+            <Composer key={taskId} taskId={taskId} busy={busy} />
           </div>
         ) : null}
       </main>
@@ -143,7 +145,6 @@ export function Shell() {
       {app.pane?.tab === "bucket" ? <BucketSheet key={`${app.pane.providerId}/${app.pane.bucket}`}
         providerId={app.pane.providerId} bucket={app.pane.bucket} /> : null}
       {app.settings ? <Settings /> : null}
-      {app.palette ? <Palette /> : null}
       <span className="sr-only" aria-live="polite">{state ? t(`state.${state}`) : ""}</span>
     </div>
   );

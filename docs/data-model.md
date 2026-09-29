@@ -198,9 +198,9 @@ The code writes these kinds:
 | --- | --- | --- | --- |
 | `survey` | `survey_account` tool, only for a successful survey | `Account survey · <account>` | The full survey profile: `{success, provider_id, list_status, visible, processed, truncated, whole_account, summary, summary_text, buckets: [per-bucket snapshot + bucket_name, access_status, evidence_sources]}` |
 | `survey` | watch sweep (`task_id` is `NULL`) | `Watch survey · <account>` | Same profile. Only the newest 3 task-less surveys per provider are kept. |
-| `review` | `review_bucket_config` tool | `Configuration review · <bucket>` | `{bucket, findings}` (at most 200 findings) |
+| `review` | `review_bucket_config` tool (inside a task) | `Configuration review · <bucket>`, naming the aspects when not all ran | `{bucket, aspects, findings}` (at most 200 findings) |
 
-`compare_to_last_survey`, `query_account_profile` and evidence import read the
+`compare_to_last_survey`, `query_estate` with `survey_filter` and evidence import read the
 newest `survey` artifacts of a provider, including watch surveys.
 
 ## Datasets
@@ -248,8 +248,8 @@ findings and whitelisted aggregates.
 
 The estate records what the work has established about the user's storage.
 Issues are opened, resolved and marked recurred only by deterministic
-observations: survey posture, the `review_bucket_security` and
-`review_bucket_lifecycle` outputs, a Verify re-check, and a watch sweep.
+observations: survey posture, the security and lifecycle aspects of a
+`review_bucket_config` run, a Verify re-check, and a watch sweep.
 Model prose never changes an issue. An observation that could not read
 something decides nothing.
 
@@ -411,7 +411,6 @@ These keys are used:
 | --- | --- | --- |
 | `language` | `en` or `zh` (default `en`). Also sets the Agent's prompt language and the language of issue titles in `query_estate`. | `PATCH /settings` |
 | `theme` | `system`, `light` or `dark` (default `system`) | `PATCH /settings` |
-| `price_table` | JSON `{rates, confirmed, note}`. The example schedule is used until this key exists. | `PUT /settings/price-table`, importer |
 | `imported_from_v4` | JSON counts from the importer (`{}` when nothing was imported). Its presence means the import has run. | importer |
 
 ## Audit
@@ -442,7 +441,6 @@ Indexes: `idx_audit_at (at)` and `idx_audit_task (task_id, id)`.
 | `task.rename`, `task.delete` | `user` | — |
 | `model_provider.create`, `.update`, `.delete` | `user` | — |
 | `cloud_provider.create`, `.update`, `.delete` | `user` | — |
-| `settings.price_table` | `user` | `{confirmed}` |
 | `watch.set` | `user` | `{enabled, interval_hours}` |
 
 ## Spans
@@ -488,7 +486,6 @@ What it copies:
 | --- | --- |
 | `model_providers` | `model_providers`. `provider_type` is normalized to a v5 `kind` (aliases such as `llama.cpp` → `llamacpp` and `custom` → `openai-compatible`; unknown values → `openai-compatible`). `api_style` is derived from the kind and base URL. The first row (oldest) is made active. The `keyring://` references carry over; the secrets stay in the vault. |
 | `cloud_providers` | `cloud_providers`, column for column, with the vault references |
-| `storage_price_table` row `id = 'default'` | the `price_table` setting `{rates, confirmed, note}` (only when `rates` is a JSON object) |
 | `sessions`: the 500 most recently updated | `tasks` (`origin = 'user'`). `title_source` is kept when it is `seed`, `agent` or `user`. |
 | `session_messages`: at most 400 per session, in order | Each user message becomes a `completed` `direction` turn chained after the previous one, with a `user_message` item (text cut to 16 000 chars for the turn's `direction`). The first turn also gets `notice {event: "imported", from: "v4"}`. Each assistant message becomes a `conclusion` item (when v4 has a `conclusion` column holding JSON with an `answer`; `call_id = "imported-<message id>"`) followed by an `agent_message` item. The task's head is its last turn. Tool calls and runs are not imported. |
 | `estate_buckets` | `estate_buckets` (`posture_json_sanitized` → `posture`) |

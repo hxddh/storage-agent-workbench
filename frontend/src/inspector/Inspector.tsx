@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEven
 import { api } from "../api";
 import { Icon } from "../components/icons";
 import { Markdown } from "../components/Markdown";
+import { useToast } from "../components/Toast";
 import { Button, IconButton } from "../components/ui";
 import { saveTextFile } from "../config";
 import { useI18n } from "../i18n";
@@ -31,7 +32,12 @@ export function Pane({ title, children, testId }: { title: string; children: Rea
   const [width, setWidth] = useState(storedWidth);
   const drag = useRef<{ x: number; w: number } | null>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !app.settings && !app.palette) app.setPane(null); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || app.settings) return;
+      // Escape in a field or a menu belongs to that field or menu, not to the pane.
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [role=menu], [role=listbox]")) return;
+      app.setPane(null);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [app]);
@@ -138,16 +144,22 @@ function Usage({ usage }: { usage: Array<TaskModel["turns"][number]["usage"]> })
 function SaveReport({ taskId, title }: { taskId: string; title: string }) {
   const { t, lang } = useI18n();
   const [saved, setSaved] = useState<string | null>(null);
+  const toast = useToast();
   const save = async () => {
-    const text = await api.report(taskId, lang);
-    const name = `${title.replace(/[^\w一-鿿-]+/g, "-").slice(0, 60) || "report"}.md`;
-    const path = await saveTextFile(name, text);
-    if (path) setSaved(path);
-    else {
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
-      a.download = name;
-      a.click();
+    try {
+      const text = await api.report(taskId, lang);
+      const name = `${title.replace(/[^\w一-鿿-]+/g, "-").slice(0, 60) || "report"}.md`;
+      const path = await saveTextFile(name, text);
+      if (path) setSaved(path);
+      else {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 0);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
     }
   };
   return (

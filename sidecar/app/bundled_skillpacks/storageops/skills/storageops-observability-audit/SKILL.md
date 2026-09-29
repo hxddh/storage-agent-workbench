@@ -46,9 +46,9 @@ looks configured but yields nothing when you need it.
 
 ## Investigate with your read-only tools
 
-- `review_bucket_observability` — the focused read: logging target, notification
+- `review_bucket_config` (aspect `observability`) — the focused read: logging target, notification
   configuration, and tagging in one pass.
-- `get_bucket_config_summary` — confirms the logging destination bucket + prefix,
+- `review_bucket_config` (aspect `summary`) — confirms the logging destination bucket + prefix,
   notification config, and tag set actually present on the bucket. Now also reads
   request `metrics` and storage-class `analytics` config status.
 - `get_bucket_config_detail` — the actual RULES behind the status: aspect
@@ -61,10 +61,10 @@ looks configured but yields nothing when you need it.
   logs are truly landing there (config says "on", but are objects arriving?).
 - `list_uploaded_files` + `analyze_uploaded_file` — if the user attaches an
   access-log or inventory export, analyze it for coverage; for data still in a
-  bucket, propose `plan_inventory_import` / an access-log import (confirmed).
-- Run `review_bucket_config` (inline, read-only) for the full posture; for the
+  bucket, run `import_evidence` (inventory or access_log).
+- Run `review_bucket_config` without aspects for the full posture; for the
   account-wide view use `survey_account`, then
-  `query_account_profile(filter='missing_logging')` answers "which buckets have
+  `query_estate(provider_id, survey_filter='missing_logging')` answers "which buckets have
   logging off?" in one call from the persisted survey (no re-scan).
 
 ## Ask the user (only what tools can't reveal)

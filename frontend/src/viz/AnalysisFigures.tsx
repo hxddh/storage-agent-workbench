@@ -2,14 +2,12 @@ import { useI18n } from "../i18n";
 import { costChart, driftChart, inventoryChart, accessChart } from "./extract";
 import {
   ChartFrame,
-  CostColumns,
   GapState,
   Legend,
   RankedBars,
   StackedHorizon,
   formatBytes,
   formatSignedBytes,
-  formatUsd,
   seriesColor,
 } from "./marks";
 import type { TaskProvenance } from "./types";
@@ -44,13 +42,10 @@ export function AnalysisFigures({
             estimate
             extra={t("viz.horizonsNote")}
             table={{
-              columns: [t("viz.horizon"), ...cost.classes, ...(cost.priceConfirmed ? [t("viz.baseline"), t("viz.candidate")] : [])],
+              columns: [t("viz.horizon"), ...cost.classes],
               rows: cost.horizons.map((h) => [
                 `${h.day}d`,
                 ...cost.classes.map((name) => formatBytes(h.classes[name] ?? 0)),
-                ...(cost.priceConfirmed
-                  ? [h.baselineCost != null ? `$${h.baselineCost.toFixed(2)}` : "—", h.candidateCost != null ? `$${h.candidateCost.toFixed(2)}` : "—"]
-                  : []),
               ]),
             }}
           >
@@ -62,32 +57,6 @@ export function AnalysisFigures({
               series={cost.classes}
               values={cost.horizons.map((h) => cost.classes.map((name) => h.classes[name] ?? 0))}
             />
-            {cost.priceConfirmed ? (
-              <>
-                <div className="viz-section">
-                  <div className="viz-subhead">
-                    <div className="viz-subtitle">{t("viz.monthlyCost")}</div>
-                    {cost.delta != null ? (
-                      <p className="viz-stat-inline" data-testid="viz-cost-delta">
-                        <strong>{formatUsd(cost.delta)}</strong>
-                        <span>{t("viz.at365")}</span>
-                      </p>
-                    ) : null}
-                  </div>
-                  <Legend items={[{ label: t("viz.baseline"), color: "var(--gray-500)" }, { label: t("viz.candidate"), color: "var(--viz-1)" }]} />
-                  <CostColumns
-                    days={cost.horizons.map((h) => h.day)}
-                    baseline={cost.horizons.map((h) => h.baselineCost)}
-                    candidate={cost.horizons.map((h) => h.candidateCost)}
-                    labels={{ baseline: t("viz.baseline"), candidate: t("viz.candidate") }}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="viz-section">
-                <GapState title={t("viz.costWithheld")} body={t("viz.costWithheldBody")} />
-              </div>
-            )}
           </ChartFrame>
         )
       ) : null}

@@ -78,8 +78,8 @@ def test_the_v4_database_is_imported_once_and_never_modified(conn):
     assert types == ["user_message", "notice", "conclusion", "agent_message"]
     issue = conn.execute("SELECT status, source_task_id FROM issues WHERE id = 'i1'").fetchone()
     assert tuple(issue) == ("open", "s1")
-    from app.analysis import prices
-    assert prices.load(conn)["confirmed"] is True
+    # v8: the price table is no longer imported (dollar estimates were removed).
+    assert conn.execute("SELECT 1 FROM settings WHERE key = 'price_table'").fetchone() is None
 
 
 def test_no_legacy_database_is_a_quiet_no_op(conn):

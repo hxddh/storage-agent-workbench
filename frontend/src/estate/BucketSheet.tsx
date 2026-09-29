@@ -25,8 +25,11 @@ export function BucketSheet({ providerId, bucket }: { providerId: string; bucket
   }, [providerId, bucket, lang]);
   useEffect(() => reload(), [reload]);
   const account = app.clouds?.find((c) => c.id === providerId)?.name ?? "";
-  const care = page?.issues.filter((i) => i.status !== "resolved") ?? [];
-  const past = page?.issues.filter((i) => i.status === "resolved") ?? [];
+  // An issue this visit touched stays where it was, so its Verify result stays readable.
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
+  const changed = (id: string) => { setTouched((s) => new Set(s).add(id)); reload(); };
+  const care = page?.issues.filter((i) => i.status !== "resolved" || touched.has(i.id)) ?? [];
+  const past = page?.issues.filter((i) => i.status === "resolved" && !touched.has(i.id)) ?? [];
   const ask = () => {
     app.prefill(t("bucket.askPrompt", { bucket, account }));
   };
@@ -42,12 +45,12 @@ export function BucketSheet({ providerId, bucket }: { providerId: string; bucket
         {page ? (
           <>
             {care.length ? (
-              <ul className="issues">{care.map((i) => <IssueCard key={i.id} issue={i} onChange={reload} />)}</ul>
+              <ul className="issues">{care.map((i) => <IssueCard key={i.id} issue={i} onChange={() => changed(i.id)} />)}</ul>
             ) : <p className="quiet-note">{t("bucket.nothing")}</p>}
             {past.length ? (
               <details className="fold">
                 <summary>{t("bucket.resolved", { n: past.length })}</summary>
-                <ul className="issues">{past.map((i) => <IssueCard key={i.id} issue={i} onChange={reload} />)}</ul>
+                <ul className="issues">{past.map((i) => <IssueCard key={i.id} issue={i} onChange={() => changed(i.id)} />)}</ul>
               </details>
             ) : null}
             <Configuration posture={page.posture} />
@@ -74,6 +77,9 @@ const ORDER = [
   "object_ownership", "acls_disabled", "inventory_status", "tagging_status", "access_status", "head_bucket_status",
 ];
 const EXPOSURE = new Set(["publicly_exposed", "policy_is_public", "acl_public"]);
+// A missing protection is worth a look; a missing policy, replication or tags is not.
+const PROTECTIONS = new Set(["public_access_block_status", "encryption_status", "versioning_status",
+  "lifecycle_status", "logging_status"]);
 const WORDS = new Set(["access_denied", "available", "error", "not_configured", "provider_unsupported", "Enabled", "Suspended", "region_mismatch"]);
 const REACHABILITY = new Set(["access_status", "head_bucket_status"]);
 
@@ -81,14 +87,14 @@ const REACHABILITY = new Set(["access_status", "head_bucket_status"]);
 function deviates(key: string, v: unknown): boolean {
   if (EXPOSURE.has(key)) return v === true;
   if (REACHABILITY.has(key)) return v !== "available" && v != null;
-  return v === "not_configured" || v === "access_denied" || v === "error";
+  if (v === "access_denied" || v === "error") return true;
+  return PROTECTIONS.has(key) && v === "not_configured";
 }
 
 function Configuration({ posture }: { posture: Record<string, unknown> }) {
   const { t } = useI18n();
-  const [all, setAll] = useState(false);
   const keys = ORDER.filter((k) => k in posture && posture[k] !== null && posture[k] !== undefined && posture[k] !== "");
-  const shown = all ? keys : keys.filter((k) => deviates(k, posture[k]));
+  const shown = keys.filter((k) => deviates(k, posture[k]));
   if (!keys.length) return null;
   const value = (k: string, v: unknown) => {
     if (v === true) return t("posture.yes");
@@ -103,18 +109,13 @@ function Configuration({ posture }: { posture: Record<string, unknown> }) {
       {shown.length ? (
         <dl className="config-list">
           {shown.map((k) => (
-            <div key={k} className="config-row" data-deviates={deviates(k, posture[k]) ? "true" : undefined}>
+            <div key={k} className="config-row">
               <dt>{t(`posture.${k}`)}</dt>
               <dd>{value(k, posture[k])}</dd>
             </div>
           ))}
         </dl>
       ) : <p className="quiet-note">{t("bucket.configClean")}</p>}
-      {keys.length > shown.length || all ? (
-        <button type="button" className="link" onClick={() => setAll(!all)}>
-          {all ? t("bucket.configLess") : t("bucket.configAll", { n: keys.length })}
-        </button>
-      ) : null}
     </div>
   );
 }

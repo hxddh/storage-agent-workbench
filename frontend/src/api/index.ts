@@ -11,7 +11,6 @@ const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 
 /** The Sidecar surface (v5). Every mutation of work goes through `/tasks`. */
 export const api = {
-  health: () => request<{ status: string; version: string }>("/health", undefined, 5_000),
 
   // tasks — the one submit path
   tasks: (q?: string) => request<{ tasks: TaskRow[] }>(`/tasks${q ? `?q=${encodeURIComponent(q)}` : ""}`),
@@ -38,8 +37,6 @@ export const api = {
     if (!res.ok) throw new ApiError(res.status, await errorDetail(res));
     return res.text();
   },
-  artifact: (id: string, artifactId: string) =>
-    request<{ id: string; kind: string; title: string; payload: unknown }>(`/tasks/${id}/artifacts/${artifactId}`),
   upload: async (id: string, file: File): Promise<FileRow> => {
     const body = new FormData();
     body.append("file", file);
@@ -55,11 +52,9 @@ export const api = {
       clear();
     }
   },
-  trace: (id: string) => request<{ spans: unknown[] }>(`/tasks/${id}/trace`),
 
   // the estate
   estate: (lang: string) => request<Estate>(`/estate?lang=${lang}`),
-  issue: (id: string, lang: string) => request<Issue>(`/issues/${id}?lang=${lang}`),
   proposeFix: (id: string, lang: string) => request<Issue>(`/issues/${id}/fix?lang=${lang}`, { method: "POST" }),
   impact: (id: string, lang: string) => request<Impact>(`/issues/${id}/impact?lang=${lang}`, undefined, 30_000),
   verifyIssue: (id: string, lang: string) =>

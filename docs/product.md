@@ -9,7 +9,7 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 - **Diagnose**: an access error, a slow bucket, a presigned URL that fails, a TLS or addressing problem.
 - **Review**: one bucket's configuration, or a survey of every bucket in an account — exposure, encryption, public access block, lifecycle, versioning, logging.
 - **Analyze**: an access log or inventory the user attaches, or evidence the Agent imports from a source the survey discovered (bounded).
-- **Estimate**: storage-class mix over time under candidate lifecycle rules; dollars only with a price table the user confirmed.
+- **Estimate**: storage-class mix (bytes per class) over time under candidate lifecycle rules. It never quotes a price.
 - **Look after**: the estate keeps known accounts, buckets, how their posture changed, Issues and notes; each Issue has a fix to apply (CLI, Terraform or the document) with a preview of what it would change, a read-only Verify that closes it, and it reopens when the problem comes back. A watch can sweep an account on a schedule and open a task only when something new turns up.
 
 ## The window
@@ -17,6 +17,7 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 **Sidebar · title bar · one conversation · one Composer**, plus one closable side pane.
 
 - The **sidebar** is New task, an in-place search, the task list grouped by day, and Settings — nothing else. In a narrow window it overlays the page. A row shows state as a mark: working (pulsing), queued, needs attention; a task the watch opened carries a shield.
+- **⌘K** focuses the sidebar search.
 - The **title bar** names the task and shows its real state; a hairline runs under it while work is live; its right-hand button opens **Details**.
 - The **Composer** is the only way to give the Agent work: *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. Files attach by button or drop (access logs, inventories); a file always makes a new request. The model chip shows which model the next turn uses.
 
@@ -25,11 +26,11 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 The greeting, the Composer, three starters (*Diagnose an access error*, *Survey my storage account*, *Analyze an access log*) that only fill the Composer, then:
 
 - **Getting started** — one sentence when a model or a storage account is missing, each part a link to the right Settings pane.
-- **Needs attention** — open Issues, most severe first (six, then a count), each naming its bucket; a row opens that bucket in the side pane. Below, one quiet line per account: its buckets, when it was last checked, whether it is watched.
+- **Needs attention** — one row per kind of open Issue, most severe first, naming every bucket it was found on (three, then *+N*); a bucket opens in the side pane. Storage that was never checked says so and offers to survey it. Below, one quiet line per account: its buckets, when it was last checked, whether it is watched.
 
 ### A bucket
 
-The **bucket sheet** (the side pane) is where the storage itself is the subject: what needs attention (the resolved Issues folded below), its configuration as last checked (deviations first), the notes kept about it, and its history (posture changes and Issue events, folded). *Ask about this bucket* fills the Composer; it never submits.
+The **bucket sheet** (the side pane) is where the storage itself is the subject: what needs attention (the resolved Issues folded below), its configuration as last checked (only what deviates: exposure that is on, a read that failed, a missing protection), the notes kept about it, and its history (posture changes and Issue events, folded). *Ask about this bucket* fills the Composer; it never submits.
 
 An Issue shows **Show fix** and **Verify** (a read-only re-check that can resolve it); its menu holds *Open task* and *Accept risk* (with an optional reason, kept as a note). The **fix** is the AWS CLI command, a Terraform resource or the API document — copy whichever you apply changes with — with an **impact preview**: what applying it would change, from the evidence the estate holds. For a public access block it counts the anonymous requests in the bucket's attached S3 server access logs; for lifecycle rules it says whether existing rules would be replaced. When the evidence cannot tell, it says so and what would answer it.
 
@@ -51,7 +52,7 @@ A small always-on-top window (⌘⇧Space, the tray, View › Quick Ask) for one
 
 ### Settings
 
-General (theme, language, the safety floor in three points) · Models (presets for OpenAI, Anthropic, DeepSeek, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint; masked keys; a live test) · Storage accounts (presets for the common services; scope by bucket and prefix; each account's **Watch**: Off · 6 h · Daily · Weekly, Check now) · Skills & bridges (skills, the standing-instructions file, the MCP server).
+General (theme, language, the safety floor in three points; *Advanced*: skills, the standing-instructions file, the MCP server) · Models (presets for OpenAI, Anthropic, DeepSeek, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint; masked keys; a live test) · Storage accounts (presets for the common services; scope by bucket and prefix; each account's **Watch**: Off · 6 h · Daily · Weekly, Check now).
 
 ## Principles
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { ModelProvider } from "../api/types";
 import { Icon } from "../components/icons";
+import { useToast } from "../components/Toast";
 import { StatusDot } from "../components/ui";
 import { useI18n } from "../i18n";
 import { useApp } from "../shell/context";
@@ -14,6 +15,7 @@ import { useApp } from "../shell/context";
 export function ModelChip() {
   const { t } = useI18n();
   const app = useApp();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -49,6 +51,8 @@ export function ModelChip() {
     try {
       await api.activateModel(m.id);
       await app.reloadProviders();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
       setOpen(false);
@@ -59,6 +63,8 @@ export function ModelChip() {
     try {
       await api.updateModel(active.id, { reasoning_effort: effort });
       await app.reloadProviders();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -75,10 +81,10 @@ export function ModelChip() {
         <Icon name="chevron" size={14} className="model-chip-caret" />
       </button>
       {open ? (
-        <div className="ui-menu model-menu" onKeyDown={(e) => e.key === "Escape" && setOpen(false)}>
+        <div className="ui-menu model-menu" onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } }}>
           <div role="listbox" aria-label={t("chip.title")}>
             {models.map((m) => (
-              <button key={m.id} role="option" aria-selected={m.active} className="ui-menu-item"
+              <button key={m.id} type="button" role="option" aria-selected={m.active} className="ui-menu-item"
                 autoFocus={m.active} onClick={() => void choose(m)}>
                 <span>{m.model}</span>
                 <small>{m.name}</small>
@@ -101,7 +107,7 @@ export function ModelChip() {
             </>
           ) : null}
           <div className="ui-menu-sep" />
-          <button className="ui-menu-item" onClick={() => { setOpen(false); app.openSettings("models"); }}>
+          <button type="button" className="ui-menu-item" onClick={() => { setOpen(false); app.openSettings("models"); }}>
             {t("chip.settings")}
           </button>
         </div>

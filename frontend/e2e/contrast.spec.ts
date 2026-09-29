@@ -169,7 +169,7 @@ for (const theme of ["dark", "light"] as const) {
         await expect(page.getByTestId("answer")).toContainText("Surveyed.", { timeout: 30_000 });
         await settled(page);
         await page.getByTestId("new-task").click();
-        await page.getByTestId("needs-care").getByTestId("issue").first().click();
+        await page.getByTestId("needs-care").getByTestId("issue-bucket").first().click();
         await expect(page.getByTestId("bucket-page")).toBeVisible();
         await page.getByTestId("note-input").fill("Owned by the growth team.");
         await page.getByTestId("note-input").press("Enter");

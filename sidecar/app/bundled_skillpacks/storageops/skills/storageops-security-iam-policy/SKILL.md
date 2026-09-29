@@ -41,21 +41,20 @@ first, because the layer names differ.
 
 ## Investigate with your read-only tools
 
-- `test_credentials` — confirm the keys are valid and see the identity reached.
+- `list_buckets` — confirm the keys are valid (AccessDenied still means they authenticate).
   If this fails, it's an auth problem, not a policy one — switch to
   `storageops-s3-protocol-compatibility` (signature) or
   `storageops-network-endpoint-access`.
 - `head_bucket` — does the denial happen at the bucket level or only on objects?
-- `head_object` on a specific key — confirm a per-key 403 vs 404, and read the
+- `inspect_object` on a specific key — confirm a per-key 403 vs 404, and read the
   object's storage class / SSE state (KMS-encrypted objects need key access).
-- `review_bucket_security` (or `get_bucket_config_summary`) — read the bucket's
+- `review_bucket_config` with aspects `security` (and `summary`) — read the bucket's
   policy/ACL/public-access-block/encryption posture and point to the layer that
-  blocks. For a full posture check run `review_bucket_config` (inline,
-  read-only); to enumerate the whole account, run `survey_account`.
-- `get_object_acl` — for "is THIS object public / who can read it?": reads ONE
+  blocks. Omit aspects for the full posture check; to enumerate the whole account, run `survey_account`.
+- `inspect_object` with aspect `acl` — for "is THIS object public / who can read it?": reads ONE
   object's ACL and flags an `AllUsers` **or `AuthenticatedUsers`** grant as
   public (an object can be public even under a locked-down bucket). Grantees are
-  reduced to a KIND — no owner/canonical id leaks. Use `get_object_tagging` when
+  reduced to a KIND — no owner/canonical id leaks. Add aspect `tags` when
   a tag-scoped policy is in play.
 - `get_bucket_config_detail` (aspect `policy_status` / `acl` / `ownership` /
   `policy` / `public_access_block`) — read the config instead of asking for it:
@@ -65,7 +64,7 @@ first, because the layer names differ.
   are disabled entirely (`BucketOwnerEnforced`, the recommended posture — if so,
   skip the ACL layer in the chain); `policy` gives per-statement
   effect/actions/`is_public`; `public_access_block` the four PAB booleans.
-- `query_account_profile` — for account-wide exposure: `filter='public_buckets'`
+- `query_estate` with `survey_filter` — for account-wide exposure: `survey_filter='public_buckets'`
   answers "which of my N buckets are PUBLIC?" in one call from the last survey
   (policy verdict and/or ACL grants; no re-scan); `missing_public_access_block`
   and friends cover the weaker postures. `compare_to_last_survey` flags any
@@ -87,7 +86,7 @@ The same authorization chain answers the opposite question — "is this bucket/
 object exposed to the world?" — which is worth a deliberate pass on any security
 review, not just when a 403 is reported:
 
-- **Start with `review_bucket_security`** — it reads the policy verdict
+- **Start with `review_bucket_config` (aspect `security`)** — it reads the policy verdict
   (`policy_is_public`, AWS's GetBucketPolicyStatus judgement of the policy), the
   ACL grants, PAB, and Object Ownership in one pass, and emits a combined
   `publicly_exposed` verdict: a single public signal (policy OR ACL) already

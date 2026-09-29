@@ -40,12 +40,12 @@ CLI/SDK error →
 The client runs on the user's machine, so you confirm the *server side* is sane
 and let the user compare their client against it:
 
-- `test_credentials` — read `identity_hint`, not just `success`. A real identity
-  or bucket count means the keys signed successfully (so a client-side failure is
+- `list_buckets` — read `status` and `error_code`, not just `success`. A bucket
+  list means the keys signed successfully (so a client-side failure is
   a credential-chain problem: env vs profile vs instance role). But
-  `"Provider unsupported"` only means this endpoint has no ListBuckets — it says
+  `provider_unsupported` only means this endpoint has no ListBuckets — it says
   NOTHING about the keys, so confirm with `head_bucket`; and
-  `"authenticated (ListBuckets denied)"` means valid keys without account-level
+  `AccessDenied` means valid keys without account-level
   list permission. Never report "your credentials are fine" from `success` alone.
 - `test_addressing_style` — establishes which addressing the provider expects, so
   you can tell the user the correct `--endpoint-url` / path-style flag.

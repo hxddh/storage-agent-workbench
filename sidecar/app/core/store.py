@@ -83,8 +83,9 @@ def list_tasks(conn: sqlite3.Connection, *, query: str | None = None, limit: int
            "FROM tasks t")
     args: list[Any] = []
     if query:
-        sql += " WHERE t.title LIKE ?"
-        args.append(f"%{query}%")
+        sql += " WHERE t.title LIKE ? ESCAPE '\\'"
+        esc = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        args.append(f"%{esc}%")
     sql += " ORDER BY t.updated_at DESC LIMIT ?"
     args.append(max(1, min(int(limit), 2000)))
     return [dict(r) | {"state": task_state(r["live_status"], r["last_status"])}
@@ -193,6 +194,15 @@ def get_turn(conn: sqlite3.Connection, turn_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def transition(conn: sqlite3.Connection, turn_id: str, frm: str, to: str) -> bool:
+    """Move a turn from one status to another only if it is still in ``frm``."""
+    now = utcnow()
+    extra = ", started_at = COALESCE(started_at, ?)" if to == "running" else ", finished_at = ?"
+    cur = conn.execute(f"UPDATE turns SET status = ?{extra} WHERE id = ? AND status = ?", (to, now, turn_id, frm))
+    conn.commit()
+    return cur.rowcount == 1
+
+
 def set_turn_status(conn: sqlite3.Connection, turn_id: str, status: str, *,
                     error: str | None = None, usage: dict[str, Any] | None = None) -> None:
     now = utcnow()
@@ -244,9 +254,11 @@ def siblings(conn: sqlite3.Connection, task_id: str) -> dict[str, list[str]]:
 
 
 def leaf_of(conn: sqlite3.Connection, task_id: str, turn_id: str) -> str:
-    """The newest descendant of a turn — switching to a branch opens its tip."""
+    """The newest descendant of a turn — switching to a branch opens its tip.
+    A withdrawn Direction (cancelled before it ran) is never part of a branch."""
     children: dict[str, list[str]] = {}
-    for r in conn.execute("SELECT id, parent_turn_id FROM turns WHERE task_id = ? ORDER BY created_at, rowid",
+    for r in conn.execute("SELECT id, parent_turn_id FROM turns WHERE task_id = ? "
+                          "AND NOT (status = 'cancelled' AND started_at IS NULL) ORDER BY created_at, rowid",
                           (task_id,)).fetchall():
         children.setdefault(r["parent_turn_id"] or "", []).append(r["id"])
     cur = turn_id

@@ -47,12 +47,11 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={`ui-input ${props.className ?? ""}`} />;
 }
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "selected" | "danger" | "danger-solid";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 /**
  * Buttons: `primary` is the accent fill (one per surface), `secondary` a
  * raised neutral, `ghost` text-only, `danger` for destructive intent.
- * `default` is kept as an alias of `secondary`.
  */
 export function Button({
   variant = "secondary",
@@ -62,13 +61,12 @@ export function Button({
   children,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: ButtonVariant | "default";
-  size?: "sm" | "md" | "lg";
+  variant?: ButtonVariant;
+  size?: "sm" | "md";
   icon?: IconName;
 }) {
-  const resolved = variant === "default" ? "secondary" : variant;
   return (
-    <button type="button" {...props} data-variant={resolved} data-size={size} className={`ui-btn ${className}`}>
+    <button type="button" {...props} data-variant={variant} data-size={size} className={`ui-btn ${className}`}>
       {icon ? <Icon name={icon} size={size === "sm" ? 14 : 16} /> : null}
       {children}
     </button>
@@ -108,16 +106,6 @@ export function Badge({ tone = "neutral", children, ...props }: React.HTMLAttrib
 /** One status mark. Colour is the tone; `pulse` only while work is live. */
 export function StatusDot({ tone = "neutral", pulse = false, className = "" }: { tone?: Tone; pulse?: boolean; className?: string }) {
   return <span className={`ui-dot ${className}`} data-tone={tone} data-pulse={pulse ? "true" : "false"} aria-hidden />;
-}
-
-/** The one section eyebrow: 11px, uppercase in Latin scripts. */
-export function SectionLabel({ children, count, id }: { children: ReactNode; count?: number | null; id?: string }) {
-  return (
-    <h2 className="ui-label" id={id}>
-      <span>{children}</span>
-      {count != null ? <small>{count}</small> : null}
-    </h2>
-  );
 }
 
 export function Segmented<T extends string>({ options, value, onChange, labelId, testId }: {

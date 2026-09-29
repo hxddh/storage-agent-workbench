@@ -14,11 +14,9 @@ describe("costChart", () => {
     const chart = costChart(wrap({ kind: "gap", gaps: [{ code: "no_inventory", message: "Attach inventory." }], timeline: [] }));
     expect(chart?.horizons).toEqual([]);
     expect(chart?.gaps[0]?.code).toBe("no_inventory");
-    expect(chart?.priceConfirmed).toBe(false);
-    expect(chart?.delta).toBeNull();
   });
 
-  it("withholds the cost axis when prices are unconfirmed", () => {
+  it("projects bytes per class, with no cost axis", () => {
     const chart = costChart(wrap({
       kind: "simulation",
       gaps: [{ code: "price_unconfirmed" }],
@@ -29,9 +27,7 @@ describe("costChart", () => {
     }));
     expect(chart?.horizons).toHaveLength(1);
     expect(chart?.horizons[0].classes.STANDARD).toBe(10);
-    expect(chart?.horizons[0].candidateCost).toBeNull();
-    expect(chart?.priceConfirmed).toBe(false);
-    expect(chart?.delta).toBeNull();
+    expect(Object.keys(chart ?? {})).not.toContain("priceConfirmed");
   });
 
   it("plots only emitted horizons — a single point is a single point", () => {
@@ -48,8 +44,6 @@ describe("costChart", () => {
       monthly_cost_delta: { usd_per_month_at_365d: 0, estimate: true },
     }));
     expect(chart?.horizons.map((h) => h.day)).toEqual([0]);
-    expect(chart?.delta).toBe(0);
-    expect(chart?.priceConfirmed).toBe(true);
   });
 
   it("does not invent a day between 0 and 365", () => {

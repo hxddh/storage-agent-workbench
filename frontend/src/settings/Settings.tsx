@@ -13,10 +13,10 @@ import { useApp } from "../shell/context";
 import { useTheme } from "../theme";
 import { CLOUD_PRESETS, MODEL_PRESETS, cloudEndpoint, isLocalProvider, parseList } from "./presets";
 
-const SECTIONS = ["general", "models", "storage", "skills"] as const;
+const SECTIONS = ["general", "models", "storage"] as const;
 type SectionId = (typeof SECTIONS)[number];
 const LABEL: Record<SectionId, string> = {
-  general: "settings.general", models: "settings.models", storage: "settings.storage", skills: "settings.skills",
+  general: "settings.general", models: "settings.models", storage: "settings.storage",
 };
 
 /** Settings: one centred dialog of compact preference panes. Secrets go in, never come out. */
@@ -52,7 +52,6 @@ export function Settings() {
           {section === "general" ? <General /> : null}
           {section === "models" ? <Models /> : null}
           {section === "storage" ? <Storage /> : null}
-          {section === "skills" ? <Skills /> : null}
         </div>
       </div>
     </dialog>
@@ -95,6 +94,10 @@ function General() {
           ))}
         </ul>
       </div>
+      <details className="pref-advanced" data-testid="settings-advanced">
+        <summary>{t("settings.advanced")}</summary>
+        <Skills />
+      </details>
     </div>
   );
 }
@@ -167,14 +170,15 @@ function ModelEditor({ model, onDone }: { model: ModelProvider | null; onDone: (
     try {
       const out = await api.testModel(model.id);
       setProbe({ ok: out.ok, detail: out.detail });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
   };
   const remove = async () => {
     if (!model) return;
-    await api.deleteModel(model.id);
-    onDone();
+    await api.deleteModel(model.id).then(onDone, (e) => toast.error(e instanceof Error ? e.message : String(e)));
   };
 
   return (
@@ -209,7 +213,7 @@ function ModelEditor({ model, onDone }: { model: ModelProvider | null; onDone: (
       <div className="editor-actions">
         <Button type="submit" variant="primary" disabled={busy || !modelName.trim()}>{t("settings.save")}</Button>
         {model ? <Button onClick={() => void test()} disabled={busy}>{busy ? t("settings.testing") : t("settings.test")}</Button> : null}
-        {model && !model.active ? <Button variant="ghost" onClick={() => void api.activateModel(model.id).then(onDone)}>{t("settings.makeActive")}</Button> : null}
+        {model && !model.active ? <Button variant="ghost" onClick={() => void api.activateModel(model.id).then(onDone, (e) => toast.error(e instanceof Error ? e.message : String(e)))}>{t("settings.makeActive")}</Button> : null}
         <span className="editor-spacer" />
         {model ? <Button variant="danger" onClick={() => void remove()}>{t("settings.delete")}</Button> : null}
       </div>
@@ -290,6 +294,7 @@ function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: (
   };
 
   return (
+    <div className="provider-editor">
     <form className="provider-editor" onSubmit={save} data-testid="cloud-editor">
       <Field label={t("field.providerType")}>
         <Select value={preset} onChange={(e) => {
@@ -305,7 +310,7 @@ function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: (
         <Field label={t("field.endpoint")} hint={p.hint}><TextInput required value={form.endpoint_url} onChange={set("endpoint_url")} /></Field>
       ) : null}
       {p.variable === "account" ? (
-        <Field label="Account ID" hint={p.hint}><TextInput required value={form.account} onChange={set("account")} /></Field>
+        <Field label={t("field.accountId")} hint={p.hint}><TextInput required value={form.account} onChange={set("account")} /></Field>
       ) : null}
       <Field label={t("field.region")}><TextInput value={form.region} placeholder={p.regionPlaceholder ?? p.regionDefault} onChange={set("region")} /></Field>
       <Field label={t("field.accessKey")} hint={cloud?.has_access_key ? t("field.keepKey") : undefined}>
@@ -325,8 +330,9 @@ function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: (
       <div className="editor-actions">
         <Button type="submit" variant="primary" disabled={busy}>{busy ? t("settings.testing") : t("settings.save")}</Button>
         <span className="editor-spacer" />
-        {cloud ? <Button variant="danger" onClick={() => void api.deleteCloud(cloud.id).then(onDone)}>{t("settings.delete")}</Button> : null}
+        {cloud ? <Button variant="danger" onClick={() => void api.deleteCloud(cloud.id).then(onDone, (e) => toast.error(e instanceof Error ? e.message : String(e)))}>{t("settings.delete")}</Button> : null}
       </div>
+    </form>
       {cloud ? <WatchControl providerId={cloud.id} /> : null}
       {cloud ? (
         <div className="pref-group">
@@ -334,7 +340,7 @@ function CloudEditor({ cloud, onDone }: { cloud: CloudProvider | null; onDone: (
           <Notes scope={{ providerId: cloud.id }} accountOnly />
         </div>
       ) : null}
-    </form>
+    </div>
   );
 }
 
@@ -347,6 +353,7 @@ const WATCH_OPTIONS = [
 
 function WatchControl({ providerId }: { providerId: string }) {
   const { t } = useI18n();
+  const toast = useToast();
   const [watch, setWatch] = useState<Watch | null>(null);
   useEffect(() => { api.watch(providerId).then(setWatch).catch(() => setWatch(null)); }, [providerId]);
   useEffect(() => {
@@ -362,13 +369,13 @@ function WatchControl({ providerId }: { providerId: string }) {
       <Segmented labelId={`watch-${providerId}`} value={WATCH_OPTIONS.some((o) => o.value === value) ? value : "24"}
         onChange={(v) => {
           const o = WATCH_OPTIONS.find((x) => x.value === v)!;
-          void api.setWatch(providerId, o.hours > 0, o.hours || watch.interval_hours).then(setWatch);
+          void api.setWatch(providerId, o.hours > 0, o.hours || watch.interval_hours).then(setWatch, (e) => toast.error(e instanceof Error ? e.message : String(e)));
         }}
         options={WATCH_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))} />
       <p className="quiet-note">{t("watch.note")}</p>
       <div className="editor-actions">
         <Button size="sm" disabled={watch.running}
-          onClick={() => void api.runWatch(providerId).then(() => setWatch({ ...watch, running: true }))}>
+          onClick={() => void api.runWatch(providerId).then(() => setWatch({ ...watch, running: true }), (e) => toast.error(e instanceof Error ? e.message : String(e)))}>
           {watch.running ? t("watch.running") : t("watch.checkNow")}
         </Button>
         {watch.last_run_at ? (
@@ -379,7 +386,7 @@ function WatchControl({ providerId }: { providerId: string }) {
   );
 }
 
-// --- skills & bridges -----------------------------------------------------------------
+// --- advanced: skills, standing instructions, the MCP bridge -----------------------------------------------------------------
 
 function Skills() {
   const { t } = useI18n();

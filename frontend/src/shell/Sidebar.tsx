@@ -43,6 +43,8 @@ export function Sidebar() {
 
   const onListKey = (e: KeyboardEvent) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    // Only a task row moves the selection — never a rename field or a row's menu.
+    if (!(e.target as HTMLElement).closest(".sidebar-task")) return;
     e.preventDefault();
     const at = flat.findIndex((x) => x.id === activeId);
     const next = flat[Math.max(0, Math.min(flat.length - 1, at + (e.key === "ArrowDown" ? 1 : -1)))];
@@ -75,6 +77,7 @@ export function Sidebar() {
           <Icon name="search" size={14} />
           <input
             type="search"
+            data-testid="task-search"
             data-focus-ring="container"
             value={query}
             placeholder={t("nav.search")}
@@ -114,9 +117,9 @@ export function Sidebar() {
                     onClick={() => setMenu(menu === task.id ? null : task.id)} />
                   {menu === task.id ? (
                     <div className="ui-menu sidebar-menu" role="menu" onKeyDown={(e) => e.key === "Escape" && setMenu(null)}>
-                      <button role="menuitem" className="ui-menu-item" autoFocus
+                      <button type="button" role="menuitem" className="ui-menu-item" autoFocus
                         onClick={() => { setMenu(null); setRenaming(task.id); }}>{t("nav.rename")}</button>
-                      <button role="menuitem" className="ui-menu-item" data-danger="true"
+                      <button type="button" role="menuitem" className="ui-menu-item" data-danger="true"
                         onClick={() => void remove(task)}>{t("nav.delete")}</button>
                     </div>
                   ) : null}

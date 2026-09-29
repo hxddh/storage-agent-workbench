@@ -200,9 +200,13 @@ def test_the_matrix_actually_covers_the_tools():
     # list_objects is the agent-facing name of the S3 layer's list_objects_v2 row.
     expected = {n for n, td in registry.REGISTRY.items() if td.group == "objects"} - {"list_objects"}
     assert "list_objects_v2" in TOOLS
-    # These two are covered but named differently at the S3 layer, and
-    # `diagnose_presigned_url` / `inspect_endpoint_tls` make no S3 call at all.
-    covered = set(TOOLS)
+    # Agent tools that front several S3-layer reads are covered when every read
+    # they make has a row; `diagnose_presigned_url` / `inspect_endpoint_tls` make
+    # no S3 call at all.
+    from app.agent.tools import storage
+    fronts = {"inspect_object": set(storage._OBJECT_ASPECTS.values()),
+              "test_object_read": {"test_range_get", "test_conditional_get"}}
+    covered = set(TOOLS) | {name for name, reads in fronts.items() if reads <= set(TOOLS)}
     missing = expected - covered
     assert not missing, (
         f"object tools with no row in the endpoint matrix: {sorted(missing)}"

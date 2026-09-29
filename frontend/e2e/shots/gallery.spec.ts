@@ -11,7 +11,7 @@ import { startFakeS3 } from "../fake-s3";
  * reaches a real, asserted state against the real Sidecar, then writes a PNG.
  *
  * The states are the product: the home and the estate, live work, the Result,
- * the Work log with a forked Direction, the side pane, Settings, the palette —
+ * the Work log with a forked Direction, the side pane, Settings —
  * in both themes and both languages.
  */
 
@@ -92,7 +92,7 @@ test("the v7 contact sheet", async ({ page }) => {
     await page.getByTestId("new-task").click();
     await expect(page.getByTestId("needs-care")).toBeVisible();
     await shot(page, "home-attention-dark-en");
-    await page.getByTestId("needs-care").getByTestId("issue").filter({ hasText: "acme-www" }).first().click();
+    await page.getByTestId("needs-care").getByTestId("issue-bucket").filter({ hasText: "acme-www" }).first().click();
     await expect(page.getByTestId("bucket-page")).toBeVisible();
     await page.getByTestId("note-input").fill("Serves the marketing site; owned by the growth team.");
     await page.getByTestId("note-input").press("Enter");
@@ -103,9 +103,6 @@ test("the v7 contact sheet", async ({ page }) => {
     if (await showFix.count()) await showFix.click();
     await expect(bucketIssue.getByTestId("impact")).toHaveAttribute("data-verdict", /./);
     await shot(page, "fix-pack-dark-en");
-    await page.keyboard.press("Escape");
-    await page.keyboard.press("Control+k");
-    await shot(page, "palette-dark-en");
     await page.keyboard.press("Escape");
     await page.getByTestId("open-settings").click();
     await shot(page, "settings-general-dark-en");
@@ -125,7 +122,7 @@ test("the v7 contact sheet", async ({ page }) => {
     await expect(page.getByTestId("answer").first()).toBeVisible();
     await shot(page, "conversation-dark-zh");
     await page.getByTestId("new-task").click();
-    await page.getByTestId("needs-care").getByTestId("issue").first().click();
+    await page.getByTestId("needs-care").getByTestId("issue-bucket").first().click();
     await expect(page.getByTestId("bucket-page")).toBeVisible();
     await shot(page, "bucket-sheet-dark-zh");
   } finally {

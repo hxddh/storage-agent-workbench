@@ -10,11 +10,11 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
-from typing import Any, AsyncIterator
+from typing import Annotated, Any, AsyncIterator
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 from sse_starlette.sse import EventSourceResponse
 
 from .. import config
@@ -40,9 +40,12 @@ def public_item(item: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+# Whitespace is stripped before the length check: a blank Direction is refused.
+Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_DIRECTION_CHARS)]
+
+
 class TaskIn(BaseModel):
     direction: str | None = Field(default=None, max_length=MAX_DIRECTION_CHARS)
-    title: str | None = Field(default=None, max_length=120)
     origin: str = Field(default="user", pattern="^(user|quick_ask)$")
 
 
@@ -51,7 +54,7 @@ class TaskPatch(BaseModel):
 
 
 class TurnIn(BaseModel):
-    direction: str = Field(min_length=1, max_length=MAX_DIRECTION_CHARS)
+    direction: Text
     # Omitted: continue from the head. A turn id: a new version after that turn
     # (a fork). "" : a new first Direction (a fork at the root).
     parent_turn_id: str | None = None
@@ -59,7 +62,7 @@ class TurnIn(BaseModel):
 
 
 class SteerIn(BaseModel):
-    text: str = Field(min_length=1, max_length=MAX_DIRECTION_CHARS)
+    text: Text
 
 
 class HeadIn(BaseModel):
@@ -133,7 +136,7 @@ def list_tasks(q: str | None = Query(default=None, max_length=200), conn: Any = 
 def create_task(body: TaskIn, conn: Any = Depends(get_conn)) -> dict[str, Any]:
     """A new task; with a Direction it starts working at once."""
     direction = (body.direction or "").strip()
-    task = store.create_task(conn, body.title or _seed_title(direction), origin=body.origin)
+    task = store.create_task(conn, _seed_title(direction), origin=body.origin)
     hub.publish_global("task", {"task_id": task["id"], "state": "ready", "title": task["title"], "created": True})
     if direction:
         RUNTIME.submit(conn, task["id"], direction)
@@ -252,21 +255,6 @@ async def upload(task_id: str, file: UploadFile = File(...), dataset_type: str =
     return _file_out(ds)
 
 
-@router.get("/{task_id}/files")
-def list_files(task_id: str, conn: Any = Depends(get_conn)) -> dict[str, Any]:
-    _task_or_404(conn, task_id)
-    return {"files": [_file_out(d) for d in datasets.list_for_task(conn, task_id)]}
-
-
-@router.get("/{task_id}/artifacts/{artifact_id}")
-def get_artifact(task_id: str, artifact_id: str, conn: Any = Depends(get_conn)) -> dict[str, Any]:
-    row = conn.execute("SELECT * FROM artifacts WHERE id = ? AND task_id = ?", (artifact_id, task_id)).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail="artifact not found")
-    return {k: row[k] for k in ("id", "kind", "title", "turn_id", "provider_id", "created_at")} | {
-        "payload": store.loads(row["payload"])}
-
-
 @router.get("/{task_id}/report", response_class=PlainTextResponse)
 def get_report(task_id: str, lang: str = Query(default="en", pattern="^(en|zh)$"),
                conn: Any = Depends(get_conn)) -> str:
@@ -290,7 +278,7 @@ def _sse(kind: str, data: Any, seq: int | None = None) -> dict[str, Any]:
 
 
 @router.get("/{task_id}/events")
-async def follow(task_id: str, request: Request, after: int = Query(default=0, ge=0)) -> EventSourceResponse:
+async def follow(task_id: str, request: Request, after: int = Query(default=0, ge=0, le=2**62)) -> EventSourceResponse:
     """Durable items after ``after``, then everything live: items, deltas, state.
 
     Subscribe first, then replay, so nothing lands in the gap; items are

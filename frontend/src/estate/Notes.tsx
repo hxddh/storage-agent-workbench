@@ -68,7 +68,7 @@ export function Notes({ scope, initial, accountOnly = false }: { scope: Scope; i
                 <form className="note-edit" onSubmit={(e) => { e.preventDefault(); void save(n.id); }}>
                   <textarea className="ui-input" value={edit} maxLength={1000} autoFocus rows={2}
                     aria-label={t("notes.edit")} onChange={(e) => setEdit(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Escape") setEditing(null); }} />
+                    onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setEditing(null); } }} />
                   <div className="note-actions">
                     <Button size="sm" type="submit" disabled={!edit.trim()}>{t("notes.save")}</Button>
                     <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>{t("common.cancel")}</Button>

@@ -34,7 +34,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
           <div style={{ fontSize: 12, color: "var(--gray-500, #9e9e9e)", marginBottom: 16, wordBreak: "break-word" }}>
             {String(this.state.error.message || this.state.error)}
           </div>
-          <button
+          <button type="button"
             onClick={() => window.location.reload()}
             style={{
               padding: "8px 20px", borderRadius: 8, border: "1px solid var(--edge-strong, #3d3d3d)",

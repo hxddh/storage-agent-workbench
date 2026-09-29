@@ -71,7 +71,7 @@ describe("the native shell bridge", () => {
   });
 
   it("declares every menu command the Rust menu bar can send", () => {
-    for (const id of ["settings", "new-task", "rename-task", "delete-task", "stop", "resume", "toggle-sidebar", "review", "palette", "quick-ask", "shortcuts", "release-notes"]) {
+    for (const id of ["settings", "new-task", "rename-task", "delete-task", "stop", "resume", "toggle-sidebar", "review", "search", "quick-ask", "release-notes"]) {
       expect(MENU_COMMANDS).toContain(id);
     }
   });

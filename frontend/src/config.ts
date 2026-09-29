@@ -20,8 +20,6 @@ let _baseUrl: string =
 let _token: string =
   (import.meta.env.VITE_SIDECAR_TOKEN as string | undefined) || "";
 
-export const HEALTH_POLL_INTERVAL_MS = 5000;
-
 /** Current resolved sidecar base URL (no trailing slash). */
 export function sidecarBaseUrl(): string {
   return _baseUrl;

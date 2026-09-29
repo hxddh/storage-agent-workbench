@@ -31,18 +31,25 @@ def read_skill(name: str) -> Any:
 
 
 @tool(group="core", core=True, timeout=15)
-def query_estate(provider_id: str = "", bucket: str = "", status: str = "active") -> dict[str, Any]:
+def query_estate(provider_id: str = "", bucket: str = "", status: str = "active",
+                 survey_filter: str = "") -> dict[str, Any]:
     """What earlier work established about the storage estate: known buckets (region, posture flags, when
     last checked) and issues with their lifecycle (open, fix proposed, resolved, came back, accepted).
+    With survey_filter (and provider_id) it instead answers a posture question from that account's latest
+    stored survey — no new scan; buckets the survey could not decide are listed as undetermined.
     Re-check before relying on an old observation.
 
     Args:
-        provider_id: Narrow to one provider.
+        provider_id: Narrow to one provider (required with survey_filter).
         bucket: Narrow to one bucket.
         status: Issue status: active, care, all, open, fix_proposed, resolved, recurred, accepted.
+        survey_filter: One of all, public_buckets, missing_encryption, missing_public_access_block,
+            missing_lifecycle, missing_logging, no_versioning, access_denied.
     """
     conn = current().conn()
     lang = current().turn.lang
+    if survey_filter:
+        return _survey_query(conn, provider_id, survey_filter)
     if status not in ("active", "care", "all", *estate.STATUSES):
         status = "active"
     known = estate.buckets(conn, provider_id or None, limit=300)
@@ -51,6 +58,20 @@ def query_estate(provider_id: str = "", bucket: str = "", status: str = "active"
     return {"success": True, "buckets": known[:200], "bucket_count": len(known),
             "issues": estate.list_issues(conn, status=status, provider_id=provider_id or None,
                                          bucket=bucket or None, limit=100, lang=lang)}
+
+
+def _survey_query(conn: Any, provider_id: str, survey_filter: str) -> dict[str, Any]:
+    """The latest stored survey of one account, filtered by posture."""
+    from ...engines import survey
+    from .account import latest_surveys
+    if survey_filter not in survey.FILTERS:
+        return {"error": f"Unknown survey_filter. Use one of: {', '.join(survey.FILTERS)}."}
+    if not provider_id:
+        return {"error": "survey_filter needs a provider_id."}
+    surveys = latest_surveys(conn, provider_id, 1)
+    if not surveys:
+        return {"success": True, "has_survey": False, "note": "No survey of this account yet; run survey_account."}
+    return {"has_survey": True, "surveyed_at": surveys[0]["surveyed_at"], **survey.query(surveys[0], survey_filter)}
 
 
 @tool(group="core", core=True, timeout=30)

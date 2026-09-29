@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ...analysis import cost_sim, prices
+from ...analysis import cost_sim
 from ...engines import datasets
 from ...error_triage import parser, playbooks
 from .registry import current, tool
@@ -61,10 +61,9 @@ def _latest_inventory(conn: Any, task_id: str, dataset_id: str) -> dict[str, Any
       summarize=lambda r: ("gap: " + ", ".join(g.get("code", "") for g in (r or {}).get("gaps") or [])
                            if isinstance(r, dict) and r.get("kind") == "gap" else "simulated")[:160])
 def simulate_storage_cost(dataset_id: str = "", candidate_rules_json: str = "") -> dict[str, Any]:
-    """Project the storage-class mix (and, only with a confirmed local price table, the monthly cost) of an
-    inventory this task holds over 0-365 days, under the current lifecycle and candidate rules. Estimates
-    always carry coverage; a missing inventory or an unconfirmed price table is returned as a gap — never
-    invent a dollar figure.
+    """Project the storage-class mix (bytes per class) of an inventory this task holds over 0-365 days,
+    under the current lifecycle and candidate rules. Estimates carry coverage; a missing inventory is
+    returned as a gap. It produces no dollar figures — never invent one.
 
     Args:
         dataset_id: The inventory dataset (from list_uploaded_files); the latest inventory when not given.
@@ -82,7 +81,7 @@ def simulate_storage_cost(dataset_id: str = "", candidate_rules_json: str = "") 
         candidates = json.loads(candidate_rules_json) if candidate_rules_json else None
     except ValueError:
         return {"error": "candidate_rules_json is not valid JSON."}
-    result = cost_sim.simulate(inventory=inventory, candidates=candidates, price_table=prices.simulator_input(conn),
+    result = cost_sim.simulate(inventory=inventory, candidates=candidates,
                                inventory_as_of=ds["created_at"] if ds else None)
     if ds is not None:
         result["dataset_id"] = ds["id"]
