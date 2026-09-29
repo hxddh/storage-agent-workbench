@@ -277,3 +277,45 @@ def test_a_deleted_provider_takes_its_issues_off_the_home():
     store.observe(conn, "gone", "b9", {"public_exposure": True}, source="survey")
     assert [i["provider_id"] for i in store.list_issues(conn)] == ["p1"]
     assert all(i["provider_id"] == "p1" for i in store.prompt_block(conn)["open_issues"])
+
+
+def test_a_fix_targets_the_provider_the_issue_was_seen_on():
+    fix = rules.generate_fix("no_default_encryption", "b1", endpoint_url="http://minio.local:9000",
+                             region="us-east-1")
+    assert fix["command"].startswith("aws --endpoint-url http://minio.local:9000 --region us-east-1 "
+                                     "s3api put-bucket-encryption --bucket b1 ")
+    assert "http://minio.local:9000" in fix["notes"][0]
+    conn = _mem()
+    conn.execute("UPDATE cloud_providers SET endpoint_url = 'http://minio.local:9000' WHERE id = 'p1'")
+    iid = store.observe(conn, "p1", "b1", {"no_default_encryption": True}, source="survey")[0]["issue_id"]
+    assert "--endpoint-url http://minio.local:9000" in store.propose_fix(conn, iid)["command"]
+
+
+def test_accepted_risks_never_crowd_out_what_needs_care():
+    conn = _mem()
+    for i in range(60):
+        iid = store.observe(conn, "p1", f"pub-{i:02d}", {"public_exposure": True}, source="survey")[0]["issue_id"]
+        store.set_accepted(conn, iid, True)
+    for i in range(3):
+        store.observe(conn, "p1", f"enc-{i}", {"no_default_encryption": True}, source="survey")
+    out = store.overview(conn)
+    assert out["open_issue_count"] == 3
+    assert {i["code"] for i in out["issues"]} == {"no_default_encryption"}
+
+
+def test_a_scoped_survey_never_forgets_buckets_outside_its_scope():
+    conn = _mem()
+    conn.execute("UPDATE cloud_providers SET allowed_buckets_json = '[\"b-in\"]' WHERE id = 'p1'")
+    store.upsert_bucket(conn, "p1", "b-out", posture={})
+    iid = store.observe(conn, "p1", "b-out", {"public_exposure": True}, source="survey")[0]["issue_id"]
+    conn.execute("INSERT INTO runs (id, run_type, status, provider_id, created_at, updated_at) "
+                 "VALUES ('r1', 'account_discovery', 'completed', 'p1', 'x', 'x')")
+    conn.execute("INSERT INTO account_snapshots (id, run_id, provider_id, bucket_count, visible_count, "
+                 "processed_count, truncated, list_status, summary_json_sanitized, created_at) "
+                 "VALUES ('s1', 'r1', 'p1', 1, 1, 1, 0, 'available', '{}', 'x')")
+    conn.execute("INSERT INTO account_snapshot_buckets (id, snapshot_id, run_id, provider_id, bucket_name, "
+                 "region, access_status, created_at) VALUES ('ab1', 's1', 'r1', 'p1', 'b-in', 'us-east-1', "
+                 "'available', 'x')")
+    store.ingest_run(conn, "r1")
+    assert store.get_issue(conn, iid)["status"] == "open"
+    assert conn.execute("SELECT COUNT(*) FROM estate_buckets WHERE bucket = 'b-out'").fetchone()[0] == 1

@@ -196,7 +196,12 @@ def _ingest_survey(conn: sqlite3.Connection, run: sqlite3.Row) -> list[dict[str,
     # A bucket the account no longer lists is forgotten — but only when this
     # survey saw the whole account (not truncated, not narrowed by a pattern).
     options = _loads(run["options_json"], {}) or {}
-    whole = (not profile.get("truncated") and profile.get("list_status") in (None, "available", "ok")
+    # A scoped provider's survey sees only its allowed buckets, so absence
+    # from it says nothing about the rest of the account.
+    from ..repositories import cloud_providers as cloud_repo
+    provider = cloud_repo.get(conn, provider_id)
+    scoped = provider is None or bool(provider.allowed_buckets) or bool(provider.allowed_prefixes)
+    whole = (not scoped and not profile.get("truncated") and profile.get("list_status") in (None, "available", "ok")
              and not options.get("include_pattern") and not options.get("exclude_pattern"))
     if whole:
         for row in conn.execute("SELECT bucket FROM estate_buckets WHERE provider_id = ?",
@@ -264,15 +269,27 @@ _ORDER = ("ORDER BY CASE i.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN
           "ELSE 3 END, i.last_seen_at DESC, i.id")
 
 
+CARE = ("open", "fix_proposed", "recurred")
+
+
+def _status_filter(status: str) -> tuple[list[str], list[Any]]:
+    if status in ("active", "care"):
+        group = ACTIVE if status == "active" else CARE
+        return [f"i.status IN ({','.join('?' * len(group))})"], list(group)
+    if status != "all":
+        return ["i.status = ?"], [status]
+    return [], []
+
+
+def count_issues(conn: sqlite3.Connection, *, status: str = "care") -> int:
+    where, args = _status_filter(status)
+    sql = "SELECT COUNT(*) FROM issues i JOIN cloud_providers cp ON cp.id = i.provider_id"
+    return conn.execute(sql + (" WHERE " + " AND ".join(where) if where else ""), args).fetchone()[0]
+
+
 def list_issues(conn: sqlite3.Connection, *, status: str = "active", provider_id: str | None = None,
                 limit: int = 200, lang: str = "en") -> list[dict[str, Any]]:
-    where, args = [], []
-    if status == "active":
-        where.append(f"i.status IN ({','.join('?' * len(ACTIVE))})")
-        args += list(ACTIVE)
-    elif status != "all":
-        where.append("i.status = ?")
-        args.append(status)
+    where, args = _status_filter(status)
     if provider_id:
         where.append("i.provider_id = ?")
         args.append(provider_id)
@@ -302,7 +319,12 @@ def propose_fix(conn: sqlite3.Connection, issue_id: str) -> dict[str, Any] | Non
     row = conn.execute("SELECT * FROM issues WHERE id = ?", (issue_id,)).fetchone()
     if row is None:
         return None
-    fix = rules.generate_fix(row["code"], row["bucket"])
+    from ..repositories import cloud_providers as cloud_repo
+    provider = cloud_repo.get(conn, row["provider_id"])
+    if provider is None:
+        return None
+    fix = rules.generate_fix(row["code"], row["bucket"], endpoint_url=provider.endpoint_url or None,
+                             region=provider.region or None)
     if fix is None:
         return None
     conn.execute("UPDATE issues SET fix_json_sanitized = ?, updated_at = ? WHERE id = ?",
@@ -346,14 +368,15 @@ def overview(conn: sqlite3.Connection, lang: str = "en") -> dict[str, Any]:
             "open_issues": {s: counts.get(s, 0) for s in ("high", "medium", "low")},
             "watch": {**_watch_out(w), "running": _sweep_running(p.id)},
         })
-    care = [i for i in list_issues(conn, status="active", limit=50, lang=lang)
-            if i["status"] != "accepted"]
+    # Accepted risks are not "needs care": filter before the display limit,
+    # and count independently of it.
+    care = list_issues(conn, status="care", limit=20, lang=lang)
     last_watch = conn.execute("SELECT MAX(last_run_at) AS at FROM watch_schedules").fetchone()["at"]
     return {
         "providers": providers,
         "bucket_count": sum(p["bucket_count"] for p in providers),
-        "open_issue_count": len(care),
-        "issues": care[:20],
+        "open_issue_count": count_issues(conn, status="care"),
+        "issues": care,
         "last_watch_at": last_watch,
     }
 

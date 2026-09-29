@@ -32,7 +32,7 @@ def get_estate(lang: str | None = None, conn: sqlite3.Connection = Depends(get_c
 def list_issues(status: str = Query("active"), provider_id: str | None = None,
                 limit: int = Query(200, ge=1, le=500), lang: str | None = None,
                 conn: sqlite3.Connection = Depends(get_conn)):
-    if status not in ("active", "all", *store.STATUSES):
+    if status not in ("active", "care", "all", *store.STATUSES):
         raise HTTPException(422, "unknown status")
     return store.list_issues(conn, status=status, provider_id=provider_id, limit=limit,
                              lang=_lang(lang))

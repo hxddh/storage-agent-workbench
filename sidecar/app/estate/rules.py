@@ -186,10 +186,30 @@ def _q(value: dict[str, Any]) -> str:
     return "'" + json.dumps(value, separators=(",", ":")) + "'"
 
 
-def generate_fix(code: str, bucket: str) -> dict[str, Any] | None:
+def generate_fix(code: str, bucket: str, *, endpoint_url: str | None = None,
+                 region: str | None = None) -> dict[str, Any] | None:
     """A deterministic fix for one rule on one bucket, or None when the fix
     depends on intent the rule cannot know (a policy's legitimate principals,
-    an application's CORS origins)."""
+    an application's CORS origins).
+
+    The command targets the provider the issue was observed on: a custom
+    endpoint (MinIO, R2, …) and its region are part of it, so the AWS CLI
+    never falls back to its default AWS endpoint for a same-named bucket."""
+    fix = _fix(code, bucket)
+    if fix is None:
+        return None
+    target = ""
+    if endpoint_url:
+        target += f" --endpoint-url {endpoint_url}"
+    if region:
+        target += f" --region {region}"
+    fix["command"] = fix["command"].replace("aws s3api ", "aws" + target + " s3api ", 1)
+    if endpoint_url:
+        fix["notes"].insert(0, f"Runs against {endpoint_url} — use credentials for that account.")
+    return fix
+
+
+def _fix(code: str, bucket: str) -> dict[str, Any] | None:
     b = bucket
     if code in ("public_exposure", "public_access_block_missing"):
         doc = _PAB
