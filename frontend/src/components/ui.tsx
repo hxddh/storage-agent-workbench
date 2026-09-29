@@ -89,10 +89,15 @@ export function IconButton({
 }
 
 /** Key caps for a shortcut: one cap per key, never run-together text. */
+/** The platform's modifier: ⌘ on Apple systems, Ctrl elsewhere. */
+export const MOD_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+  ? "⌘" : "Ctrl";
+
+/** Key caps; "Mod" reads as the platform's modifier. */
 export function Kbd({ keys }: { keys: string[] }) {
   return (
     <span className="ui-kbd-group inline-flex items-center gap-1" aria-hidden>
-      {keys.map((key) => <kbd key={key} className="ui-kbd">{key}</kbd>)}
+      {keys.map((key) => <kbd key={key} className="ui-kbd">{key === "Mod" ? MOD_KEY : key}</kbd>)}
     </span>
   );
 }

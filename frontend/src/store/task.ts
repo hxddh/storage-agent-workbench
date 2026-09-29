@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { api, streamUrl } from "../api";
 import type { Item, LiveSegment, StateEvent, TaskSnapshot, TaskState, Turn, TurnStatus } from "../api/types";
 
@@ -290,5 +290,8 @@ export function useTask(id: string | null) {
     return () => clearTimeout(t);
   }, [isStale, model.connected, reload]);
 
-  return { model, reload, setSnapshot: (s: TaskSnapshot) => dispatch({ type: "snapshot", snapshot: s }) };
+  // Until the reset lands, never render the previous task's model under this task's id.
+  const blank = useMemo(() => initial(id ?? ""), [id]);
+  const current = model.id === (id ?? "") ? model : blank;
+  return { model: current, reload, setSnapshot: (s: TaskSnapshot) => dispatch({ type: "snapshot", snapshot: s }) };
 }
