@@ -31,7 +31,25 @@ def history_items(conn, task_id: str, before_turn_id: str | None) -> list[dict[s
     return to_input(items)
 
 
-def to_input(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _assistant(item_id: str, text: str) -> dict[str, Any]:
+    # The SDK's own output-message shape: on Chat Completions its converter
+    # merges this message with the tool calls that follow it into ONE assistant
+    # message (a bare {"role": "assistant"} would be flushed on its own, and
+    # strict chat templates reject two assistant messages in a row).
+    return {"type": "message", "role": "assistant", "id": item_id or "msg", "status": "completed",
+            "content": [{"type": "output_text", "text": text, "annotations": []}]}
+
+
+def to_input(items: list[dict[str, Any]], *, skip_steers_of: str | None = None) -> list[dict[str, Any]]:
+    """Items of one branch (in branch order) → model input.
+
+    Tool calls of one model response are replayed as one batch — every call,
+    then every output in call order — whatever order the recorder wrote them in
+    (a conclusion or a refused call records its output at once). A call that
+    never returned gets an "interrupted" output: providers reject a dangling
+    call. ``skip_steers_of``: the running turn, whose steers the model-input
+    filter injects itself.
+    """
     # Only the latest compaction counts: it stands in for the turns it folded
     # (earlier summaries are folded into it), and comes first.
     folded: set[str] = set()
@@ -43,49 +61,64 @@ def to_input(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     if summary:
         out.append({"role": "user", "content": "[Summary of the earlier work in this task]\n" + summary})
-    open_calls: dict[str, dict[str, Any]] = {}
+
+    calls: list[dict[str, Any]] = []          # the open batch, in call order
+    outputs: dict[str, dict[str, Any]] = {}   # call_id -> its output item
+
+    def flush() -> None:
+        if not calls:
+            return
+        out.extend(calls)
+        for c in calls:
+            out.append(outputs.get(c["call_id"]) or
+                       {"type": "function_call_output", "call_id": c["call_id"], "output": _INTERRUPTED_OUTPUT})
+        calls.clear()
+        outputs.clear()
+
+    def add_call(call: dict[str, Any]) -> None:
+        # A new call after every call of the batch has returned starts a new response.
+        if calls and all(c["call_id"] in outputs for c in calls):
+            flush()
+        calls.append(call)
+
     for it in items:
         if it["type"] == "compaction" or it.get("turn_id") in folded:
             continue
         p = it["payload"]
         t = it["type"]
         if t == "user_message":
+            flush()
             text = p.get("text", "")
             if p.get("attachments"):
                 names = ", ".join(a.get("filename", "") for a in p["attachments"])
                 text += f"\n[Attached: {names} — see list_uploaded_files]"
             out.append({"role": "user", "content": text})
         elif t == "steer":
+            if skip_steers_of and it.get("turn_id") == skip_steers_of:
+                continue
+            flush()
             out.append({"role": "user", "content": "[The user steered while you worked] " + p.get("text", "")})
         elif t == "agent_message":
-            out.append({"role": "assistant", "content": p.get("text", "")})
+            flush()
+            if p.get("text"):
+                out.append(_assistant(it.get("id", ""), p["text"]))
         elif t == "tool_call":
-            call = {"type": "function_call", "call_id": p["call_id"], "name": p["name"],
-                    "arguments": json.dumps(p.get("args") or {}, separators=(",", ":"))}
-            out.append(call)
-            open_calls[p["call_id"]] = call
+            add_call({"type": "function_call", "call_id": p["call_id"], "name": p["name"],
+                      "arguments": json.dumps(p.get("args") or {}, separators=(",", ":"))})
         elif t == "tool_output":
-            if p["call_id"] in open_calls:
-                open_calls.pop(p["call_id"])
-                out.append({"type": "function_call_output", "call_id": p["call_id"],
-                            "output": p.get("model_output") or p.get("summary") or ""})
+            if any(c["call_id"] == p["call_id"] for c in calls):
+                outputs[p["call_id"]] = {"type": "function_call_output", "call_id": p["call_id"],
+                                         "output": p.get("model_output") or p.get("summary") or ""}
         elif t == "conclusion":
-            out.append({"type": "function_call", "call_id": p["call_id"], "name": "record_conclusion",
-                        "arguments": json.dumps({k: p.get(k) for k in ("answer", "findings", "next_steps")},
-                                                separators=(",", ":"))})
-            out.append({"type": "function_call_output", "call_id": p["call_id"], "output": "Conclusion recorded."})
+            add_call({"type": "function_call", "call_id": p["call_id"], "name": "record_conclusion",
+                      "arguments": json.dumps({k: p.get(k) for k in ("answer", "findings", "next_steps")},
+                                              separators=(",", ":"))})
+            outputs[p["call_id"]] = {"type": "function_call_output", "call_id": p["call_id"],
+                                     "output": "Conclusion recorded."}
         elif t == "notice" and p.get("event") == "resumed":
+            flush()
             out.append({"role": "user", "content": p.get("note") or "[Continue the interrupted work.]"})
-    # A call without an output (a crash mid-call) still needs one: providers
-    # reject a dangling function_call.
-    if open_calls:
-        fixed: list[dict[str, Any]] = []
-        for entry in out:
-            fixed.append(entry)
-            if entry.get("type") == "function_call" and entry["call_id"] in open_calls:
-                fixed.append({"type": "function_call_output", "call_id": entry["call_id"],
-                              "output": _INTERRUPTED_OUTPUT})
-        out = fixed
+    flush()
     return out
 
 
@@ -107,7 +140,8 @@ class ItemsSession:
             items = store.items_for_turns(conn, [t["id"] for t in chain])
         finally:
             conn.close()
-        out = to_input(items)
+        # This turn's steers reach the model through the input filter, once.
+        out = to_input(items, skip_steers_of=self._turn_id)
         return out[-limit:] if limit else out
 
     async def add_items(self, items: list[Any]) -> None:

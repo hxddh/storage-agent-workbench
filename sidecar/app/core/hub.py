@@ -46,6 +46,15 @@ def subscribe(task_id: str | None, loop: asyncio.AbstractEventLoop) -> _Sub:
     return sub
 
 
+def subscribe_with_live(task_id: str, loop: asyncio.AbstractEventLoop) -> tuple[_Sub, dict[str, Any] | None]:
+    """Subscribe and read the live segment atomically (deltas publish under the same lock)."""
+    sub = _Sub(loop)
+    with _lock:
+        _subs.setdefault(task_id, []).append(sub)
+        live = _live.get(task_id)
+        return sub, (dict(live) if live else None)
+
+
 def unsubscribe(task_id: str | None, sub: _Sub) -> None:
     with _lock:
         if task_id is None:
@@ -92,13 +101,18 @@ def item(task_id: str, item_: dict[str, Any]) -> None:
 def delta(task_id: str, turn_id: str, segment_id: str, text: str) -> None:
     if not text:
         return
+    event = ("delta", {"turn_id": turn_id, "segment_id": segment_id, "text": text})
     with _lock:
         live = _live.get(task_id)
         if live is None or live.get("segment_id") != segment_id:
             live = {"turn_id": turn_id, "segment_id": segment_id, "text": ""}
             _live[task_id] = live
         live["text"] = (live["text"] + text)[-_MAX_LIVE_CHARS:]
-    publish(task_id, "delta", {"turn_id": turn_id, "segment_id": segment_id, "text": text})
+        # Queued under the same lock as the live text, so a new follower sees
+        # each delta exactly once (in its snapshot or in its queue).
+        targets = list(_subs.get(task_id, []))
+        for sub in targets:
+            _deliver(sub, event)
 
 
 def close_segment(task_id: str, segment_id: str) -> None:
@@ -112,6 +126,10 @@ def live_snapshot(task_id: str) -> dict[str, Any] | None:
     with _lock:
         live = _live.get(task_id)
         return dict(live) if live else None
+
+
+def turn(task_id: str, data: dict[str, Any]) -> None:
+    publish(task_id, "turn", data)
 
 
 def state(task_id: str, data: dict[str, Any]) -> None:

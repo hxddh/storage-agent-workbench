@@ -159,6 +159,24 @@ def create_turn(conn: sqlite3.Connection, task_id: str, direction: str, *, kind:
     return get_turn(conn, turn_id)  # type: ignore[return-value]
 
 
+TURN_FIELDS = ("id", "parent_turn_id", "kind", "direction", "status", "error", "created_at",
+               "started_at", "finished_at", "resumed_from")
+
+
+def turn_public(turn: dict[str, Any]) -> dict[str, Any]:
+    """A turn as the window reads it (snapshot and the live ``turn`` event)."""
+    return {k: turn.get(k) for k in TURN_FIELDS} | {"usage": loads(turn.get("usage_json"))}
+
+
+def reparent_children(conn: sqlite3.Connection, turn_id: str, new_parent: str | None) -> list[str]:
+    """Move a turn's children onto ``new_parent``; returns the moved turn ids."""
+    ids = [r["id"] for r in conn.execute("SELECT id FROM turns WHERE parent_turn_id = ?", (turn_id,)).fetchall()]
+    if ids:
+        conn.execute("UPDATE turns SET parent_turn_id = ? WHERE parent_turn_id = ?", (new_parent, turn_id))
+        conn.commit()
+    return ids
+
+
 def get_turn(conn: sqlite3.Connection, turn_id: str) -> dict[str, Any] | None:
     row = conn.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
     return dict(row) if row else None
@@ -254,12 +272,16 @@ def append_item(conn: sqlite3.Connection, task_id: str, turn_id: str | None, typ
 
 
 def items_for_turns(conn: sqlite3.Connection, turn_ids: Iterable[str]) -> list[dict[str, Any]]:
+    """Items of the given turns in TURN order (the order given — a branch, oldest
+    first), then by seq within a turn. Seq alone interleaves a follow-up queued
+    while an earlier turn ran into that turn's items."""
     ids = list(turn_ids)
     if not ids:
         return []
+    order = {tid: n for n, tid in enumerate(ids)}
     marks = ",".join("?" * len(ids))
     rows = conn.execute(f"SELECT * FROM items WHERE turn_id IN ({marks}) ORDER BY seq", ids).fetchall()
-    return [_item(r) for r in rows]
+    return sorted((_item(r) for r in rows), key=lambda it: (order[it["turn_id"]], it["seq"]))
 
 
 def items_after(conn: sqlite3.Connection, task_id: str, after: int, limit: int = 2000) -> list[dict[str, Any]]:

@@ -85,6 +85,42 @@ def commentary_tool_turn(text: str, name: str, arguments: dict) -> list[bytes]:
     ]
 
 
+def parallel_turn(calls: list[tuple[str, dict]], text: str = "") -> list[bytes]:
+    """Several function calls in ONE response (optionally after commentary)."""
+    chunks = [_chunk({"role": "assistant", "content": text})] if text else []
+    tool_calls = [{"index": i, "id": f"call_fake_{next(_CALL_IDS)}", "type": "function",
+                   "function": {"name": n, "arguments": json.dumps(a)}} for i, (n, a) in enumerate(calls)]
+    chunks.append(_chunk({"role": "assistant", "tool_calls": tool_calls} if not text else {"tool_calls": tool_calls}))
+    chunks.append(_chunk({}, "tool_calls"))
+    return chunks
+
+
+def chat_violations(messages: list[dict]) -> list[str]:
+    """What a strict Chat Completions endpoint (OpenAI, strict local chat
+    templates) would reject in a request's messages."""
+    out: list[str] = []
+    pending: set[str] = set()
+    prev_role = None
+    for n, m in enumerate(messages):
+        role = m.get("role")
+        if role == "tool":
+            if m.get("tool_call_id") not in pending:
+                out.append(f"#{n}: tool output {m.get('tool_call_id')} does not answer the preceding tool calls")
+            pending.discard(m.get("tool_call_id"))
+        else:
+            if pending:
+                out.append(f"#{n}: {role} message before every tool call was answered: {sorted(pending)}")
+                pending = set()
+            if role == "assistant" and prev_role == "assistant":
+                out.append(f"#{n}: two assistant messages in a row")
+            if role == "assistant":
+                pending = {tc["id"] for tc in m.get("tool_calls") or []}
+        prev_role = role
+    if pending:
+        out.append(f"end: unanswered tool calls {sorted(pending)}")
+    return out
+
+
 def _assemble(chunks: list[bytes]) -> dict:
     """A non-streamed chat.completion equivalent to a scripted stream."""
     content, calls, finish = "", {}, "stop"

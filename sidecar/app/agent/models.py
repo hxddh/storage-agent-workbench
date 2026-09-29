@@ -64,12 +64,13 @@ def build(creds: dict[str, Any], clients: list[Any], *, tools_allowed: bool = Tr
     key = endpoint_key(creds)
     window = int(creds.get("context_window") or budget.context_window(creds.get("model")))
     settings: dict[str, Any] = {
-        "temperature": TEMPERATURE,
         "max_tokens": budget.completion_token_budget(creds.get("model"), window, creds.get("max_output_tokens")),
         "timeout": MODEL_CALL_TIMEOUT_S,
         # Runner-managed retries for transient provider failures (SDK retry).
         "retry": ModelRetrySettings(max_retries=2),
     }
+    if not budget.is_reasoning_model(creds.get("model")):
+        settings["temperature"] = TEMPERATURE  # reasoning models reject a sampling temperature
     if tools_allowed:
         settings["parallel_tool_calls"] = key not in NO_PARALLEL
     if creds.get("reasoning_effort"):
