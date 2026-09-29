@@ -9,6 +9,7 @@ import {
 import type { CloudProvider } from "../types";
 import { Button, Field, Select, TextInput } from "../components/ui";
 import { CloudProviderTester } from "../components/CloudProviderTester";
+import { ProviderWatch } from "./ProviderWatch";
 import { Icon } from "../components/icons";
 import { useI18n } from "../i18n";
 import { CLOUD_PRESETS, cloudEndpoint, parseList, type CloudPreset } from "./presets";
@@ -323,6 +324,7 @@ export function CloudProvidersPanel() {
               )}
             </div>
             {testingIds.has(provider.id) ? <div className="basis-full"><CloudProviderTester provider={provider} /></div> : null}
+            <div className="basis-full"><ProviderWatch providerId={provider.id} /></div>
           </li>
         ))}
         {items.length === 0 && !showForm ? <li className="native-settings-empty">{t("prov.noCloud")}</li> : null}

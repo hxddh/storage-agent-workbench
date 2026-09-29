@@ -18,7 +18,7 @@ Secrets are stored separately in the encrypted local vault. SQLite stores only o
 
 The schema is created by append-only migrations in `sidecar/app/migrations.py`.
 
-**Current migration head: 031.**
+**Current migration head: 032.**
 
 Rules:
 
@@ -62,6 +62,7 @@ Rules:
 | 029 | `native_agent_turn_items_approvals` | `session_messages.turn_items` (ordered commentary/tool items before the answer); `task_decisions.kind` (`approval` / `proposal`) and `scope` (`once` / `task`) for Decisions raised inline by gated tools |
 | 030 | `native_agent_context_compaction` | `task_context_versions.summary_sanitized` (the bounded, redacted continuation summary the compaction step wrote; carried forward onto later versions) and `summary_through_seq` (the `session_messages` rowid it covers through — the prompt replays only later messages) |
 | 031 | `result_first_work_result_conclusion` | `session_messages.conclusion` and `work_results.conclusion_json_sanitized` — JSON `{answer, findings[{title, severity, detail?}], next_steps[]}` the model recorded with `record_conclusion` (bounded, redacted; `NULL` = none recorded, and the UI then shows the answer alone) |
+| 032 | `storage_estate_issues_watch` | (v4.0) the storage estate: `estate_buckets` (per provider + bucket: region, a posture projection of status enums/booleans only, `last_checked_at`, source run/task); `issues` (one row per provider + bucket + rule `code`, the `fingerprint`; `status` `open`/`fix_proposed`/`resolved`/`recurred`/`accepted`; severity `high`/`medium`/`low`; generated fix text in `fix_json_sanitized`; last read-only verify); `issue_events` (append-only lifecycle, each with its source); `watch_schedules` (opt-in per cloud provider, off by default) |
 
 ## Product-to-persistence mapping
 

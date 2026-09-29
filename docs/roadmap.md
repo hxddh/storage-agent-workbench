@@ -1,6 +1,13 @@
 # Roadmap
 
-> **Status: delivered in v3.1.0 — Outputs made real.** The Task report is
+> **Status: delivered in v4.0.0 — the resident Agent for the storage estate.**
+> The estate is the object; Agent Tasks are how work is done. Surveys and
+> config reviews leave a durable estate — buckets, posture and deterministic
+> Issues with a lifecycle (open → fix proposed → resolved, recurred); fixes are
+> text the user applies and Verify re-checks read-only; an opt-in watch sweeps
+> an account on the Sidecar's clock and opens one task when something new turns
+> up; the home says what to care about now (`docs/releases/4.0.0.md`). Before
+> it, v3.1.0 — Outputs made real. The Task report is
 > rebuilt conclusion-first in the reader's language; the Result and the
 > Evidence tab read one findings list with an Evidence link per finding; ⌘I
 > toggles the side pane; the model chip says *Runtime offline* when the
@@ -30,9 +37,22 @@
 > "native, simple, elegant, not a chat tool" and rebuilt the turn as a
 > document section (`docs/releases/1.19.0.md`).
 
-> **Baseline: Storage Agent v3.1.0.** The product invariant is unchanged:
-> **the Agent Task is the application.** The window is sidebar · title bar ·
+> **Baseline: Storage Agent v4.0.0.** The product invariant changed in v4.0:
+> **the estate is the object; Agent Tasks are how work is done.** The window is sidebar · title bar ·
 > one Task document · one Composer, plus one closable side pane for outputs.
+
+## The resident Agent for the storage estate (shipped in v4.0.0)
+
+| Surface | v4.0 |
+| --- | --- |
+| Knowledge | Buckets and posture per account outlive the task (`estate_buckets`); every task starts with a bounded `known_estate` block |
+| Issues | Deterministic, fingerprinted per provider + bucket + rule; open → fix proposed → resolved, recurred when they return; accept risk |
+| Fix · Verify | Fix is text the user applies (storage stays read-only); Verify re-runs the rule's read-only review |
+| Watch | Opt-in per provider, off by default, 1 h–7 d; bounded read-only sweep; one task only when something new turns up |
+| Home | Readiness (model · storage), Your storage, Needs care |
+| Trust | Live golden task: a real Execution against a real S3 server (moto) in CI |
+
+Next candidates (not committed): signed/notarized installers once certificates exist; a MinIO service job beside moto; cost anomalies in the watch once inventory evidence is routinely present.
 
 ## Outputs made real (shipped in v3.1.0)
 

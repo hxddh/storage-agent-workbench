@@ -53,15 +53,16 @@ describe("v3.1 documentation contract", () => {
     expect(readRepo("docs/README.md")).toContain("v2.2.0");
     expect(readRepo("docs/README.md")).toContain("v3.0.0");
     expect(readRepo("docs/README.md")).toContain("v3.1.0");
+    expect(readRepo("docs/README.md")).toContain("v4.0.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.16.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.19.0");
     expect(readRepo("CLAUDE.md")).toContain("v2.0.0");
     expect(readRepo("CLAUDE.md")).toContain("v2.1.0");
-    expect(readRepo("CLAUDE.md")).toContain("Implementation contract for Storage Agent v3.1.0");
+    expect(readRepo("CLAUDE.md")).toContain("Implementation contract for Storage Agent v4.0.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
-    expect(readRepo("docs/product.md")).toContain("v3.1.0");
-    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v3\.1\.0/);
-    expect(readRepo("docs/architecture.md")).toContain("Migration head **031**");
+    expect(readRepo("docs/product.md")).toContain("v4.0.0");
+    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v4\.0\.0/);
+    expect(readRepo("docs/architecture.md")).toContain("Migration head **032**");
     expect(readRepo("docs/architecture.md")).not.toMatch(/Current architecture baseline: Storage Agent v1\.10\.0/);
     expect(readRepo("docs/architecture.md")).not.toMatch(/Migration head \*\*028\*\*/);
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
@@ -108,7 +109,7 @@ describe("v3.1 documentation contract", () => {
     expect(api).toContain("/remediation-plans");
     expect(api).toContain("/settings/price-table");
     expect(api).toMatch(/product-level.*Agent Task/i);
-    expect(dataModel).toMatch(/Current migration head:\s*031/i);
+    expect(dataModel).toMatch(/Current migration head:\s*032/i);
     expect(dataModel).toContain("result_first_work_result_conclusion");
     expect(dataModel).toContain("conclusion_json_sanitized");
     expect(api).toContain("conclusion.recorded");
@@ -183,6 +184,14 @@ describe("v3.1 documentation contract", () => {
     expect(readRepo("docs/releases/3.0.0.md")).toContain("Design system v3");
     expect(readRepo("docs/roadmap.md")).toContain("v3.1.0");
     expect(readRepo("docs/releases/3.1.0.md")).toContain("Outputs made real");
+    // v4.0 — the estate is the object; tasks are how work is done.
+    expect(readRepo("docs/roadmap.md")).toContain("v4.0.0");
+    expect(readRepo("docs/releases/4.0.0.md")).toContain("storage estate");
+    expect(readRepo("CLAUDE.md")).toContain("The estate is the object; Agent Tasks are how work is done.");
+    expect(readRepo("docs/product.md")).toContain("The estate is the object; Agent Tasks are how work is done.");
+    expect(readRepo("docs/api.md")).toContain("/issues/{id}/verify");
+    expect(readRepo("docs/api.md")).toContain("/estate/watch/{provider_id}");
+    expect(readRepo("docs/data-model.md")).toContain("storage_estate_issues_watch");
     // v3.1 — the report leads with the recorded conclusion and follows the
     // reader's language; one findings list feeds the Result and Evidence.
     expect(readRepo("docs/api.md")).toContain("lang");

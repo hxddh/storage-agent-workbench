@@ -13,6 +13,7 @@ import "./styles/markdown.css";
 import "./styles/settings-panes.css";
 import "./styles/artifacts.css";
 import "./styles/overlays.css";
+import "./styles/estate.css";
 
 applyTheme(initialTheme());
 

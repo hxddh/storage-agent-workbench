@@ -640,6 +640,17 @@ def _build_prompt(
         except Exception:  # noqa: BLE001
             providers = []
     prompt_parts.append("configured_providers:\n" + json.dumps(providers, ensure_ascii=False))
+    # v4.0 — the storage estate: what earlier tasks already established about
+    # these accounts (known buckets, open issues). Bounded, deterministic, no
+    # posture documents; changes only when the estate does, so it caches.
+    if conn is not None:
+        try:
+            from ..estate import store as estate_store
+            estate = estate_store.prompt_block(conn)
+        except Exception:  # noqa: BLE001
+            estate = None
+        if estate:
+            prompt_parts.append("known_estate:\n" + json.dumps(estate, ensure_ascii=False))
     prompt_parts.append(render_context_text(stable_ctx))
     prompt_parts.append(render_context_text(volatile_ctx))
     # Files the user attached this turn (uploaded but not yet analyzed). The agent

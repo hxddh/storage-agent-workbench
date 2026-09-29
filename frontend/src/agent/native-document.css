@@ -692,11 +692,13 @@ button.result-finding-head:hover { background: var(--hover); }
   display: flex;
   flex: 1;
   flex-direction: column;
-  justify-content: center;
   overflow: auto;
   padding: 32px 24px;
 }
-.native-start-inner { width: 100%; max-width: 44rem; margin: 0 auto; padding-bottom: 8vh; }
+/* v4.0 — auto margins centre the start while it fits and let it scroll from
+   its top once the estate makes it taller than the window (a centred flex
+   column would clip its head). */
+.native-start-inner { width: 100%; max-width: 44rem; margin: auto; padding-bottom: 8vh; }
 .native-start-greeting {
   margin: 0;
   color: var(--gray-100);

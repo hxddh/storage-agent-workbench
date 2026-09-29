@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "../fake-model";
-import { seedExecutionLog, seedInterruptedTask, seedOptimizationTask, seedSession as seedTask } from "../seed";
+import { seedEstate, seedExecutionLog, seedInterruptedTask, seedOptimizationTask, seedSession as seedTask } from "../seed";
 
 /**
  * Human visual-review contact sheet for the Agent product.
@@ -132,6 +132,15 @@ for (const theme of THEMES) {
       const count = await page.getByTestId("result-finding").count();
       await expect(page.getByTestId("evidence-findings").locator("li")).toHaveCount(count);
       await shoot(page, "04b-evidence", theme, lang);
+    });
+
+    test("Home — what to care about now (v4.0 estate)", async ({ page }) => {
+      seedEstate();
+      await openAgent(page, theme, lang);
+      await expect(page.getByTestId("estate-panel")).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("estate-issue").first()).toHaveAttribute("data-issue-code", "public_exposure");
+      await page.getByTestId("estate-issue").nth(2).getByRole("button").first().click();
+      await shoot(page, "00b-home-estate", theme, lang);
     });
 
     test("Task navigation — task list, not a console", async ({ page }) => {

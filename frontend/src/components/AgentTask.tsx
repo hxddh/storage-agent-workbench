@@ -32,6 +32,7 @@ export type AgentTaskProps = {
   onTaskDiscarded: (id: string) => void;
   sidecarStatus: "starting" | "connected" | "disconnected" | "error";
   onOpenSettings: () => void;
+  onOpenTask?: (id: string) => void; // v4.0: a home issue opens the task that found it
   onChanged: () => void;
   sidecarReady: boolean;
   settingsOpen: boolean;
@@ -55,6 +56,7 @@ export function AgentTask({
   onTaskDiscarded,
   sidecarStatus,
   onOpenSettings,
+  onOpenTask,
   onChanged,
   sidecarReady,
   settingsOpen,
@@ -274,6 +276,7 @@ export function AgentTask({
           composerNode={composerNode}
           banners={banners}
           onStarter={(text) => { composer.setText(text); composer.focus(); }}
+          home={{ sidecarReady, settingsOpen, onOpenSettings, onOpenTask }}
         />
       ) : (
         <TaskDocument

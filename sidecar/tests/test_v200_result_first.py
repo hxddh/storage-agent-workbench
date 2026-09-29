@@ -110,7 +110,7 @@ def test_migration_031_adds_the_conclusion_columns(client):
         assert "conclusion" in msg_cols
         assert "conclusion_json_sanitized" in wr_cols
         head = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-        assert int(head) == 31
+        assert int(head) >= 31  # later heads append (v4.0: 032)
     finally:
         conn.close()
 

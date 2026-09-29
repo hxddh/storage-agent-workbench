@@ -21,6 +21,7 @@ import { ActiveTaskContext } from "./agent/activeTask";
 import { listAgentTasks } from "./agent/taskApi";
 import { agentTaskState } from "./agent/taskState";
 import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "./hooks/useNativeAgent";
+import { useWatchAlerts } from "./hooks/useWatchAlerts";
 import { hasNativeTrafficLights, openExternal } from "./config";
 import { IconButton } from "./components/ui";
 
@@ -224,6 +225,8 @@ export default function App() {
     onSummon: useCallback(() => { getPaletteActions().focusComposer?.(); }, []),
   });
   useSettleNotifications(tasks, activeTaskId);
+  // v4.0 — a watch sweep that found something: one notification, and the task it opened appears.
+  useWatchAlerts(status === "connected", refreshTasks);
 
   // v1.16 — window-owned palette entries (the shortcuts sheet) survive task
   // switches: the task publisher below never sets them.
@@ -277,6 +280,7 @@ export default function App() {
               sidecarStatus={status}
               onTaskDiscarded={(id) => { if (activeTaskId === id) setActiveTaskId(null); refreshTasks(); }}
               onOpenSettings={() => setSettingsOpen(true)}
+              onOpenTask={setActiveTaskId}
               onChanged={refreshTasks}
               sidecarReady={status === "connected"}
               settingsOpen={settingsOpen}

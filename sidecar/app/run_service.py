@@ -83,10 +83,26 @@ def run_sync(run_id: str) -> None:
             except Exception:  # noqa: BLE001 - best effort; never mask the original
                 pass
             return
+        # v4.0 — what a completed survey / config review learned belongs to
+        # the estate, not only to the task that asked.
+        _ingest_estate(conn, run_id)
         # After the run finishes, refresh its session's deterministic summary.
         _finalize_session(conn, run_id, session_id)
     finally:
         conn.close()
+
+
+def _ingest_estate(conn, run_id: str) -> None:
+    """Project a completed survey / config review onto the estate (buckets and
+    issues). Estate bookkeeping must never fail the run."""
+    try:
+        from .estate import store as estate_store
+        estate_store.ingest_run(conn, run_id)
+    except Exception:  # noqa: BLE001 - never break a run over estate bookkeeping
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _finalize_session(conn, run_id: str, session_id: str | None) -> None:

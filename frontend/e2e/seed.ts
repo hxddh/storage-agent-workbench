@@ -467,3 +467,50 @@ export function seedExecutionLog(
     { encoding: "utf8" },
   ).trim();
 }
+
+const ESTATE_PY = `
+import json, sqlite3, sys, uuid
+from datetime import datetime, timedelta, timezone
+conn = sqlite3.connect(sys.argv[1])
+pid, name = sys.argv[2], sys.argv[3]
+now = datetime.now(timezone.utc)
+ts = lambda m: (now - timedelta(minutes=m)).strftime("%Y-%m-%dT%H:%M:%SZ")
+conn.execute("INSERT OR IGNORE INTO cloud_providers (id, name, provider_type, region, created_at, updated_at)"
+             " VALUES (?, ?, 'aws', 'us-east-1', ?, ?)", (pid, name, ts(600), ts(600)))
+for i in range(24):
+    conn.execute("INSERT OR REPLACE INTO estate_buckets (provider_id, bucket, region, posture_json_sanitized,"
+                 " last_checked_at) VALUES (?, ?, 'us-east-1', '{}', ?)", (pid, "acme-%02d" % i, ts(95)))
+issues = [
+    ("public_exposure", "Bucket is publicly accessible", "high", "acme-assets", "open",
+     "Anonymous s3:GetObject allowed by the bucket policy."),
+    ("no_default_encryption", "No default encryption", "medium", "acme-logs", "recurred",
+     "Bucket has no default server-side encryption."),
+    ("public_access_block_missing", "Public access block not fully enabled", "medium", "acme-exports", "fix_proposed",
+     "Public access block not configured."),
+    ("no_abort_mpu", "Incomplete multipart uploads are never cleaned up", "medium", "acme-backups", "open",
+     "No AbortIncompleteMultipartUpload rule."),
+]
+for code, title, sev, bucket, status, detail in issues:
+    conn.execute("INSERT OR IGNORE INTO issues (id, provider_id, bucket, code, fingerprint, title, severity, status,"
+                 " detail_sanitized, first_seen_at, last_seen_at, created_at, updated_at)"
+                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 (uuid.uuid4().hex, pid, bucket, code, "%s:%s:%s" % (pid, bucket, code), title, sev, status,
+                  detail, ts(3000), ts(95), ts(3000), ts(95)))
+conn.execute("INSERT OR REPLACE INTO watch_schedules (provider_id, enabled, interval_hours, next_run_at, last_run_at,"
+             " last_status, last_summary_sanitized, created_at, updated_at)"
+             " VALUES (?, 1, 24, ?, ?, 'found', 'Checked 24 bucket(s): 1 new or returned issue(s), 0 resolved.', ?, ?)",
+             (pid, (now + timedelta(hours=22)).strftime("%Y-%m-%dT%H:%M:%SZ"), ts(95), ts(600), ts(95)))
+conn.commit()
+print(pid)
+`;
+
+/** v4.0 — a watched account with a known estate and open Issues (gallery only:
+ * it adds a cloud provider to the shared E2E database). */
+export function seedEstate(name = "prod-account"): { providerId: string } {
+  const providerId = execFileSync(
+    process.env.E2E_PYTHON || "python3",
+    ["-c", ESTATE_PY, `${dataDir()}/app.db`, `estate-${name}`, name],
+    { encoding: "utf8" },
+  ).trim();
+  return { providerId };
+}
