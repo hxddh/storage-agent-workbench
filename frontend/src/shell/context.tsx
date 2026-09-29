@@ -28,8 +28,6 @@ type Ctx = {
   settings: string | null;
   openSettings: (section?: string) => void;
   closeSettings: () => void;
-  palette: boolean;
-  setPalette: (open: boolean) => void;
   editing: Editing;
   setEditing: (e: Editing) => void;
   draft: { text: string; nonce: number };
@@ -62,7 +60,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [pane, setPane] = useState<Pane>(null);
   const [sidebar, setSidebarState] = useState(storedSidebar);
   const [settings, setSettings] = useState<string | null>(null);
-  const [palette, setPalette] = useState(false);
   const [editing, setEditing] = useState<Editing>(null);
   const [draft, setDraft] = useState({ text: "", nonce: 0 });
   const [models, setModels] = useState<ModelProvider[] | null>(null);
@@ -118,8 +115,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     settings,
     openSettings: (section = "general") => setSettings(section),
     closeSettings: () => { setSettings(null); void reloadProviders(); },
-    palette,
-    setPalette,
     editing,
     setEditing,
     draft,
@@ -129,7 +124,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     reloadProviders,
     online,
     setOnline,
-  }), [route, navigate, pane, sidebar, settings, palette, editing, draft, models, clouds, reloadProviders, online]);
+  }), [route, navigate, pane, sidebar, settings, editing, draft, models, clouds, reloadProviders, online]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

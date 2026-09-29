@@ -22,21 +22,15 @@ export const MENU_COMMANDS = [
   "resume",
   "toggle-sidebar",
   "review",
-  "palette",
+  "search",
   "focus-composer",
   "theme",
   "quick-ask",
-  "shortcuts",
   "release-notes",
 ] as const;
 export type MenuCommand = (typeof MENU_COMMANDS)[number];
 
 export const DEEP_LINK_SCHEME = "storage-agent";
-export const SUMMON_SHORTCUT = "CmdOrCtrl+Shift+S";
-
-export function isNativeShell(): boolean {
-  return tauriInvoke() !== null;
-}
 
 function tauriListen(event: string, handler: (payload: unknown) => void): (() => void) | null {
   const g = globalThis as unknown as {

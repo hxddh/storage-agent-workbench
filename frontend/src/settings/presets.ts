@@ -36,11 +36,6 @@ const LOCAL_PROVIDER_TYPES = new Set([
 export const isLocalProvider = (providerType: string) =>
   LOCAL_PROVIDER_TYPES.has((providerType || "").trim().toLowerCase());
 
-export function modelPresetFor(providerType: string): ModelPreset | null {
-  const type = (providerType || "").trim().toLowerCase();
-  return MODEL_PRESETS.find((preset) => preset.providerType === type) ?? null;
-}
-
 export type CloudPreset = {
   id: string;
   label: string;

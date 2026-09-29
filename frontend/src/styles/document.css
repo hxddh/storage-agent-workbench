@@ -282,13 +282,9 @@
 
 .toast-card[data-kind="error"] { border-color: var(--danger-border); }
 
-.toast-card[data-kind="success"] { border-color: var(--success-border); }
-
 .toast-icon { flex-shrink: 0; margin-top: 3px; color: var(--gray-200); }
 
 .toast-card[data-kind="error"] .toast-icon { color: var(--danger); }
-
-.toast-card[data-kind="success"] .toast-icon { color: var(--success); }
 
 .toast-message {
   min-width: 0;

@@ -11,7 +11,7 @@ import { startFakeS3 } from "../fake-s3";
  * reaches a real, asserted state against the real Sidecar, then writes a PNG.
  *
  * The states are the product: the home and the estate, live work, the Result,
- * the Work log with a forked Direction, the side pane, Settings, the palette —
+ * the Work log with a forked Direction, the side pane, Settings —
  * in both themes and both languages.
  */
 
@@ -103,9 +103,6 @@ test("the v7 contact sheet", async ({ page }) => {
     if (await showFix.count()) await showFix.click();
     await expect(bucketIssue.getByTestId("impact")).toHaveAttribute("data-verdict", /./);
     await shot(page, "fix-pack-dark-en");
-    await page.keyboard.press("Escape");
-    await page.keyboard.press("Control+k");
-    await shot(page, "palette-dark-en");
     await page.keyboard.press("Escape");
     await page.getByTestId("open-settings").click();
     await shot(page, "settings-general-dark-en");

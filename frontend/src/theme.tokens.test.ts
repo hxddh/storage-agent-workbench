@@ -361,9 +361,9 @@ describe("the keyboard focus ring (v0.61.0)", () => {
       fs.readFileSync(f, "utf8").includes('data-focus-ring="container"'),
     );
     // v5 — each of these inputs sits in a container that draws the focus
-    // border: the Composer card, the palette sheet, the sidebar search field
+    // border: the Composer card, the sidebar search field
     // and the Quick Ask field.
-    expect(users.map((f) => path.basename(f)).sort()).toEqual(["Composer.tsx", "Palette.tsx", "QuickAsk.tsx", "Sidebar.tsx"]);
+    expect(users.map((f) => path.basename(f)).sort()).toEqual(["Composer.tsx", "QuickAsk.tsx", "Sidebar.tsx"]);
   });
 
   it("still suppresses the default outline it replaces", () => {

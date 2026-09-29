@@ -77,6 +77,7 @@ export function Sidebar() {
           <Icon name="search" size={14} />
           <input
             type="search"
+            data-testid="task-search"
             data-focus-ring="container"
             value={query}
             placeholder={t("nav.search")}
