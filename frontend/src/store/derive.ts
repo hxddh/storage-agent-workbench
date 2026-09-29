@@ -120,8 +120,7 @@ function section(turn: Turn, items: Item[], live: LiveSegment | null): Section {
         group = null;
         break;
       case "compaction":
-        blocks.unshift({ kind: "compacted", id: it.id });
-        break;
+        break; // the note comes from the turn's own `compacted` notice (once)
       case "notice":
         if (it.payload.event === "cancelled" || it.payload.event === "stopped") stopped = true;
         if (it.payload.event === "finalized") finalized = true;
@@ -135,10 +134,12 @@ function section(turn: Turn, items: Item[], live: LiveSegment | null): Section {
     }
   }
 
-  // The answer is the last message after the last tool call; it leaves the commentary.
+  // The answer is the last message after the last tool call of a turn that
+  // finished (or was finalized); a stopped or failed turn's last words are
+  // commentary, not an answer.
   let answer: string | null = null;
   const last = messages[messages.length - 1];
-  if (last && last.index > lastToolIndex && !isLive(turn)) {
+  if (last && last.index > lastToolIndex && (turn.status === "completed" || finalized)) {
     answer = last.item.payload.text;
     const at = blocks.findIndex((b) => b.kind === "commentary" && b.id === last.item.id);
     if (at >= 0) blocks.splice(at, 1);

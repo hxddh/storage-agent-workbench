@@ -3,11 +3,11 @@ import { api } from "../api";
 import { Composer } from "../composer/Composer";
 import { hasNativeTrafficLights, openExternal } from "../config";
 import { IconButton, StatusDot } from "../components/ui";
-import { EstatePage } from "../estate/EstatePage";
+import { BucketSheet } from "../estate/BucketSheet";
 import { Home } from "../home/Home";
 import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
-import { Inspector } from "../inspector/Inspector";
+import { Details } from "../inspector/Inspector";
 import { Settings } from "../settings/Settings";
 import { useTask } from "../store/task";
 import { TaskPage } from "../task/TaskPage";
@@ -43,7 +43,8 @@ export function Shell() {
     void setNativeWindowTitle(model.snapshot && taskId ? `${model.snapshot.task.title} — Storage Agent` : "Storage Agent");
   }, [model.snapshot, taskId]);
 
-  useEffect(() => { if (!taskId) app.setPane(null); }, [taskId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Details belong to a task: leaving it closes them (a bucket sheet stays open).
+  useEffect(() => { if (!taskId && app.pane?.tab === "details") app.setPane(null); }, [taskId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const command = useCallback((c: MenuCommand) => {
     switch (c) {
@@ -53,7 +54,7 @@ export function Shell() {
       case "toggle-sidebar": app.setSidebar(!app.sidebar); break;
       case "theme": theme.toggle(); break;
       case "stop": if (taskId) void api.stop(taskId); break;
-      case "review": if (taskId) app.setPane(app.pane ? null : { tab: "evidence" }); break;
+      case "review": if (taskId) app.setPane(app.pane?.tab === "details" ? null : { tab: "details" }); break;
       case "focus-composer": document.querySelector<HTMLTextAreaElement>("[data-testid=composer-input]")?.focus(); break;
       case "shortcuts": app.setPalette(true); break;
       case "release-notes": void openExternal("https://github.com/hxddh/storage-agent-workbench/releases"); break;
@@ -95,9 +96,7 @@ export function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [app, command, taskId, busy]);
 
-  const route = app.route;
-  const title = taskId ? model.snapshot?.task.title ?? ""
-    : route.kind === "estate" ? route.bucket ?? t("nav.estate") : t("nav.home");
+  const title = taskId ? model.snapshot?.task.title ?? "" : "";
   const state = taskId ? model.state : null;
 
   return (
@@ -124,7 +123,7 @@ export function Shell() {
           </div>
           <div className="titlebar-end">
             {taskId ? (
-              <IconButton icon="panelRight" label={app.pane ? t("inspector.close") : t("inspector.open")} data-testid="titlebar-sidepane"
+              <IconButton icon="panelRight" label={app.pane ? t("pane.close") : t("pane.open")} data-testid="titlebar-sidepane"
                 aria-pressed={!!app.pane} onClick={() => command("review")} />
             ) : null}
           </div>
@@ -132,7 +131,7 @@ export function Shell() {
         </header>
         <div className="document" data-testid="document">
           {taskId ? <TaskPage key={taskId} model={model} setSnapshot={setSnapshot} />
-            : route.kind === "estate" ? <EstatePage providerId={route.providerId} bucket={route.bucket} /> : <Home />}
+            : <Home />}
         </div>
         {taskId ? (
           <div className="dock">
@@ -140,7 +139,9 @@ export function Shell() {
           </div>
         ) : null}
       </main>
-      {taskId && app.pane ? <Inspector model={model} /> : null}
+      {taskId && app.pane?.tab === "details" ? <Details model={model} /> : null}
+      {app.pane?.tab === "bucket" ? <BucketSheet key={`${app.pane.providerId}/${app.pane.bucket}`}
+        providerId={app.pane.providerId} bucket={app.pane.bucket} /> : null}
       {app.settings ? <Settings /> : null}
       {app.palette ? <Palette /> : null}
       <span className="sr-only" aria-live="polite">{state ? t(`state.${state}`) : ""}</span>

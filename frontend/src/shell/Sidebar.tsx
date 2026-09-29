@@ -10,8 +10,8 @@ import { useTaskList } from "../store/tasks";
 import { useApp } from "./context";
 
 /**
- * The sidebar: Home, New task, an in-place title search, one chronological
- * list grouped by day, Settings. State is a mark on the row; Ready paints
+ * The sidebar: New task (the home is a new conversation), an in-place title
+ * search, one chronological list grouped by day, Settings. State is a mark on the row; Ready paints
  * nothing. ↑/↓ move between tasks.
  */
 export function Sidebar() {
@@ -65,20 +65,11 @@ export function Sidebar() {
         <IconButton icon="sidebar" label={t("nav.hideSidebar")} onClick={() => app.setSidebar(false)} />
       </div>
       <div className="sidebar-top">
-        <button type="button" className="sidebar-new" onClick={() => app.goHome()} data-testid="new-task">
+        <button type="button" className="sidebar-new" data-active={app.route.kind === "home" ? "true" : undefined}
+          onClick={() => app.goHome()} data-testid="new-task">
           <Icon name="compose" size={16} />
           <span>{t("nav.newTask")}</span>
           <Kbd keys={["⌘", "N"]} />
-        </button>
-        <button type="button" className="sidebar-link" data-active={app.route.kind === "home" ? "true" : undefined}
-          onClick={() => app.goHome()} data-testid="nav-home">
-          <Icon name="list" size={16} />
-          <span>{t("nav.home")}</span>
-        </button>
-        <button type="button" className="sidebar-link" data-active={app.route.kind === "estate" ? "true" : undefined}
-          onClick={() => app.openEstate()} data-testid="nav-estate">
-          <Icon name="storage" size={16} />
-          <span>{t("nav.estate")}</span>
         </button>
         <label className="sidebar-search">
           <Icon name="search" size={14} />

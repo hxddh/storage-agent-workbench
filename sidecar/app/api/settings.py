@@ -41,7 +41,10 @@ def preferences(conn: Any) -> dict[str, str]:
     rows = {r["key"]: r["value"] for r in conn.execute(
         "SELECT key, value FROM settings WHERE key IN (%s)" % ",".join("?" * len(PREFERENCES)),
         tuple(PREFERENCES)).fetchall()}
-    return {k: rows.get(k, allowed[0]) for k, allowed in PREFERENCES.items()}
+    out = {k: rows.get(k, allowed[0]) for k, allowed in PREFERENCES.items()}
+    # No language chosen yet: the window follows the system's and tells us.
+    out["language"] = rows.get("language")  # type: ignore[assignment]
+    return out
 
 
 @router.get("/settings")
