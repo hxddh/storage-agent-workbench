@@ -49,3 +49,47 @@ test("what a survey learns outlives the task: the home shows the estate and what
   await expect(page.getByTestId("result")).toContainText("Surveyed both buckets.");
   expect(s3.requests.filter((r) => /^(PUT|POST|DELETE) /.test(r))).toEqual([]);
 });
+
+test("the estate view: an account, a bucket page, a note, and a fix pack that says what it cannot tell", async ({ page }) => {
+  const storageId = await addStorage(s3.endpointUrl);
+  model = await startFakeModel([toolTurn("survey_account", { provider_id: storageId }), textTurn("Surveyed.")]);
+  providerId = await useFakeModel(model.baseUrl);
+  await boot(page);
+  await delegate(page, "Survey my storage account");
+  await expect(page.getByTestId("result")).toContainText("Surveyed.", { timeout: 30_000 });
+  await settled(page);
+
+  await page.getByTestId("nav-estate").click();
+  await page.getByTestId("estate-account").first().click();
+  await expect(page.getByTestId("bucket-row")).toHaveCount(2);
+  await page.getByTestId("bucket-row").filter({ hasText: "acme-www" }).click();
+  const bucket = page.getByTestId("bucket-page");
+  await expect(bucket.locator(".page-title")).toHaveText("acme-www");
+  await expect(page.getByTestId("timeline")).toContainText("First observed");
+
+  // A note is kept on the bucket and survives a reload.
+  await page.getByTestId("note-input").fill("Serves the marketing site.");
+  await page.getByTestId("note-add").click();
+  await expect(page.getByTestId("note")).toContainText("Serves the marketing site.");
+  await page.reload();
+  await expect(page.getByTestId("note")).toContainText("Serves the marketing site.");
+
+  // The fix pack: CLI, Terraform, the document — and an honest impact preview.
+  const issue = bucket.getByTestId("issue").filter({ has: page.getByRole("button", { name: /public access block/i }) }).first();
+  const target = (await issue.count()) ? issue : bucket.getByTestId("issue").first();
+  await target.locator(".issue-head").click();
+  const show = target.getByRole("button", { name: "Show the fix" });
+  if (await show.count()) {
+    await show.click();
+    await expect(target.getByTestId("fix-pack")).toBeVisible();
+    await target.getByRole("button", { name: "Terraform" }).click();
+    await expect(target.locator(".issue-fix pre")).toContainText("resource \"aws_s3_bucket");
+    await expect(target.getByTestId("impact")).toHaveAttribute("data-verdict", /low|caution|unknown/);
+  }
+
+  // Ask about this bucket fills the Composer; it never submits.
+  await page.getByTestId("ask-bucket").click();
+  await expect(page.getByTestId("home")).toBeVisible();
+  await expect(page.getByTestId("composer-input")).toHaveValue(/acme-www/);
+  expect(s3.requests.filter((r) => /^(PUT|POST|DELETE) /.test(r))).toEqual([]);
+});

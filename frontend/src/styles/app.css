@@ -267,6 +267,7 @@ button.model-chip:hover { background: var(--hover); color: var(--gray-100); }
 .issue-fix { justify-items: stretch; }
 .fix-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .issue-fix pre { max-height: 22rem; }
+.issue-fix pre[data-format="cli"] { white-space: pre-wrap; overflow-wrap: anywhere; }
 .fix-notes { display: grid; gap: var(--space-1); margin: 0; padding-left: var(--space-5); color: var(--gray-300); font-size: var(--text-sm); }
 .impact { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--edge); border-radius: var(--radius); background: var(--panel); }
 .impact-head { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--gray-100); font-weight: 600; }

@@ -164,11 +164,20 @@ const POSTURE_ORDER = [
   "object_ownership", "acls_disabled", "inventory_status", "tagging_status", "access_status", "head_bucket_status",
 ];
 
-function postureValue(v: unknown, t: (k: string) => string): string {
+const POSTURE_VALUES = new Set([
+  "access_denied", "available", "error", "not_configured", "provider_unsupported", "Enabled", "Suspended", "region_mismatch",
+]);
+
+const REACHABILITY = new Set(["access_status", "head_bucket_status"]);
+
+function postureValue(key: string, v: unknown, t: (k: string) => string): string {
+  if (v === "available" && REACHABILITY.has(key)) return t("posture.value.ok");
   if (v === true) return t("posture.yes");
   if (v === false) return t("posture.no");
   if (v === null || v === undefined || v === "") return t("posture.unknown");
-  return String(v).replace(/_/g, " ");
+  const s = String(v);
+  // Known status words read in the reader's language; anything else (an ownership mode) as recorded.
+  return POSTURE_VALUES.has(s) ? t(`posture.value.${s}`) : s.replace(/_/g, " ");
 }
 
 function BucketView({ providerId, bucket }: { providerId: string; bucket: string }) {
@@ -227,7 +236,7 @@ function BucketView({ providerId, bucket }: { providerId: string; bucket: string
                 {posture.map((k) => (
                   <div key={k} className="posture-row">
                     <dt>{t(`posture.${k}`)}</dt>
-                    <dd>{postureValue(page.posture[k], t)}</dd>
+                    <dd>{postureValue(k, page.posture[k], t)}</dd>
                   </div>
                 ))}
               </dl>

@@ -33,24 +33,24 @@ Every event of a Turn is an **item** appended to `items` with a global, monotoni
 
 1. **resolves the model** (`providers/models.credentials`): no usable model → the Turn fails with an `error` item whose action is *Open Settings*;
 2. **compacts** when the branch history nears 80 % of the context window: one tool-less summary step folds all but the two latest Turns into a `compaction` item;
-3. **runs the SDK loop** — `Runner.run_streamed(agent, history, context=TurnContext, max_turns=60, run_config)`:
-   - `history` is `session.to_input(items of the branch)`: messages, function calls with their recorded outputs (what the model read, `model_output`), the recorded conclusion as a `record_conclusion` call/output pair, the latest compaction first;
+3. **runs the SDK loop** — `Runner.run_streamed(agent, [], context=TurnContext, max_turns=60, run_config, session=ItemsSession(task, turn), error_handlers={max_turns, model_refusal})`:
+   - the SDK reads the history from `ItemsSession` — `session.to_input(items of the branch)`: messages, function calls with their recorded outputs (what the model read, `model_output`), the recorded conclusion as a `record_conclusion` call/output pair, the latest compaction first;
    - `RunConfig.call_model_input_filter` applies the SDK's `ToolOutputTrimmer` (older tool outputs shortened) and injects **steer** messages at a stable position on every call;
    - `ToolExecutionConfig(max_function_tool_concurrency=6)` bounds parallel calls;
    - tracing metadata carries the task and turn ids to the local trace processor;
 4. **streams**: text deltas go to the hub as the live segment; a segment closes into an `agent_message` item when a tool call or message boundary arrives (the `StreamSanitizer` holds back a tail and masks secret-shaped strings before anything is published);
-5. **ends**: `completed`; on Stop `cancelled` (partial work kept); on a step-budget overrun or recoverable provider error one tool-less **finalize** call writes the answer from the work so far; otherwise `failed` with a user-actionable message. A remembered endpoint refusal (parallel tool calls, usage reporting) is not sent again.
+5. **ends**: `completed`; on Stop `cancelled` (partial work kept); on a step-budget overrun (the SDK's `max_turns` error handler) or a recoverable provider error one tool-less **finalize** call writes the answer from the work so far; a model refusal (the `model_refusal` handler) becomes the answer as recorded; otherwise `failed` with a user-actionable message. A remembered endpoint refusal (parallel tool calls, usage reporting) is not sent again.
 6. after the first answer, a tool-less **title** step names the task unless the user renamed it.
 
 **Restart**: `RUNTIME.recover()` stamps Turns left `running` as `interrupted` and submits one `resume` Turn per chain on the same branch (the model sees the completed calls and a note); queued Turns are picked up again.
 
 ## Tools
 
-`agent/tools/registry.py` — see `docs/tools.md`. `build_sdk_tools(responses)` turns each registered function into an SDK `FunctionTool` with its JSON schema from the signature, a scope **input guardrail**, and a timeout. On the Responses backend every non-core group becomes a deferred `tool_namespace` behind the hosted `ToolSearchTool`; on Chat Completions every tool is sent. `invoke()` clamps arguments, records `tool_call`/`tool_output` items and an audit row through the Turn's `Recorder`, redacts the result, and returns it bounded inside the untrusted-data envelope. `record_conclusion` is special: it validates and records a `conclusion` item.
+`agent/tools/registry.py` — see `docs/tools.md`. `build_sdk_tools(responses)` turns each registered function into an SDK `FunctionTool` with its JSON schema from the signature, a scope **input guardrail**, and a timeout. On the Responses backend every non-core group becomes a deferred `tool_namespace` behind the hosted `ToolSearchTool`; on Chat Completions every tool is sent. `invoke()` clamps arguments, records `tool_call`/`tool_output` items and an audit row through the Turn's `Recorder`, redacts the result, and returns it bounded inside the untrusted-data envelope. `record_conclusion` is special: it validates and records a `conclusion` item. Each call's `CallContext` carries a `StopSignal` that the Turn's Stop or the call's own timeout sets; tool bodies check `ctx.cancelled` between units of work, because a worker thread cannot be killed.
 
 ## Models
 
-`agent/models.py` builds one client per Turn (closed after it):
+`agent/models.py` builds one client per Turn (closed after it). On the official endpoint the main loop uses the Responses **websocket** transport (`OpenAIResponsesWSModel`); an endpoint that refuses it is remembered (`NO_WEBSOCKET`) and served over HTTP from then on; side steps (title, compaction, finalize) always use HTTP.
 
 | | Responses (official OpenAI endpoint) | Chat Completions (everything else) |
 | --- | --- | --- |
@@ -69,7 +69,10 @@ The frontend's `store/task.ts` is one reducer over the snapshot (`GET /tasks/{id
 ## The estate
 
 - `estate/rules.py` — deterministic rules over a survey posture (status enums and booleans) and over security/lifecycle review findings; a blind spot decides nothing; fixes are generated text (public access block, default encryption, lifecycle), none where the fix depends on intent.
-- `estate/store.py` — `ingest_survey` / `ingest_review` project tool results onto `estate_buckets` and `issues` (+ `issue_events`); a survey that saw the whole account forgets buckets it no longer lists; `digest()` is the bounded block every Turn's instructions carry.
+- `estate/store.py` — `ingest_survey` / `ingest_review` project tool results onto `estate_buckets` and `issues` (+ `issue_events`); a survey that saw the whole account forgets buckets it no longer lists; `digest()` is the bounded block every Turn's instructions carry (known buckets per account, ≤ 12 open Issues, ≤ 12 notes).
+- `estate/fixpacks.py` — each fix's formats (CLI · Terraform · document; names shell-quoted / HCL-escaped) and the **impact preview**: anonymous-request counts from the bucket's S3 server access logs in DuckDB (aggregates only), the recorded lifecycle/versioning posture, and what the change does; `unknown` with a gap when the evidence cannot tell.
+- `estate/notes.py` — notes (user · agent · accept), redacted, bounded, audited; the 12 most recent join the digest.
+- `estate/store.py` also keeps `posture_history` (appended on change, last 50 per bucket) and serves the bucket page's timeline (posture changes + `issue_events`).
 - `estate/verify.py` — `POST /issues/{id}/verify` re-runs the rule's read-only review, scope-checked and audited.
 - `estate/watch.py` — opt-in per account, off by default, interval 1 h – 7 d; the Sidecar's clock (`STORAGE_AGENT_WATCH_TICK_SECONDS`, default 60 s) runs due sweeps: the survey engine (≤ 500 buckets), a read-only re-check of what posture cannot decide (≤ 25 buckets), and only when a high or medium Issue opened or came back, one task (`origin = watch`) through `RUNTIME.submit`. Turning the watch off stops a scheduled sweep between phases. The last three watch surveys per account are kept.
 

@@ -1,5 +1,5 @@
 /**
- * The v5 window contract, executable. If an intentional replacement is
+ * The v6 window contract, executable. If an intentional replacement is
  * needed, change the code, this file and the canonical docs together.
  */
 import fs from "node:fs";
@@ -55,6 +55,15 @@ describe("the window", () => {
     expect(home).toMatch(/onClick=\{\(\) => app\.prefill\(/);
     expect(result).toMatch(/onClick=\{\(\) => app\.prefill\(s\)\}/);
     for (const text of [home, result]) expect(text).not.toMatch(/api\.(submit|createTask|steer)\(/);
+  });
+
+  it("the estate never submits work and never writes to storage", () => {
+    // v6: the estate is a primary surface, but work still starts only in the Composer.
+    const estate = source.filter((p) => rel(p).startsWith("estate/"));
+    expect(estate.map(rel).sort()).toEqual(["estate/EstatePage.tsx", "estate/IssueCard.tsx", "estate/Notes.tsx"]);
+    for (const p of estate) expect(read(p)).not.toMatch(/api\.(submit|createTask|steer|resume)\(/);
+    // Ask about this bucket only fills the Composer.
+    expect(read(path.join(SRC, "estate/EstatePage.tsx"))).toContain("app.prefill(");
   });
 
   it("paints no approval, plan or chat-era chrome", () => {
