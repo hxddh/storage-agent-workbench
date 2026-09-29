@@ -562,7 +562,7 @@ pub fn run() {
         // sharing is not benign — the secret vault rewrites the whole file on
         // every save, so the second instance's write silently discarded a
         // credential the first had just stored, and both would contend on one
-        // app.db. Here we simply surface the existing window.
+        // database. Here we simply surface the existing window.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // The window config sets no explicit label, so Tauri's implicit
             // "main" applies — but don't depend on that: fall back to whichever

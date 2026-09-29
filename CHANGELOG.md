@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [5.0.0] - 2026-09-29
+
+_A fully native Agent, rebuilt on one item stream — the estate is the object, Agent Tasks are how work is done, one stream is the truth. A fresh database (`storage-agent.db`) with a one-shot importer from v4; storage stays read-only; one Agent and one submit path._ See `docs/releases/5.0.0.md`.
+
+### Added
+
+- **Items stream** — every event of a task is one append-only row with a global sequence; the page, report, audit and trace are projections. SSE follows resume by sequence.
+- **Forks** — a task is a tree of turns; editing a Direction answers a new version on its own branch; a version switcher reads either.
+- **Responses API backend** for the official OpenAI endpoint (deferred tool namespaces behind hosted tool search, server-side compaction, `store=False`); Chat Completions for every other endpoint.
+- **Tool registry** (`@tool`) — scope guardrail, bounds, timeouts, budgets, redaction, untrusted envelope and audit in one place.
+- **Quick Ask** window (⌘⇧Space) and a **tray** item; `open_task_in_main`, `set_tray_status`.
+- **Official MCP server** (MCP Python SDK 2.x, Streamable HTTP, opt-in, read-only).
+- **Importer** from a v4 `app.db` (read-only): providers, estate, Issues, watch, price table, past results.
+
+### Changed
+
+- Sidecar runtime, persistence and API rewritten (`/tasks`, `/providers/*`, `/settings`); the window rewritten (one reducer over snapshot + SSE; result-first task page; side pane Evidence · Report · Activity; home; palette; Settings).
+- Dependencies upgraded: openai-agents 0.22.3, openai 3.20, uvicorn 0.54, sse-starlette 3.5, mcp 2.2, duckdb 1.5.6, pandas 3.0.6, pydantic 2.13.5; React 19.3, Vite 8.3, Vitest 5, Playwright 1.63; Tauri `tray-icon`.
+
+### Removed
+
+- Sessions/runs/executions/work-results tables and routes, Decision history, remediation plans, baselines/drift, revisits, investigation memory tables, the provenance projection, the find bar and shortcuts sheet.
+
 ## [4.0.0] - 2026-09-29
 
 _The resident Agent for the storage estate — the estate is the object; Agent Tasks are how work is done. Migration **032**; storage stays read-only; one Agent and one submit path unchanged._ See `docs/releases/4.0.0.md`.

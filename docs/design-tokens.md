@@ -25,10 +25,10 @@ stylesheets below; the type aliases are gone (five sizes, five names); and
 | CSS variables (color, type, spacing, radius, shadow, motion, measure) | `frontend/src/index.css` |
 | Tailwind mapping | `frontend/tailwind.config.js` |
 | Component library (Button, IconButton, Kbd, Badge, StatusDot, SectionLabel, Segmented, Field / TextInput / Select) | `frontend/src/components/ui.tsx` |
-| Component styles (`ui-*` only), menus, the activity bar, the `ui-rise-in` / `ui-pop-in` keyframes | `frontend/src/agent/native-components.css` |
-| Window, sidebar, title bar, side pane, Settings | `frontend/src/agent/native-shell.css` |
-| Result, outputs bar, Work log turns, tool rows, tables, figures, Composer, banners, empty start, the `reveal-in` keyframe | `frontend/src/agent/native-document.css` |
-| Surface stylesheets (v3.1), imported after `agent/native-*.css`: rendered Markdown · Settings panes · side-pane outputs · palette and sheets | `frontend/src/styles/markdown.css` · `settings-panes.css` · `artifacts.css` · `overlays.css` |
+| Component styles (`ui-*` only), menus, the `ui-rise-in` / `ui-pop-in` keyframes | `frontend/src/styles/components.css` |
+| Window, sidebar, title bar, Composer, home, Task page, side pane, Settings, palette, Quick Ask, motion | `frontend/src/styles/app.css` |
+| Prose, tables, figures, toasts, the `reveal-in` keyframe | `frontend/src/styles/document.css` |
+| Rendered Markdown | `frontend/src/styles/markdown.css` |
 | Figures (`ChartFrame`, marks, legend, tooltip) | `frontend/src/viz/marks.tsx` |
 | Enforcement | `frontend/src/design-tokens.test.ts`, `frontend/src/theme.tokens.test.ts`, `frontend/src/agent/architecture.test.ts`, `frontend/src/components/v310.test.tsx`, `e2e/contrast.spec.ts` |
 
@@ -147,7 +147,7 @@ output is open.
 ## Components
 
 `components/ui.tsx` is the only place a control's look is decided; the look
-lives in `agent/native-components.css`:
+lives in `styles/components.css`:
 
 - `Button` (`ui-btn`, `data-variant`): `primary` (accent fill, one per
   surface) · `secondary` (raised neutral) · `ghost` (text only) · `selected`

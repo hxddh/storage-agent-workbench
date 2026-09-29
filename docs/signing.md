@@ -143,6 +143,6 @@ When trusted signing/notarization becomes active:
 - update `install.md` first-launch expectations;
 - update `release.md` required gates/secrets without publishing secret values;
 - update `release-smoke-test.md` to verify trusted signatures/notarization;
-- update `roadmap.md` to remove the shipped distribution gap.
+- note the shipped distribution in the release notes.
 
 Until then, the only correct public statement is: **macOS is ad-hoc signed, not notarized; Windows is not Authenticode-signed.**

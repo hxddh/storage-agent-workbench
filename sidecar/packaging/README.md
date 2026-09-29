@@ -34,7 +34,7 @@ Configuration (CLI args take precedence over env):
 | port       | `--port`       | `STORAGE_AGENT_PORT`        | `8765`      |
 | data dir   | `--data-dir`   | `STORAGE_AGENT_DATA_DIR`    | `<repo>/data` (dev) |
 | auth token | —              | `STORAGE_AGENT_AUTH_TOKEN`  | unset (auth open) |
-| DB path    | —              | `SAW_DB_PATH`               | `<data dir>/app.db` |
+| DB path    | —              | `SAW_DB_PATH`               | `<data dir>/storage-agent.db` |
 
 `STORAGE_AGENT_AUTH_TOKEN` is the per-launch shared secret Tauri sets in
 production; when set, every request must carry it (`X-Sidecar-Token` header, or
