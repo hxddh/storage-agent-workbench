@@ -316,7 +316,7 @@ button.model-chip:hover { background: var(--hover); color: var(--gray-100); }
 .config-row { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-1) 0; }
 .config-row dt { color: var(--gray-400); }
 .config-row dd { margin: 0; color: var(--gray-200); text-align: right; }
-.config-row[data-deviates="true"] dd { color: var(--gray-100); font-weight: 500; }
+.config-row dd { color: var(--gray-100); font-weight: 500; }
 .config .link { margin-top: var(--space-1); font-size: var(--text-sm); }
 .timeline { display: grid; margin: 0; padding: 0; list-style: none; }
 .timeline-row { display: grid; grid-template-columns: var(--space-4) 1fr; gap: 0 var(--space-2); align-items: baseline; padding: var(--space-1) 0; }

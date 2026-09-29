@@ -62,12 +62,10 @@ describe("the bucket sheet", () => {
   it("shows what needs attention, what deviates in its configuration, the notes and its history", async () => {
     await act(async () => { render(wrap(<BucketSheet providerId="p1" bucket="acme-www" />)); });
     expect(await screen.findByText("Bucket is publicly exposed", { selector: ".issue-title" })).toBeInTheDocument();
-    // Deviations first: exposure and a missing protection; a configured setting waits behind Show all.
+    // Only what deviates: exposure and a missing protection; a configured setting is not listed.
     expect(screen.getByText("Publicly exposed")).toBeInTheDocument();
     expect(screen.getByText("Versioning")).toBeInTheDocument();
     expect(screen.queryByText("Default encryption")).toBeNull();
-    fireEvent.click(screen.getByText("Show all 3"));
-    expect(screen.getByText("Default encryption")).toBeInTheDocument();
     expect(screen.getByText("Serves the marketing site.")).toBeInTheDocument();
     expect(screen.getByTestId("timeline")).toHaveTextContent("Opened — Bucket is publicly exposed");
   });
