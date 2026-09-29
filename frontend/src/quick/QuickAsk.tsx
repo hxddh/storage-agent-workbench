@@ -17,6 +17,7 @@ export function QuickAsk() {
   const [text, setText] = useState("");
   const [taskId, setTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const { model } = useTask(taskId);
   const all = useMemo(() => sections(model.turns, model.items, model.live), [model.turns, model.items, model.live]);
   const result = latestResult(all);
@@ -26,14 +27,17 @@ export function QuickAsk() {
   const ask = async (e: FormEvent) => {
     e.preventDefault();
     const q = text.trim();
-    if (!q) return;
+    if (!q || sending) return; // one question, one task — a double Enter never makes two
     setError(null);
+    setSending(true);
     try {
       const snap = await api.createTask(q, "quick_ask");
       setTaskId(snap.task.id);
       setText("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSending(false);
     }
   };
   const openMain = () => {
@@ -52,8 +56,10 @@ export function QuickAsk() {
       {taskId ? (
         <div className="quick-body">
           {working ? <p className="quiet-note"><StatusDot tone="accent" pulse />{t("work.thinking")}</p> : null}
-          {result?.conclusion ? <p className="result-answer">{result.conclusion.answer}</p> : null}
-          {result?.answer ? <Markdown text={result.answer} /> : live ? <Markdown text={live} /> : null}
+          {/* The answer once: the full text when there is one, else the recorded conclusion. */}
+          {result?.answer ? <Markdown text={result.answer} />
+            : result?.conclusion ? <p className="result-answer">{result.conclusion.answer}</p>
+              : live ? <Markdown text={live} /> : null}
           <Button size="sm" variant="ghost" icon="external" onClick={openMain}>{t("quick.open")}</Button>
         </div>
       ) : null}
