@@ -1,30 +1,26 @@
-"""Read-only re-check of an issue (v4.0).
+"""Read-only re-check of an issue (v5).
 
-Verify re-reads the bucket's configuration with the same read-only review the
-issue's rule belongs to (``review_bucket_security`` or
-``review_bucket_lifecycle`` — get_/list_ calls only), records the call like
-every other tool call, and applies the verdict through the one lifecycle in
-``store.observe``. It never writes to storage. A review that could not read
-what the rule needs decides nothing: the result is ``inconclusive`` and the
-issue keeps its state.
+Re-runs the rule's read-only review (``review_bucket_security`` or
+``review_bucket_lifecycle``), scope-checked and audited, and applies the verdict
+through the one lifecycle (``store.observe``). A review that could not read
+what the rule needs is ``inconclusive``; the issue keeps its state.
 """
 
 from __future__ import annotations
 
 import sqlite3
+import time
 from typing import Any
 
-from ..repositories import cloud_providers as cloud_repo
+from ..core import store as core_store
+from ..providers import clouds
 from ..repositories import utcnow
 from ..s3 import config_tools as ct
 from ..s3.scope import check_scope
-from ..tool_runner import run_tool
+from ..security.redaction import redact, redact_text
 from . import rules, store
 
-_CHECKS = {
-    "security": ("review_bucket_security", ct.review_bucket_security),
-    "lifecycle": ("review_bucket_lifecycle", ct.review_bucket_lifecycle),
-}
+CHECKS = {"security": ct.review_bucket_security, "lifecycle": ct.review_bucket_lifecycle}
 
 
 class VerifyError(Exception):
@@ -32,27 +28,29 @@ class VerifyError(Exception):
 
 
 def recheck_bucket(conn: sqlite3.Connection, provider_id: str, bucket: str, checks: set[str], *,
-                   source: str, session_id: str | None = None) -> tuple[dict[str, rules.Verdict], list[dict[str, Any]]]:
-    """Run the named read-only reviews on one bucket and apply their verdicts.
-    Returns (verdicts, issue changes)."""
-    provider = cloud_repo.get(conn, provider_id)
-    if provider is None:
-        raise VerifyError("The cloud provider for this issue no longer exists.")
-    denial = check_scope(provider.allowed_buckets, provider.allowed_prefixes, bucket)
+                   source: str, actor: str = "user") -> tuple[dict[str, rules.Verdict], list[dict[str, Any]]]:
+    cloud = clouds.get(conn, provider_id)
+    if cloud is None:
+        raise VerifyError("The storage account for this issue no longer exists.")
+    denial = check_scope(cloud.allowed_buckets, cloud.allowed_prefixes, bucket)
     if denial:
         raise VerifyError(denial)
-    verdicts: dict[str, rules.Verdict] = {}
-    details: dict[str, str] = {}
+    outputs: dict[str, Any] = {}
     for check in sorted(checks):
-        name, fn = _CHECKS[check]
-        out = run_tool(conn, name, {"provider_id": provider_id, "bucket": bucket},
-                       lambda fn=fn: fn(conn, provider_id, bucket), session_id=session_id)
-        v, d = rules.evaluate_review(check, out)
-        verdicts.update(v)
-        details.update(d)
-    store.upsert_bucket(conn, provider_id, bucket)
-    changes = store.observe(conn, provider_id, bucket, verdicts, details, source=source)
-    conn.commit()
+        started = time.monotonic()
+        try:
+            out = CHECKS[check](conn, provider_id, bucket)
+        except Exception as exc:  # noqa: BLE001 — a failed read decides nothing
+            out = {"success": False, "error_code": type(exc).__name__,
+                   "error_message_sanitized": redact_text(str(exc))[:300]}
+        outputs[check] = redact(out)
+        core_store.audit(conn, actor=actor, action=f"tool.review_bucket_{check}", target=bucket,
+                         ok=out.get("success", True) is not False,
+                         duration_ms=int((time.monotonic() - started) * 1000), detail={"source": source})
+    verdicts: dict[str, rules.Verdict] = {}
+    for check, out in outputs.items():
+        verdicts.update(rules.evaluate_review(check, out)[0])
+    changes = store.ingest_review(conn, provider_id, bucket, outputs, source=source)
     return verdicts, changes
 
 
@@ -63,16 +61,12 @@ def verify_issue(conn: sqlite3.Connection, issue_id: str, *, source: str = "veri
     rule = rules.BY_CODE.get(row["code"])
     if rule is None:
         raise VerifyError("This issue has no read-only check.")
-    task_id = row["source_task_id"]
-    if task_id and conn.execute("SELECT 1 FROM sessions WHERE id = ?", (task_id,)).fetchone() is None:
-        task_id = None
-    verdicts, _changes = recheck_bucket(conn, row["provider_id"], row["bucket"], {rule.check},
-                                        source=source, session_id=task_id)
+    verdicts, _changes = recheck_bucket(conn, row["provider_id"], row["bucket"], {rule.check}, source=source)
     verdict = verdicts.get(row["code"])
     result = "still_present" if verdict else ("resolved" if verdict is False else "inconclusive")
     now = utcnow()
-    conn.execute("UPDATE issues SET last_verified_at = ?, last_verify_result = ?, updated_at = ? "
-                 "WHERE id = ?", (now, result, now, issue_id))
-    store._event(conn, issue_id, "verified", source=source, detail={"result": result})
+    conn.execute("UPDATE issues SET last_verified_at = ?, last_verify_result = ?, updated_at = ? WHERE id = ?",
+                 (now, result, now, issue_id))
+    store.event(conn, issue_id, "verified", source=source, detail={"result": result})
     conn.commit()
     return {"result": result, "issue": store.get_issue(conn, issue_id)}

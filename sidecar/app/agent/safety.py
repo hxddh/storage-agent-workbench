@@ -1,4 +1,4 @@
-"""Local guardrails for the agent's tool use.
+"""Safety layer of the v5 Agent: guardrails enforced in code, not in the prompt.
 
 These are enforced in code, NOT merely in the model prompt:
 - forbidden-tool denial (defense-in-depth: `is_forbidden_tool` rejects any name
@@ -241,6 +241,67 @@ def redacted(text: str) -> str:
     return redact_text(text)
 
 
+# --- untrusted-data envelope ---------------------------------------------------
+# Every payload derived from storage, files or endpoints is DATA, never
+# instructions. The model sees it wrapped; a payload cannot close the envelope
+# early because literal markers inside it are defanged.
+
+UNTRUSTED_OPEN = "<<external_untrusted_data>>"
+UNTRUSTED_CLOSE = "<<end_external_untrusted_data>>"
+
+
+def envelope(text: str) -> str:
+    for m in (UNTRUSTED_OPEN, UNTRUSTED_CLOSE):
+        if m in text:
+            text = text.replace(m, m.replace("<<", "< <", 1))
+    return f"{UNTRUSTED_OPEN}\n{text}\n{UNTRUSTED_CLOSE}"
+
+
+# --- live stream sanitizer -------------------------------------------------------
+# A secret can complete across deltas; the live view masks eagerly and holds a
+# tail back, the persisted text applies the precise rules.
+
+_STREAM_TAIL_HOLDBACK = 128
+_SECRET_TOKEN_TAIL = re.compile(r"[A-Za-z0-9/+=_.\-]{20,}\Z")
+_STREAM_BARE_SECRET = re.compile(r"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])")
+
+
+class StreamSanitizer:
+    """Incrementally sanitize a growing message. ``push`` returns only the
+    monotonic extension of what was already emitted; ``final=True`` flushes."""
+
+    def __init__(self) -> None:
+        self.emitted = ""
+
+    @staticmethod
+    def _visible(raw: str) -> str:
+        text = redact_text(strip_chain_of_thought_stream(raw))
+        return _STREAM_BARE_SECRET.sub(REDACTED, text)
+
+    def push(self, raw_acc: str, final: bool = False) -> str:
+        visible = self._visible(raw_acc)
+        if not final:
+            cut = len(visible) - _STREAM_TAIL_HOLDBACK
+            if cut <= 0:
+                return ""
+            m = _SECRET_TOKEN_TAIL.search(visible)
+            if m is not None and m.start() < cut:
+                cut = m.start()
+            if cut <= 0:
+                return ""
+            visible = visible[:cut]
+        if len(visible) <= len(self.emitted) or not visible.startswith(self.emitted):
+            return ""
+        out = visible[len(self.emitted):]
+        self.emitted = visible
+        return out
+
+
+def clean_message(text: str | None) -> str:
+    """The persisted form of model text: hidden reasoning stripped, secrets redacted."""
+    return redact_text(strip_chain_of_thought(text or ""))
+
+
 __all__ = [
     "GuardrailBlocked", "FORBIDDEN_TOKENS",
     "FORBIDDEN_PHRASES", "DESTRUCTIVE_VERBS", "AGENT_DEFAULT_LIST_KEYS",
@@ -248,4 +309,5 @@ __all__ = [
     "is_forbidden_tool", "bound_tool_args",
     "assert_no_secrets_in_context",
     "strip_chain_of_thought", "strip_chain_of_thought_stream", "redacted",
+    "UNTRUSTED_OPEN", "UNTRUSTED_CLOSE", "envelope", "StreamSanitizer", "clean_message",
 ]
