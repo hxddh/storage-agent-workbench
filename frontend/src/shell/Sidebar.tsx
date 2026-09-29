@@ -3,6 +3,7 @@ import { api } from "../api";
 import type { TaskRow } from "../api/types";
 import { Icon } from "../components/icons";
 import { IconButton, Kbd, StatusDot } from "../components/ui";
+import { notifyNative } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
 import { localDayKey, previousDayKey } from "../lib/time";
 import { useTaskList } from "../store/tasks";
@@ -24,6 +25,18 @@ export function Sidebar() {
   const activeId = app.route.kind === "task" ? app.route.id : null;
 
   useEffect(() => app.setOnline(online), [online]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A task the watch opened while this window was open is worth one OS notification.
+  const known = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!tasks || query) return;
+    if (known.current) {
+      for (const task of tasks) {
+        if (!known.current.has(task.id) && task.origin === "watch") void notifyNative(t("watch.found", { name: task.title }), "");
+      }
+    }
+    known.current = new Set(tasks.map((x) => x.id));
+  }, [tasks, query, t]);
 
   const groups = useMemo(() => group(tasks ?? []), [tasks]);
   const flat = groups.flatMap((g) => g.tasks);

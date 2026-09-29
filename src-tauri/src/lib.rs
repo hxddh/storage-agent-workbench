@@ -21,6 +21,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, State};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -29,8 +30,9 @@ use tauri_plugin_opener::OpenerExt;
 
 /// The deep-link scheme registered in tauri.conf.json (`plugins.deep-link`).
 const DEEP_LINK_SCHEME: &str = "storage-agent";
-/// One global shortcut: summon the window and focus the Composer.
+/// Global shortcuts: summon the window and focus the Composer; toggle Quick Ask.
 const SUMMON_SHORTCUT: &str = "CmdOrCtrl+Shift+S";
+const QUICK_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
 /// Menu commands the native menu bar dispatches to the webview as the
 /// `menu-command` event `{ id }`. The frontend (`hooks/useNativeAgent.ts`,
 /// `MENU_COMMANDS`) routes each id through the SAME handler the keyboard and
@@ -44,11 +46,11 @@ const MENU_COMMANDS: &[(&str, &str, Option<&str>)] = &[
     ("stop", "Stop Execution", Some("CmdOrCtrl+.")),
     ("resume", "Resume Interrupted Execution", None),
     ("toggle-sidebar", "Toggle Sidebar", Some("CmdOrCtrl+\\")),
-    ("find", "Find in Task", Some("CmdOrCtrl+F")),
     ("review", "Show Details", Some("CmdOrCtrl+I")),
     ("palette", "Command Palette", Some("CmdOrCtrl+K")),
     ("focus-composer", "Focus Composer", Some("CmdOrCtrl+L")),
     ("theme", "Toggle Theme", None),
+    ("quick-ask", "Quick Ask", None),
     ("shortcuts", "Keyboard Shortcuts", None),
     ("release-notes", "Release Notes", None),
 ];
@@ -324,6 +326,67 @@ fn focus_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Show or hide the small Quick Ask window (label `quick`, tauri.conf.json).
+fn toggle_quick<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(win) = app.get_webview_window("quick") {
+        if win.is_visible().unwrap_or(false) {
+            let _ = win.hide();
+        } else {
+            let _ = win.center();
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
+    }
+}
+
+/// Quick Ask hands its task to the main window through the same deep-link
+/// event every other entry point uses, and steps aside.
+#[tauri::command]
+fn open_task_in_main(app: tauri::AppHandle, task_id: String) -> Result<(), String> {
+    let valid = task_id.len() >= 8
+        && task_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !valid {
+        return Err("invalid task id".into());
+    }
+    if let Some(quick) = app.get_webview_window("quick") {
+        let _ = quick.hide();
+    }
+    emit_deep_links(&app, vec![format!("{DEEP_LINK_SCHEME}://task/{task_id}")]);
+    Ok(())
+}
+
+/// The tray item's tooltip carries the estate at a glance ("3 issues need care").
+#[tauri::command]
+fn set_tray_status(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    let text: String = text.chars().take(120).collect();
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        tray.set_tooltip(Some(text)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, "tray-open", "Open Storage Agent", true, None::<&str>)?;
+    let quick = MenuItem::with_id(app, "tray-quick", "Quick Ask", true, Some(QUICK_SHORTCUT))?;
+    let quit = MenuItem::with_id(app, "tray-quit", "Quit Storage Agent", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &quick, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let mut builder = TrayIconBuilder::with_id("main-tray")
+        .tooltip("Storage Agent")
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "tray-open" => focus_main_window(app),
+            "tray-quick" => toggle_quick(app),
+            "tray-quit" => app.exit(0),
+            _ => {}
+        });
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 /// App · Task · View · Help. Every custom item carries one of MENU_COMMANDS;
 /// the predefined Edit/Window items are what keep copy/paste and window
 /// management native inside the webview.
@@ -364,8 +427,6 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::copy(app, None)?,
             &PredefinedMenuItem::paste(app, None)?,
             &PredefinedMenuItem::select_all(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &item("find")?,
         ],
     )?;
     let task_menu = Submenu::with_items(
@@ -391,6 +452,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &item("toggle-sidebar")?,
             &item("palette")?,
+            &item("quick-ask")?,
             &item("theme")?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::fullscreen(app, None)?,
@@ -524,7 +586,9 @@ pub fn run() {
         .menu(|app| build_menu(app))
         .on_menu_event(|app, event| {
             let id = event.id().as_ref().to_string();
-            if MENU_COMMANDS.iter().any(|(cid, _, _)| *cid == id) {
+            if id == "quick-ask" {
+                toggle_quick(app);
+            } else if MENU_COMMANDS.iter().any(|(cid, _, _)| *cid == id) {
                 let _ = app.emit("menu-command", serde_json::json!({ "id": id }));
             }
         })
@@ -567,6 +631,20 @@ pub fn run() {
                         );
                     }
                 });
+
+            // Quick Ask: a small always-on-top window for one question.
+            let quick = app.handle().clone();
+            let _ = app
+                .global_shortcut()
+                .on_shortcut(QUICK_SHORTCUT, move |_app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        toggle_quick(&quick);
+                    }
+                });
+            // The tray item is best-effort: some Linux desktops have no tray.
+            if let Err(e) = build_tray(app.handle()) {
+                eprintln!("tray unavailable: {e}");
+            }
 
             let port = free_port().ok_or_else(|| {
                 eprintln!("fatal: no free loopback port for the sidecar");
@@ -654,7 +732,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![get_sidecar_url, get_sidecar_token,
                                                  save_report, open_external, notify,
-                                                 set_window_title, open_app_folder])
+                                                 set_window_title, open_app_folder,
+                                                 open_task_in_main, set_tray_status])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {

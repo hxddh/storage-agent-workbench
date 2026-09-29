@@ -6,6 +6,7 @@ import { Icon } from "../components/icons";
 import { Badge, Button, SectionLabel, StatusDot } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { useCopy } from "../hooks/useCopy";
+import { setTrayStatus } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
 import { timeAgo } from "../lib/time";
 import { useApp } from "../shell/context";
@@ -82,11 +83,13 @@ function EstateView() {
   const [estate, setEstate] = useState<Estate | null>(null);
   const reload = useCallback(async () => {
     try {
-      setEstate(await api.estate(lang));
+      const next = await api.estate(lang);
+      setEstate(next);
+      void setTrayStatus(next.open_issue_count ? t("home.careCount", { n: next.open_issue_count }) : t("home.careEmpty"));
     } catch {
       setEstate(null);
     }
-  }, [lang]);
+  }, [lang, t]);
   useEffect(() => {
     void reload();
     const timer = setInterval(() => void reload(), 60_000);

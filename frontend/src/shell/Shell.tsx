@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { api } from "../api";
 import { Composer } from "../composer/Composer";
-import { hasNativeTrafficLights } from "../config";
+import { hasNativeTrafficLights, openExternal } from "../config";
 import { IconButton, StatusDot } from "../components/ui";
 import { Home } from "../home/Home";
 import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "../hooks/useNativeAgent";
@@ -22,7 +22,7 @@ import { Sidebar } from "./Sidebar";
 export function Shell() {
   const app = useApp();
   const taskId = app.route.kind === "task" ? app.route.id : null;
-  const { model, setSnapshot } = useTask(taskId);
+  const { model, setSnapshot, reload } = useTask(taskId);
   const busy = model.state === "working" || model.state === "queued";
   const { t } = useI18n();
   const theme = useTheme();
@@ -54,9 +54,27 @@ export function Shell() {
       case "stop": if (taskId) void api.stop(taskId); break;
       case "review": if (taskId) app.setPane(app.pane ? null : { tab: "evidence" }); break;
       case "focus-composer": document.querySelector<HTMLTextAreaElement>("[data-testid=composer-input]")?.focus(); break;
+      case "shortcuts": app.setPalette(true); break;
+      case "release-notes": void openExternal("https://github.com/hxddh/storage-agent-workbench/releases"); break;
+      case "rename-task": {
+        const current = model.snapshot?.task.title;
+        const next = taskId && current != null ? window.prompt(t("nav.rename"), current) : null;
+        if (taskId && next && next.trim()) void api.renameTask(taskId, next.trim().slice(0, 120)).then(() => reload());
+        break;
+      }
+      case "delete-task":
+        if (taskId && window.confirm(t("nav.deleteConfirm", { title: model.snapshot?.task.title ?? "" }))) {
+          void api.deleteTask(taskId).then(() => app.goHome());
+        }
+        break;
+      case "resume": {
+        const last = model.turns[model.turns.length - 1];
+        if (taskId && last && (last.status === "interrupted" || last.status === "failed")) void api.resume(taskId, last.id);
+        break;
+      }
       default: break;
     }
-  }, [app, theme, taskId]);
+  }, [app, theme, taskId, model, reload, t]);
 
   useNativeShell({ onOpenTask: app.openTask, onMenuCommand: command, onSummon: () => command("focus-composer") });
 

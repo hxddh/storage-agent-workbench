@@ -21,11 +21,11 @@ export const MENU_COMMANDS = [
   "stop",
   "resume",
   "toggle-sidebar",
-  "find",
   "review",
   "palette",
   "focus-composer",
   "theme",
+  "quick-ask",
   "shortcuts",
   "release-notes",
 ] as const;
@@ -140,4 +140,11 @@ export async function openNativeFolder(sub: "skills" | "data"): Promise<string |
   } catch {
     return null;
   }
+}
+
+/** The tray item's tooltip: the estate at a glance. No-op in a browser. */
+export async function setTrayStatus(text: string): Promise<void> {
+  const invoke = tauriInvoke();
+  if (!invoke) return;
+  try { await invoke("set_tray_status", { text }); } catch { /* cosmetic */ }
 }

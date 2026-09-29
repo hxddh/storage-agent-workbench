@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Storage Agent",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "identifier": "com.storageagent.workbench",
   "build": {
     "frontendDist": "../frontend/dist",
@@ -13,6 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "Storage Agent",
         "width": 1280,
         "height": 800,
@@ -24,6 +25,22 @@
           "x": 12,
           "y": 12
         }
+      },
+      {
+        "label": "quick",
+        "title": "Quick Ask",
+        "url": "index.html?view=quick",
+        "width": 560,
+        "height": 420,
+        "minWidth": 420,
+        "minHeight": 160,
+        "visible": false,
+        "resizable": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "center": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
@@ -35,7 +52,7 @@
     "targets": "all",
     "category": "DeveloperTool",
     "shortDescription": "Object storage agent: ops, analytics, management",
-    "longDescription": "Local-first agent for object storage on S3-compatible systems \u2014 operations, analytics, and management: diagnostics, access-log and inventory analysis, account and bucket configuration review, error triage, usage/cost profiling, and optimization.",
+    "longDescription": "Local-first agent for object storage on S3-compatible systems — operations, analytics, and management: diagnostics, access-log and inventory analysis, account and bucket configuration review, error triage, usage/cost profiling, and optimization.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
