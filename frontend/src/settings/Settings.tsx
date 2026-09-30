@@ -117,8 +117,15 @@ function useEditing<T extends { id: string }>(list: T[] | null) {
     if (list.length === 0) { setEditing("new"); return; }
     setEditing((e) => (e && e !== "new" ? list.find((x) => x.id === e.id) ?? null : e));
   }, [list]);
+  const current = useRef<string | null>(null);
+  current.current = editing === "new" ? "new" : editing?.id ?? null;
   const open = (e: T | "new" | null) => { setProbe(null); setEditing(e); };
-  const saved = (item: T, p: Probe | null) => { setEditing(item); setProbe(p); };
+  /** A save that finishes after the reader moved to another item leaves them where they are. */
+  const saved = (from: string, item: T, p: Probe | null) => {
+    if (current.current !== from) return;
+    setEditing(item);
+    setProbe(p);
+  };
   return { editing, probe, open, saved };
 }
 
@@ -143,7 +150,7 @@ function Models() {
       </div>
       {editing ? <ModelEditor key={editing === "new" ? "new" : editing.id} model={editing === "new" ? null : editing}
         initialProbe={probe}
-        onSaved={(m, p) => { saved(m, p); void app.reloadProviders(); }}
+        onSaved={(from, m, p) => { saved(from, m, p); void app.reloadProviders(); }}
         onChanged={() => void app.reloadProviders()}
         onDeleted={() => { open(null); void app.reloadProviders(); }} /> : null}
     </div>
@@ -152,7 +159,7 @@ function Models() {
 
 function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
   model: ModelProvider | null; initialProbe: Probe | null;
-  onSaved: (m: ModelProvider, p: Probe | null) => void; onChanged: () => void; onDeleted: () => void;
+  onSaved: (from: string, m: ModelProvider, p: Probe | null) => void; onChanged: () => void; onDeleted: () => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -188,7 +195,7 @@ function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
         out = { ok: false, detail: err instanceof Error ? err.message : String(err) };
       }
       setProbe(out);
-      onSaved(saved, out);
+      onSaved(model?.id ?? "new", saved, out);
     } catch (err) {
       fail(err);
     } finally {
@@ -208,7 +215,7 @@ function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
     }
   };
   const remove = async () => {
-    if (!model) return;
+    if (!model || !window.confirm(t("nav.deleteConfirm", { title: model.name }))) return;
     await api.deleteModel(model.id).then(onDeleted, fail);
   };
   const contextField = (
@@ -249,10 +256,11 @@ function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
         </details>
       )}
       {model ? <p className="quiet-note">{t("field.apiStyle")}: {t(`settings.apiStyle.${model.api_style}`)}</p> : null}
-      {probe ? (
-        <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
-      ) : null}
       <div className="editor-actions">
+        {/* The test result sits in the sticky row: it is in sight right after Save. */}
+        {probe ? (
+          <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
+        ) : null}
         <Button type="submit" variant="primary" disabled={busy || !modelName.trim()}>{busy ? t("settings.testing") : t("settings.save")}</Button>
         {model ? <Button onClick={() => void test()} disabled={busy}>{t("settings.test")}</Button> : null}
         {model && !model.active ? <Button variant="ghost" onClick={() => void api.activateModel(model.id).then(onChanged, fail)}>{t("settings.makeActive")}</Button> : null}
@@ -292,7 +300,7 @@ function Storage() {
       </div>
       {editing ? <CloudEditor key={editing === "new" ? "new" : editing.id} cloud={editing === "new" ? null : editing}
         initialProbe={probe}
-        onSaved={(c, p) => { saved(c, p); void app.reloadProviders(); }}
+        onSaved={(from, c, p) => { saved(from, c, p); void app.reloadProviders(); }}
         onDeleted={() => { open(null); void app.reloadProviders(); }} /> : null}
     </div>
   );
@@ -300,7 +308,7 @@ function Storage() {
 
 function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
   cloud: CloudProvider | null; initialProbe: Probe | null;
-  onSaved: (c: CloudProvider, p: Probe | null) => void; onDeleted: () => void;
+  onSaved: (from: string, c: CloudProvider, p: Probe | null) => void; onDeleted: () => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -338,7 +346,7 @@ function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
         out = { ok: false, detail: err instanceof Error ? err.message : String(err) };
       }
       setProbe(out);
-      onSaved(saved, out);
+      onSaved(cloud?.id ?? "new", saved, out);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -383,13 +391,16 @@ function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
             <Field label={t("field.prefixes")} hint={t("field.listHint")}><TextInput value={form.prefixes} onChange={set("prefixes")} /></Field>
           </div>
         </details>
-        {probe ? (
-          <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
-        ) : null}
         <div className="editor-actions">
+          {probe ? (
+            <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
+          ) : null}
           <Button type="submit" variant="primary" disabled={busy}>{busy ? t("settings.testing") : t("settings.save")}</Button>
           <span className="editor-spacer" />
-          {cloud ? <Button variant="danger" onClick={() => void api.deleteCloud(cloud.id).then(onDeleted, (e) => toast.error(e instanceof Error ? e.message : String(e)))}>{t("settings.delete")}</Button> : null}
+          {cloud ? <Button variant="danger" onClick={() => {
+            if (!window.confirm(t("nav.deleteConfirm", { title: cloud.name }))) return;
+            void api.deleteCloud(cloud.id).then(onDeleted, (e) => toast.error(e instanceof Error ? e.message : String(e)));
+          }}>{t("settings.delete")}</Button> : null}
         </div>
       </form>
       {cloud ? (

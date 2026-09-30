@@ -61,10 +61,19 @@ describe("sections", () => {
     expect(versions(forks, turn("t1"))).toBeNull();
   });
 
-  it("a stopped turn has no answer: its last words stay commentary", () => {
+  it("a stopped turn keeps what it had written as the answer so far (it never vanishes into the steps)", () => {
     const s = sections([turn("t1", { status: "cancelled" })], [
-      item("t1", "agent_message", { text: "Now let me check encryption…" }),
+      item("t1", "agent_message", { text: "Two buckets are public so far." }),
       item("t1", "notice", { event: "cancelled" }),
+    ], null)[0];
+    expect(s.answer).toBe("Two buckets are public so far.");
+    expect(s.stopped).toBe(true);
+    expect(s.blocks.map((b) => b.kind)).toEqual([]);
+  });
+
+  it("a failed turn's last words stay commentary", () => {
+    const s = sections([turn("t1", { status: "failed" })], [
+      item("t1", "agent_message", { text: "Now let me check encryption…" }),
     ], null)[0];
     expect(s.answer).toBeNull();
     expect(s.blocks.map((b) => b.kind)).toEqual(["commentary"]);

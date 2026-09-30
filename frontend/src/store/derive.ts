@@ -135,11 +135,11 @@ function section(turn: Turn, items: Item[], live: LiveSegment | null): Section {
   }
 
   // The answer is the last message after the last tool call of a turn that
-  // finished (or was finalized); a stopped or failed turn's last words are
-  // commentary, not an answer.
+  // finished, was finalized or was stopped (what it had written by then is the
+  // answer so far); a failed turn's last words are commentary.
   let answer: string | null = null;
   const last = messages[messages.length - 1];
-  if (last && last.index > lastToolIndex && (turn.status === "completed" || finalized)) {
+  if (last && last.index > lastToolIndex && (turn.status === "completed" || turn.status === "cancelled" || finalized || stopped)) {
     answer = last.item.payload.text;
     const at = blocks.findIndex((b) => b.kind === "commentary" && b.id === last.item.id);
     if (at >= 0) blocks.splice(at, 1);

@@ -31,6 +31,18 @@ export function Pane({ title, children, testId }: { title: string; children: Rea
   const app = useApp();
   const [width, setWidth] = useState(storedWidth);
   const drag = useRef<{ x: number; w: number } | null>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  // Opened from a button, the pane takes focus; closed, focus goes back where it came from.
+  // (Opened while typing — ⌘I in the Composer — focus stays in the field.)
+  useEffect(() => {
+    const from = document.activeElement as HTMLElement | null;
+    const typing = !!from?.closest?.("input, textarea, [contenteditable=true]");
+    if (!typing) titleRef.current?.focus({ preventScroll: true });
+    return () => {
+      const now = document.activeElement;
+      if (from?.isConnected && (!now || now === document.body || !now.isConnected)) from.focus({ preventScroll: true });
+    };
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || app.settings) return;
@@ -52,12 +64,22 @@ export function Pane({ title, children, testId }: { title: string; children: Rea
     drag.current = null;
     try { localStorage.setItem("sa.pane.w", String(width)); } catch { /* per device */ }
   };
+  const resizeBy = (dx: number) => setWidth((w) => {
+    const next = Math.max(MIN_W, Math.min(MAX_W, w + dx));
+    try { localStorage.setItem("sa.pane.w", String(next)); } catch { /* per device */ }
+    return next;
+  });
   return (
     <aside className="inspector" style={{ width }} aria-label={title} data-testid={testId}>
-      <div className="inspector-grip" role="separator" aria-orientation="vertical" onPointerDown={onDown}
-        onPointerMove={onMove} onPointerUp={onUp} onDoubleClick={() => setWidth(DEFAULT_W)} />
+      <div className="inspector-grip" role="separator" aria-orientation="vertical" tabIndex={0}
+        aria-label={t("pane.resize")} aria-valuemin={MIN_W} aria-valuemax={MAX_W} aria-valuenow={width}
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onDoubleClick={() => setWidth(DEFAULT_W)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft") { e.preventDefault(); resizeBy(32); }
+          else if (e.key === "ArrowRight") { e.preventDefault(); resizeBy(-32); }
+        }} />
       <header className="inspector-head">
-        <h2 className="inspector-title">{title}</h2>
+        <h2 className="inspector-title" ref={titleRef} tabIndex={-1}>{title}</h2>
         <IconButton icon="close" label={t("pane.close")} onClick={() => app.setPane(null)} />
       </header>
       <div className="inspector-body">{children}</div>
@@ -135,8 +157,8 @@ function Usage({ usage }: { usage: Array<TaskModel["turns"][number]["usage"]> })
   return (
     <p className="quiet-note">
       {sum.input || sum.output
-        ? t("pane.usage", { req: sum.requests, inTok: sum.input.toLocaleString(), outTok: sum.output.toLocaleString() })
-        : t("pane.requests", { req: sum.requests })}
+        ? t(sum.requests === 1 ? "pane.usage1" : "pane.usage", { req: sum.requests, inTok: sum.input.toLocaleString(), outTok: sum.output.toLocaleString() })
+        : t(sum.requests === 1 ? "pane.request" : "pane.requests", { req: sum.requests })}
     </p>
   );
 }
@@ -179,6 +201,13 @@ function pretty(text: string | null): string {
   }
 }
 
+/** A storage account reads by its name, not its opaque id. */
+function readableArgs(args: ToolRow["args"], clouds: Array<{ id: string; name: string }> | null) {
+  const id = args && typeof args === "object" ? (args as Record<string, unknown>).provider_id : undefined;
+  const name = typeof id === "string" ? clouds?.find((c) => c.id === id)?.name : undefined;
+  return name ? { ...(args as Record<string, unknown>), provider_id: name } : args;
+}
+
 function CallDetail({ row }: { row: ToolRow }) {
   const { t, lang } = useI18n();
   const app = useApp();
@@ -191,7 +220,7 @@ function CallDetail({ row }: { row: ToolRow }) {
       <p className="quiet-note"><code>{row.name}</code>{row.durationMs != null ? ` · ${(row.durationMs / 1000).toFixed(1)}s` : ""}</p>
       {row.summary ? <p>{row.summary}</p> : null}
       <h4 className="pane-label">{t("tool.args")}</h4>
-      <Markdown text={"```json\n" + JSON.stringify(row.args, null, 2) + "\n```"} />
+      <Markdown text={"```json\n" + JSON.stringify(readableArgs(row.args, app.clouds), null, 2) + "\n```"} />
       {row.detail ? (
         <>
           <h4 className="pane-label">{t("tool.output")}</h4>

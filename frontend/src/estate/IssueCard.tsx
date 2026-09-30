@@ -29,16 +29,19 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
   const [accepting, setAccepting] = useState(false);
   const [reason, setReason] = useState("");
   // The fix opens under the actions, which stay where they are.
-  const [fixShown, setFixShown] = useState(Boolean(initial.fix));
+  const [showFix, setFixShown] = useState(Boolean(initial.fix));
+  const fixShown = showFix && Boolean(issue.fix); // never "Hide the fix" over nothing
   useEffect(() => setIssue(initial), [initial]);
 
-  const act = async (name: string, fn: () => Promise<Issue>) => {
+  const act = async (name: string, fn: () => Promise<Issue>): Promise<boolean> => {
     setBusy(name);
     try {
       setIssue(await fn());
       onChange();
+      return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(null);
     }
@@ -56,7 +59,8 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
       setBusy(null);
     }
   };
-  const tone = SEVERITY_TONE[issue.severity];
+  // An accepted or resolved issue no longer asks for attention: its dot goes quiet.
+  const tone = issue.status === "accepted" || issue.status === "resolved" ? "neutral" : SEVERITY_TONE[issue.severity];
   const settled = issue.status === "resolved" || issue.status === "accepted";
 
   return (
@@ -77,7 +81,7 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
               <Button size="sm" variant={fixShown ? "secondary" : "primary"} disabled={!!busy} aria-expanded={fixShown}
                 onClick={() => {
                   if (issue.fix) setFixShown(!fixShown);
-                  else void act("fix", () => api.proposeFix(issue.id, lang)).then(() => setFixShown(true));
+                  else void act("fix", () => api.proposeFix(issue.id, lang)).then((ok) => { if (ok) setFixShown(true); });
                 }}>
                 {fixShown ? t("issue.hideFix") : t("issue.fix")}
               </Button>

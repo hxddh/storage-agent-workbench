@@ -69,7 +69,12 @@ export function Composer({ taskId, busy, onCreated, autoFocus = false }: {
   const trimmed = text.trim();
   const steering = busy && files.length === 0 && !editing;
   const tooLong = text.length > MAX_DIRECTION;
-  const canSend = !sending && !tooLong && (trimmed.length > 0) && app.online;
+  // With no model to run it, a Direction would only become a failed task: Send waits, the chip says where to set one up.
+  const noModel = app.models !== null && !app.models.some((m) => m.active);
+  const canSend = !sending && !tooLong && (trimmed.length > 0) && app.online && (steering || !noModel);
+  // A model set up elsewhere (another window, the API) counts as soon as the reader starts writing.
+  const writing = trimmed.length > 0;
+  useEffect(() => { if (noModel && writing) void app.reloadProviders(); }, [noModel, writing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const send = async (e?: FormEvent) => {
     e?.preventDefault();

@@ -21,11 +21,11 @@ test("a fresh install says what is missing and starts nothing on its own", async
   await expect(page.getByTestId("model-editor")).toBeVisible();
 });
 
-test("without a model the task says why it could not start and where to fix it", async ({ page }) => {
+test("without a model nothing is sent; the chip says where to set one up", async ({ page }) => {
   await boot(page);
   await page.getByTestId("composer-input").fill("Why is my bucket slow?");
-  await page.getByTestId("composer-send").click();
-  await expect(page.getByTestId("attention")).toContainText("No model is configured");
-  await page.getByTestId("attention").getByRole("button", { name: "Open Settings" }).click();
+  await expect(page.getByTestId("composer-send")).toBeDisabled();
+  await page.getByTestId("model-chip").click();
   await expect(page.getByTestId("settings")).toBeVisible();
+  await expect(page.getByTestId("model-editor")).toBeVisible();
 });

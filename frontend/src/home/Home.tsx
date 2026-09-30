@@ -123,7 +123,10 @@ function Attention() {
 
 type Group = { key: string; title: string; severity: Issue["severity"]; recurred: boolean; issues: Issue[] };
 
-/** Issues arrive most severe first; the first of each kind places its row. */
+const RANK: Record<string, number> = { high: 0, medium: 1, low: 2, info: 3 };
+
+/** One row per kind of issue, most severe first, then by title; buckets by name — the
+ * order stays put while issues change around it. */
 function groupIssues(issues: Issue[]): Group[] {
   const out = new Map<string, Group>();
   for (const i of issues) {
@@ -133,7 +136,9 @@ function groupIssues(issues: Issue[]): Group[] {
     g.recurred ||= i.status === "recurred";
     out.set(key, g);
   }
-  return [...out.values()];
+  const groups = [...out.values()];
+  for (const g of groups) g.issues.sort((a, b) => a.bucket.localeCompare(b.bucket));
+  return groups.sort((a, b) => (RANK[a.severity] ?? 9) - (RANK[b.severity] ?? 9) || a.title.localeCompare(b.title));
 }
 
 const SHOWN_BUCKETS = 3;

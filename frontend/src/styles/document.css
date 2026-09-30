@@ -95,11 +95,8 @@
 
 .agent-table-more:hover { background: var(--hover); }
 
-.agent-prose nav[data-testid="result-outline"] { margin: 0.2rem 0 0.75rem; border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 10px 14px; background: var(--panel); }
 
-.agent-prose nav[data-testid="result-outline"] ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.25rem; row-gap: 0.15rem; }
 
-.agent-prose nav[data-testid="result-outline"] a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
 
 .agent-prose blockquote { margin-block: 0.2rem; padding: 0.5rem 0.9rem; border-left: 2px solid var(--accent); border-radius: 0; background: transparent; color: var(--gray-300); }
 
@@ -110,7 +107,6 @@
 .agent-prose table { font-variant-numeric: tabular-nums; }
 
 @media (max-width: 760px) {
-  .agent-prose nav[data-testid="result-outline"] ul { grid-template-columns: minmax(0, 1fr); }
 }
 
 .viz-figures { display: grid; gap: 16px; margin-top: 24px; }

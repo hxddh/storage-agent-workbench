@@ -120,7 +120,8 @@ function Activity({ section, running }: { section: Section; running: boolean }) 
   const failed = rows.filter((r) => r.status === "failed" || r.status === "refused").length;
   let label: string;
   if (running) {
-    label = now ? `${toolLabel(now.name, lang)}${now.target ? ` ${now.target}` : ""}` : t("work.thinking");
+    label = now ? `${toolLabel(now.name, lang)}${now.target ? ` ${now.target}` : ""}`
+      : section.live?.text ? t("work.writing") : t("work.thinking");
   } else {
     label = rows.length === 1 ? t("work.step") : rows.length ? t("work.steps", { n: rows.length }) : t("work.notes");
   }
@@ -159,9 +160,13 @@ function Activity({ section, running }: { section: Section; running: boolean }) 
 
 /** While work is live, the Agent's latest note (its short commentary) under the line. */
 function LiveNotes({ section }: { section: Section }) {
+  const { t } = useI18n();
   const last = [...section.blocks].reverse().find((b) => b.kind === "commentary" || b.kind === "steer");
   if (!last || (last.kind !== "commentary" && last.kind !== "steer")) return null;
-  return <p className="activity-now reveal">{last.text}</p>;
+  // A steer reads as the reader's own words, labelled — never as unmarked text in the stream.
+  return last.kind === "steer"
+    ? <p className="activity-now activity-steer reveal"><span>{t("work.steered")}</span> {last.text}</p>
+    : <p className="activity-now reveal">{last.text}</p>;
 }
 
 const GLYPH: Record<Row["status"], "check" | "x" | "alert" | "tool"> = { ok: "check", failed: "x", refused: "alert", running: "tool" };
@@ -239,9 +244,9 @@ function Outcome({ section, taskId, running }: { section: Section; taskId: strin
             an interruption (a restart) can simply continue. */}
         <span className="turn-outcome-text">{section.error?.message ?? section.turn.error
           ?? (st === "interrupted" ? t("turn.interrupted") : t("turn.failed"))}</span>
-        {st === "failed"
-          ? <Button size="sm" onClick={() => app.openSettings("models")}>{t("turn.openSettings")}</Button>
-          : <Button size="sm" onClick={() => void api.resume(taskId, section.turn.id).catch((e) => toast.error(String(e)))}>{t("turn.resume")}</Button>}
+        {/* Continue picks the work up again; a failure may also need the model settings. */}
+        <Button size="sm" onClick={() => void api.resume(taskId, section.turn.id).catch((e) => toast.error(String(e)))}>{t("turn.resume")}</Button>
+        {st === "failed" ? <Button size="sm" variant="ghost" onClick={() => app.openSettings("models")}>{t("turn.openSettings")}</Button> : null}
       </div>
     );
   }
