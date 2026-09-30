@@ -32,7 +32,11 @@ def _s3(endpoint: str) -> Any:
 
 
 class Moto:
-    """A fresh moto S3 server (real object state, no signature checks)."""
+    """A fresh moto S3 server (real object state, no signature checks).
+
+    moto keeps its state per PROCESS, not per server: the state is reset when
+    the server starts and when it stops, so no scenario sees another's buckets
+    and nothing leaks into later tests."""
 
     def __enter__(self) -> Moto:
         from moto.server import ThreadedMotoServer
@@ -40,11 +44,20 @@ class Moto:
         self._server.start()
         host, port = self._server.get_host_and_port()
         self.endpoint = f"http://{host}:{port}"
+        self._reset()
         self.s3 = _s3(self.endpoint)
         return self
 
+    def _reset(self) -> None:
+        import urllib.request
+        urllib.request.urlopen(urllib.request.Request(self.endpoint + "/moto-api/reset", method="POST"),
+                               timeout=10).close()
+
     def __exit__(self, *_exc: Any) -> None:
-        self._server.stop()
+        try:
+            self._reset()
+        finally:
+            self._server.stop()
 
 
 def add_cloud(client: Any, endpoint: str, **extra: Any) -> str:

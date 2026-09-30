@@ -153,12 +153,13 @@ turn's `Recorder`, which also publishes each item to open streams.
 | `tool_call` | `{call_id, name, args, target}` | A tool starts. `args` are clamped and redacted. `target` is `bucket/key`, `bucket`, `name`, `dataset_id` or `provider_id`. |
 | `tool_progress` | `{call_id, name, done, total, unit}` | An engine reports counts (survey buckets, import files). Throttled to at most one per second and 120 per call. The final count (`done >= total`) is always written. `unit` is at most 24 chars. |
 | `tool_output` | `{call_id, name, ok, summary, duration_ms, detail, detail_truncated, model_output}` | A tool finishes. `summary` is at most 240 chars. `detail` is the redacted result as JSON, at most 24 000 chars, and is what the UI reads. `model_output` is the same, at most 60 000 chars, is removed from every HTTP/SSE response, and is replayed to the model as the call's output in later history. A call stopped before it ran, or cancelled or timed out, has `ok: false`, a `summary` saying so, and `detail` and `model_output` set to `null`. |
-| `tool_output` (refused) | `{call_id, name, ok: false, refused: true, summary, model_output}` | The scope guardrail rejected the call. A `tool_call` item precedes it. |
+| `tool_output` (refused) | `{call_id, name, ok: false, refused: true, summary, model_output}` | The scope guardrail rejected the call. A `tool_call` item precedes it. `summary` is the tidy tool-row note (≤ 60 chars); `model_output` carries the whole reason. |
+| `tool_output` (not run) | `{call_id, name, ok, summary, duration_ms: 0, detail: null, model_output}` | v10: the runtime answered the call without running it — a repeat of a call this Turn already made (`ok: true`, `summary: "repeated call, not run"`) or arguments that were not a JSON object (`ok: false`, `summary: "arguments were not valid JSON"`). A `tool_call` item precedes it; it is audited with `detail.skipped`. |
 | `conclusion` | `{call_id, findings: [{title, severity, detail?}], next_steps}` | The model called `record_conclusion` with valid arguments: ≤ 8 findings (title ≤ 240, severity `high`/`medium`/`low`/`info`, detail ≤ 600) and ≤ 4 next steps, each cut to 200 chars; either may be empty, not both. Redacted. No `tool_call` or `tool_output` item is written for it. v9 dropped `answer` (the answer is the Turn's final `agent_message`): an item recorded earlier — or imported from v4 — may still carry `answer` (≤ 400 chars); readers treat it as optional and history replay leaves it out. |
 | `steer` | `{text}` | The user steered a running turn. The text is redacted, and the open segment is closed first. |
-| `compaction` | `{summary, turns_folded, folded: [turn_id]}` | The branch history neared 80 % of the context window (estimated at about 4 chars per token). It is recorded on the oldest kept turn: the last three turns stay unfolded. `summary` is at most 8 000 chars. When the model's history is built, only the latest compaction counts: it stands in for the turns it folded. |
+| `compaction` | `{summary, turns_folded, folded: [turn_id]}` | The fixed prefix plus the branch history reached 80 % of the input budget (window − `max_tokens`, estimated at 3.2 chars per token). It is recorded on the oldest kept turn — up to the two latest earlier turns stay unfolded, fewer (down to none: then it is recorded on the current turn) when they alone would not fit. `summary` is at most 8 000 chars. When the model's history is built, only the latest compaction counts: it stands in for the turns it folded. |
 | `notice` | `{event, …}` | A runtime note. The events are listed below. |
-| `error` | `{message, action?}` | A turn failure the user can read. `action: "settings"` when no usable model is configured. |
+| `error` | `{message, action?}` | A turn failure the user can read. `action: "settings"` when no usable model is configured. Also written when the fallback answer after a step-budget overrun or a provider error could not be written either (the turn is then `failed`). |
 
 #### Notice events
 
@@ -170,6 +171,7 @@ turn's `Recorder`, which also publishes each item to open streams.
 | `stopped` | — | Stop ended a streamed run between steps |
 | `finalized` | `reason: "budget" \| "provider"` | the answer was written from the work so far by one tool-less call |
 | `compacted` | `turns_folded` | older turns were folded into a `compaction` item |
+| `reprompted` | `reason: "text_tool_call"` | v10: the final message was a tool call written as text; the model got one short correction and the turn continued |
 | `titled` | `title` | the title step renamed the task after its first answer |
 | `resumed` | `note, resumed_from` | the first item of a `resume` turn. `note` is replayed to the model as a user message. |
 | `interrupted` | — | restart recovery found the turn still running |
@@ -196,7 +198,7 @@ The code writes these kinds:
 
 | Kind | Writer | Title | Payload |
 | --- | --- | --- | --- |
-| `survey` | `survey_account` tool, only for a successful survey | `Account survey · <account>` | The full survey profile: `{success, provider_id, list_status, visible, processed, truncated, whole_account, summary, summary_text, buckets: [per-bucket snapshot + bucket_name, access_status, evidence_sources]}` |
+| `survey` | `survey_account` tool, only for a successful survey | `Account survey · <account>` | The full survey profile (what the model reads is a compact projection of it — key facts first, then columnar rows cut to fit; the artifact keeps everything): `{success, provider_id, list_status, visible, processed, truncated, whole_account, summary, summary_text, buckets: [per-bucket snapshot + bucket_name, access_status, evidence_sources]}` |
 | `survey` | watch sweep (`task_id` is `NULL`) | `Watch survey · <account>` | Same profile. Only the newest 3 task-less surveys per provider are kept. |
 | `review` | `review_bucket_config` tool (inside a task) | `Configuration review · <bucket>`, naming the aspects when not all ran | `{bucket, aspects, findings}` (at most 200 findings) |
 
