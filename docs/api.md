@@ -355,10 +355,9 @@ An opt-in, read-only MCP server. It exists only when the Sidecar starts with
 The server exposes `list_providers` plus a subset of the Agent's tool registry
 (`exposed()` in `sidecar/app/api/mcp.py`):
 
-- every tool in the `probes`, `objects` and `config` groups, except
-  `review_bucket_config` (that tool saves a task artifact);
-- plus `list_buckets`, `head_bucket`, `read_skill`, `query_estate` and
-  `triage_error`.
+- every tool in the `probes`, `objects` and `config` groups
+  (`review_bucket_config` saves no artifact there: there is no task);
+- plus `list_buckets`, `read_skill`, `query_estate` and `triage_error`.
 
 `list_providers` returns
 `[{id, name, provider_type, region, allowed_buckets, allowed_prefixes}]` and
@@ -366,18 +365,21 @@ never returns credentials. It is annotated read-only and closed-world. Every
 other tool is annotated `readOnlyHint = true`, `destructiveHint = false`,
 `openWorldHint = true`.
 
-The 21 exposed tools are: `list_providers`, `diagnose_presigned_url`,
-`get_bucket_config_detail`, `get_bucket_location`, `head_bucket`,
-`inspect_endpoint_tls`, `inspect_object`, `list_buckets`,
-`list_multipart_uploads`, `list_object_versions`, `list_objects`,
-`list_upload_parts`, `measure_request_latency`, `preview_object`,
-`query_estate`, `read_skill`, `review_bucket_config`,
-`review_bucket_performance_profile`, `test_addressing_style`,
-`test_object_read`, `triage_error`. `note` and `record_conclusion` are never
-exposed.
+The 9 exposed tools (v10) are: `list_providers`, `inspect_object`,
+`list_buckets`, `list_objects`, `probe_endpoint`, `query_estate`,
+`read_skill`, `review_bucket_config`, `triage_error`. `note` and
+`record_conclusion` are never exposed.
 
 Each registry tool runs through `registry.call_direct(..., actor="mcp")`. It
-gets the same argument clamping, scope check and redaction as inside a turn,
-and one audit row with actor `mcp` (a refusal is audited with `ok = 0`). Tools
-that belong to a task (surveys, files, imports, the conclusion) are not
-exposed.
+gets the same argument coercion and clamping, scope check and redaction (the
+exact vault values included) as inside a turn, and one audit row with actor
+`mcp` (a refusal is audited with `ok = 0`, and its text names
+`list_providers`). Tools that belong to a task (surveys, files, imports, the
+conclusion) are not exposed.
+
+- A result comes back as **text inside the untrusted-data envelope**
+  (`<<external_untrusted_data>>…<<end_external_untrusted_data>>`), as tool
+  output does inside a turn; `read_skill` (local guidance) is returned plain.
+- The per-turn budgets (previews 16 objects / 24 MiB, ranged reads 12,
+  latency runs 8, skill loads 20) are spent from one shared context that is
+  renewed every 10 minutes (`mcp.budget_turn`), not per call.
