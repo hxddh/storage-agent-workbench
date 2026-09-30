@@ -322,3 +322,49 @@ def redact(value: Any) -> Any:
             return value
         return scrubbed.encode("utf-8")
     return value
+
+
+# --- exact vault values ---------------------------------------------------------
+# The patterns above catch credential SHAPES. A provider's own secret can have a
+# shape none of them know (a gateway secret with no AKIA id beside it, a local
+# model's API key) and still come back in an endpoint's error text. The vault
+# knows the exact values, so a scrubber masks those too. It is built once per
+# call path (one tool call, one direct run); its values are never logged.
+
+_MIN_VAULT_SECRET = 8  # shorter values would mask ordinary words
+
+
+def vault_values() -> list[str]:
+    """Every secret value the local vault holds, longest first (for the regex)."""
+    try:
+        from . import keyring_store as ks
+        with ks._lock:  # the in-memory, already-decrypted map
+            blob = ks._ensure_loaded()
+            values = {v for v in blob.values() if isinstance(v, str) and len(v) >= _MIN_VAULT_SECRET}
+    except Exception:  # noqa: BLE001 — an unreadable vault leaves the pattern layer
+        return []
+    return sorted(values, key=len, reverse=True)
+
+
+class SecretScrubber:
+    """Masks the exact vault values in a string or a JSON-like structure."""
+
+    __slots__ = ("_re",)
+
+    def __init__(self, values: list[str] | None = None) -> None:
+        values = vault_values() if values is None else sorted({v for v in values if v}, key=len, reverse=True)
+        self._re = re.compile("|".join(re.escape(v) for v in values)) if values else None
+
+    def text(self, text: str) -> str:
+        return self._re.sub(REDACTED, text) if self._re is not None and text else text
+
+    def __call__(self, value: Any) -> Any:
+        if self._re is None:
+            return value
+        if isinstance(value, str):
+            return self.text(value)
+        if isinstance(value, dict):
+            return {k: self(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self(v) for v in value]
+        return value

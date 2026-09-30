@@ -1,90 +1,18 @@
 ---
 name: storageops-account-posture
-description: >
-  Map an account's storage landscape and configuration posture across buckets —
-  which buckets exist, which have logging / inventory / lifecycle / replication /
-  public-access-block configured, and where to look first. Use when the user wants
-  an account-wide overview or audit entry point and has NO specific error. A
-  concrete error symptom goes to the specialist skill for that error; a single
-  bucket's deep config goes to review_bucket_config.
-domains: [account, posture, audit]
-trigger_keywords:
-  - account overview
-  - map my buckets
-  - which buckets
-  - audit
-  - posture
-  - where to start
-  - list all buckets
+description: Account-wide overview or audit with no specific error, and observability (logging, notifications, inventory).
 ---
 
-# Account Posture & Landscape
+# Account posture
 
-Give the user the account-level picture and a sensible place to start — not a
-deep audit of every bucket. This is the entry point when there's no specific
-error (an error goes to the specialist skill for it); this skill is for "show
-me the landscape / what should I look at first".
+1. `survey_account` (or `query_estate(survey_filter=…)` when a recent survey exists). Say if it was truncated.
+2. `query_estate(since_last_survey=true)` when an earlier survey exists: lead with buckets that became public.
+3. Rank: public exposure > missing public access block > no encryption > no lifecycle/versioning > no logging.
+4. Go deeper only where the goal needs it: `review_bucket_config(aspects=["security"])` for one bucket;
+   `review_bucket_config(detail="logging"|"notification"|"inventory")` for observability.
+5. Observability gap to catch: logging "on" but delivered to a bucket nobody reads, or no inventory
+   on a large bucket (the only cheap way to size it).
 
-## Decision tree
-
-```
-Account-wide question (no specific error) →
-  run survey_account → from the profile, route to what's relevant:
-  ├─ public-access-block missing / permissive policy → storageops-security-iam-policy
-  ├─ logging or inventory not enabled               → observability gap (note it,
-  │     and inventory is also what feeds capacity analysis)
-  ├─ lifecycle absent + cost concern                → storageops-lifecycle-cost
-  ├─ replication / versioning question              → storageops-replication-versioning
-  └─ a bucket shows a concrete error                → the specialist skill for that error
-```
-
-Pick what the user's goal calls for — **do not reflexively review every bucket**.
-The survey gives the landscape; you decide where to go deeper.
-
-## How this runs in the app
-
-- `survey_account(provider_id, max_buckets?)` runs the read-only account survey.
-  It caps at **100 buckets by default** (hard cap 500) — on a larger account pass
-  `max_buckets`, and ALWAYS report the result's `truncated` flag rather than
-  answering "which buckets are public?" over a silently trimmed set. It persists a
-  profile: `bucket_count` / `visible_count` (the account may hold buckets the
-  credentials can't see), and per-bucket config flags — `logging_status`,
-  `inventory_status`, `lifecycle_status`, `replication_status`,
-  `public_access_block_status`, `policy_status` — plus detected `evidence_sources`
-  (logging targets, inventory destinations). It reads the landscape; it is NOT a
-  deep per-bucket audit.
-- `query_estate(provider_id, survey_filter=…)` — the account-wide posture query:
-  reads the LATEST persisted survey and returns, per bucket, its region + config
-  flags, filtered by posture (`public_buckets` — buckets AWS judges publicly exposed via
-  policy verdict and/or ACL grants, the account's most critical question —
-  `missing_public_access_block`, `missing_encryption`, `missing_lifecycle`,
-  `missing_logging`, `no_versioning`, `access_denied`, or `all`). This is how
-  you answer "which of my N buckets are public / have no X?" at scale — no
-  re-scan, statuses only. Run `survey_account` first if none exists; say so when
-  the survey was truncated and the matrix is partial.
-- `compare_to_last_survey(provider_id)` — "what changed since last time?" across
-  the two most recent surveys. Changes carrying `"alert": true` mean a bucket
-  BECAME PUBLIC since the last survey — lead your answer with those. Whenever
-  `survey_account` returns `has_prior_survey: true`, call this next and report
-  the delta unprompted.
-- For one bucket's full configuration, use `review_bucket_config`
-  instead of surveying the whole account.
-- Large accounts: the survey is bounded (at most 500 buckets) and reports its
-  coverage; don't re-run it to fill gaps — say what was not covered.
-
-Treat `provider_unsupported` / `access_denied` items as exactly that — report the
-gap honestly rather than asserting a bucket lacks a feature you couldn't read.
-
-## Ask the user (only what tools can't reveal)
-
-- Which buckets are in scope, if not the whole account.
-- Whether there's a specific bar to audit against (e.g. "every bucket must have
-  logging + public-access-block"), so you can prioritise.
-
-## What to report
-
-The account landscape grounded in the profile — bucket counts (and any not
-visible to the credentials), and which buckets have or lack logging / inventory /
-lifecycle / public-access-block — then a short, prioritised list of where to look
-first and a hand-off to the relevant specialist skill. Separate what the survey
-verified from what couldn't be read.
+Stop when: every bucket in scope has a verdict or an explicit gap (access_denied,
+provider_unsupported are gaps, never "fine"). Do not review every bucket reflexively.
+Hand off: exposure → security-iam card; cost → lifecycle-cost card.

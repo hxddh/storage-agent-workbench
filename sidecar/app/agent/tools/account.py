@@ -1,4 +1,4 @@
-"""Account-wide tools (v5 registry): survey, compare with the last survey."""
+"""Account-wide tools: the survey (v10: comparing surveys is query_estate(since_last_survey=true))."""
 
 from __future__ import annotations
 
@@ -88,18 +88,3 @@ def survey_account(max_buckets: int = 100, provider_id: str = "") -> dict[str, A
                                      "resolved": sum(1 for c in changes if c["change"] == "resolved")}
     return {**_compact(profile, ctx.turn.lang),
             **({"estate_changes": profile["estate_changes"]} if "estate_changes" in profile else {})}
-
-
-@tool(group="account", scope=_ACCOUNT, timeout=30,
-      summarize=lambda r: ("compared" if r.get("comparable") else "no earlier survey")
-      if isinstance(r, dict) and r.get("success") else "could not compare")
-def compare_to_last_survey(provider_id: str = "") -> dict[str, Any]:
-    """What changed since the previous survey of this account (buckets added or removed, posture changes),
-    from stored surveys; no new scan.
-    """
-    surveys = latest_surveys(current().conn(), provider_id, 2)
-    if len(surveys) < 2:
-        return {"success": True, "comparable": False,
-                "note": "Fewer than two surveys of this account exist; run survey_account first."}
-    return {"success": True, "comparable": True, "older_at": surveys[1]["surveyed_at"],
-            "newer_at": surveys[0]["surveyed_at"], **survey.diff_profiles(surveys[1], surveys[0])}

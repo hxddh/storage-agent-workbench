@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
+
+from pydantic import Field
 
 from ...estate import notes as estate_notes
 from ...estate import rules
@@ -19,6 +21,8 @@ SurveyFilter = Literal["all", "public_buckets", "missing_encryption", "missing_p
 def _estate_summary(r: Any) -> str:
     if not isinstance(r, dict) or r.get("error"):
         return str((r or {}).get("error") or "could not read")
+    if "comparable" in r:
+        return "compared with the last survey" if r.get("comparable") else "no earlier survey"
     if "has_survey" in r:
         if not r.get("has_survey"):
             return "no survey yet"
@@ -50,18 +54,17 @@ def _only_account(conn: Any) -> str:
 
 @tool(group="core", core=True, timeout=15, summarize=_estate_summary)
 def query_estate(provider_id: str = "", bucket: str = "", status: IssueStatus = "active",
-                 survey_filter: SurveyFilter | None = None) -> dict[str, Any]:
-    """What earlier work established: known buckets and issues (with ids and status). With survey_filter,
-    filters the account's latest stored survey by posture instead (no new scan).
+                 survey_filter: SurveyFilter | None = None, since_last_survey: bool = False) -> dict[str, Any]:
+    """What earlier work established: known buckets and issues (ids, status). survey_filter: the latest
+    survey's buckets by posture; since_last_survey: what changed since the survey before. No new scan.
 
     Args:
-        provider_id: Narrow to one storage account.
-        bucket: Narrow to one bucket.
         status: Which issues (active: still to act on).
-        survey_filter: Filter the latest survey's buckets by posture.
     """
     conn = current().conn()
     lang = current().turn.lang
+    if since_last_survey:
+        return _survey_diff(conn, provider_id or _only_account(conn))
     if survey_filter:
         return _survey_query(conn, provider_id or _only_account(conn), survey_filter)
     if status not in ("active", "care", "all", *estate.STATUSES):
@@ -72,6 +75,20 @@ def query_estate(provider_id: str = "", bucket: str = "", status: IssueStatus = 
     return {"success": True, "buckets": known[:200], "bucket_count": len(known),
             "issues": estate.list_issues(conn, status=status, provider_id=provider_id or None,
                                          bucket=bucket or None, limit=100, lang=lang)}
+
+
+def _survey_diff(conn: Any, provider_id: str) -> dict[str, Any]:
+    """What changed between the two latest stored surveys of one account."""
+    from ...engines import survey
+    from .account import latest_surveys
+    if not provider_id:
+        return {"error": "Several storage accounts are configured: since_last_survey needs a provider_id."}
+    surveys = latest_surveys(conn, provider_id, 2)
+    if len(surveys) < 2:
+        return {"success": True, "comparable": False,
+                "note": "Fewer than two surveys of this account exist; run survey_account first."}
+    return {"success": True, "comparable": True, "older_at": surveys[1]["surveyed_at"],
+            "newer_at": surveys[0]["surveyed_at"], **survey.diff_profiles(surveys[1], surveys[0])}
 
 
 def _survey_query(conn: Any, provider_id: str, survey_filter: str) -> dict[str, Any]:
@@ -139,12 +156,13 @@ def note(text: str, provider_id: str = "", bucket: str = "") -> dict[str, Any]:
 
 
 @tool(group="core", core=True, untrusted=False, special="conclusion", timeout=10)
-def record_conclusion(findings: list[Finding] | None = None, next_steps: list[str] | None = None) -> str:
-    """Record the turn's findings (most severe first) and/or next steps, right before your final answer.
-    Shown under the answer.
+def record_conclusion(findings: Annotated[list[Finding], Field(max_length=8)] | None = None,
+                      next_steps: Annotated[list[str], Field(max_length=4)] | None = None) -> str:
+    """Record the turn's findings (most severe first) and/or next steps, once, right before your final
+    answer. Shown under the answer.
 
     Args:
-        findings: At most 8; only what your tools showed.
-        next_steps: At most 4 short requests the user could send you next.
+        findings: Only what your tools showed.
+        next_steps: Short requests the user could send you next.
     """
     return "recorded"  # handled by the registry (special="conclusion")

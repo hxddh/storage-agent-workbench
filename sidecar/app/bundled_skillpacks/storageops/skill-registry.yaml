@@ -1,256 +1,51 @@
-# StorageOps Skill Registry
+# StorageOps Skill Registry (v10: five short method cards)
 #
-# Metadata for the bundled StorageOps skills. The agent sees each skill's name +
-# description as a CATALOG (progressive disclosure) and loads a skill's full
-# SKILL.md body on demand via the read-only read_skill tool. `description` is the
-# ONLY routing signal the live agent uses — it tells the model when to load the
-# skill. trigger_keywords / domains / auto_route are parsed by loader.py but are
-# currently UNCONSUMED (no offline selector reads them); they are retained as
-# descriptive metadata only.
+# The agent sees each card's name (without the storageops- prefix) and the
+# first sentence of its description as a CATALOG, and loads the card on demand
+# with the read-only read_skill tool. `description` is the only routing signal.
+# `aliases` are the names of the v9 skills folded into a card: read_skill still
+# loads them (old tasks replay calls by those names), the catalog never shows them.
 
-version: "1.0"
+version: "2.0"
 
 skills:
-  - name: storageops-security-iam-policy
-    path: skills/storageops-security-iam-policy/SKILL.md
-    priority: 10
+  - name: storageops-account-posture
+    path: skills/storageops-account-posture/SKILL.md
     description: >
-      Diagnose permission errors (403 AccessDenied, 401 Unauthorized) by tracing
-      the authorization chain — explicit deny, identity vs bucket policy, ACL,
-      public-access block, cross-account, and KMS. Also runs the mirror-image
-      public-exposure pass: is a bucket/object exposed to the world (missing
-      public-access block, wildcard policy, AllUsers ACL)? Use when access is
-      denied but the credentials are valid, or to check for public exposure.
-    trigger_keywords:
-      - 403 AccessDenied
-      - 401 Unauthorized
-      - permission denied
-      - access denied
-      - IAM policy
-      - bucket policy
-      - cross-account
-      - KMS
-      - public bucket
-      - publicly accessible
-      - public exposure
+      Account-wide overview or audit with no specific error, and observability
+      (logging, notifications, inventory).
+    aliases: [storageops-observability-audit, storageops-event-notification]
+    domains: [account, posture, observability]
+
+  - name: storageops-security-iam
+    path: skills/storageops-security-iam/SKILL.md
+    description: >
+      403/AccessDenied with valid credentials, or "is anything public?" — walk
+      the authorization chain.
+    aliases: [storageops-security-iam-policy]
     domains: [security]
 
-  - name: storageops-performance-diagnosis
-    path: skills/storageops-performance-diagnosis/SKILL.md
-    priority: 10
+  - name: storageops-protocol-compat
+    path: skills/storageops-protocol-compat/SKILL.md
     description: >
-      Diagnose throughput and latency problems — throttling (429/503 SlowDown),
-      slow upload/download, multipart inefficiency, small-file overhead, prefix
-      hotspotting, connection-pool exhaustion. Use when transfers are slow or
-      rate-limited or throughput is far below the available bandwidth.
-    trigger_keywords:
-      - 429 SlowDown
-      - 503 SlowDown
-      - slow upload
-      - slow download
-      - throughput
-      - throttling
-      - rate limit
-      - multipart
-    domains: [performance]
+      SignatureDoesNotMatch, region/301, addressing, presigned URLs, TLS/DNS/timeouts,
+      CLI/SDK quirks, stale reads, NotImplemented on S3-compatible providers.
+    aliases: [storageops-s3-protocol-compatibility, storageops-network-endpoint-access,
+              storageops-cli-sdk-diagnosis, storageops-data-consistency]
+    domains: [protocol, network, compatibility]
 
-  - name: storageops-s3-protocol-compatibility
-    path: skills/storageops-s3-protocol-compatibility/SKILL.md
-    priority: 10
+  - name: storageops-access-logs
+    path: skills/storageops-access-logs/SKILL.md
     description: >
-      Diagnose wire-protocol failures — SignatureDoesNotMatch, SigV2 vs SigV4,
-      clock skew, expired presigned URLs, MalformedXML, NotImplemented, CORS, and
-      virtual-hosted vs path-style addressing on S3-compatible providers. Also
-      carries the provider capability matrix — which S3 APIs a non-AWS provider
-      (MinIO, Ceph/RGW, R2, B2, Wasabi, OSS, COS, BOS, GCS) does or doesn't
-      implement, reported as `Provider unsupported` rather than a hard failure.
-      Use when a request is rejected at the protocol level though the network is
-      fine and the credentials are valid, or when an API may not be supported.
-    trigger_keywords:
-      - SignatureDoesNotMatch
-      - CORS
-      - SigV4
-      - SigV2
-      - AuthorizationHeaderMalformed
-      - RequestExpired
-      - NotImplemented
-      - provider compatibility
-      - not supported
-    domains: [protocol, compatibility]
-
-  - name: storageops-network-endpoint-access
-    path: skills/storageops-network-endpoint-access/SKILL.md
-    priority: 10
-    description: >
-      Diagnose transport-layer connectivity — DNS resolution, TCP reachability,
-      TLS/certificate problems, proxies, VPC/private endpoints. Use for connection
-      refused/timeout, name-not-resolved, or TLS/cert errors, i.e. the request
-      never gets a clean HTTP response.
-    trigger_keywords:
-      - DNS
-      - TLS
-      - certificate
-      - connection refused
-      - connection timeout
-      - endpoint
-      - VPC
-    domains: [network]
-
-  - name: storageops-cli-sdk-diagnosis
-    path: skills/storageops-cli-sdk-diagnosis/SKILL.md
-    priority: 20
-    description: >
-      Diagnose tool- and SDK-specific failures — awscli, boto3/botocore, rclone,
-      s5cmd, s3cmd, mc, bcecmd, obsutil. Covers version-specific bugs, signature
-      defaults, clock skew, region/endpoint config, and multipart/ETag
-      incompatibilities. Use when the failure is tied to a particular client.
-    trigger_keywords:
-      - awscli
-      - boto3
-      - rclone
-      - s5cmd
-      - bcecmd
-      - obsutil
-    domains: [cli-sdk]
-
-  - name: storageops-access-log-analysis
-    path: skills/storageops-access-log-analysis/SKILL.md
-    priority: 20
-    description: >
-      Analyze object-storage server access logs for error patterns, traffic
-      profiles, anomaly spikes, hot keys, and request-cost attribution. Use when
-      the user asks who/what is hitting a bucket, why error rates changed over
-      time, or where request cost comes from. Runs as a bounded evidence
-      import + analysis in the app.
-    trigger_keywords:
-      - access log
-      - error rate
-      - 403 spike
-      - 503 spike
-      - traffic analysis
-      - who is accessing
-    domains: [access-log, observability]
+      Access logs or inventories — who is accessing, error spikes, throttling
+      (429/503), hot prefixes, capacity and object shape.
+    aliases: [storageops-access-log-analysis, storageops-inventory-analysis, storageops-performance-diagnosis]
+    domains: [access-log, inventory, performance]
 
   - name: storageops-lifecycle-cost
     path: skills/storageops-lifecycle-cost/SKILL.md
-    priority: 20
     description: >
-      Diagnose higher-than-expected storage cost and recommend lifecycle/storage-
-      class strategy — small-file billing floors, wrong-tier data, accumulating
-      noncurrent versions, orphaned multipart uploads, transition/minimum-duration
-      rules. Use for billed-storage and tiering questions (not transfer speed).
-    trigger_keywords:
-      - lifecycle
-      - cost
-      - billing
-      - storage class
-      - Glacier
-      - IA
-    domains: [lifecycle, cost]
-
-  - name: storageops-replication-versioning
-    path: skills/storageops-replication-versioning/SKILL.md
-    priority: 20
-    description: >
-      Diagnose replication and versioning problems — objects not replicating,
-      delete markers not propagating, replication lag, versioning-state confusion,
-      object-lock/retention behavior. Use for "my replica is missing/stale" or
-      unexpected version state.
-    trigger_keywords:
-      - replication
-      - versioning
-      - CRR
-      - SRR
-      - DeleteMarker
-      - Object Lock
-    domains: [replication]
-
-  - name: storageops-data-consistency
-    path: skills/storageops-data-consistency/SKILL.md
-    priority: 30
-    description: >
-      Diagnose stale reads, missing-object-after-write, ETag confusion, and
-      concurrent-overwrite races. Modern object storage is strongly consistent, so
-      the cause is usually client-side caching, an incomplete multipart upload, or
-      last-writer-wins. Use for visibility/staleness questions.
-    trigger_keywords:
-      - consistency
-      - stale
-      - mismatch
-      - ETag
-      - checksum
-    domains: [consistency]
-
-  - name: storageops-event-notification
-    path: skills/storageops-event-notification/SKILL.md
-    priority: 30
-    description: >
-      Diagnose event-delivery failures — bucket notifications not firing or not
-      reaching Lambda/SQS/SNS/EventBridge. Walks the chain: object action → rule
-      (event type + prefix/suffix) → target resource policy → target limits. Use
-      for "my function/queue isn't triggered on upload".
-    trigger_keywords:
-      - notification
-      - event
-      - SQS
-      - Lambda
-      - EventBridge
-    domains: [notification]
-
-  - name: storageops-inventory-analysis
-    path: skills/storageops-inventory-analysis/SKILL.md
-    priority: 20
-    description: >
-      Read an object-storage inventory for capacity and object-shape: total size
-      and object count, size distribution, which prefixes hold the bytes,
-      storage-class mix, small-object ratio, and the largest objects. Use when the
-      user asks how big a bucket is, how objects are distributed, where capacity
-      goes, or whether there are too many small files. Cost/lifecycle decisions go
-      to the lifecycle skill.
-    trigger_keywords:
-      - inventory
-      - capacity
-      - bucket size
-      - object count
-      - storage class
-      - small files
-      - largest objects
-    domains: [inventory, capacity]
-
-  - name: storageops-account-posture
-    path: skills/storageops-account-posture/SKILL.md
-    priority: 20
-    description: >
-      Map an account's storage landscape and configuration posture across buckets
-      — which exist, which have logging / inventory / lifecycle / replication /
-      public-access-block, and where to look first. Use for an account-wide
-      overview or audit entry point with NO specific error. A concrete error
-      symptom goes to its specialist skill; one bucket's deep config goes to
-      review_bucket_config.
-    trigger_keywords:
-      - account overview
-      - map my buckets
-      - which buckets
-      - audit
-      - posture
-      - where to start
-    domains: [account, posture, audit]
-
-  - name: storageops-observability-audit
-    path: skills/storageops-observability-audit/SKILL.md
-    priority: 20
-    description: >
-      Audit whether a bucket/account is observable — server access logging, event
-      notifications, request metrics, inventory reports, and tagging — as one
-      coherent method, so gaps that would blind an incident investigation are
-      found before they matter. Interpreting the logs themselves belongs to
-      storageops-access-log-analysis.
-    trigger_keywords:
-      - access logging
-      - server log
-      - event notification
-      - request metrics
-      - inventory report
-      - observability
-      - who deleted
-    domains: [observability]
+      Storage cost and tiering, lifecycle rules, noncurrent versions, stuck
+      multipart uploads, replication and object lock.
+    aliases: [storageops-replication-versioning]
+    domains: [lifecycle, cost, replication]

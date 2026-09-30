@@ -28,13 +28,15 @@ import json
 import re
 import threading
 import time
+import types
+import typing
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from ... import db
 from ...s3.scope import check_scope
-from ...security.redaction import redact, redact_text
+from ...security.redaction import SecretScrubber, redact, redact_text
 from .. import safety
 
 # --- declaration -------------------------------------------------------------------
@@ -42,12 +44,17 @@ from .. import safety
 
 @dataclass(frozen=True)
 class Scope:
-    """Which parameters name storage, and whether the call lists objects."""
+    """Which parameters name storage, and whether the call lists objects.
+    ``listing`` may be a predicate over the arguments, for a tool that lists
+    only in some modes (a configuration review that samples objects)."""
     provider: str = "provider_id"
     bucket: str | None = "bucket"
     key: str | None = None
     prefix: str | None = None
-    listing: bool = False
+    listing: bool | Callable[[dict[str, Any]], bool] = False
+
+    def lists(self, args: dict[str, Any]) -> bool:
+        return bool(self.listing(args)) if callable(self.listing) else bool(self.listing)
 
 
 @dataclass
@@ -63,20 +70,70 @@ class ToolDef:
     untrusted: bool = True
     max_model_chars: int = 60_000
     special: str | None = None  # "conclusion": recorded as a conclusion item
+    # Parameters typed as a list or an object: a model that sends one as a string
+    # ("security", '["a","b"]', '{"k": "v"}') gets it coerced, not a TypeError.
+    shapes: dict[str, str] = field(default_factory=dict)
 
 
 REGISTRY: dict[str, ToolDef] = {}
 MODEL_CHARS_CAP = 60_000
 
 GROUPS: dict[str, str] = {
-    "core": "Orientation: providers, buckets, skills, the estate and the conclusion.",
-    "probes": "Endpoint probes: bucket location, TLS, addressing, latency, presigned URLs.",
-    "objects": "Object forensics: listing, versions, multipart uploads, one object's metadata, read tests, previews.",
-    "config": "Bucket configuration: the review (summary, security, lifecycle, observability, cost), detail per aspect, performance.",
-    "account": "Account-wide: compare with the last survey.",
-    "files": "Local analysis of attached files and imported evidence: analyze, aggregate, import evidence.",
-    "advice": "Deterministic advice: error triage, cost and lifecycle simulation.",
+    "core": "Orientation: accounts, buckets, skills, the estate and the conclusion.",
+    "probes": "Endpoint probes: reachability, region, addressing, TLS, latency.",
+    "objects": "Objects: listing (keys, versions, multipart uploads) and one object's metadata, preview and read tests.",
+    "config": "Bucket configuration: the review per aspect, rule detail, performance profile.",
+    "account": "Account-wide survey.",
+    "files": "Attached files and imported evidence: analyze, aggregate, import.",
+    "advice": "Deterministic advice: error triage, storage-class projection.",
 }
+
+
+def _shapes(fn: Callable[..., Any]) -> dict[str, str]:
+    try:
+        hints = typing.get_type_hints(fn)
+    except Exception:  # noqa: BLE001 — an unresolvable hint just gets no coercion
+        return {}
+    out: dict[str, str] = {}
+    hints.pop("return", None)
+    for name, hint in hints.items():
+        union = typing.get_origin(hint) in (typing.Union, types.UnionType)
+        for opt in (typing.get_args(hint) if union else (hint,)):
+            origin = typing.get_origin(opt) or opt
+            if origin is list:
+                out[name] = "list"
+            elif origin is dict:
+                out[name] = "dict"
+    return out
+
+
+def coerce_args(td: ToolDef, args: dict[str, Any]) -> dict[str, Any]:
+    """A string where a list or object is expected: JSON when it parses as one,
+    else (a list) a comma-separated value — ``aspects="security"`` is ``["security"]``."""
+    if not td.shapes:
+        return args
+    out = dict(args)
+    for name, shape in td.shapes.items():
+        value = out.get(name)
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        parsed: Any = None
+        if text[:1] in ("[", "{"):
+            try:
+                parsed = json.loads(text)
+            except ValueError:
+                parsed = None
+        if shape == "list":
+            if isinstance(parsed, list):
+                out[name] = parsed
+            elif isinstance(parsed, dict):
+                out[name] = [parsed]
+            else:
+                out[name] = [p.strip() for p in text.split(",") if p.strip()] or None
+        else:
+            out[name] = parsed if isinstance(parsed, dict) else None
+    return out
 
 
 def tool(*, group: str, core: bool = False, timeout: float = 60.0, scope: Scope | None = None,
@@ -90,7 +147,7 @@ def tool(*, group: str, core: bool = False, timeout: float = 60.0, scope: Scope 
         if group not in GROUPS:
             raise ValueError(f"unknown tool group: {group}")
         REGISTRY[tool_name] = ToolDef(tool_name, fn, group, core, timeout, scope, dict(bounds or {}),
-                                      summarize, untrusted, max_model_chars, special)
+                                      summarize, untrusted, max_model_chars, special, _shapes(fn))
         return fn
     return deco
 
@@ -304,28 +361,32 @@ def with_default_provider(td: ToolDef, args: dict[str, Any]) -> dict[str, Any]:
     return {**args, td.scope.provider: rows[0]["id"]} if len(rows) == 1 else args
 
 
-def scope_denial(td: ToolDef, args: dict[str, Any]) -> str | None:
+def scope_denial(td: ToolDef, args: dict[str, Any], *, providers: str = "configured_providers") -> str | None:
+    """None when the call is in scope, else why not. ``providers`` names where
+    the caller finds account ids (the MCP bridge: its list_providers tool)."""
     if td.scope is None:
         return None
     provider_id = args.get(td.scope.provider)
     if not provider_id:
-        return ("Several storage accounts are configured: pass provider_id (from configured_providers)."
+        return (f"Several storage accounts are configured: pass provider_id (from {providers})."
                 if _account_count() else "No storage account is configured. Add one in Settings › Storage accounts.")
+    if not isinstance(provider_id, str):
+        return f"provider_id must be a string from {providers}."
     from ...providers import clouds
     conn = db.connect()
     try:
-        cloud = clouds.get(conn, str(provider_id))
+        cloud = clouds.get(conn, provider_id)
     finally:
         conn.close()
     if cloud is None:
-        return f"Unknown provider_id {provider_id!r}. Use one from configured_providers."
+        return f"Unknown provider_id {provider_id!r}. Use one from {providers}."
     bucket = args.get(td.scope.bucket) if td.scope.bucket else None
-    if not bucket:
+    key = args.get(td.scope.key) if td.scope.key else None
+    prefix = args.get(td.scope.prefix) if td.scope.prefix else None
+    if bucket is None or bucket == "":
         return None
-    return check_scope(cloud.allowed_buckets, cloud.allowed_prefixes, str(bucket),
-                       key=args.get(td.scope.key) if td.scope.key else None,
-                       prefix=args.get(td.scope.prefix) if td.scope.prefix else None,
-                       listing=td.scope.listing)
+    return check_scope(cloud.allowed_buckets, cloud.allowed_prefixes, bucket,
+                       key=None if key == "" else key, prefix=prefix, listing=td.scope.lists(args))
 
 
 # --- SDK binding ------------------------------------------------------------------------------
@@ -401,7 +462,8 @@ def build_sdk_tools(*, responses: bool, names: set[str] | None = None) -> list[A
 
         @tool_input_guardrail(name=f"scope:{td.name}")
         def _scope_guard(data, _td=td):  # type: ignore[no-untyped-def]
-            args = with_default_provider(_td, _parse_args(getattr(data.context, "tool_arguments", "") or ""))
+            args = with_default_provider(_td, coerce_args(
+                _td, _parse_args(getattr(data.context, "tool_arguments", "") or "")))
             denial = scope_denial(_td, args)
             if denial is None:
                 return ToolGuardrailFunctionOutput.allow()
@@ -439,9 +501,13 @@ async def invoke(td: ToolDef, tool_ctx: Any, raw_args: str) -> str:
     raw = _parse_args(raw_args)
     if td.special == "conclusion":
         return turn.recorder.conclusion(call_id, raw)
+    raw = coerce_args(td, raw)
     filled = with_default_provider(td, raw)
     args = _clamp(filled, td.bounds)
-    safe_args = redact(args)
+    # The exact secrets this machine holds are masked from everything the call
+    # records or returns — built once per call, never logged.
+    scrub = SecretScrubber()
+    safe_args = scrub(redact(args))
     if filled is not raw:
         # The account was filled in here, after the guardrail read the raw call:
         # check the scope of what will actually run.
@@ -479,9 +545,9 @@ async def invoke(td: ToolDef, tool_ctx: Any, raw_args: str) -> str:
         result = {"success": False, "error_code": type(exc).__name__,
                   "error_message_sanitized": redact_text(str(exc))[:500]}
     duration_ms = int((time.monotonic() - started) * 1000)
-    clean = redact(result)
+    clean = scrub(redact(result))
     ok = _ok(clean)
-    summary = tidy_summary(redact_text((td.summarize or default_summary)(clean)))
+    summary = tidy_summary(scrub(redact_text((td.summarize or default_summary)(clean))))
     text = clean if isinstance(clean, str) else compact_json(clean)
     text = _bounded_for_model(text, min(td.max_model_chars, turn.model_chars))
     model_text = safety.envelope(text) if td.untrusted else text
@@ -499,9 +565,10 @@ def run_direct(conn: Any, name: str, args: dict[str, Any], fn: Callable[[], Any]
     except Exception as exc:  # noqa: BLE001 — returned as a sanitized failure
         result = {"success": False, "error_code": type(exc).__name__,
                   "error_message_sanitized": redact_text(str(exc))[:300]}
-    result = redact(result)
+    scrub = SecretScrubber()
+    result = scrub(redact(result))
     store.audit(conn, actor=actor, action=f"tool.{name}", target=_target(args), ok=_ok(result),
-                duration_ms=int((time.monotonic() - started) * 1000), detail={"args": redact(args)})
+                duration_ms=int((time.monotonic() - started) * 1000), detail={"args": scrub(redact(args))})
     return result
 
 
@@ -512,22 +579,26 @@ class _DetachedRecorder:
         return None
 
 
-def call_direct(name: str, args: dict[str, Any], *, actor: str, allowed: frozenset[str]) -> Any:
+def call_direct(name: str, args: dict[str, Any], *, actor: str, allowed: frozenset[str],
+                turn: TurnContext | None = None, providers: str = "configured_providers") -> Any:
     """Run one registered tool outside a turn — same scope check, bounds and
-    redaction as inside one, audited with its actor. Only ``allowed`` tools."""
+    redaction as inside one, audited with its actor. Only ``allowed`` tools.
+    ``turn`` carries the budgets across calls (the MCP bridge keeps one per time
+    window); without it each call starts a fresh one."""
     from ...core import store
     td = REGISTRY.get(name)
     if td is None or name not in allowed:
         return {"error": f"Unknown tool: {name}"}
-    args = _clamp(with_default_provider(td, dict(args or {})), td.bounds)
-    denial = scope_denial(td, args)
+    args = _clamp(with_default_provider(td, coerce_args(td, dict(args or {}))), td.bounds)
+    denial = scope_denial(td, args, providers=providers)
     conn = db.connect()
     try:
         if denial:
             store.audit(conn, actor=actor, action=f"tool.{name}", target=_target(args), ok=False,
                         detail={"refused": denial})
             return {"error": f"Refused: {denial}"}
-        turn = TurnContext("", "", threading.Event(), _DetachedRecorder())
+        if turn is None:
+            turn = TurnContext("", "", threading.Event(), _DetachedRecorder())
         call = CallContext(turn, f"{actor}-{time.monotonic_ns()}", name)
 
         def fn() -> Any:

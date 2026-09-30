@@ -1,19 +1,18 @@
-"""Safety layer of the v5 Agent: guardrails enforced in code, not in the prompt.
+"""Safety layer of the Agent: guardrails enforced in code, not in the prompt.
 
 These are enforced in code, NOT merely in the model prompt:
 - forbidden-tool denial (defense-in-depth: `is_forbidden_tool` rejects any name
-  carrying a dangerous token or a mutating-op phrase — used to sanitize proposed
-  action slugs, and asserted over the agent's registered tools in tests)
-- tool argument bounds (e.g. list max_keys; range size is capped in the S3 layer)
-- no-secret assertions on the LLM context
+  carrying a dangerous token or a mutating-op phrase; the `@tool` decorator
+  refuses such a name, and tests assert it over the registered tools)
+- the no-secret assertion on the assembled instructions (`prompt.instructions_for`)
 - chain-of-thought stripping (complete-message and streaming-safe variants)
+- the untrusted-data envelope around tool output, the estate digest and notes
 
-The tool *allowlist* is the curated set of `@function_tool`-decorated functions
-registered in `session_tools` / `session_action_tools` / `session_analysis_tools`
-/ `session_memory_tools` — that registration IS the whitelist (there is no second
-static name-set to keep in sync, and no runtime name-match gate: adding a
-read-only tool must not require editing a second list). The forbidden-token
-denylist below is the belt-and-suspenders that catches a mis-added mutating tool.
+The tool *allowlist* is the registry (`agent/tools/registry.REGISTRY`): that
+registration IS the whitelist. Argument bounds are declared per tool
+(`@tool(bounds=…)`); range and preview sizes are also capped in the S3 layer.
+The forbidden-token denylist below is the belt-and-suspenders that catches a
+mis-added mutating tool.
 """
 
 from __future__ import annotations
@@ -23,16 +22,6 @@ import re
 from typing import Any
 
 from ..security.redaction import REDACTED, redact_text
-
-# List sampling in agent mode is graded, not silently clamped to a tiny cap:
-# when the caller doesn't ask for a size it gets DEFAULT; it may explicitly
-# request up to MAX (which matches the S3 layer's own hard cap, so a deliberate
-# wider sample is honored instead of dropped to the default); a request beyond
-# MAX is CLAMPED to MAX (bounds, not gates) — there is no human-approval path.
-AGENT_DEFAULT_LIST_KEYS = 100
-AGENT_MAX_LIST_KEYS = 1000  # bounded no-approval ceiling (== S3 hard cap)
-# NOTE: range-GET size is capped in the S3 layer (s3/tools.py MAX_RANGE_BYTES);
-# there is deliberately no second, unenforced constant here.
 
 # Forbidden surface, matched on whole NAME TOKENS (split on non-alphanumeric),
 # not raw substrings — so legitimate names like `test_credentials` or
@@ -76,8 +65,8 @@ FORBIDDEN_PHRASES = {
 # Every verb here is one that NO read-only tool or action type in this product
 # uses; `test_no_real_tool_name_is_caught_by_the_verb_list` holds that line
 # against the actual tool list rather than against this comment. Note what is
-# deliberately absent: `upload` (`list_upload_parts`), `import`
-# (`import_inventory_file`) and `restore` are nouns or reads here, and the
+# deliberately absent: `upload` (`list_objects(kind="uploads")`), `import`
+# (`import_evidence`) and `restore` are nouns or reads here, and the
 # mutating forms of those are already covered by the phrase list.
 DESTRUCTIVE_VERBS = {
     "delete", "deletion", "remove", "purge", "destroy", "wipe", "erase", "drop",
@@ -111,29 +100,6 @@ def is_forbidden_tool(name: str) -> bool:
         if any(tuple(tokens[i:i + n]) == phrase for i in range(len(tokens) - n + 1)):
             return True
     return False
-
-
-def bound_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Clamp argument bounds for no-approval agent execution.
-
-    Unset ``max_keys`` defaults to ``AGENT_DEFAULT_LIST_KEYS``; an explicit
-    larger request is honored up to ``AGENT_MAX_LIST_KEYS`` (not silently
-    dropped to the default), so a deliberate wider sample works.
-    """
-    out = dict(args or {})
-    # v1.13 — every paged list tool gets the same graded clamp as
-    # list_objects_v2 (the S3 layer is the truth; this keeps the agent-side
-    # echo consistent so a deliberate wider sample is honored, never dropped).
-    if name in ("list_objects_v2", "list_object_versions"):
-        mk = int(out.get("max_keys", AGENT_DEFAULT_LIST_KEYS) or AGENT_DEFAULT_LIST_KEYS)
-        out["max_keys"] = max(1, min(mk, AGENT_MAX_LIST_KEYS))
-    if name == "list_multipart_uploads":
-        mu = int(out.get("max_uploads", AGENT_DEFAULT_LIST_KEYS) or AGENT_DEFAULT_LIST_KEYS)
-        out["max_uploads"] = max(1, min(mu, AGENT_MAX_LIST_KEYS))
-    if name == "list_upload_parts":
-        mp = int(out.get("max_parts", AGENT_DEFAULT_LIST_KEYS) or AGENT_DEFAULT_LIST_KEYS)
-        out["max_parts"] = max(1, min(mp, AGENT_MAX_LIST_KEYS))
-    return out
 
 
 def _contains_secret(text: str) -> bool:
@@ -304,9 +270,8 @@ def clean_message(text: str | None) -> str:
 
 __all__ = [
     "GuardrailBlocked", "FORBIDDEN_TOKENS",
-    "FORBIDDEN_PHRASES", "DESTRUCTIVE_VERBS", "AGENT_DEFAULT_LIST_KEYS",
-    "AGENT_MAX_LIST_KEYS", "REDACTED",
-    "is_forbidden_tool", "bound_tool_args",
+    "FORBIDDEN_PHRASES", "DESTRUCTIVE_VERBS", "REDACTED",
+    "is_forbidden_tool",
     "assert_no_secrets_in_context",
     "strip_chain_of_thought", "strip_chain_of_thought_stream", "redacted",
     "UNTRUSTED_OPEN", "UNTRUSTED_CLOSE", "envelope", "StreamSanitizer", "clean_message",

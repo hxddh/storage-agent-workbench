@@ -88,7 +88,7 @@ def test_optional_arguments_stay_optional():
     assert s["list_objects"]["required"] == ["bucket"]
     assert "required" not in s["list_buckets"] and "required" not in s["survey_account"]
     assert "required" not in s["record_conclusion"] and "required" not in s["query_estate"]
-    assert s["test_object_read"]["required"] == ["bucket", "key", "mode"]
+    assert s["inspect_object"]["required"] == ["bucket", "key"]
     for name, schema in s.items():
         assert "provider_id" not in schema.get("required", []), name
         assert "anyOf" not in json.dumps(schema), name  # Optional[X] is sent as X
@@ -99,20 +99,20 @@ def test_optional_arguments_stay_optional():
 def test_fixed_choices_are_enums():
     s = _schemas()
     assert s["review_bucket_config"]["properties"]["aspects"]["items"]["enum"] == [
-        "summary", "security", "lifecycle", "observability", "cost"]
-    assert s["inspect_object"]["properties"]["aspects"]["items"]["enum"] == ["head", "attributes", "lock", "acl",
-                                                                           "tags"]
-    assert s["test_object_read"]["properties"]["mode"]["enum"] == ["conditional", "range"]
+        "summary", "security", "lifecycle", "observability", "cost", "performance"]
+    assert s["inspect_object"]["properties"]["aspects"]["items"]["enum"] == [
+        "head", "attributes", "lock", "acl", "tags", "preview", "range", "conditional"]
     assert s["import_evidence"]["properties"]["source_type"]["enum"] == ["inventory", "access_log"]
     assert "public_buckets" in s["query_estate"]["properties"]["survey_filter"]["enum"]
     assert "fix_proposed" in s["query_estate"]["properties"]["status"]["enum"]
-    assert "policy_status" in s["get_bucket_config_detail"]["properties"]["aspect"]["enum"]
+    assert "policy_status" in s["review_bucket_config"]["properties"]["detail"]["enum"]
     severity = s["record_conclusion"]["$defs"]["Finding"]["properties"]["severity"]
     assert severity["enum"] == ["high", "medium", "low", "info"] and "pattern" not in severity
-    metric = s["aggregate_uploaded_file"]["properties"]["metric"]
-    assert {"count", "sum_bytes", "p95_latency_ms", "total_size", "avg_size"} <= set(metric["enum"])
-    assert "allowed_metrics" not in json.dumps(s["aggregate_uploaded_file"])
-    assert "storage_class" in s["aggregate_uploaded_file"]["properties"]["group_by"]["enum"]
+    metric = s["analyze_uploaded_file"]["properties"]["metric"]
+    assert {"count", "sum_bytes", "p95_latency_ms", "distinct_storage_classes"} <= set(metric["enum"])
+    assert not {"total_size", "avg_size"} & set(metric["enum"])  # one vocabulary for logs and inventories
+    assert "allowed_metrics" not in json.dumps(s["analyze_uploaded_file"])
+    assert "storage_class" in s["analyze_uploaded_file"]["properties"]["group_by"]["items"]["enum"]
 
 
 def test_descriptions_are_short_single_lines():
@@ -133,10 +133,10 @@ def test_the_first_survey_request_fits_a_small_window(client):
     size = len(json.dumps(req))
     tools = len(json.dumps(req["tools"]))
     system = len(req["messages"][0]["content"])
-    # v9 measured 21 752 chars (tools 16 576, instructions 4 796): ≈ 5.4k tokens,
-    # a third of a 16k window. Held at ~60 % of the v8 request.
-    assert size <= BASELINE_REQUEST_CHARS * 0.61, (size, tools, system)
-    assert tools <= 17_500 and system <= 5_200, (tools, system)
+    # v9 measured 21 752 chars (tools 16 576, instructions 4 796); v10 cut the
+    # tool set to 15 (tools ≈ 10.9k as sent). Held at half of the v8 request.
+    assert size <= BASELINE_REQUEST_CHARS * 0.5, (size, tools, system)
+    assert tools <= 11_500 and system <= 5_200, (tools, system)
     assert len(req["tools"]) == len(registry.REGISTRY)
 
 
@@ -195,9 +195,9 @@ def test_compaction_counts_the_fixed_prefix():
 
 
 def test_a_small_window_compacts_what_history_alone_would_not(client):
-    """Three long answers (~33k chars) are well under 80 % of a 16k window
+    """Three long answers (~41k chars) are well under 80 % of a 16k window
     (52k chars) — but not once the instructions and tool definitions are counted."""
-    long = "Bucket findings. " * 640  # ≈ 10 900 chars
+    long = "Bucket findings. " * 800  # ≈ 13 600 chars
     with FakeModel([text_turn(long), text_turn(long), text_turn(long), text_turn("Fourth.")],
                    compaction="- Earlier: three long answers.") as fake:
         _use(client, fake)  # openai-compatible on localhost: planned as 16k
@@ -220,24 +220,26 @@ def test_one_tool_output_is_bounded_by_a_small_window():
 # --- the single storage account ----------------------------------------------------------
 
 
-def test_the_only_account_is_the_default_provider(client):
+def test_the_only_account_is_the_default_provider(client, monkeypatch):
+    from app.s3 import tools as s3
+    monkeypatch.setattr(s3, "list_buckets", lambda conn, p: {"success": True, "provider_id": p, "buckets": []})
     pid = _account(client)
-    td = registry.REGISTRY["compare_to_last_survey"]
+    td = registry.REGISTRY["list_buckets"]
     assert registry.with_default_provider(td, {}) == {"provider_id": pid}
     assert registry.with_default_provider(registry.REGISTRY["note"], {}) == {}  # an estate-wide note stays so
-    with FakeModel([tool_turn("compare_to_last_survey", {}), text_turn("No earlier survey.")]) as fake:
+    with FakeModel([tool_turn("list_buckets", {}), text_turn("No buckets.")]) as fake:
         _use(client, fake)
         tid = client.post("/tasks", json={"direction": "What changed?"}).json()["task"]["id"]
         snap = _settle(client, tid)
     call = next(i for i in snap["items"] if i["type"] == "tool_call")
     out = next(i for i in snap["items"] if i["type"] == "tool_output")
     assert call["payload"]["args"]["provider_id"] == pid and call["payload"]["target"] == "demo"
-    assert out["payload"]["ok"] is True and "comparable" in out["payload"]["detail"]
+    assert out["payload"]["ok"] is True and pid in out["payload"]["detail"]
 
     _account(client, "second")
     assert registry.with_default_provider(td, {}) == {}
     assert "Several storage accounts" in registry.scope_denial(td, {})
-    refused = registry.call_direct("compare_to_last_survey", {}, actor="mcp",
+    refused = registry.call_direct("list_buckets", {}, actor="mcp",
                                    allowed=frozenset(registry.REGISTRY))
     assert "Several storage accounts" in refused["error"]
 
@@ -249,13 +251,13 @@ def test_the_prompt_names_accounts_not_ids(client, conn):
     pid = _account(client, "prod")
     estate.ingest_survey(conn, pid, {"buckets": [{"bucket_name": "www", "publicly_exposed": True}]})
     text = prompt.dynamic_context(conn)
-    digest = text[text.index("estate_digest: "):].split("\n")[0]
+    digest = text[text.index("estate_digest: "):].split("<<end_external_untrusted_data>>")[0]
     assert "www" in digest and "Bucket is publicly accessible" in digest and pid not in digest
     assert "provider_id may be omitted" in text
     assert "chain-of-thought" not in prompt.INSTRUCTIONS
-    # The two meta skills are gone; their routing lives in the instructions.
+    # The two meta skills are gone; their routing lives in the instructions (v10: a table).
     assert "triage" not in text.split("skills (")[1].split("\n\n")[0]
-    assert "load the matching skill" in prompt.INSTRUCTIONS
+    assert "Where to start:" in prompt.INSTRUCTIONS and "triage_error" in prompt.INSTRUCTIONS
 
 
 def test_a_skill_loads_by_its_short_catalog_name():
@@ -309,7 +311,7 @@ def test_survey_account_is_always_loaded_on_responses():
     tools = registry.build_sdk_tools(responses=True)
     top = {getattr(t, "name", None): t for t in tools}
     assert "survey_account" in top and top["survey_account"].defer_loading is False
-    assert "list_uploaded_files" in top and top["list_uploaded_files"].defer_loading is False
+    assert "analyze_uploaded_file" in top and top["analyze_uploaded_file"].defer_loading is False
     assert any(getattr(t, "defer_loading", False) for t in tools)  # the rest still load on demand
     assert registry.schema_chars(responses=True) < registry.schema_chars(responses=False)
 
@@ -363,8 +365,8 @@ def test_tool_row_notes_read_as_short_plain_clauses():
         "import_evidence": {"success": True, "files": 4, "coverage": "partial"},
         "analyze_uploaded_file": {"success": True, "rows": 1, "findings": [1, 2]},
         "triage_error": {"error_code": "AccessDenied", "candidate_causes": [1]},
-        "aggregate_uploaded_file": {"success": True, "groups": [1, 2]},
-        "list_uploaded_files": {"success": True, "datasets": []},
+        "probe_endpoint": {"check": "latency", "success": True, "p50_ms": 12.5, "p95_ms": 40.1},
+        "inspect_object": {"success": True, "partial": True, "failed": ["acl"], "head": {"success": True}},
         "query_estate": {"success": True, "bucket_count": 1, "issues": [1, 2]},
     }
     notes = {}
@@ -377,5 +379,7 @@ def test_tool_row_notes_read_as_short_plain_clauses():
     assert notes["list_buckets"] == "1 bucket"
     assert notes["import_evidence"] == "imported 4 files, partial"
     assert notes["triage_error"] == "AccessDenied, 1 likely cause"
+    assert notes["probe_endpoint"] == "p50 12.5 ms, p95 40.1 ms"
+    assert notes["inspect_object"] == "partial: acl failed"
     for name, note in notes.items():
         assert "(s)" not in note and len(note) <= registry.SUMMARY_CHARS, (name, note)

@@ -82,9 +82,8 @@ def live_s3_endpoint():
     host, port = server.get_host_and_port()
     endpoint = f"http://{host}:{port}"
     try:
-        # `list_multipart_uploads` deliberately does not hand back upload ids
-        # (sanitized to key samples), so the seeder publishes the one it created
-        # for the ListParts test to use.
+        # The seeder publishes the upload id it created, so the engine's
+        # ListParts test does not depend on the listing's sample.
         SEEDED["upload_id"] = _seed(endpoint)
         yield endpoint
     finally:
