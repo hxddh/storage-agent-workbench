@@ -43,7 +43,7 @@ def test_a_failed_check_is_reported_without_the_body_or_key(client):
 
 
 def test_ollama_reports_a_context_smaller_than_planned(client):
-    show = {"model_info": {"general.architecture": "llama", "llama.context_length": 8192}}
+    show = {"model_info": {"general.architecture": "x", "x.context_length": 8192}}
     with FakeModel([tool_turn("report_ready", {"ready": True})], show=show) as fake:
         body = client.post(f"/providers/models/{_model(client, fake, kind='ollama')}/test").json()
     assert body["model_context"] == 8192 and body["planned_window"] == 16_384

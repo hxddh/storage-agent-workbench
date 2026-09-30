@@ -79,22 +79,22 @@ def test_small_windows_reserve_about_2048_completion_tokens():
     assert budget.completion_token_budget(None, 16_384) == 2_048
     assert budget.completion_token_budget(None, 32_768) == 2_048
     assert budget.completion_token_budget(None, 4_096) == 1_024  # never above a quarter of a tiny window
-    assert budget.completion_token_budget("gpt-3.5-turbo", 16_385) == 2_048
+    assert budget.completion_token_budget(None, 16_385, explicit_max=4_096) == 2_048
     # Above 32k: unchanged (window//8 floored at 16 384, never above the model's max output).
     assert budget.completion_token_budget(None, 128_000) == 16_384
     assert budget.completion_token_budget(None, 400_000) == 16_384
-    assert budget.completion_token_budget("o3", 200_000) == 25_000
-    assert budget.completion_token_budget("gpt-4-turbo", 128_000) == 4_096
+    assert budget.completion_token_budget(None, 200_000, explicit_max=100_000) == 25_000
+    assert budget.completion_token_budget(None, 128_000, explicit_max=4_096) == 4_096
     assert budget.completion_token_budget(None, 16_384, explicit_max=1_000) == 1_000
 
 
 def test_one_plan_decides_window_and_max_tokens():
-    local = budget.plan({"kind": "ollama", "base_url": "http://127.0.0.1:11434/v1", "model": "llama3.1:8b"})
+    local = budget.plan({"kind": "ollama", "base_url": "http://127.0.0.1:11434/v1", "model": "local-model"})
     assert (local.window, local.max_tokens, local.input_tokens) == (16_384, 2_048, 14_336)
     assert local.input_chars == int(14_336 * budget.CHARS_PER_TOKEN)
-    hosted = budget.plan({"kind": "deepseek", "model": "deepseek-chat"})
+    hosted = budget.plan({"kind": "openrouter", "model": "some-hosted-model", "max_output_tokens": 8_192})
     assert hosted.window == 128_000 and hosted.max_tokens == 8_192
-    declared = budget.plan({"kind": "vllm", "model": "qwen3:8b", "context_window": 40_960})
+    declared = budget.plan({"kind": "vllm", "model": "local-model", "context_window": 40_960})
     assert declared.window == 40_960
     # The resolved credentials and the plan agree (one source of truth).
     assert budget.planned_window("ollama", None, "x", None) == budget.LOCAL_DEFAULT_WINDOW
@@ -110,7 +110,7 @@ def test_every_request_asks_for_the_planned_max_tokens(client):
 
 def test_ollama_is_asked_for_the_planned_window():
     clients: list = []
-    _, settings = models.build({"kind": "ollama", "base_url": "http://127.0.0.1:11434/v1", "model": "qwen3:8b",
+    _, settings = models.build({"kind": "ollama", "base_url": "http://127.0.0.1:11434/v1", "model": "local-model",
                                 "api_key": "not-needed", "api_style": "chat", "context_window": 16_384}, clients)
     asyncio.run(models.close_clients(clients))
     assert settings.extra_body == {"options": {"num_ctx": 16_384}}
