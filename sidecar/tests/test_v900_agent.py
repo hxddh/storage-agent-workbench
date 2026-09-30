@@ -188,10 +188,12 @@ def test_the_dead_budgets_are_gone():
 
 
 def test_compaction_counts_the_fixed_prefix():
-    window = 16_384  # 65 536 chars; the threshold is 80 %
-    assert not runtime.needs_compaction(30_000, 0, window)
-    assert runtime.needs_compaction(30_000, 23_000, window)  # the same history, plus what every request carries
-    assert not runtime.needs_compaction(30_000, 23_000, 128_000)
+    # v10: against the input budget (window − max_tokens), at 3.2 chars/token.
+    small = budget.Plan(16_384, budget.completion_token_budget(None, 16_384)).input_tokens  # 14 336
+    large = budget.Plan(128_000, budget.completion_token_budget(None, 128_000)).input_tokens
+    assert not runtime.needs_compaction(30_000, 0, small)
+    assert runtime.needs_compaction(30_000, 23_000, small)  # the same history, plus what every request carries
+    assert not runtime.needs_compaction(30_000, 23_000, large)
 
 
 def test_a_small_window_compacts_what_history_alone_would_not(client):
@@ -212,7 +214,7 @@ def test_a_small_window_compacts_what_history_alone_would_not(client):
 
 
 def test_one_tool_output_is_bounded_by_a_small_window():
-    assert runtime.tool_output_chars(16_384) == 16_384
+    assert runtime.tool_output_chars(16_384) == 13_107  # v10: a quarter of the window at 3.2 chars/token
     assert runtime.tool_output_chars(128_000) == 60_000  # the absolute cap holds
     assert runtime.tool_output_chars(2_048) == 4_000
 
