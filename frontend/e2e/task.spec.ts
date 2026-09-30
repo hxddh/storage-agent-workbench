@@ -17,7 +17,7 @@ const conclusion = {
 test.beforeEach(async () => {
   await reset();
   model = await startFakeModel([
-    toolTurn("list_uploaded_files", {}),
+    toolTurn("query_estate", {}),
     toolTurn("record_conclusion", conclusion),
     textTurn("There are **no attached files** yet.\n\n| Kind | Count |\n|---|---|\n| Access logs | 0 |\n| Inventories | 0 |"),
   ], { title: "Attached evidence check" });
@@ -54,8 +54,8 @@ test("a message becomes a conversation: the work in one line, the answer, Detail
 
   // The work line opens to every call; a call opens in Details.
   await page.getByTestId("activity-line").click();
-  await page.locator(".call-row button", { hasText: "Listed attached files" }).click();
-  await expect(page.getByTestId("call-detail")).toContainText("list_uploaded_files");
+  await page.locator(".call-row button", { hasText: "Checked what is known" }).click();
+  await expect(page.getByTestId("call-detail")).toContainText("query_estate");
   await page.getByRole("button", { name: "All calls" }).click();
   await expect(page.getByTestId("details")).toContainText("Save report");
   await page.keyboard.press("Escape");

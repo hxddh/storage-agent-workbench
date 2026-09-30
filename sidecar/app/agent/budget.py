@@ -15,6 +15,10 @@ range byte caps, list caps, sample caps, ingest caps) — those stay fixed.
 
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
+from typing import Any
+
 # Context windows in TOKENS, keyed on lowercased model-name substrings. The
 # LONGEST matching substring wins, so a specific entry (codellama, qwen3,
 # mistral-nemo) is never shadowed by its family (llama, qwen, mistral),
@@ -56,6 +60,19 @@ COMPLETION_TOKENS_FLOOR = 16_384
 # small one: the completion budget is clamped to half the window (vLLM rejects
 # max_tokens ≥ context), with a tiny minimum for a degenerate declared window.
 _COMPLETION_TOKENS_MIN = 1_024
+# A small window (≤ 32k) reserves only what one answer or one batch of tool
+# calls needs: every token reserved for output is a token the request cannot use.
+SMALL_WINDOW = 32_768
+SMALL_WINDOW_MAX_TOKENS = 2_048
+
+# The one char→token estimate (v10). JSON-ish content (tool schemas, tool
+# output, arguments) tokenizes densely — ~3.2 chars per token, not the ~4 of
+# English prose — so every size check in the runtime divides by this constant.
+CHARS_PER_TOKEN = 3.2
+
+# Local / self-hosted kinds: without a declared window they are planned small.
+LOCAL_KINDS = frozenset({"ollama", "lmstudio", "vllm", "llamacpp", "openai-compatible"})
+OFFICIAL_OPENAI_HOSTS = ("api.openai.com",)
 
 
 # Models known to accept a reasoning-effort knob on Chat Completions
@@ -103,9 +120,58 @@ def max_output_tokens(model: str | None, explicit_max: int | None = None) -> int
 
 def completion_token_budget(model: str | None, explicit_window: int | None = None,
                             explicit_max: int | None = None) -> int:
-    """max_tokens for a request: window//8 floored at 16 384, never above half
-    the window, and never above the model's real max output."""
+    """max_tokens for a request. A window ≤ 32k reserves ~2 048 (never above a
+    quarter of it); a larger one window//8 floored at 16 384, never above half
+    the window. Never above the model's real max output."""
     window = context_window(model, explicit_window)
-    scaled = max(COMPLETION_TOKENS_FLOOR, window // 8)
-    scaled = min(scaled, max(_COMPLETION_TOKENS_MIN, window // 2))
+    if window <= SMALL_WINDOW:
+        scaled = min(SMALL_WINDOW_MAX_TOKENS, max(256, window // 4))
+    else:
+        scaled = max(COMPLETION_TOKENS_FLOOR, window // 8)
+        scaled = min(scaled, max(_COMPLETION_TOKENS_MIN, window // 2))
     return min(scaled, max_output_tokens(model, explicit_max))
+
+
+def est_tokens(chars: int | float) -> int:
+    """The conservative token estimate of ``chars`` characters of model input."""
+    return math.ceil(max(0, chars) / CHARS_PER_TOKEN)
+
+
+def tokens_to_chars(tokens: int | float) -> int:
+    return int(max(0, tokens) * CHARS_PER_TOKEN)
+
+
+def planned_window(kind: str | None, base_url: str | None, model: str | None, declared: int | None) -> int:
+    """THE window the runtime plans for — the one place it is decided. A declared
+    window wins. A local or self-hosted endpoint without one is assumed small:
+    its server's configured context is usually far below what the model family
+    supports, and assuming too much is what overflows it."""
+    if declared and declared > 0:
+        return int(declared)
+    official = bool(base_url) and any(h in str(base_url) for h in OFFICIAL_OPENAI_HOSTS)
+    if (kind or "") in LOCAL_KINDS and not official:
+        return LOCAL_DEFAULT_WINDOW
+    return context_window(model)
+
+
+@dataclass(frozen=True)
+class Plan:
+    """What one request may spend: the window, the completion reserve, and the
+    input budget that is left (window − max_tokens)."""
+    window: int
+    max_tokens: int
+
+    @property
+    def input_tokens(self) -> int:
+        return max(1, self.window - self.max_tokens)
+
+    @property
+    def input_chars(self) -> int:
+        return tokens_to_chars(self.input_tokens)
+
+
+def plan(creds: dict[str, Any]) -> Plan:
+    """The budget of a turn, from resolved credentials (``providers.models.credentials``)."""
+    window = planned_window(creds.get("kind"), creds.get("base_url"), creds.get("model"),
+                            creds.get("context_window"))
+    return Plan(window, completion_token_budget(creds.get("model"), window, creds.get("max_output_tokens")))

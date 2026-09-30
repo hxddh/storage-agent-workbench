@@ -100,8 +100,8 @@ def test_an_attached_log_is_analyzed_without_rows_reaching_the_model(client):
     ds = up.json()
     assert ds["type"] == "access_log" and ds["size_bytes"] == len(_LOG)
     with FakeModel([tool_turn("analyze_uploaded_file", {"dataset_id": ds["id"]}),
-                    tool_turn("aggregate_uploaded_file", {"dataset_id": ds["id"], "metric": "count",
-                                                          "group_by": "status_code", "limit": 5}),
+                    tool_turn("analyze_uploaded_file", {"dataset_id": ds["id"], "metric": "count",
+                                                        "group_by": "status_code", "limit": 5}),
                     text_turn("Most requests succeed; 403s are 20%.")]) as fake:
         client.post("/providers/models", json={"name": "f", "kind": "openai-compatible", "base_url": fake.base_url,
                                                "model": "fake-model"})

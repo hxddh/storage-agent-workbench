@@ -35,7 +35,7 @@ export function ModelChip() {
     return (
       <button type="button" className="model-chip" data-state="none" data-testid="model-chip"
         onClick={() => app.openSettings("models")}>
-        {t("chip.setUp")}
+        {models.length ? t("chip.choose") : t("chip.setUp")}
       </button>
     );
   }

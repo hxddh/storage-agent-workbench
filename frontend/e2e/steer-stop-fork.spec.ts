@@ -12,7 +12,7 @@ test.afterEach(async () => {
 });
 
 test("while it works the Composer adds to the request, and Stop keeps the partial work", async ({ page }) => {
-  model = await startFakeModel([toolTurn("list_uploaded_files", {}), textTurn("word ".repeat(300))], { deltaDelayMs: 40 });
+  model = await startFakeModel([toolTurn("query_estate", {}), textTurn("word ".repeat(300))], { deltaDelayMs: 40 });
   providerId = await useFakeModel(model.baseUrl);
   await boot(page);
   await delegate(page, "Take your time");
@@ -28,7 +28,7 @@ test("while it works the Composer adds to the request, and Stop keeps the partia
 
 test("follow-ups read top to bottom, each under its own message, and survive a reload", async ({ page }) => {
   model = await startFakeModel([
-    textTurn("First answer."), toolTurn("list_uploaded_files", {}), textTurn("Second answer."),
+    textTurn("First answer."), toolTurn("query_estate", {}), textTurn("Second answer."),
     textTurn("Third answer."), textTurn("Fourth answer."),
   ], { deltaDelayMs: 10 });
   providerId = await useFakeModel(model.baseUrl);

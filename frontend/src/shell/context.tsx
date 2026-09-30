@@ -76,6 +76,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState(true);
   const [estateRev, setEstateRev] = useState(0);
 
+  // Crossing into a narrow window closes the overlay instead of covering the page with it.
+  useEffect(() => {
+    const mq = window.matchMedia?.("(max-width: 720px)");
+    if (!mq) return;
+    const onChange = () => { if (mq.matches) setSidebarState(false); };
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+
   useEffect(() => {
     const onHash = () => setRoute(readRoute());
     window.addEventListener("hashchange", onHash);
@@ -86,6 +95,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const go = () => {
       if (window.location.hash !== hash) window.history.pushState(null, "", hash || "#/");
       setRoute(next);
+      if (isNarrow()) setSidebarState(false); // the overlay gives the page back once a page is chosen
       setEditing(null);
       setDraft({ text: "", nonce: 0 }); // a draft belongs to the page it was written on
     };

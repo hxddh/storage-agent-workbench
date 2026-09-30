@@ -57,7 +57,7 @@ export function Shell() {
       case "toggle-sidebar": app.setSidebar(!app.sidebar); break;
       case "theme": theme.toggle(); break;
       case "stop": if (taskId) void api.stop(taskId); break;
-      case "review": if (taskId) app.setPane(app.pane?.tab === "details" ? null : { tab: "details" }); break;
+      case "review": if (taskId) app.setPane(app.pane ? null : { tab: "details" }); break; // the toggle closes whatever pane is open
       case "focus-composer": document.querySelector<HTMLTextAreaElement>("[data-testid=composer-input]")?.focus(); break;
       case "release-notes": void openExternal("https://github.com/hxddh/storage-agent-workbench/releases"); break;
       case "rename-task": {

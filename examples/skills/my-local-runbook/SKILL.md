@@ -18,7 +18,7 @@ problem.
 ## Method
 
 1. Describe symptoms to collect (error code, endpoint, bucket, key, headers)
-2. Run the relevant read-only probes (`head_bucket`, `get_bucket_location`, `test_addressing_style`, `preview_object`)
+2. Run the relevant read-only probes (`probe_endpoint` with `check` reach / location / addressing, `inspect_object` with `aspects=["preview"]`)
 3. Compare config (`review_bucket_config`) with observed behavior
 4. Summarize findings, cite evidence, note gaps
 

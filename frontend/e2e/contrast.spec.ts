@@ -128,7 +128,7 @@ async function boot(page: Page, theme: "dark" | "light", seeded: boolean) {
   await bootApp(page, { theme });
   if (!seeded) return;
   const model = await startFakeModel([
-    toolTurn("list_uploaded_files", {}),
+    toolTurn("query_estate", {}),
     toolTurn("record_conclusion", { answer: "Nothing is attached yet.", next_steps: ["Attach a log"],
       findings: [{ title: "No evidence", severity: "high", detail: "Attach an access log." },
         { title: "Low", severity: "low", detail: "" }, { title: "Info", severity: "info", detail: "" }] }),

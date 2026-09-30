@@ -48,6 +48,7 @@ class SkillMeta:
     maturity: str = ""
     mode: str = ""
     domains: tuple[str, ...] = ()
+    aliases: tuple[str, ...] = ()  # retired names a bundled card still answers to
 
 
 def _user_skills_dirs() -> list[Path]:
@@ -166,6 +167,7 @@ def _load_bundled_registry() -> list[SkillMeta]:
             maturity=str(entry.get("maturity") or ""),
             mode=str(entry.get("mode") or ""),
             domains=tuple(str(d) for d in (entry.get("domains") or [])),
+            aliases=tuple(str(a) for a in (entry.get("aliases") or [])),
         ))
     return out
 
@@ -187,8 +189,13 @@ def load_registry() -> list[SkillMeta]:
 
 
 def get_meta(name: str) -> SkillMeta | None:
-    for m in load_registry():
+    """The skill by its name, else the card a retired name was folded into."""
+    registry = load_registry()
+    for m in registry:
         if m.name == name:
+            return m
+    for m in registry:
+        if name in m.aliases:
             return m
     return None
 

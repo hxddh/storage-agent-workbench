@@ -995,8 +995,8 @@ def review_bucket_observability(conn: sqlite3.Connection, provider_id: str, buck
     findings += _unsupported_findings(tagging["status"], "tagging")
 
     findings.append(_finding(OPPORTUNITY, "Deeper inventory review available",
-                             "Read the bucket's inventory configuration with get_bucket_config_detail "
-                             "(aspect 'inventory'), and run inventory_analysis on an inventory file for "
+                             "Read the bucket's inventory configuration with review_bucket_config "
+                             "(detail 'inventory'), and analyze an imported inventory file for "
                              "object-level capacity metrics."))
 
     return {
@@ -1047,7 +1047,7 @@ def review_bucket_cost_optimization(conn: sqlite3.Connection, provider_id: str, 
 
     # Phase 06 does not require Phase 05 results; suggest deeper analysis instead.
     findings.append(_finding(OPPORTUNITY, "Deeper cost analysis available",
-                             "Run inventory_analysis on an inventory file to assess small-object ratio and cold data."))
+                             "Import the bucket's inventory (import_evidence) to assess small-object ratio and cold data."))
 
     return {
         "success": True,

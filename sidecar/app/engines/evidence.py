@@ -2,7 +2,8 @@
 
 Only a source the survey DISCOVERED (an S3 Inventory destination or a
 server-access-logging target) can be imported, at most 500 files / 256 MiB per
-call (clamped), refused without 1 GiB of free disk after the download, and
+call (clamped), refused without 1 GiB of free disk after the download (the
+decompressed output is budgeted against the same headroom while it is written), and
 stoppable between files. The download lands as a local dataset and is analyzed
 deterministically right away; nothing is ever written to storage.
 """
@@ -106,9 +107,15 @@ def import_source(conn: Any, *, task_id: str, provider_id: str, bucket: str, sou
     dest_dir = config.ensure_secure_dir(datasets.dataset_dir(task_id, did) / "raw")
     files = [{"object_key": f.get("object_key") or f.get("key"), "size": f.get("size")} for f in plan.selected]
     try:
+        # The check above bounds the download; decompressed output is budgeted
+        # against the same headroom while it is written (gzip can expand ~1000x).
         combined, total = mi.download_and_combine(conn, provider_id, plan.source_type, plan.source_bucket,
                                                   plan.fmt, plan.schema, files, plan.max_files, plan.max_bytes,
-                                                  dest_dir, on_file=on_file, cancel_event=cancel_event)
+                                                  dest_dir, on_file=on_file, cancel_event=cancel_event,
+                                                  disk_headroom=DISK_HEADROOM)
+    except mi.LimitExceeded as exc:
+        shutil.rmtree(datasets.dataset_dir(task_id, did), ignore_errors=True)
+        raise ImportRefused(f"The import was stopped and nothing was kept: {redact_text(str(exc))[:200]}.") from exc
     except Exception:
         shutil.rmtree(datasets.dataset_dir(task_id, did), ignore_errors=True)
         raise

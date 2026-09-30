@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [10.0.0] - 2026-09-30
+
+_A small local model finishes the work._ See `docs/releases/10.0.0.md`.
+
+### Changed
+
+- One budget plan: ~2 048 answer tokens for windows ≤ 32k, one conservative token estimate, `num_ctx` for Ollama; request 0 of a first survey is 13 849 chars and fits an 8k window.
+- In-turn shrinking of earlier tool outputs; compaction can fold every earlier Turn; side steps read fitted histories; a failed fallback is a failure.
+- Agent tools 30 → 15; skills 13 → 5 method cards; routing table in the prompt; survey output leads with key facts; attachment line carries the dataset id.
+- Small-model guards: repeated calls, non-JSON arguments, string-for-list coercion, tool calls written as text.
+- Scenario eval (15 seeded scenarios, deterministic scoring) against any OpenAI-compatible endpoint; CI replays small-model failures and checks request fit.
+- Model Test makes one real tool call and reads Ollama's context length.
+
+### Fixed
+
+- Verify clears every exposure field; steers survive the websocket fallback in order; refusal notes ≤ 60 chars.
+- Window: Settings scroll, save race, delete confirmation, narrow Settings; stopped answers kept; Send waits without a model; pane toggle, focus and keyboard resize; narrow sidebar closes; stable Needs attention; failed turns can Continue; outline removed.
+
+### Security
+
+- `..` key/prefix segments refused; `list_buckets` scoped; bucket names enveloped; decompressed size in the disk check; vault values masked; MCP enveloped with rolling budgets.
+
 ## [9.0.0] - 2026-09-29
 
 _Small models work; state stays consistent._ See `docs/releases/9.0.0.md`.

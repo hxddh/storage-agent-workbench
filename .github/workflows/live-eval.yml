@@ -1,19 +1,30 @@
 name: Live model eval
 
-# Manual only. Drives real Agent turns against a REAL model endpoint and a local
-# moto S3 server (never real cloud). Needs the repository secret
-# STORAGE_AGENT_EVAL_API_KEY; without it the run fails rather than skip every case.
+# Manual only. Runs the seeded scenario eval (sidecar/tests/live_eval) against a
+# REAL model endpoint — hosted or any OpenAI-compatible server the runner can
+# reach — with a fresh local moto S3 server per run (never real cloud). A hosted
+# kind needs the repository secret STORAGE_AGENT_EVAL_API_KEY; without it the run
+# fails rather than skip every case. Writes summary.json + summary.md as an artifact.
 on:
   workflow_dispatch:
     inputs:
       kind:
-        description: "Provider kind (openai, anthropic, deepseek, openrouter, openai-compatible)"
+        description: "Provider kind (openai, anthropic, deepseek, openrouter, openai-compatible, ollama, vllm, llamacpp, lmstudio)"
         default: "openai"
       model:
-        description: "Model name"
-        default: "gpt-5.1"
+        description: "Model name (required)"
+        required: true
       base_url:
-        description: "Base URL (optional)"
+        description: "Base URL (optional for the official endpoint)"
+        default: ""
+      window:
+        description: "Declared context window in tokens (optional; empty = planned)"
+        default: ""
+      runs:
+        description: "Runs per scenario"
+        default: "1"
+      scenarios:
+        description: "Comma-separated scenario ids (empty = all)"
         default: ""
 
 permissions:
@@ -22,24 +33,28 @@ permissions:
 jobs:
   live-eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Require the eval key
+      - name: Require the eval key for a hosted kind
         # A run without the key would skip every case and still read "success".
         env:
           KEY: ${{ secrets.STORAGE_AGENT_EVAL_API_KEY }}
+          KIND: ${{ inputs.kind }}
         run: |
+          case "$KIND" in
+            ollama|lmstudio|vllm|llamacpp|openai-compatible) exit 0 ;;
+          esac
           if [ -z "$KEY" ]; then
             echo "::error::Repository secret STORAGE_AGENT_EVAL_API_KEY is not set; nothing was evaluated."
             exit 1
           fi
       - name: Install sidecar
         run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]"
-      - name: Run live evals
+      - name: Run the scenario eval
         working-directory: sidecar
         env:
           STORAGE_AGENT_LIVE_EVAL: "1"
@@ -47,4 +62,15 @@ jobs:
           STORAGE_AGENT_EVAL_KIND: ${{ inputs.kind }}
           STORAGE_AGENT_EVAL_MODEL: ${{ inputs.model }}
           STORAGE_AGENT_EVAL_BASE_URL: ${{ inputs.base_url }}
-        run: pytest -q -rs tests/live_eval
+          STORAGE_AGENT_EVAL_WINDOW: ${{ inputs.window }}
+          STORAGE_AGENT_EVAL_RUNS: ${{ inputs.runs }}
+          STORAGE_AGENT_EVAL_SCENARIOS: ${{ inputs.scenarios }}
+          STORAGE_AGENT_EVAL_OUT: test-results/live-eval
+        run: pytest -q -rs -s tests/live_eval
+      - name: Upload the summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-eval-summary
+          path: sidecar/test-results/live-eval/
+          if-no-files-found: ignore

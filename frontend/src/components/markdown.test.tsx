@@ -186,34 +186,10 @@ describe("Work Result structure", () => {
     expect(h2?.textContent).toBe("Why it is large");
   });
 
-  it("gives each heading a stable id derived from its text", () => {
-    const { container } = md("## Why it is large");
-    expect(container.querySelector("h2")?.id).toBe("sec-why-it-is-large");
-  });
-
-  it("keeps ids valid for a heading of only punctuation", () => {
-    const { container } = md("## ---");
-    expect(container.querySelector("h2")?.id).toBe("sec");
-  });
-
-  it("offers an outline once a Work Result has enough sections to navigate", () => {
-    const text = "## Cause\n\na\n\n## Evidence\n\nb\n\n## Fix\n\nc";
-    md(text);
-    const nav = screen.getByTestId("result-outline");
-    expect(nav.textContent).toContain("Cause");
-    expect(nav.querySelectorAll("a").length).toBe(3);
-    expect(nav.querySelector("a")?.getAttribute("href")).toBe("#sec-cause");
-  });
-
-  it("does not clutter a short Work Result with an outline", () => {
-    md("## Only one\n\ntext");
+  it("renders an answer without an outline or heading ids (answers in one conversation must not collide)", () => {
+    const { container } = md("## Cause\n\na\n\n## Evidence\n\nb\n\n## Fix\n\nc");
     expect(screen.queryByTestId("result-outline")).toBeNull();
-  });
-
-  it("does not list every sub-heading in the outline", () => {
-    const text = "## A\n\n### a1\n\n### a2\n\n## B\n\n### b1\n\n## C";
-    md(text);
-    expect(screen.getByTestId("result-outline").querySelectorAll("a").length).toBe(3);
+    expect(container.querySelector("h2")?.id).toBe("");
   });
 });
 

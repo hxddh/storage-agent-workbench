@@ -10,6 +10,7 @@ once its watch is turned off. Nothing here writes to storage.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from datetime import datetime, timedelta, timezone
@@ -201,17 +202,22 @@ def _recheck_undecided(conn: Any, provider_id: str, proceed: Callable[[], bool])
 
 
 def direction_for(name: str, new: list[dict[str, Any]]) -> str:
-    lines = []
+    """The watch's Direction. Bucket names come from a listing (anyone who can
+    create a bucket names it), so the findings travel as JSON data inside the
+    untrusted-data envelope — never as lines the model could read as instructions."""
+    from ..agent.safety import envelope
+    rows = []
     for c in new[:12]:
         rule = rules.BY_CODE.get(c["code"])
-        title = rules.title(rule) if rule else c["code"]
-        lines.append(f"- [{c['severity']}] {title} — bucket `{c['bucket']}`"
-                     + (" (came back after being resolved)" if c["change"] == "recurred" else ""))
-    more = f"\n- …and {len(new) - 12} more" if len(new) > 12 else ""
-    return (f"The scheduled read-only watch of the storage account \"{name}\" found {len(new)} new or returned "
-            "issue(s):\n" + "\n".join(lines) + more + "\n\nRe-check each with read-only tools, explain the likely "
-            "cause and impact, and record a conclusion with the fix steps, most severe first. Storage stays "
-            "read-only: never change it.")
+        rows.append({"severity": c["severity"], "issue": rules.title(rule) if rule else c["code"],
+                     "bucket": c["bucket"], **({"returned": True} if c["change"] == "recurred" else {})})
+    data = {"account": name, "new_or_returned": len(new), "issues": rows,
+            **({"more": len(new) - 12} if len(new) > 12 else {})}
+    return (f"The scheduled read-only watch of storage account {json.dumps(name, ensure_ascii=False)} found "
+            f"{len(new)} new or returned issue(s), listed below as data from storage:\n"
+            + envelope(json.dumps(data, ensure_ascii=False))
+            + "\n\nRe-check each with read-only tools, explain the likely cause and impact, and record a "
+            "conclusion with the fix steps, most severe first. Storage stays read-only: never change it.")
 
 
 def _open_task(conn: Any, cloud: Any, new: list[dict[str, Any]]) -> tuple[str | None, str | None]:

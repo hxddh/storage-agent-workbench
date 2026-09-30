@@ -109,7 +109,7 @@ describe("v9: home", () => {
 });
 
 describe("v9: the task page", () => {
-  it("a failed turn says why and points at the model settings", async () => {
+  it("a failed turn says why, can continue, and points at the model settings", async () => {
     serve(() => ({}));
     const m = reduce(initial("task-1"), { type: "snapshot", snapshot: snapshot(
       [turn("t1", { status: "failed", error: "The model endpoint refused the key (401)." })],
@@ -119,7 +119,7 @@ describe("v9: the task page", () => {
     const outcome = screen.getByTestId("attention");
     expect(outcome).toHaveTextContent("refused the key (401)");
     expect(outcome).toHaveTextContent("Open Settings");
-    expect(outcome).not.toHaveTextContent("Continue");
+    expect(outcome).toHaveTextContent("Continue");
   });
 
   it("durations read in the reader's language", () => {

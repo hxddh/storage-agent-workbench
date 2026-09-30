@@ -79,8 +79,8 @@ export function toolTurn(name: string, args: Record<string, unknown>): string[] 
 /** A scripted turn, or one computed from the request the model just received.
  *
  * Reactive turns exist because some tools take an id the script cannot know:
- * `analyze_uploaded_file(dataset_id)` needs the id that `list_uploaded_files`
- * just returned. A real model reads it out of the tool result, so the double
+ * `analyze_uploaded_file(dataset_id)` needs the id the attachment line
+ * carries. A real model reads it out of its input, so the double
  * has to be able to as well — otherwise the only testable shape is a tool call
  * with constant arguments, which is not what the agent does.
  */

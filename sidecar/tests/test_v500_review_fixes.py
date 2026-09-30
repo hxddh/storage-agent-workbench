@@ -22,7 +22,7 @@ def _settle(client, tid, timeout=20.0):
 
 
 def test_a_later_turn_replays_tool_output_inside_the_envelope(client):
-    with FakeModel([tool_turn("list_uploaded_files", {}), text_turn("None."), text_turn("Still none.")]) as fake:
+    with FakeModel([tool_turn("query_estate", {}), text_turn("None."), text_turn("Still none.")]) as fake:
         client.post("/providers/models", json={"name": "f", "kind": "openai-compatible", "base_url": fake.base_url,
                                                "model": "fake-model"})
         tid = client.post("/tasks", json={"direction": "Files?"}).json()["task"]["id"]

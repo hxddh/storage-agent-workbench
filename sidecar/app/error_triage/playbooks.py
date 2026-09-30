@@ -40,18 +40,22 @@ _ASK = {"action_type": "ask_user_for_context", "title": "Ask for more context",
 # their case. Categories are stable; an unmapped one points at no skill (v9: the
 # first-contact routing lives in the Agent's instructions, not in a skill).
 _CATEGORY_SKILL: dict[str, str] = {
-    "auth": "storageops-s3-protocol-compatibility",
-    "authz": "storageops-security-iam-policy",
-    "availability": "storageops-performance-diagnosis",
-    "client": "storageops-data-consistency",
-    "connectivity": "storageops-network-endpoint-access",
-    "routing": "storageops-s3-protocol-compatibility",
-    "throttling": "storageops-performance-diagnosis",
+    "auth": "storageops-protocol-compat",
+    "authz": "storageops-security-iam",
+    "availability": "storageops-access-logs",
+    "client": "storageops-protocol-compat",
+    "connectivity": "storageops-protocol-compat",
+    "routing": "storageops-protocol-compat",
+    "throttling": "storageops-access-logs",
     "lifecycle": "storageops-lifecycle-cost",
     # v0.62.0 — "this configuration does not exist" is not a fault, so it maps to
     # the skill that explains what the configuration would DO, not to triage.
-    "not_configured": "storageops-observability-audit",
+    "not_configured": "storageops-account-posture",
 }
+
+
+# A pasted presigned URL is a signing question.
+PRESIGNED_SKILL = "storageops-protocol-compat"
 
 
 def skill_for_category(category: str) -> str | None:
@@ -69,8 +73,8 @@ _BY_CODE: dict[str, dict[str, Any]] = {
          "presigned URL query was stripped or reordered", "S3-compatible signing incompatibility"],
         ["client region vs bucket region", "configured endpoint vs provider endpoint",
          "addressing style", "request timestamp vs server time"],
-        ["list_buckets (credential check)", "inspect_endpoint_tls", "test_addressing_style",
-         "get_bucket_location", "compare client region and endpoint", "check request time skew"],
+        ["list_buckets (credential check)", "probe_endpoint(check=tls)", "probe_endpoint(check=addressing)",
+         "probe_endpoint(check=location)", "compare client region and endpoint", "check request time skew"],
         ["diagnostic", "bucket_config_review"],
         ["S3-compatible providers may differ in SigV4 canonicalization or require path-style."],
         [_DIAG, _ASK]),
@@ -96,7 +100,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         "NoSuchBucket", "routing", "Bucket does not exist (from this endpoint/region)", "medium",
         ["bucket name typo", "wrong region/endpoint so the bucket is not visible", "bucket deleted"],
         ["exact bucket name", "endpoint + region targeted"],
-        ["head_bucket", "get_bucket_location", "verify endpoint/region"],
+        ["probe_endpoint(check=reach)", "probe_endpoint(check=location)", "verify endpoint/region"],
         ["diagnostic"], ["On some providers a region/endpoint mismatch surfaces as NoSuchBucket."],
         [_DIAG, _ASK]),
     "NoSuchKey": _entry(
@@ -110,14 +114,14 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         ["region mismatch", "wrong endpoint", "bucket location differs from client config",
          "virtual-hosted-style routing issue"],
         ["bucket location vs client region", "endpoint used"],
-        ["get_bucket_location", "test_addressing_style", "align endpoint/region"],
+        ["probe_endpoint(check=location)", "probe_endpoint(check=addressing)", "align endpoint/region"],
         ["diagnostic"], ["S3-compatible providers may not emit a redirect; they may just fail."],
         [_DIAG, _ASK]),
     "AuthorizationHeaderMalformed": _entry(
         "AuthorizationHeaderMalformed", "routing", "Authorization header region/format mismatch", "high",
         ["region in the request differs from the bucket region", "malformed/altered Authorization header"],
         ["region declared in the request vs bucket region"],
-        ["get_bucket_location", "align the signing region", "list_buckets (credential check)"],
+        ["probe_endpoint(check=location)", "align the signing region", "list_buckets (credential check)"],
         ["diagnostic"], [], [_DIAG, _ASK]),
     "RequestTimeTooSkewed": _entry(
         "RequestTimeTooSkewed", "auth", "Client clock skew", "high",
@@ -144,7 +148,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         "RequestTimeout", "availability", "Request timed out", "medium",
         ["client timeout too low", "slow network path", "large multipart part", "provider latency"],
         ["client timeout settings", "object/part size", "network path"],
-        ["retry with backoff", "increase client timeout", "inspect_endpoint_tls / connectivity"],
+        ["retry with backoff", "increase client timeout", "probe_endpoint(check=tls) / connectivity"],
         ["diagnostic"], [], [_DIAG, _ASK]),
     "InvalidBucketName": _entry(
         "InvalidBucketName", "client", "Bucket name is invalid", "high",
@@ -199,7 +203,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
          "whose Object Ownership is BucketOwnerEnforced — ACLs are disabled there (the AWS "
          "default for new buckets since 2023)"],
         ["the bucket's Object Ownership setting", "whether the client sends ACL headers/grants"],
-        ["get_bucket_config_detail(aspect='ownership') — confirms BucketOwnerEnforced",
+        ["review_bucket_config(detail=ownership) — confirms BucketOwnerEnforced",
          "remove the ACL parameter/headers from the upload tooling; grant access via bucket "
          "policy instead (manual change, reviewed by you)"],
         ["bucket_config_review"],
@@ -212,8 +216,8 @@ _BY_CODE: dict[str, dict[str, Any]] = {
          "wrong upload id / wrong bucket"],
         ["the upload's start time vs the lifecycle abort-days rule",
          "whether another worker completed/aborted the same upload id"],
-        ["list_multipart_uploads — is the upload id still listed?",
-         "get_bucket_config_detail(aspect='lifecycle') — check AbortIncompleteMultipartUpload days",
+        ["list_objects(kind=uploads) — is the upload id still listed?",
+         "review_bucket_config(detail=lifecycle) — check AbortIncompleteMultipartUpload days",
          "restart the upload; serialize completers if multiple workers share one upload id"],
         ["bucket_config_review"], [], [_CFG, _ASK]),
     "InvalidRange": _entry(
@@ -223,7 +227,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
          "a zero-byte object requested with any Range"],
         ["the exact Range header sent vs the object's current size"],
         ["inspect_object on the key — read the CURRENT size (and ETag: did it change?)",
-         "test_object_read (mode range) with a bounded in-range read to confirm range reads work at all"],
+         "inspect_object(aspects=[range]) with a bounded in-range read to confirm range reads work at all"],
         ["diagnostic"], [], [_DIAG, _ASK]),
     "NotImplemented": _entry(
         "NotImplemented", "client", "Provider does not implement this API (capability gap)", "high",
@@ -269,19 +273,19 @@ _TLS = _entry(
     ["expired/self-signed/untrusted certificate", "SNI/hostname mismatch", "TLS version/cipher mismatch",
      "interception proxy"],
     ["certificate subject/issuer/expiry", "endpoint hostname vs cert"],
-    ["inspect_endpoint_tls", "verify the endpoint hostname and CA trust"],
+    ["probe_endpoint(check=tls)", "verify the endpoint hostname and CA trust"],
     ["diagnostic"], ["Custom S3-compatible endpoints may use private CAs."], [_DIAG, _ASK])
 _CONN = _entry(
     "ConnectionError", "connectivity", "Network connection failed", "medium",
     ["DNS/endpoint unreachable", "firewall/proxy blocking", "client timeout too low", "transient network"],
     ["endpoint resolvability", "proxy settings", "timeout configuration"],
-    ["inspect_endpoint_tls / connectivity to the endpoint", "retry with backoff", "verify endpoint/region"],
+    ["probe_endpoint(check=tls) / connectivity to the endpoint", "retry with backoff", "verify endpoint/region"],
     ["diagnostic"], [], [_DIAG, _ASK])
 _5XX = _entry(
     "ServerError", "availability", "Provider-side 5xx error", "medium",
     ["transient provider error", "gateway/proxy issue", "large multipart retry", "provider degradation"],
     ["which operation/endpoint", "whether retries succeed"],
-    ["retry with exponential backoff", "inspect_endpoint_tls / connectivity", "check provider status"],
+    ["retry with exponential backoff", "probe_endpoint(check=tls) / connectivity", "check provider status"],
     ["diagnostic"], [], [_DIAG, _ASK])
 _PAGINATION = _entry(
     "Pagination", "client", "Listing pagination / continuation-token issue", "low",
@@ -411,7 +415,7 @@ _BY_CODE.update({
         ["the exact operation and the parameter named in the message",
          "whether the same call works against AWS S3"],
         ["retry the same call with the optional parameter removed",
-         "list_buckets (credential check)", "inspect_endpoint_tls"],
+         "list_buckets (credential check)", "probe_endpoint(check=tls)"],
         ["diagnostic"],
         ["The message text — not the code — names the offending parameter, and "
          "S3-compatible providers word it differently."],
@@ -424,7 +428,7 @@ _BY_CODE.update({
          "a retry replayed a consumed stream"],
         ["whether the request passes through a proxy or gateway",
          "whether the same call succeeds directly against the endpoint"],
-        ["inspect_endpoint_tls", "test_addressing_style",
+        ["probe_endpoint(check=tls)", "probe_endpoint(check=addressing)",
          "retry bypassing any intermediary"],
         ["diagnostic"],
         ["Anything that rewrites the body — including transparent compression — "
@@ -438,7 +442,7 @@ _BY_CODE.update({
          "expiry beyond the provider's maximum"],
         ["the full URL exactly as used, including every query parameter",
          "how long the signature was requested for"],
-        ["diagnose_presigned_url on the pasted URL (parse only, no network call)"],
+        ["triage_error(url=...) on the pasted URL (parse only, no network call)"],
         ["diagnostic"],
         ["Providers differ on the maximum expiry they will sign."],
         [_DIAG, _ASK]),
@@ -449,7 +453,7 @@ _BY_CODE.update({
          "a global endpoint used for a region-locked bucket"],
         ["the configured region and endpoint side by side",
          "where the bucket actually lives"],
-        ["get_bucket_location", "test_addressing_style"],
+        ["probe_endpoint(check=location)", "probe_endpoint(check=addressing)"],
         ["diagnostic"],
         ["S3-compatible providers often accept any region string, so this "
          "surfaces only on AWS or on strict gateways."],
@@ -461,7 +465,7 @@ _BY_CODE.update({
          "a provider-specific ceiling lower than AWS's"],
         ["the object size and whether multipart was used",
          "the provider's documented per-object and per-part limits"],
-        ["list_multipart_uploads to see whether a multipart attempt is stuck"],
+        ["list_objects(kind=uploads) to see whether a multipart attempt is stuck"],
         ["diagnostic"],
         ["Per-object and per-part maxima vary widely across S3-compatible providers."],
         [_ASK]),
@@ -472,7 +476,7 @@ _BY_CODE.update({
          "a document valid on AWS using an element this provider does not parse"],
         ["the exact document submitted",
          "whether it validates against the provider's own schema"],
-        ["get_bucket_config_detail for the aspect, to see what IS currently stored"],
+        ["review_bucket_config with detail set to the aspect, to see what IS currently stored"],
         ["bucket_config_review"],
         ["Element ORDER matters in several S3 XML schemas; some providers are "
          "stricter than AWS."],
@@ -483,7 +487,7 @@ _BY_CODE.update({
         ["two configuration changes to one bucket at the same time",
          "an automation retry racing its own earlier attempt"],
         ["what else was writing to this bucket's configuration at that moment"],
-        ["retry once after a short pause", "get_bucket_config_detail to see what landed"],
+        ["retry once after a short pause", "review_bucket_config with detail set to the aspect, to see what landed"],
         ["bucket_config_review"],
         [],
         [_CFG]),
@@ -495,7 +499,7 @@ _BY_CODE.update({
         ["whether versioning is enabled — a versioned bucket looks empty while "
          "still holding every prior version",
          "whether incomplete multipart uploads exist"],
-        ["list_object_versions", "list_multipart_uploads", "list_objects"],
+        ["list_objects(kind=versions)", "list_objects(kind=uploads)", "list_objects"],
         ["diagnostic"],
         ["This product performs no deletions; the checks above only show you what "
          "is still there."],
@@ -508,7 +512,7 @@ _BY_CODE.update({
          "an oversized signed-headers list on a presigned URL"],
         ["the number and size of x-amz-meta-* headers",
          "whether a proxy sits in front of the endpoint"],
-        ["retry with fewer metadata headers", "inspect_endpoint_tls"],
+        ["retry with fewer metadata headers", "probe_endpoint(check=tls)"],
         ["diagnostic"],
         ["Header limits are lower on many S3-compatible gateways than on AWS."],
         [_DIAG, _ASK]),
@@ -518,8 +522,8 @@ _BY_CODE.update({
         ["server access logging pointed at a bucket in another region",
          "source and target buckets created in different locations"],
         ["the region of both the source and the target bucket"],
-        ["get_bucket_location on both buckets",
-         "get_bucket_config_detail(aspect='logging')"],
+        ["probe_endpoint(check=location) on both buckets",
+         "review_bucket_config(detail=logging)"],
         ["bucket_config_review"],
         [],
         [_CFG]),

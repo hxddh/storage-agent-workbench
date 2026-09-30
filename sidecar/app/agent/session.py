@@ -18,8 +18,13 @@ from typing import Any
 
 from .. import db
 from ..core import store
+from . import safety
 
 _INTERRUPTED_OUTPUT = "[No result: the work was interrupted before this call returned.]"
+_ITEM_OVERHEAD_CHARS = 16  # role / type / ids around each item's text
+PREVIEW_CHARS = 300
+TRIMMED_MARK = "[earlier output trimmed: "
+_OMITTED = "[Earlier history omitted to fit the model's context window.]"
 
 
 def _assistant(item_id: str, text: str) -> dict[str, Any]:
@@ -95,8 +100,10 @@ def to_input(items: list[dict[str, Any]], *, skip_steers_of: str | None = None) 
             flush()
             text = p.get("text", "")
             if p.get("attachments"):
-                names = ", ".join(a.get("filename", "") for a in p["attachments"])
-                text += f"\n[Attached: {names} — see list_uploaded_files]"
+                # One line per file, with the id analyze_uploaded_file takes (no lookup step for a small model).
+                for a in p["attachments"]:
+                    text += (f"\n[Attached: {a.get('filename', '')} · dataset_id={a.get('dataset_id', '')}"
+                             f" · kind={a.get('type', '')}]")
             out.append({"role": "user", "content": text})
         elif t == "steer":
             tid = it.get("turn_id", "")
@@ -135,6 +142,99 @@ def to_input(items: list[dict[str, Any]], *, skip_steers_of: str | None = None) 
             out.append({"role": "user", "content": p.get("note") or "[Continue the interrupted work.]"})
     flush()
     return out
+
+
+# --- sizing and fitting model input (v10) ----------------------------------------------
+# Sizes are characters of model-facing text; ``budget.est_tokens`` turns them
+# into the one conservative token estimate.
+
+
+def item_chars(item: Any) -> int:
+    """The model-facing text of one input item (plus a small fixed overhead)."""
+    if not isinstance(item, dict):
+        return _ITEM_OVERHEAD_CHARS + len(str(item))
+    n = _ITEM_OVERHEAD_CHARS
+    for key in ("content", "output", "arguments", "name"):
+        v = item.get(key)
+        if isinstance(v, str):
+            n += len(v)
+        elif isinstance(v, list):
+            n += sum(len(str(p.get("text") or "")) if isinstance(p, dict) else len(str(p)) for p in v)
+    return n
+
+
+def input_chars(items: list[Any]) -> int:
+    return sum(item_chars(i) for i in items)
+
+
+def preview_output(text: str, n: int = PREVIEW_CHARS) -> str:
+    """An earlier tool output shrunk to its first ``n`` characters. Enveloped
+    data stays enveloped: the preview is re-wrapped, never left open."""
+    text = str(text or "")
+    enveloped = text.startswith(safety.UNTRUSTED_OPEN)
+    inner = text
+    if enveloped:
+        inner = text[len(safety.UNTRUSTED_OPEN):]
+        if inner.endswith(safety.UNTRUSTED_CLOSE):
+            inner = inner[:-len(safety.UNTRUSTED_CLOSE)]
+        inner = inner.strip()
+    head = inner[:n] + "…"
+    return TRIMMED_MARK + (safety.envelope(head) if enveloped else head) + "]"
+
+
+def _trailing_outputs(items: list[Any]) -> int:
+    """Index where the trailing run of tool outputs (the latest batch) starts."""
+    i = len(items)
+    while i > 0 and isinstance(items[i - 1], dict) and items[i - 1].get("type") == "function_call_output":
+        i -= 1
+    return i
+
+
+def shrink_outputs(items: list[Any], budget_chars: int, *, keep_latest: bool = True,
+                   preview: int = PREVIEW_CHARS) -> tuple[list[Any], int]:
+    """Shrink tool outputs, oldest first, to previews until the input fits
+    ``budget_chars``. ``keep_latest``: the latest batch of outputs (what the
+    model is about to read) stays whole. Returns (items, outputs shrunk)."""
+    total = input_chars(items)
+    if total <= budget_chars:
+        return items, 0
+    out = list(items)
+    stop = _trailing_outputs(out) if keep_latest else len(out)
+    shrunk = 0
+    for n in range(stop):
+        it = out[n]
+        if not (isinstance(it, dict) and it.get("type") == "function_call_output"):
+            continue
+        text = it.get("output")
+        if not isinstance(text, str) or text.startswith(TRIMMED_MARK) or len(text) <= preview + 120:
+            continue
+        small = preview_output(text, preview)
+        total -= len(text) - len(small)
+        out[n] = {**it, "output": small}
+        shrunk += 1
+        if total <= budget_chars:
+            break
+    return out, shrunk
+
+
+def fit(items: list[Any], budget_chars: int) -> list[Any]:
+    """History for a tool-less side step (a summary, a final answer) within
+    ``budget_chars``: every tool output shrinks to a preview first; if that is
+    not enough, the oldest items go (never leaving a tool output without its
+    call) and a note says so."""
+    out, _ = shrink_outputs(items, budget_chars, keep_latest=False)
+    if input_chars(out) <= budget_chars:
+        return out
+    last = out[-1] if out else None
+    while out and input_chars(out) + len(_OMITTED) > budget_chars:
+        out.pop(0)
+        # A call or output at the front has lost its partner: drop to the next message.
+        while out and isinstance(out[0], dict) and out[0].get("type") in ("function_call", "function_call_output"):
+            out.pop(0)
+    if not out and isinstance(last, dict) and isinstance(last.get("content"), str):
+        # Even the latest message alone is too long: keep its start.
+        out = [{**last, "content": last["content"][: max(0, budget_chars - len(_OMITTED) - 64)]}]
+    return [{"role": "user", "content": _OMITTED}, *out]
 
 
 class ItemsSession:

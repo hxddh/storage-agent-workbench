@@ -1,98 +1,21 @@
 ---
 name: storageops-lifecycle-cost
-description: >
-  Diagnose why object-storage cost is higher than expected and recommend
-  lifecycle/storage-class strategy. Covers small-file billing-floor overhead,
-  objects in the wrong tier, accumulating noncurrent versions, orphaned
-  incomplete multipart uploads, and transition/minimum-duration rules. Use for
-  billed-storage and tiering questions (not transfer speed). Treat class
-  thresholds and minimum durations as provider-specific; never quote a price.
-domains: [lifecycle, cost]
-trigger_keywords:
-  - lifecycle
-  - cost
-  - billing
-  - storage class
-  - Glacier
-  - IA
-  - Intelligent Tiering
+description: Storage cost and tiering, lifecycle rules, noncurrent versions, stuck multipart uploads, replication and object lock.
 ---
 
-# Lifecycle & Cost Analysis
+# Lifecycle, cost, versions and replication
 
-Most cost surprises come from minimum-duration penalties, small files (each
-object is separately billable, often with a size floor), accumulating versions,
-and orphaned multipart parts. The transfer-speed small-file penalty belongs to
-`storageops-performance-diagnosis`; log-derived request cost belongs to
-`storageops-access-log-analysis`.
+1. `review_bucket_config(aspects=["lifecycle","cost"])`: missing abort-multipart rule, versions that never expire.
+2. Evidence, not guesses: `list_objects(kind="versions")` (noncurrent bytes, delete markers) and
+   `list_objects(kind="uploads")` (stuck uploads with upload ids). provider_unsupported = not
+   measurable, never "none"; a truncated page is a lower bound.
+3. Size and class mix: an inventory (`import_evidence(source_type="inventory")`), then
+   `simulate_storage_cost(candidate_rules=[…])` to compare rules. Never quote prices.
+4. Account-wide: `query_estate(survey_filter="missing_lifecycle"|"no_versioning")`.
+5. Replication: `review_bucket_config(detail="replication")`; versioning must be on at both ends,
+   rules are not retroactive, delete markers replicate only when enabled.
+   `inspect_object` shows replication_status; `aspects=["lock"]` explains undeletable objects.
 
-## Decision tree
-
-```
-Cost concern →
-  ├─ "bill too high" →
-  │   ├─ many small files?        → billing-floor amplification
-  │   ├─ wrong tier (IA accessed often)? → retrieval fees outweigh storage savings
-  │   ├─ versioning on?            → every noncurrent version is billable
-  │   └─ incomplete multipart?      → orphaned parts billed until aborted
-  ├─ "what lifecycle rules?" →
-  │   ├─ known access pattern?     → manual transitions matched to minimum durations
-  │   └─ unknown pattern?           → intelligent-tiering (auto-move)
-  └─ no data → gather inventory: object count, size distribution, class breakdown
-```
-
-## Investigate with your read-only tools
-
-- `review_bucket_config` (aspect `lifecycle`) — read the bucket's current lifecycle rules and
-  versioning/cleanup posture; surfaces missing "abort incomplete multipart" and
-  risky early transitions.
-- `review_bucket_config` (aspect `cost`) — the cost-focused review: flags wrong-tier
-  data, small-object overhead, and version accumulation.
-- `list_object_versions` — when config shows versioning on but the bill is
-  unexplained, this reads the ACTUAL pileup (noncurrent-version count + bytes,
-  delete markers) that the config review can't see. The concrete "your bucket is
-  huge because of old versions" evidence. Two honesty checks before you quote a
-  number: a `provider_unsupported: true` result (with `success: true` and zero
-  counts) means this provider does not implement the listing — report "not
-  measurable here", NEVER "no old versions"; and the counts/bytes are ONE page
-  (≤1000). If `is_truncated`, page with `key_marker`/`version_id_marker` or
-  report the figure as a lower bound.
-- `list_multipart_uploads` — surfaces abandoned incomplete uploads whose parts
-  are billed but invisible in a normal listing (pass a `prefix` to scope it —
-  REQUIRED on a prefix-restricted provider, where a prefixless listing is
-  denied). Same two checks: `provider_unsupported: true` means unmeasurable, not
-  "none found"; and an `is_truncated` page is a lower bound. If uploads are
-  present, propose an "abort incomplete multipart upload" lifecycle rule
-  (manual — the app never aborts).
-- `list_upload_parts` — for the worst offender from `list_multipart_uploads`,
-  pass its `upload_id` here to size it: part count, **total bytes accrued**, and
-  first/last part times — the concrete "this abandoned upload has held N GB since
-  <date>" number. Listing only; still no abort.
-- `review_bucket_performance_profile(provider_id, bucket, prefix?)` (pass an
-  in-scope `prefix` on a prefix-restricted provider — it lists) / `list_objects`
-  — sample size
-  distribution and storage classes to judge small-file impact. `list_objects`
-  now returns per-key `objects[]` (size / storage_class / last_modified) so you
-  can sample the distribution directly, without an extra `inspect_object` per key.
-- Run `review_bucket_config` (inline, read-only) for the full lifecycle posture.
-- Account-wide: after a `survey_account`,
-  `query_estate(provider_id, survey_filter='missing_lifecycle')` lists every bucket with no
-  lifecycle rules in one call from the persisted survey (no re-scan).
-  For real per-object numbers, analyze an uploaded inventory export with
-  `analyze_uploaded_file`; for an inventory still in a bucket, run
-  `import_evidence(source_type="inventory", …)`. Do not invent prices.
-
-## Ask the user (only what tools can't reveal)
-
-- Per-bucket / per-class billing data (to calibrate any savings estimate).
-- The lifecycle XML currently applied, if they want it audited.
-- Whether versioning is on and roughly how many noncurrent versions exist.
-
-## What to report
-
-Where the cost goes (storage floor / wrong tier / versions / orphaned parts), a
-lifecycle recommendation matched to minimum-duration rules (manual-only — it
-affects all matching objects, and noncurrent versions if versioning is on), and
-an explicit note that storage-class estimates exclude request and transfer cost
-unless access logs are analyzed. State which numbers are tool-verified vs.
-provider-pricing assumptions.
+Mind minimum storage durations and small-object floors before proposing a transition.
+Stop when: the cost driver is named with tool-verified numbers, and each proposed rule is text
+the user applies (it affects every matching object).

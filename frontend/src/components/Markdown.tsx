@@ -3,57 +3,17 @@ import { useCopy } from "../hooks/useCopy";
 import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
 import { highlight, TOK_CLASS } from "../lib/highlight";
-import { revealInScroller } from "../lib/scroll";
 import { Icon } from "./icons";
 
 /** Dependency-free, safe markdown renderer for Agent Work Results and artifacts. */
 const MarkdownBlocks = memo(function MarkdownBlocks({ text }: { text: string }) {
   const blocks = useMemo(() => parseBlocks(text || ""), [text]);
-  const outline = useMemo(() => outlineOf(blocks), [blocks]);
   return (
     <div className="agent-result-prose md-root min-w-0 break-words">
-      {outline.length > 0 && <Outline entries={outline} />}
       <Blocks blocks={blocks} />
     </div>
   );
 });
-
-/** Section headings worth offering as an outline, or [] when navigation adds no value. */
-export function outlineOf(blocks: Block[]): Array<{ id: string; text: string; level: number }> {
-  const heads = blocks.filter(
-    (b): b is Extract<Block, { type: "heading" }> => b.type === "heading" && b.level <= 2,
-  );
-  // v1.14 — two sections deserve navigation as much as three do.
-  if (heads.length < 2) return [];
-  return heads.map((h) => ({ id: h.id, text: h.text, level: h.level }));
-}
-
-function Outline({ entries }: { entries: Array<{ id: string; text: string; level: number }> }) {
-  const { t } = useI18n();
-  return (
-    <nav aria-label={t("result.outline")} data-testid="result-outline">
-      <div className="md-outline-label">{t("result.outline")}</div>
-      <ul className="space-y-0.5">
-        {entries.map((e) => (
-          <li key={e.id} className={e.level === 2 ? "pl-3" : ""}>
-            {/* The document lives in a nested scroller: a bare fragment href
-                would miss it, so scroll the resolved node explicitly. */}
-            <a
-              href={`#${e.id}`}
-              onClick={(event) => {
-                event.preventDefault();
-                revealInScroller(document.getElementById(e.id), "start");
-              }}
-              className="md-outline-link"
-            >
-              {e.text}
-            </a>
-          </li>
-        ))}
-      </ul>
-    </nav>
-  );
-}
 
 function Blocks({ blocks }: { blocks: Block[] }) {
   return (
@@ -66,7 +26,7 @@ function Blocks({ blocks }: { blocks: Block[] }) {
             const cls = HEADING_CLASS[b.level] ?? HEADING_CLASS[6];
             const Tag = `h${Math.min(Math.max(b.level, 1), 6)}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
             return (
-              <Tag key={i} id={b.id} data-heading-level={b.level} className={`md-heading first:mt-0 ${cls}`}>
+              <Tag key={i} data-heading-level={b.level} className={`md-heading first:mt-0 ${cls}`}>
                 {inline(b.text)}
               </Tag>
             );
@@ -89,16 +49,6 @@ function Blocks({ blocks }: { blocks: Block[] }) {
       })}
     </>
   );
-}
-
-export function headingId(text: string): string {
-  const slug = text
-    .toLowerCase()
-    .replace(/`/g, "")
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-  return slug ? `sec-${slug}` : "sec";
 }
 
 // v1.14 — display headings carry weight through size and tracking, not
@@ -299,7 +249,7 @@ type ListBlockT = { type: "list"; ordered: boolean; start: number; items: ListIt
 
 type Block =
   | { type: "p"; content: string }
-  | { type: "heading"; level: number; text: string; id: string }
+  | { type: "heading"; level: number; text: string }
   | { type: "code"; lang: string; content: string }
   | ListBlockT
   | { type: "quote"; lines: string[] }
@@ -323,15 +273,6 @@ const MAX_DEPTH = 5;
 function parseBlocks(text: string, depth = 0): Block[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks: Block[] = [];
-  // v1.14 — duplicate heading text gets suffixed ids (sec-x, sec-x-2),
-  // so outline links and the DOM never collide.
-  const seenIds: Record<string, number> = {};
-  const uniqueHeadingId = (headingText: string): string => {
-    const base = headingId(headingText);
-    const n = (seenIds[base] ?? 0) + 1;
-    seenIds[base] = n;
-    return n === 1 ? base : `${base}-${n}`;
-  };
   let i = 0;
   let para: string[] = [];
   const flush = () => {
@@ -361,7 +302,7 @@ function parseBlocks(text: string, depth = 0): Block[] {
     const h = line.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
       flush();
-      blocks.push({ type: "heading", level: h[1].length, text: h[2], id: uniqueHeadingId(h[2]) });
+      blocks.push({ type: "heading", level: h[1].length, text: h[2] });
       i++;
       continue;
     }

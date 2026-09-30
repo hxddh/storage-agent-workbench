@@ -22,10 +22,10 @@ def _strict(fake: FakeModel) -> None:
 def test_three_directions_replay_exactly_and_strictly(client):
     concl = {"findings": [{"title": "Nothing", "severity": "info"}], "next_steps": []}
     with FakeModel([
-        commentary_tool_turn("Let me look.", "list_uploaded_files", {}),
+        commentary_tool_turn("Let me look.", "query_estate", {}),
         tool_turn("record_conclusion", concl),
         text_turn("Answer one."),
-        commentary_tool_turn("Checking again.", "list_uploaded_files", {}),
+        commentary_tool_turn("Checking again.", "query_estate", {}),
         text_turn("Answer two."),
         text_turn("Answer three."),
     ]) as fake:
@@ -49,7 +49,7 @@ def test_three_directions_replay_exactly_and_strictly(client):
 
 def test_a_follow_up_queued_while_a_turn_runs_comes_after_that_turn(client):
     with FakeModel([
-        commentary_tool_turn("Let me look.", "list_uploaded_files", {}),
+        commentary_tool_turn("Let me look.", "query_estate", {}),
         text_turn("Answer one, streamed slowly so the follow-up is queued meanwhile."),
         text_turn("Answer two."),
     ], delay_s=0.03) as fake:
@@ -70,7 +70,7 @@ def test_a_follow_up_queued_while_a_turn_runs_comes_after_that_turn(client):
 def test_a_parallel_batch_with_a_conclusion_replays_calls_then_outputs(client):
     concl = {"next_steps": ["Look again"]}
     with FakeModel([
-        parallel_turn([("list_uploaded_files", {}), ("record_conclusion", concl), ("query_estate", {})],
+        parallel_turn([("query_estate", {}), ("record_conclusion", concl), ("query_estate", {})],
                       text="Looking at both."),
         text_turn("One."),
         text_turn("Two."),
@@ -131,7 +131,7 @@ def test_a_stop_writes_one_lifecycle_notice(client):
 
 
 def test_a_steer_reaches_the_model_once(client):
-    with FakeModel([commentary_tool_turn("Surveying first.", "list_uploaded_files", {}),
+    with FakeModel([commentary_tool_turn("Surveying first.", "query_estate", {}),
                     text_turn("Focused on logs.")], delay_s=0.05) as fake:
         _use(client, fake)
         tid = _start(client, "Look around")

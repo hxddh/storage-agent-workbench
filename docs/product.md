@@ -19,7 +19,7 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 - The **sidebar** is New task, an in-place search, the task list grouped by day, and Settings — nothing else. In a narrow window it overlays the page. A row shows state as a mark: working (pulsing), queued, needs attention; a task the watch opened carries a shield.
 - **⌘K** focuses the sidebar search.
 - The **title bar** names the task and shows its real state; a hairline runs under it while work is live; its right-hand button opens **Details**.
-- The **Composer** is the only way to give the Agent work: *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. Files attach by button or drop (access logs, inventories); a file always makes a new request. The model chip shows which model the next turn uses.
+- The **Composer** is the only way to give the Agent work: *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. Files attach by button or drop (access logs, inventories); a file always makes a new request. The model chip shows which model the next turn uses; with none set up, Send waits and the chip says where to add one. Stopping keeps what was written so far as the answer.
 
 ### Home — a new conversation, and what needs attention
 

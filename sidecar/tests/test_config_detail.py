@@ -212,19 +212,27 @@ def _scoped(client, **scope):
 def test_agent_tool_registered_and_scope_enforced(client):
     from app.agent.tools import registry
     pid = _scoped(client, allowed_buckets=["only-this"])
-    assert "get_bucket_config_detail" in registry.REGISTRY
-    out = registry.call_direct("get_bucket_config_detail", {"provider_id": pid, "bucket": "other-bucket",
-                                                            "aspect": "cors"},
-                               actor="test", allowed=frozenset({"get_bucket_config_detail"}))
+    # v10: the rule detail is review_bucket_config(detail=…).
+    assert "get_bucket_config_detail" not in registry.REGISTRY
+    out = registry.call_direct("review_bucket_config", {"provider_id": pid, "bucket": "other-bucket",
+                                                        "detail": "cors"},
+                               actor="test", allowed=frozenset({"review_bucket_config"}))
     assert out["error"].startswith("Refused")
 
 
 def test_performance_profile_honors_allowed_prefixes(client):
-    """review_bucket_performance_profile LISTS objects, so a prefix-scoped provider
-    must not have the bucket root sampled out of scope."""
+    """The performance aspect LISTS objects, so a prefix-scoped provider must not
+    have the bucket root sampled out of scope — while the other aspects, which
+    read bucket configuration only, stay allowed without a prefix."""
     from app.agent.tools import registry
     pid = _scoped(client, allowed_buckets=["only-this"], allowed_prefixes=["team-a/"])
-    out = registry.call_direct("review_bucket_performance_profile", {"provider_id": pid, "bucket": "only-this",
-                                                                     "prefix": ""},
-                               actor="test", allowed=frozenset({"review_bucket_performance_profile"}))
-    assert out["error"].startswith("Refused")
+    allowed = frozenset({"review_bucket_config"})
+    for aspects in (["performance"], "performance", ["summary", "performance"]):
+        out = registry.call_direct("review_bucket_config", {"provider_id": pid, "bucket": "only-this",
+                                                            "aspects": aspects, "prefix": ""},
+                                   actor="test", allowed=allowed)
+        assert out["error"].startswith("Refused"), aspects
+    td = registry.REGISTRY["review_bucket_config"]
+    assert registry.scope_denial(td, {"provider_id": pid, "bucket": "only-this", "aspects": ["security"]}) is None
+    assert registry.scope_denial(td, {"provider_id": pid, "bucket": "only-this", "aspects": ["performance"],
+                                      "prefix": "team-a/x"}) is None
