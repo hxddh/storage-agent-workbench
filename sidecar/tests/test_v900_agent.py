@@ -334,15 +334,20 @@ def test_a_review_finding_carries_the_estate_issue_name(client, monkeypatch):
 
 
 def test_a_survey_row_names_its_issues():
-    profile = {"success": True, "processed": 2, "summary": {"public_bucket_count": 1},
+    profile = {"success": True, "visible": 2, "processed": 2, "whole_account": True,
+               "summary": {"public_bucket_count": 1},
                "buckets": [{"bucket_name": "www", "access_status": "available", "publicly_exposed": True,
                             "encryption_status": "not_configured"},
                            {"bucket_name": "logs", "access_status": "available", "publicly_exposed": False,
                             "encryption_status": "available"}]}
     out = account_tools._compact(profile, "en")
-    assert set(out["buckets"][0]["issues"]) == {"public_exposure", "no_default_encryption"}
-    assert "issues" not in out["buckets"][1]
-    assert out["issues"]["public_exposure"] == {"title": "Bucket is publicly accessible", "severity": "high"}
+    table = out["buckets"]
+    rows = {r[0]: dict(zip(table["columns"], r)) for r in table["rows"]}
+    assert set(rows["www"]["issues"]) == {"public_exposure", "no_default_encryption"}
+    assert rows["logs"]["issues"] is None
+    public = next(i for i in out["issues"] if i["code"] == "public_exposure")
+    assert public == {"code": "public_exposure", "title": "Bucket is publicly accessible", "severity": "high",
+                      "buckets": 1, "names": ["www"]}
     assert account_tools._survey_summary(out) == "2 buckets, all readable; 1 public"
 
 
@@ -357,8 +362,7 @@ def test_tool_row_notes_read_as_short_plain_clauses():
     assert registry.tidy_summary("1 bucket(s) visible") == "1 bucket visible"
     assert len(registry.tidy_summary("x" * 200)) <= registry.SUMMARY_CHARS
     samples = {
-        "survey_account": {"success": True, "processed": 3, "summary": {},
-                           "buckets": [{"access_status": "available"}] * 3},
+        "survey_account": {"success": True, "issues": [], "coverage": {"visible": 3, "surveyed": 3}},
         "review_bucket_config": {"success": True, "findings": [{"category": "warning", "title": "a"}] * 19},
         "list_objects": {"success": True, "key_count": 12, "next_token": "t"},
         "list_buckets": {"success": True, "buckets": [{"name": "a"}]},

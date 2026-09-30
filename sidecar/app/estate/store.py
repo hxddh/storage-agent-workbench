@@ -203,7 +203,10 @@ _POSTURE_FROM_VERDICT: dict[str, dict[bool, dict[str, Any]]] = {
                               False: {"encryption_status": "available"}},
     "public_access_block_missing": {False: {"public_access_block_status": "available"}},
     "no_abort_mpu": {False: {"lifecycle_status": "available"}},
-    "public_exposure": {False: {"publicly_exposed": False}},
+    # A review that decided exposure decided every way the survey records it: a
+    # stale policy_is_public / acl_public would keep the sheet showing exposure.
+    "public_exposure": {True: {"publicly_exposed": True},
+                        False: {"publicly_exposed": False, "policy_is_public": False, "acl_public": False}},
 }
 
 
