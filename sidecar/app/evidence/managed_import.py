@@ -57,25 +57,53 @@ _GUNZIP_MIN_OUT_CAP = 4 * _CHUNK
 _COMBINE_MAX_OUT_BYTES = 16 * 1024 * 1024 * 1024  # 16 GiB
 
 
+# While combining, free disk is re-read after every this many bytes written.
+_DISK_RECHECK_BYTES = 64 * 1024 * 1024
+
+
 class _OutBudget:
     """Shared cumulative-output budget for one combine (see _COMBINE_MAX_OUT_BYTES).
 
     Threaded through every part so the running decompressed/copied total is bounded
-    across the whole selection, not just per-file."""
+    across the whole selection, not just per-file. With ``disk_dir`` it also
+    re-reads the free space there as output grows and stops once less than
+    ``headroom`` would be left — the size of decompressed output is unknown
+    until it is written, so the check before the download cannot bound it."""
 
-    __slots__ = ("remaining",)
+    __slots__ = ("remaining", "cap", "disk_dir", "headroom", "_since_check")
 
-    def __init__(self, cap: int = _COMBINE_MAX_OUT_BYTES) -> None:
+    def __init__(self, cap: int = _COMBINE_MAX_OUT_BYTES, disk_dir: Path | None = None,
+                 headroom: int = 0) -> None:
         self.remaining = cap
+        self.cap = cap
+        self.disk_dir = disk_dir
+        self.headroom = headroom
+        self._since_check = 0
 
     def take(self, n: int) -> None:
         self.remaining -= n
         if self.remaining < 0:
             raise LimitExceeded(
                 "combined evidence exceeds the total decompression budget "
-                f"({_COMBINE_MAX_OUT_BYTES} bytes across all parts); refusing a "
-                "possible decompression bomb"
+                f"({self.cap} bytes across all parts); refusing a "
+                "possible decompression bomb or an import the free disk cannot hold"
             )
+        if self.disk_dir is not None:
+            self._since_check += n
+            if self._since_check >= _DISK_RECHECK_BYTES:
+                self._since_check = 0
+                check_disk(self.disk_dir, self.headroom)
+
+
+def check_disk(where: Path, headroom: int, needed: int = 0) -> None:
+    """Refuse (LimitExceeded) when writing ``needed`` more bytes at ``where``
+    would leave less than ``headroom`` free."""
+    try:
+        free = shutil.disk_usage(where).free
+    except OSError:
+        return
+    if free - needed < headroom:
+        raise LimitExceeded("not enough free disk space to finish combining the evidence")
 
 
 class ImportError_(Exception):
@@ -528,7 +556,7 @@ def _append_maybe_gunzip(src: Path, out, budget: "_OutBudget | None" = None) -> 
                 # after it would corrupt the combined file. Fail cleanly instead.
                 raise ImportError_("gzip evidence file is corrupt (stream failed mid-way)")
             fh.seek(0)
-            _copy_stream(fh, out)
+            _copy_stream(fh, out, budget)
 
 
 def _copy_stream(fh: BinaryIO, out, budget: "_OutBudget | None" = None) -> None:
@@ -547,9 +575,9 @@ def _append_with_newline(src: Path, out: _TrackedWriter, budget: "_OutBudget | N
         out.write(b"\n")
 
 
-def _combine_access_logs(parts: list[Path], dest_dir: Path) -> Path:
+def _combine_access_logs(parts: list[Path], dest_dir: Path, budget: "_OutBudget | None" = None) -> Path:
     out_path = dest_dir / "combined.log"
-    budget = _OutBudget()
+    budget = budget or _OutBudget()
     with out_path.open("wb") as fh:
         for part in parts:
             writer = _TrackedWriter(fh)
@@ -557,14 +585,15 @@ def _combine_access_logs(parts: list[Path], dest_dir: Path) -> Path:
     return out_path
 
 
-def _combine_inventory(parts: list[Path], fmt: str, schema: str | None, dest_dir: Path) -> Path:
+def _combine_inventory(parts: list[Path], fmt: str, schema: str | None, dest_dir: Path,
+                       budget: "_OutBudget | None" = None) -> Path:
     if fmt == "parquet":
         # Combine out-of-core via DuckDB (never all frames in RAM at once).
         # Parts may be gzip-wrapped parquet; unwrap those to disk first.
         import duckdb
 
         plain: list[Path] = []
-        budget = _OutBudget()
+        budget = budget or _OutBudget()
         for i, part in enumerate(parts):
             with part.open("rb") as fh:
                 is_gz = fh.read(2) == b"\x1f\x8b"
@@ -576,6 +605,10 @@ def _combine_inventory(parts: list[Path], fmt: str, schema: str | None, dest_dir
             else:
                 plain.append(part)
         out_path = dest_dir / "combined.parquet"
+        if budget.disk_dir is not None:
+            # DuckDB writes the combined file in one go: budget it (about the size
+            # of its inputs) against the free space before it starts.
+            check_disk(budget.disk_dir, budget.headroom, sum(p.stat().st_size for p in plain))
         con = duckdb.connect()
         try:
             files_sql = ", ".join("'" + str(p).replace("'", "''") + "'" for p in plain)
@@ -592,7 +625,7 @@ def _combine_inventory(parts: list[Path], fmt: str, schema: str | None, dest_dir
     # provides the column names, which we write as the header so the existing
     # header-based importer can map columns.
     out_path = dest_dir / "combined.csv"
-    budget = _OutBudget()
+    budget = budget or _OutBudget()
     with out_path.open("wb") as fh:
         if schema:
             header = ",".join(c.strip() for c in schema.split(","))
@@ -646,6 +679,7 @@ def download_and_combine(
     dest_dir: Path,
     on_file: "Any" = None,
     cancel_event: "Any" = None,
+    disk_headroom: int | None = None,
 ) -> tuple[Path, int]:
     """Download the confirmed evidence files and combine into ONE local file.
 
@@ -654,6 +688,10 @@ def download_and_combine(
     not in the confirmed list. Bodies stream to per-part temp files under the
     run's raw dir and are combined from disk (see the memory-safety note above);
     the parts are removed once the combined file exists.
+
+    With ``disk_headroom``, the combine's output (decompressed gzip, the copied
+    CSV/log, the combined parquet) is budgeted against the free space left after
+    the download minus that headroom, and re-checked while it is written.
     """
     if len(files) > max_files:
         raise LimitExceeded(f"{len(files)} files exceeds max_files={max_files}")
@@ -681,10 +719,21 @@ def download_and_combine(
             if on_file is not None:
                 on_file(i + 1, len(files), "files")
 
+        budget = None
+        if disk_headroom is not None:
+            try:
+                free = shutil.disk_usage(dest_dir).free
+            except OSError:
+                free = None
+            if free is not None:
+                room = free - disk_headroom
+                if room <= 0:
+                    raise LimitExceeded("not enough free disk space to combine the evidence")
+                budget = _OutBudget(min(_COMBINE_MAX_OUT_BYTES, room), disk_dir=dest_dir, headroom=disk_headroom)
         if source_type == "inventory":
-            combined = _combine_inventory(parts, (fmt or "csv"), schema, dest_dir)
+            combined = _combine_inventory(parts, (fmt or "csv"), schema, dest_dir, budget)
         else:
-            combined = _combine_access_logs(parts, dest_dir)
+            combined = _combine_access_logs(parts, dest_dir, budget)
     finally:
         shutil.rmtree(parts_dir, ignore_errors=True)
     return combined, total

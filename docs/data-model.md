@@ -200,7 +200,7 @@ The code writes these kinds:
 | `survey` | watch sweep (`task_id` is `NULL`) | `Watch survey · <account>` | Same profile. Only the newest 3 task-less surveys per provider are kept. |
 | `review` | `review_bucket_config` tool (inside a task) | `Configuration review · <bucket>`, naming the aspects when not all ran | `{bucket, aspects, findings}` (at most 200 findings) |
 
-`compare_to_last_survey`, `query_estate` with `survey_filter` and evidence import read the
+`query_estate` with `survey_filter` or `since_last_survey` and evidence import read the
 newest `survey` artifacts of a provider, including watch surveys.
 
 ## Datasets

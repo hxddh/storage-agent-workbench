@@ -65,7 +65,7 @@ def test_a_user_rename_wins_over_the_title_step(client):
 def test_tools_and_the_conclusion_are_items_and_the_ui_never_gets_model_output(client):
     conclusion = {"findings": [
         {"title": "Nothing to analyze", "severity": "info", "detail": ""}], "next_steps": ["Attach a log"]}
-    with FakeModel([commentary_tool_turn("Let me look.", "list_uploaded_files", {}),
+    with FakeModel([commentary_tool_turn("Let me look.", "query_estate", {}),
                     tool_turn("record_conclusion", conclusion),
                     text_turn("There are no attached files.")]) as fake:
         _use(client, fake)
@@ -77,8 +77,8 @@ def test_tools_and_the_conclusion_are_items_and_the_ui_never_gets_model_output(c
                          "notice:completed"][: len(types) - 2] or "conclusion" in types
     call = next(i for i in snap["items"] if i["type"] == "tool_call")
     out = next(i for i in snap["items"] if i["type"] == "tool_output")
-    assert call["payload"]["name"] == "list_uploaded_files" and out["payload"]["ok"] is True
-    assert "model_output" not in out["payload"] and "datasets" in out["payload"]["detail"]
+    assert call["payload"]["name"] == "query_estate" and out["payload"]["ok"] is True
+    assert "model_output" not in out["payload"] and "issues" in out["payload"]["detail"]
     concl = next(i for i in snap["items"] if i["type"] == "conclusion")["payload"]
     assert "answer" not in concl and concl["next_steps"] == ["Attach a log"]
     # The model read the tool output inside the untrusted-data envelope.
@@ -142,7 +142,7 @@ def test_a_queued_direction_can_be_withdrawn(client):
 
 
 def test_steer_reaches_the_running_loop(client):
-    with FakeModel([commentary_tool_turn("Looking.", "list_uploaded_files", {}), text_turn("Done.")],
+    with FakeModel([commentary_tool_turn("Looking.", "query_estate", {}), text_turn("Done.")],
                    delay_s=0.15) as fake:
         _use(client, fake)
         tid = _start(client, "Check files")
@@ -174,7 +174,7 @@ def test_no_model_fails_the_turn_with_a_way_forward(client):
 def test_a_step_budget_overrun_is_finalized_not_lost(client, monkeypatch):
     from app.agent import runtime
     monkeypatch.setattr(runtime, "MAX_TURN_STEPS", 2)
-    with FakeModel([tool_turn("list_uploaded_files", {})], finalize="Here is what I found so far.") as fake:
+    with FakeModel([tool_turn("query_estate", {})], finalize="Here is what I found so far.") as fake:
         _use(client, fake)
         tid = _start(client, "Loop forever")
         snap = _settle(client, tid)
@@ -205,7 +205,7 @@ def test_a_refused_scope_is_a_tool_output_the_model_reads(client):
         "name": "scoped", "provider_type": "s3-compatible", "endpoint_url": "https://minio.example.com",
         "region": "us-east-1", "access_key": "AKIAIOSFODNN7EXAMPLE",
         "secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "allowed_buckets": ["only-this"]}).json()["id"]
-    with FakeModel([tool_turn("head_bucket", {"provider_id": pid, "bucket": "elsewhere"}),
+    with FakeModel([tool_turn("probe_endpoint", {"provider_id": pid, "bucket": "elsewhere"}),
                     text_turn("That bucket is outside your scope.")]) as fake:
         _use(client, fake)
         tid = _start(client, "Check elsewhere")

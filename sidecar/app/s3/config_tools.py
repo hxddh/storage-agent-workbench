@@ -1047,7 +1047,7 @@ def review_bucket_cost_optimization(conn: sqlite3.Connection, provider_id: str, 
 
     # Phase 06 does not require Phase 05 results; suggest deeper analysis instead.
     findings.append(_finding(OPPORTUNITY, "Deeper cost analysis available",
-                             "Run inventory_analysis on an inventory file to assess small-object ratio and cold data."))
+                             "Import the bucket's inventory (import_evidence) to assess small-object ratio and cold data."))
 
     return {
         "success": True,

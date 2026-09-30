@@ -1,9 +1,9 @@
-"""Read-only storage tools: probes and object forensics (v5 registry).
+"""Read-only storage tools: buckets, endpoint probes, listings, one object (v10).
 
-Every function is a thin, typed front over the ``s3`` engine. Scope, bounds,
-timeouts, redaction, the untrusted envelope and recording are the registry's
-job; the few per-turn budgets (previews, latency runs, ranged reads) are
-declared here with ``ctx.budget``.
+Every function is a thin, typed front over the ``s3`` engine — one tool per
+job, the mode picked by an enum. Scope, bounds, timeouts, redaction, the
+untrusted envelope and recording are the registry's job; the per-turn budgets
+(previews, ranged reads, latency runs) are spent here with ``ctx.budget``.
 
 ``provider_id`` comes last and is optional: with one storage account the
 registry fills it in; with several, the scope check asks for it.
@@ -11,230 +11,294 @@ registry fills it in; with several, the scope check asks for it.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
 from ...s3 import tools as s3
 from .registry import Scope, current, plural, tool
 
-_BUCKET = Scope()
 _KEY = Scope(key="key")
 _LIST = Scope(prefix="prefix", listing=True)
 
+# Response headers that say nothing about the storage (routing, dates, request
+# identity): dropped from what the model and the UI read.
+_NOISY_HEADERS = frozenset({"server", "date", "x-amz-request-id", "x-amz-id-2", "connection", "content-length",
+                            "keep-alive", "x-amz-server-side-encryption-customer-algorithm",
+                            "x-minio-deployment-id", "x-xss-protection", "strict-transport-security",
+                            "x-content-type-options", "vary", "accept-ranges"})
 
-def _page_summary(res: Any) -> str:
+
+def quiet(res: Any) -> Any:
+    """An engine result without its noise: no host id, no request ids on a
+    success, no routing headers. A failure keeps its request id (support asks)."""
+    if isinstance(res, list):
+        return [quiet(x) for x in res]
+    if not isinstance(res, dict):
+        return res
+    out: dict[str, Any] = {}
+    failed = res.get("success") is False
+    for k, v in res.items():
+        if k == "host_id" or (k == "request_id" and (not failed or v is None)):
+            continue
+        if k == "headers_sanitized" and isinstance(v, dict):
+            kept = {h: hv for h, hv in v.items() if str(h).lower() not in _NOISY_HEADERS}
+            if kept:
+                out[k] = kept
+            continue
+        out[k] = quiet(v) if isinstance(v, (dict, list)) else v
+    return out
+
+
+def _list_buckets_summary(res: Any) -> str:
     if not isinstance(res, dict) or res.get("success") is False:
-        return str((res or {}).get("error_code") or "failed")
-    n = int(res.get("key_count", len(res.get("keys") or [])) or 0)
-    more = ", more to page" if res.get("next_token") or res.get("is_truncated") else ""
-    return plural(n, "key") + more
+        return str((res or {}).get("error_code") or (res or {}).get("status") or "failed")
+    return plural(len(res.get("buckets") or []), "bucket")
 
 
-@tool(group="core", core=True, scope=Scope(bucket=None), timeout=30)
+@tool(group="core", core=True, scope=Scope(bucket=None), timeout=30, summarize=_list_buckets_summary)
 def list_buckets(provider_id: str = "") -> dict[str, Any]:
     """List the buckets the account's credentials can see; also the first check of whether the keys work
     (AccessDenied: they authenticate but may not list; provider_unsupported: a capability gap).
     """
-    return s3.list_buckets(current().conn(), provider_id)
-
-
-@tool(group="core", core=True, scope=_BUCKET, timeout=30)
-def head_bucket(bucket: str, provider_id: str = "") -> dict[str, Any]:
-    """Check that a bucket exists and is reachable.
-    """
-    return s3.head_bucket(current().conn(), provider_id, bucket)
-
-
-@tool(group="probes", scope=_BUCKET, timeout=30)
-def get_bucket_location(bucket: str, provider_id: str = "") -> dict[str, Any]:
-    """The bucket's real region versus the configured one; the first check for 301 redirects and region
-    errors.
-    """
-    return s3.get_bucket_location(current().conn(), provider_id, bucket)
-
-
-@tool(group="probes", scope=_BUCKET, timeout=45)
-def test_addressing_style(bucket: str, provider_id: str = "") -> dict[str, Any]:
-    """Probe virtual-hosted versus path-style addressing and say which works (SignatureDoesNotMatch or
-    "bucket not found" on S3-compatible endpoints).
-    """
-    return s3.test_path_style_vs_virtual_host(current().conn(), provider_id, bucket)
-
-
-@tool(group="probes", scope=Scope(bucket=None), timeout=30)
-def inspect_endpoint_tls(provider_id: str = "") -> dict[str, Any]:
-    """The endpoint's TLS certificate and protocol, for handshake, expiry and hostname errors.
-    """
     from ...providers import clouds
-    cloud = clouds.get(current().conn(), provider_id)
-    if cloud is None or not cloud.endpoint_url:
-        return {"success": False, "error_code": "no_endpoint",
-                "error_message_sanitized": "This provider uses the default AWS endpoint."}
-    return s3.inspect_tls(cloud.endpoint_url)
-
-
-@tool(group="probes", scope=Scope(key="key"), timeout=60, bounds={"samples": (1, 10)})
-def measure_request_latency(bucket: str, key: str = "", samples: int = 5,
-                            provider_id: str = "") -> dict[str, Any]:
-    """Time a few HEAD round-trips to the bucket (or one key): min, p50, p95 and max in ms.
-
-    Args:
-        key: Probe this object instead of the bucket.
-        samples: Round-trips (1-10).
-    """
     ctx = current()
-    if not ctx.budget("runs", 8):
-        return {"error": "Latency-probe budget for this turn is used up (8 runs). Report what you measured."}
-    return s3.measure_request_latency(ctx.conn(), provider_id, bucket, key or None, samples)
-
-
-@tool(group="probes", untrusted=True, timeout=10)
-def diagnose_presigned_url(url: str) -> dict[str, Any]:
-    """Parse a pasted presigned URL (no request is made): signature version, expiry, credential scope,
-    signed headers and the problems found.
-
-    Args:
-        url: The full presigned URL.
-    """
-    return s3.diagnose_presigned_url(url)
-
-
-@tool(group="objects", scope=_LIST, timeout=60, bounds={"max_keys": (1, 1000)}, summarize=_page_summary)
-def list_objects(bucket: str, prefix: str = "", max_keys: int = 200, continuation_token: str = "",
-                 recursive: bool = False, provider_id: str = "") -> dict[str, Any]:
-    """One page of object keys (no bodies). Page with next_token: one page is not the bucket total. For a
-    very large bucket, prefer an inventory.
-
-    Args:
-        max_keys: Page size (up to 1000).
-        continuation_token: The previous page's next_token.
-        recursive: List flat instead of grouping by '/'.
-    """
-    res = s3.list_objects_v2(current().conn(), provider_id, bucket, max_keys, prefix or None,
-                             continuation_token=continuation_token or None,
-                             delimiter=None if recursive else "/")
-    if isinstance(res, dict):
-        keys = res.get("keys")
-        sample = res.get("sample_keys")
-        if isinstance(keys, list) and isinstance(sample, list) and keys[:len(sample)] == sample:
-            res.pop("sample_keys", None)
+    res = quiet(s3.list_buckets(ctx.conn(), provider_id))
+    cloud = clouds.get(ctx.conn(), provider_id)
+    allowed = set(cloud.allowed_buckets or ()) if cloud else set()
+    if allowed and isinstance(res, dict) and isinstance(res.get("buckets"), list):
+        # A bucket-scoped account sees only its scope, here as everywhere else.
+        res["buckets"] = [b for b in res["buckets"] if b.get("name") in allowed]
+        res["bucket_count"] = len(res["buckets"])
+        res["scope"] = "filtered to this account's allowed_buckets"
     return res
 
 
-@tool(group="objects", scope=_LIST, timeout=60, bounds={"max_keys": (1, 1000)})
-def list_object_versions(bucket: str, prefix: str = "", max_keys: int = 1000, key_marker: str = "",
-                         version_id_marker: str = "", provider_id: str = "") -> dict[str, Any]:
-    """One page of object versions and delete markers: counts, current versus noncurrent bytes (why a
-    versioned bucket is large).
+# --- probe_endpoint -------------------------------------------------------------------
 
-    Args:
-        max_keys: Page size (up to 1000).
-    """
-    return s3.list_object_versions(current().conn(), provider_id, bucket, prefix or None, max_keys,
-                                   key_marker=key_marker or None, version_id_marker=version_id_marker or None)
+Check = Literal["reach", "location", "addressing", "tls", "latency"]
 
 
-@tool(group="objects", scope=_LIST, timeout=60, bounds={"max_uploads": (1, 1000)})
-def list_multipart_uploads(bucket: str, prefix: str = "", max_uploads: int = 1000, key_marker: str = "",
-                           upload_id_marker: str = "", provider_id: str = "") -> dict[str, Any]:
-    """One page of incomplete multipart uploads (billed, invisible in a listing): count, oldest, samples.
-
-    Args:
-        max_uploads: Page size (up to 1000).
-    """
-    return s3.list_multipart_uploads(current().conn(), provider_id, bucket, max_uploads, prefix or None,
-                                     key_marker=key_marker or None, upload_id_marker=upload_id_marker or None)
-
-
-@tool(group="objects", scope=_KEY, timeout=45, bounds={"max_parts": (1, 1000)})
-def list_upload_parts(bucket: str, key: str, upload_id: str, max_parts: int = 1000,
-                      part_number_marker: int = 0, provider_id: str = "") -> dict[str, Any]:
-    """One page of an in-progress multipart upload's parts: count, bytes, first and last part times.
-
-    Args:
-        key: The upload's object key.
-        upload_id: From list_multipart_uploads.
-        max_parts: Page size (up to 1000).
-    """
-    return s3.list_upload_parts(current().conn(), provider_id, bucket, key, upload_id, max_parts,
-                                part_number_marker=part_number_marker or None)
+def _probe_summary(res: Any) -> str:
+    if not isinstance(res, dict):
+        return "probed"
+    if res.get("error"):
+        return str(res["error"])
+    check = res.get("check")
+    if check == "latency" and res.get("success"):
+        return f"p50 {res.get('p50_ms')} ms, p95 {res.get('p95_ms')} ms"
+    if check == "location" and res.get("success"):
+        return f"region {res.get('bucket_region')}" + (", mismatch" if res.get("region_mismatch") else "")
+    if check == "addressing":
+        return f"addressing: {res.get('recommendation') or 'inconclusive'}"
+    if check == "tls":
+        return str(res.get("tls_version") or res.get("error_code") or "no TLS answer")
+    if res.get("success") is False:
+        return str(res.get("error_code") or "failed")
+    return "reachable" if check == "reach" else "done"
 
 
-ObjectAspect = Literal["head", "attributes", "lock", "acl", "tags"]
-_OBJECT_ASPECTS = {"head": "head_object", "attributes": "get_object_attributes",  # s3 engine reads
-                   "lock": "get_object_lock_status", "acl": "get_object_acl", "tags": "get_object_tagging"}
-
-
-@tool(group="objects", scope=_KEY, timeout=60)
-def inspect_object(bucket: str, key: str, version_id: str = "", aspects: list[ObjectAspect] | None = None,
+@tool(group="probes", scope=_KEY, timeout=60, bounds={"samples": (1, 10)}, summarize=_probe_summary)
+def probe_endpoint(bucket: str = "", check: Check = "reach", key: str = "", samples: int = 5,
                    provider_id: str = "") -> dict[str, Any]:
-    """One object's metadata without its body. head (the default): size, ETag, class, metadata, restore and
-    replication status; attributes: checksums, parts; lock: retention, legal hold; acl: is this object
-    public; tags.
+    """Probe the endpoint: reach (HeadBucket), location (real vs configured region), addressing (virtual-
+    hosted vs path-style), tls (certificate; no bucket) or latency (HEAD round-trips in ms).
 
     Args:
-        aspects: Which reads to make.
+        key: latency: this object instead of the bucket.
+        samples: latency: round-trips (1-10).
+    """
+    ctx = current()
+    conn = ctx.conn()
+    if check == "tls":
+        from ...providers import clouds
+        cloud = clouds.get(conn, provider_id)
+        if cloud is None or not cloud.endpoint_url:
+            return {"check": check, "success": False, "error_code": "no_endpoint",
+                    "error_message_sanitized": "This account uses the default AWS endpoint."}
+        return {"check": check, **s3.inspect_tls(cloud.endpoint_url)}
+    if check not in ("reach", "location", "addressing", "latency"):
+        return {"error": "Unknown check. Use reach, location, addressing, tls or latency."}
+    if not bucket:
+        return {"error": f"check {check} needs a bucket."}
+    if check == "reach":
+        res = s3.head_bucket(conn, provider_id, bucket)
+    elif check == "location":
+        res = s3.get_bucket_location(conn, provider_id, bucket)
+    elif check == "addressing":
+        res = s3.test_path_style_vs_virtual_host(conn, provider_id, bucket)
+    else:
+        if not ctx.budget("runs", 8):
+            return {"error": "Latency-probe budget for this turn is used up (8 runs). Report what you measured."}
+        res = s3.measure_request_latency(conn, provider_id, bucket, key or None, samples)
+    return {"check": check, **quiet(res)}
+
+
+# --- list_objects ------------------------------------------------------------------------
+
+ListKind = Literal["keys", "versions", "uploads"]
+
+
+def _page_summary(res: Any) -> str:
+    if not isinstance(res, dict) or res.get("success") is False:
+        return str((res or {}).get("error") or (res or {}).get("error_code") or "failed")
+    more = ", more to page" if res.get("next_token") or res.get("is_truncated") else ""
+    kind = res.get("kind")
+    if kind == "versions":
+        return plural(int(res.get("version_count") or 0), "version") + more
+    if kind == "uploads":
+        return plural(int(res.get("upload_count") or 0), "open upload") + more
+    n = int(res.get("key_count", len(res.get("keys") or [])) or 0)
+    return plural(n, "key") + more
+
+
+def _markers(page_token: str) -> tuple[str | None, str | None]:
+    """versions / uploads page with two markers, carried as one opaque token."""
+    if not page_token:
+        return None, None
+    try:
+        pair = json.loads(page_token)
+    except ValueError:
+        return page_token, None
+    if isinstance(pair, list) and len(pair) == 2:
+        return (str(pair[0]) if pair[0] else None), (str(pair[1]) if pair[1] else None)
+    return page_token, None
+
+
+def _token(a: Any, b: Any) -> str | None:
+    return json.dumps([a or "", b or ""]) if (a or b) else None
+
+
+@tool(group="objects", scope=_LIST, timeout=60, bounds={"max_keys": (1, 1000)}, summarize=_page_summary)
+def list_objects(bucket: str, kind: ListKind = "keys", prefix: str = "", max_keys: int = 200,
+                 page_token: str = "", recursive: bool = False, provider_id: str = "") -> dict[str, Any]:
+    """One page of a listing, no bodies: keys (size, class, age), versions (delete markers, noncurrent
+    bytes) or uploads (incomplete multipart uploads, with upload ids). A page is not the bucket total.
+
+    Args:
+        max_keys: Page size (1-1000).
+        page_token: The previous page's next_token.
+        recursive: keys: flat, not grouped by '/'.
+    """
+    conn = current().conn()
+    if kind == "versions":
+        km, vm = _markers(page_token)
+        res = quiet(s3.list_object_versions(conn, provider_id, bucket, prefix or None, max_keys,
+                                            key_marker=km, version_id_marker=vm))
+        res.pop("sample_keys", None)  # sample_versions carries every key it names
+        res["next_token"] = _token(res.pop("next_key_marker", None), res.pop("next_version_id_marker", None))
+    elif kind == "uploads":
+        km, um = _markers(page_token)
+        res = quiet(s3.list_multipart_uploads(conn, provider_id, bucket, max_keys, prefix or None,
+                                              key_marker=km, upload_id_marker=um))
+        res.pop("sample_keys", None)  # sample_uploads carries the keys with their upload ids
+        res["next_token"] = _token(res.pop("next_key_marker", None), res.pop("next_upload_id_marker", None))
+    elif kind == "keys":
+        res = quiet(s3.list_objects_v2(conn, provider_id, bucket, max_keys, prefix or None,
+                                       continuation_token=page_token or None, delimiter=None if recursive else "/"))
+        res.pop("sample_keys", None)  # the first keys of `keys`
+        objects, keys = res.get("objects") or [], res.get("keys") or []
+        if keys and len(keys) <= len(objects):
+            res.pop("keys", None)  # every key is already in `objects`, with its detail
+        elif keys:
+            res["keys"] = keys[len(objects):]
+            res["keys_note"] = f"The first {len(objects)} keys are in objects; keys lists the rest."
+        if res.get("max_keys_requested") == res.get("max_keys_applied"):
+            res.pop("max_keys_requested", None)
+            res.pop("max_keys_applied", None)
+    else:
+        return {"error": "Unknown kind. Use keys, versions or uploads."}
+    return {"kind": kind, **res}
+
+
+# --- inspect_object ---------------------------------------------------------------------
+
+ObjectAspect = Literal["head", "attributes", "lock", "acl", "tags", "preview", "range", "conditional"]
+_READS = {"head": "head_object", "attributes": "get_object_attributes",  # s3 engine reads
+          "lock": "get_object_lock_status", "acl": "get_object_acl", "tags": "get_object_tagging"}
+_ASPECTS = (*_READS, "preview", "range", "conditional")
+_PREVIEW_BYTES = 24 * 1024 * 1024  # per turn
+_PREVIEW_OBJECTS = 16  # per turn
+_RANGE_READS = 12  # per turn
+
+
+def _inspect_summary(res: Any) -> str:
+    if not isinstance(res, dict):
+        return "inspected"
+    if res.get("error"):
+        return str(res["error"])
+    if res.get("partial"):
+        return "partial: " + ", ".join(res.get("failed") or []) + " failed"
+    if res.get("success") is False:
+        return str(res.get("error_code") or "failed")
+    if "size" in res and isinstance(res.get("size"), int):
+        return plural(res["size"], "byte")
+    return "inspected"
+
+
+def _preview(ctx: Any, provider_id: str, bucket: str, key: str, kib: int) -> dict[str, Any]:
+    left = ctx.remaining("bytes", _PREVIEW_BYTES)
+    if left <= 0:
+        return {"success": False, "error": "Object-preview byte budget for this turn is used up (24 MiB)."}
+    if not ctx.budget("objects", _PREVIEW_OBJECTS):
+        return {"success": False, "error": f"Object-preview budget for this turn is used up ({_PREVIEW_OBJECTS} "
+                                           "objects)."}
+    # The read itself is clamped to what is left, so the budget bounds bytes read — not just reported.
+    res = s3.preview_object(ctx.conn(), provider_id, bucket, key, min(kib * 1024, left))
+    if isinstance(res, dict):
+        ctx.budget("bytes", _PREVIEW_BYTES, min(left, int(res.get("bytes_read") or 0)))
+    return res
+
+
+def _range(ctx: Any, provider_id: str, bucket: str, key: str, byte_range: str) -> dict[str, Any]:
+    if not ctx.budget("reads", _RANGE_READS):
+        return {"success": False, "error": f"Ranged-read budget for this turn is used up ({_RANGE_READS} calls)."}
+    return s3.test_range_get(ctx.conn(), provider_id, bucket, key, byte_range or "bytes=0-1023")
+
+
+@tool(group="objects", scope=_KEY, timeout=60, bounds={"preview_kib": (1, 1024)}, summarize=_inspect_summary)
+def inspect_object(bucket: str, key: str, aspects: list[ObjectAspect] | None = None, version_id: str = "",
+                   etag: str = "", byte_range: str = "bytes=0-1023", preview_kib: int = 256,
+                   provider_id: str = "") -> dict[str, Any]:
+    """One object. head (default): size, ETag, class, metadata, restore/replication; attributes: checksums,
+    parts; lock; acl: is it public; tags; preview: first bytes, redacted; range: a ranged GET; conditional:
+    does etag still match.
+
+    Args:
+        etag: conditional: the cached ETag.
+        byte_range: range: at most 4 MiB.
+        preview_kib: preview: KiB (1-1024).
     """
     wanted = aspects or ["head"]
-    unknown = sorted(set(wanted) - set(_OBJECT_ASPECTS))
+    unknown = sorted({str(a) for a in wanted} - set(_ASPECTS))
     if unknown:
-        return {"error": f"Unknown aspect {', '.join(unknown)}. Use any of: {', '.join(_OBJECT_ASPECTS)}."}
-    chosen = [a for a in _OBJECT_ASPECTS if a in wanted]
+        return {"error": f"Unknown aspect {', '.join(unknown)}. Use any of: {', '.join(_ASPECTS)}."}
+    if "conditional" in wanted and not etag:
+        return {"error": "The conditional aspect needs the cached etag."}
+    chosen = [a for a in _ASPECTS if a in wanted]
     ctx = current()
+
+    def read(name: str) -> dict[str, Any]:
+        if name == "preview":
+            return _preview(ctx, provider_id, bucket, key, preview_kib)
+        if name == "range":
+            return _range(ctx, provider_id, bucket, key, byte_range)
+        if name == "conditional":
+            return s3.test_conditional_get(ctx.conn(), provider_id, bucket, key, etag)
+        return getattr(s3, _READS[name])(ctx.conn(), provider_id, bucket, key, version_id or None)
+
     if len(chosen) == 1:  # one read answers as that read does
-        return getattr(s3, _OBJECT_ASPECTS[chosen[0]])(ctx.conn(), provider_id, bucket, key, version_id or None)
+        return quiet(read(chosen[0]))
     out: dict[str, Any] = {"bucket": bucket, "key": key}
     for name in chosen:
         if ctx.cancelled:
             out["stopped"] = True
             break
-        out[name] = getattr(s3, _OBJECT_ASPECTS[name])(ctx.conn(), provider_id, bucket, key, version_id or None)
-    reads = [v for k, v in out.items() if k in _OBJECT_ASPECTS and isinstance(v, dict)]
-    out["success"] = any(r.get("success") is not False for r in reads)
+        out[name] = quiet(read(name))
+    failed = [n for n in chosen if isinstance(out.get(n), dict) and out[n].get("success") is False]
+    done = [n for n in chosen if n in out]
+    out["success"] = len(failed) < len(done)
+    if failed:
+        # A read that failed decides nothing: an unreadable ACL is not "not public".
+        out["partial"] = True
+        out["failed"] = failed
     return out
-
-
-@tool(group="objects", scope=_KEY, timeout=45)
-def test_object_read(bucket: str, key: str, mode: Literal["conditional", "range"], etag: str = "",
-                     range_header: str = "bytes=0-1023", provider_id: str = "") -> dict[str, Any]:
-    """conditional: does a cached ETag still match the object (stale data; read etag_matches)? range: a
-    bounded ranged GET checking range support and latency.
-
-    Args:
-        mode: Which read to test.
-        etag: For conditional: the cached ETag.
-        range_header: For range: e.g. bytes=0-1023.
-    """
-    ctx = current()
-    if mode == "conditional":
-        if not etag:
-            return {"error": "mode conditional needs the cached etag."}
-        return s3.test_conditional_get(ctx.conn(), provider_id, bucket, key, etag)
-    if mode != "range":
-        return {"error": 'Unknown mode. Use "conditional" or "range".'}
-    if not ctx.budget("reads", 12):
-        return {"error": "Ranged-read budget for this turn is used up (12 calls)."}
-    return s3.test_range_get(ctx.conn(), provider_id, bucket, key, range_header or "bytes=0-1023")
-
-
-_PREVIEW_BYTES = 24 * 1024 * 1024
-
-
-@tool(group="objects", scope=_KEY, timeout=60, bounds={"max_bytes": (1024, 1024 * 1024)})
-def preview_object(bucket: str, key: str, max_bytes: int = 262144, provider_id: str = "") -> dict[str, Any]:
-    """A redacted preview of an object's first bytes (at most 1 MiB; gzip decompressed, parquet as its
-    structure, binary reported). A few objects per turn.
-
-    Args:
-        max_bytes: Bytes to read.
-    """
-    ctx = current()
-    left = ctx.remaining("bytes", _PREVIEW_BYTES)
-    if left <= 0:
-        return {"error": "Object-preview byte budget for this turn is used up (24 MiB)."}
-    if not ctx.budget("objects", 16):
-        return {"error": "Object-preview budget for this turn is used up (16 objects)."}
-    # The read itself is clamped to what is left, so the budget bounds bytes read — not just reported.
-    res = s3.preview_object(ctx.conn(), provider_id, bucket, key, min(max_bytes, left))
-    if isinstance(res, dict):
-        ctx.budget("bytes", _PREVIEW_BYTES, min(left, int(res.get("bytes_read") or 0)))
-    return res

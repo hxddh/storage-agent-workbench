@@ -55,6 +55,19 @@ def check_scope(
       whole bucket root, OUTSIDE the allowed prefixes, so it is denied — the
       caller must list within an allowed prefix.
     """
+    # A model can send any JSON type: a non-string name is refused as such,
+    # never coerced (str(["a"]) is not a bucket) and never an AttributeError.
+    for kind, value in (("bucket", bucket), ("key", key), ("prefix", prefix)):
+        if value is not None and not isinstance(value, str):
+            return f"The {kind} must be a string."
+    target = key if key is not None else prefix
+    if target:
+        segments = target.split("/")
+        kind = "key" if key is not None else "prefix"
+        # `..` never names a real sub-path of a prefix; a gateway that normalizes
+        # paths would resolve it outside the scope the check just approved.
+        if ".." in segments:
+            return f"The {kind} '{target}' contains a '..' path segment, which is refused."
     if allowed_buckets and bucket not in allowed_buckets:
         # List the allowed bucket names (they are non-secret DNS-style
         # identifiers), like the prefix branch below, so the caller can pick a
@@ -69,8 +82,14 @@ def check_scope(
     # unrestrict the bucket. Drop empties, so a stray "" doesn't widen scope.
     allowed_prefixes = [p for p in (allowed_prefixes or []) if p]
     if allowed_prefixes:
-        target = key if key is not None else prefix
         if target:
+            # Under a prefix scope a `.` segment or an empty one (`//`) can be
+            # normalized away by a path-rewriting gateway: `logs/./x` or
+            # `logs//../x` must not pass as `logs/…`.
+            if "." in target.split("/") or "//" in target:
+                kind = "key" if key is not None else "prefix"
+                return (f"The {kind} '{target}' contains a '.' or empty path segment, which a "
+                        "prefix-scoped account refuses.")
             if not _prefix_in_scope(target, allowed_prefixes):
                 kind = "key" if key is not None else "prefix"
                 return (

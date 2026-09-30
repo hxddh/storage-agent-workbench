@@ -709,6 +709,14 @@ def list_multipart_uploads(
             "upload_count": len(uploads),
             "oldest_initiated": oldest.isoformat() if hasattr(oldest, "isoformat") else (str(oldest) if oldest else None),
             "sample_keys": [u.get("Key") for u in uploads[:SAMPLE_KEYS_LIMIT]],
+            # The upload id names ONE stuck upload (for the user's own abort or a
+            # lifecycle rule); a key alone is ambiguous when several uploads target it.
+            "sample_uploads": [
+                {"key": u.get("Key"), "upload_id": u.get("UploadId"),
+                 "initiated": u["Initiated"].isoformat() if hasattr(u.get("Initiated"), "isoformat")
+                 else u.get("Initiated"), "storage_class": u.get("StorageClass")}
+                for u in uploads[:SAMPLE_KEYS_LIMIT]
+            ],
             "is_truncated": bool(resp.get("IsTruncated", False)),
             "next_key_marker": resp.get("NextKeyMarker"),
             "next_upload_id_marker": resp.get("NextUploadIdMarker"),
