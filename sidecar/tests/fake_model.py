@@ -72,6 +72,19 @@ def tool_turn(name: str, arguments: dict) -> list[bytes]:
     ]
 
 
+def raw_tool_turn(name: str, raw_arguments: str) -> list[bytes]:
+    """A function call whose arguments are exactly ``raw_arguments`` — a small
+    model's invalid JSON, a string where a list belongs."""
+    call_id = f"call_fake_{next(_CALL_IDS)}"
+    return [
+        _chunk({"role": "assistant", "tool_calls": [{
+            "index": 0, "id": call_id, "type": "function",
+            "function": {"name": name, "arguments": raw_arguments},
+        }]}),
+        _chunk({}, "tool_calls"),
+    ]
+
+
 def commentary_tool_turn(text: str, name: str, arguments: dict) -> list[bytes]:
     """Commentary the model writes, then a function call, in ONE response."""
     call_id = f"call_fake_{next(_CALL_IDS)}"
@@ -147,8 +160,18 @@ class FakeModel:
     """
 
     def __init__(self, turns: list[list[bytes]], delay_s: float = 0.0,
-                 title: str | None = None, compaction: str | None = None, finalize: str = "Final answer."):
+                 title: str | None = None, compaction: str | None = None, finalize: str = "Final answer.",
+                 fail: list[tuple[int, str]] | None = None, finalize_status: int = 200,
+                 show: dict | None = None, fail_at: int = 0):
         self.turns = turns
+        # v10: ``fail`` — each entry fails one main request (status, message) before
+        # the script resumes; ``finalize_status`` != 200 fails every finalize step;
+        # ``show`` is what Ollama's /api/show answers (None: 404).
+        self.fail = list(fail or [])
+        self.fail_at = fail_at  # failures start once this many scripted turns were served
+        self.finalize_status = finalize_status
+        self.show = show
+        self.show_requests: list[dict] = []
         self.delay_s = delay_s
         # v1.10.0 — the runtime's title step is a separate bounded request
         # marked with TITLE_MARKER. It is answered here without consuming a
@@ -173,6 +196,19 @@ class FakeModel:
             def log_message(self, *_args):  # keep pytest output readable
                 pass
 
+            def _json(self, status: int, payload: dict) -> None:
+                out = json.dumps(payload).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
+
+            def do_GET(self):  # noqa: N802
+                if self.path.rstrip("/").endswith("/models"):
+                    return self._json(200, {"object": "list", "data": [{"id": "fake-model", "object": "model"}]})
+                return self._json(404, {"error": {"message": "not found"}})
+
             def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler's contract
                 body = self.rfile.read(int(self.headers.get("content-length") or 0))
                 try:
@@ -180,6 +216,20 @@ class FakeModel:
                 except ValueError:
                     parsed = {}
                 text_body = (body or b"").decode("utf-8", "replace")
+                if self.path.rstrip("/").endswith("/api/show"):
+                    fake.show_requests.append(parsed)
+                    return self._json(200, fake.show) if fake.show is not None else \
+                        self._json(404, {"error": "model not found"})
+                if FINALIZE_MARKER in text_body and fake.finalize_status != 200:
+                    fake.finalize_requests.append(parsed)
+                    return self._json(fake.finalize_status, {"error": {"message": "finalize failed", "type": "x"}})
+                if not any(m in text_body for m in (TITLE_MARKER, COMPACT_MARKER, FINALIZE_MARKER)):
+                    with fake._lock:
+                        failure = fake.fail.pop(0) if fake.fail and fake._i >= fake.fail_at else None
+                    if failure is not None:
+                        fake.requests.append(parsed)
+                        return self._json(failure[0], {"error": {"message": failure[1], "type": "invalid_request_error",
+                                                                 "code": None}})
                 if TITLE_MARKER in text_body:
                     fake.title_requests.append(parsed)
                     chunks = text_turn(fake.title or "")

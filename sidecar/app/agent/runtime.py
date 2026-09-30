@@ -25,7 +25,9 @@ Restart: turns found ``running`` are stamped ``interrupted`` and continued once
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -33,10 +35,10 @@ from typing import Any
 from .. import db
 from ..core import hub, store
 from ..providers import models as model_providers
-from ..security.redaction import redact_text
+from ..security.redaction import redact, redact_text
 from . import budget, errors, models, prompt, safety, tracing
 from .recorder import Recorder
-from .session import ItemsSession, to_input
+from .session import ItemsSession, fit, input_chars, shrink_outputs, to_input
 from .tools import registry
 
 logger = logging.getLogger(__name__)
@@ -45,12 +47,23 @@ MAX_TURN_STEPS = 60
 MAX_PARALLEL_TOOLS = 6
 RESUME_NOTE = ("[The app restarted while you were working on this. Your completed tool calls are above. "
                "Continue from where you stopped; do not repeat calls that already returned.]")
-_COMPACT_FRACTION = 0.8
+# Budgets are fractions of the INPUT budget (window − max_tokens), in tokens
+# estimated at budget.CHARS_PER_TOKEN.
+_COMPACT_FRACTION = 0.8   # before a Turn: fold older Turns at this
+_COMPACT_TARGET = 0.6     # ... until what is left is under this (no compaction every Turn)
+_PRESSURE_FRACTION = 0.85  # inside a Turn: shrink earlier tool outputs at this
+_SIDE_STEP_FRACTION = 0.9  # a summary / final-answer request fits in this
+_SUMMARY_ALLOWANCE_CHARS = 3_000  # what the summary itself will add back
 _KEEP_RECENT_TURNS = 2
-_CHARS_PER_TOKEN = 4
 _TOOL_OUTPUT_FRACTION = 0.25
 _MIN_TOOL_OUTPUT_CHARS = 4_000
 _SMALL_WINDOW = 65_536  # below this, older tool outputs are trimmed harder
+REPEATED_CALL = "Already called with these arguments; the result is above."
+TEXT_TOOL_CALL_CORRECTION = (
+    "[Your last message was a tool call written as text, so nothing ran. To use a tool, call it through "
+    "the tool-calling interface; otherwise write your answer in plain prose.]")
+FINALIZE_FAILED = ("The model could not write an answer from the work so far ({why}). The completed steps "
+                   "are above; ask me to continue, or check the model in Settings › Models.")
 
 
 @dataclass
@@ -60,6 +73,12 @@ class _Live:
     steers: list[str] = field(default_factory=list)
     result: Any = None
     recorder: Any = None  # the running turn's Recorder: a steer closes ITS open segment first
+    # Messages the model-input filter re-inserts at a stable position on every
+    # call of this Turn (steers, a correction). Kept on the Turn, not on one SDK
+    # run, so a transport retry re-applies them instead of losing them.
+    applied: list[tuple[int, dict[str, Any]]] = field(default_factory=list)
+    inject: list[dict[str, Any]] = field(default_factory=list)  # waiting for the next model call
+    calls_seen: set[str] = field(default_factory=set)  # name + canonical args of this Turn's calls
 
 
 class Runtime:
@@ -272,9 +291,18 @@ class Runtime:
             if outcome.get("status") == "retry_http":
                 # The websocket was refused before anything streamed: the same Turn
                 # runs again over HTTP (the endpoint is remembered in NO_WEBSOCKET).
+                # Steers the first attempt drained stay on `live.applied`.
                 outcome = await self._stream_turn(conn, task_id, turn_id, creds, rec, live, clients)
                 if outcome.get("status") == "retry_http":
                     outcome = {"status": "failed", "error": outcome.get("error"), "usage": outcome.get("usage")}
+            if (outcome.get("status") == "completed" and not outcome.get("finalized")
+                    and not live.cancel.is_set() and looks_like_text_tool_call(rec.last_message)):
+                # A small model wrote its tool call as text: nothing ran. Say so once.
+                rec.notice("reprompted", reason="text_tool_call")
+                live.inject.append({"role": "user", "content": TEXT_TOOL_CALL_CORRECTION})
+                again = await self._stream_turn(conn, task_id, turn_id, creds, rec, live, clients)
+                again["usage"] = _add_usage(outcome.get("usage"), again.get("usage"))
+                outcome = again if again.get("status") != "retry_http" else outcome
             status, error, usage = outcome["status"], outcome.get("error"), outcome.get("usage")
         except Exception as exc:  # noqa: BLE001
             status, error = "failed", errors.user_message(exc)
@@ -311,37 +339,49 @@ class Runtime:
 
         responses = models.is_responses(creds)
         model, settings = models.build(creds, clients)
-        tools = registry.build_sdk_tools(responses=responses)
+        tools = self._guard_tools(registry.build_sdk_tools(responses=responses), live, rec)
         if responses:
             from agents import ToolSearchTool
             tools.append(ToolSearchTool())
         lang = _setting(conn, "language") or "en"
         agent = Agent(name="Storage Agent", instructions=prompt.instructions_for(conn, responses=responses, lang=lang),
                       tools=tools, model=model, model_settings=settings)
-        window = _window(creds)
+        plan = budget.plan(creds)
+        schema_chars = registry.schema_chars(responses=responses)
         # Older Directions' tool outputs shrink to a preview; a small window keeps
         # only the current Direction's outputs whole.
         trimmer = (ToolOutputTrimmer(recent_turns=2, max_output_chars=4000, preview_chars=600)
-                   if window >= _SMALL_WINDOW else
+                   if plan.window >= _SMALL_WINDOW else
                    ToolOutputTrimmer(recent_turns=1, max_output_chars=2000, preview_chars=400))
-        applied: list[tuple[int, str]] = []
 
         def model_input(data: Any) -> Any:
             md = trimmer(data)
             if hasattr(md, "__await__"):
                 raise RuntimeError("async trimmer unsupported")  # pragma: no cover
             items = list(md.input)
+            if not responses:
+                # In-turn pressure (Chat Completions has no server-side compaction):
+                # this Turn's earlier tool outputs shrink to previews, oldest first,
+                # the latest batch stays whole.
+                room = (tokens_budget_chars(plan, _PRESSURE_FRACTION)
+                        - len(str(md.instructions or "")) - schema_chars)
+                items, _ = shrink_outputs(items, room)
             with self._lock:
                 fresh, live.steers[:] = list(live.steers), []
+                pending, live.inject[:] = list(live.inject), []
             for text in fresh:
-                applied.append((len(items), text))
-            for pos, text in sorted(applied, key=lambda x: x[0], reverse=True):
-                items.insert(min(pos, len(items)), {"role": "user", "content": "[The user steered] " + text})
+                live.applied.append((len(items), {"role": "user", "content": "[The user steered] " + text}))
+            for msg in pending:
+                live.applied.append((len(items), msg))
+            # Latest position first (and, at one position, the later message first),
+            # so every message lands where it was first applied, in order.
+            for _, (pos, msg) in sorted(enumerate(live.applied), key=lambda x: (x[1][0], x[0]), reverse=True):
+                items.insert(min(pos, len(items)), dict(msg))
             md.input = items
             return md
 
         turn_ctx = registry.TurnContext(task_id, turn_id, live.cancel, rec, lang=lang,
-                                        model_chars=tool_output_chars(window))
+                                        model_chars=tool_output_chars(plan.window))
         run_config = RunConfig(
             call_model_input_filter=model_input,
             tool_not_found_behavior="return_error_to_model",
@@ -353,14 +393,14 @@ class Runtime:
         )
         # The SDK's own error handlers end a run that ran out of steps (or that the
         # model refused) with an answer instead of an exception.
-        finalized: dict[str, str] = {}
+        finalized: dict[str, Any] = {}
 
         async def on_max_turns(data: Any) -> Any:
             # The branch history from items carries the steers the model input
             # filter injected (the SDK's run history does not).
             text = await self._final_answer(creds, clients, _history(conn, task_id, turn_id), reason="budget")
-            finalized.update(text=text, reason="budget")
-            return RunErrorHandlerResult(final_output=text, include_in_history=False)
+            finalized.update(text=text or "", reason="budget", failed=text is None)
+            return RunErrorHandlerResult(final_output=text or "", include_in_history=False)
 
         async def on_refusal(data: Any) -> Any:
             text = safety.clean_message(str(data.error))[:600] or "The model declined to continue with this request."
@@ -403,66 +443,134 @@ class Runtime:
                 return {"status": "cancelled", "usage": _usage(result)}
             if errors.recoverable(exc):
                 text = await self._final_answer(creds, clients, _history(conn, task_id, turn_id), reason="provider")
+                if text is None:
+                    return self._finalize_failed(rec, errors.user_message(exc), _usage(result))
                 rec.notice("finalized", reason="provider")
                 rec._append("agent_message", {"text": text})
-                return {"status": "completed", "usage": _usage(result)}
+                return {"status": "completed", "finalized": True, "usage": _usage(result)}
             return {"status": "failed", "error": errors.user_message(exc), "usage": _usage(result)}
         rec.close_segment()
         if live.cancel.is_set():
             return {"status": "cancelled", "usage": _usage(result)}
+        if finalized.get("failed"):
+            return self._finalize_failed(rec, "the step budget ran out", _usage(result))
         if finalized:
             rec.notice("finalized", reason=finalized["reason"])
             rec._append("agent_message", {"text": finalized["text"]})
+            return {"status": "completed", "finalized": True, "usage": _usage(result)}
         return {"status": "completed", "usage": _usage(result)}
 
+    @staticmethod
+    def _finalize_failed(rec: Recorder, why: str, usage: dict[str, Any] | None) -> dict[str, Any]:
+        """The fallback answer could not be written either: a clear failure, never a canned success."""
+        message = FINALIZE_FAILED.format(why=redact_text(why)[:200].rstrip(". "))
+        rec._append("error", {"message": message})
+        return {"status": "failed", "error": message, "usage": usage}
+
+    def _guard_tools(self, tools: list[Any], live: _Live, rec: Recorder) -> list[Any]:
+        """Guards for small models, around every tool of this Turn:
+        arguments that are not a JSON object are answered without running; a
+        string where the schema wants a list (or a number) is coerced; a call
+        identical to one this Turn already made returns a pointer to its result
+        instead of running again. Each is recorded like any other call."""
+        from agents import FunctionTool
+
+        for ft in tools:
+            if not isinstance(ft, FunctionTool):
+                continue
+            inner = ft.on_invoke_tool
+            schema = ft.params_json_schema or {}
+
+            async def guarded(tool_ctx: Any, raw_args: str, _inner=inner, _schema=schema,
+                              _name=ft.name) -> Any:
+                call_id = getattr(tool_ctx, "tool_call_id", None) or f"call-{id(tool_ctx)}"
+                args = parse_tool_args(raw_args)
+                if args is None:
+                    rec.tool_skipped(call_id, _name, {}, "", ok=False, summary="arguments were not valid JSON",
+                                     model_text=("Not run: the arguments were not a valid JSON object. Call "
+                                                 f"{_name} again with a JSON object that matches its schema."))
+                    return ("Not run: the arguments were not a valid JSON object. Call "
+                            f"{_name} again with a JSON object that matches its schema.")
+                args = coerce_args(args, _schema)
+                key = _name + "\0" + json.dumps(args, sort_keys=True, separators=(",", ":"), default=str)
+                with self._lock:
+                    repeated = key in live.calls_seen
+                    live.calls_seen.add(key)
+                if repeated:
+                    safe = redact(args)
+                    rec.tool_skipped(call_id, _name, safe, registry_target(safe), ok=True,
+                                     summary="repeated call, not run", model_text=REPEATED_CALL)
+                    return REPEATED_CALL
+                try:
+                    return await _inner(tool_ctx, json.dumps(args))
+                except BaseException:
+                    with self._lock:
+                        live.calls_seen.discard(key)  # stopped or timed out: a retry may run
+                    raise
+
+            ft.on_invoke_tool = guarded
+        return tools
+
     async def _final_answer(self, creds: dict[str, Any], clients: list[Any], history: list[Any], *,
-                            reason: str) -> str:
-        """The answer the work so far supports, written with no tools."""
+                            reason: str) -> str | None:
+        """The answer the work so far supports, written with no tools, from the
+        history fitted to the window this step protects. None when even that failed."""
         from agents import Agent, Runner
         model, settings = models.build(creds, clients, tools_allowed=False)
         agent = Agent(name="Storage Agent", instructions=prompt.FINALIZE_INSTRUCTIONS, model=model,
                       model_settings=settings)
-        history = list(history) + [{"role": "user", "content": (
+        ask = {"role": "user", "content": (
             "[Your step budget ran out]" if reason == "budget" else "[The model call failed mid-work]")
-            + " Write the best answer the work above supports, and say what remains."}]
+            + " Write the best answer the work above supports, and say what remains."}
+        room = side_step_chars(budget.plan(creds), prompt.FINALIZE_INSTRUCTIONS) - len(ask["content"])
         try:
-            out = await Runner.run(agent, history, max_turns=1)
+            out = await Runner.run(agent, fit(list(history), room) + [ask], max_turns=1)
             text = safety.clean_message(str(out.final_output or ""))
         except Exception as exc:  # noqa: BLE001
             text = ""
             logger.info("finalize failed: %s", redact_text(str(exc))[:200])
-        return text or ("I could not finish this in one go. The work so far is above — ask me to continue "
-                        "and I will pick up from there.")
+        return text or None
 
     async def _maybe_compact(self, conn: Any, task_id: str, turn_id: str, creds: dict[str, Any],
                              rec: Recorder, clients: list[Any]) -> None:
-        """Fold older turns into one summary item when the request nears the window:
-        the history PLUS the fixed prefix every request carries (instructions and
-        tool definitions — on a small local model, most of the window)."""
+        """Fold older turns into one summary item when the request nears the input
+        budget: the history PLUS the fixed prefix every request carries
+        (instructions and tool definitions — on a small local model, most of the
+        window). The two latest earlier Turns stay verbatim when that is enough;
+        otherwise more fold, down to every earlier Turn (the current Direction stays)."""
         chain = store.branch(conn, task_id, turn_id)
-        if len(chain) <= _KEEP_RECENT_TURNS + 1:
+        if len(chain) < 2:
             return
-        history = _history(conn, task_id, turn_id)
+        plan = budget.plan(creds)
         responses = models.is_responses(creds)
         lang = _setting(conn, "language") or "en"
         prefix = (len(prompt.instructions_for(conn, responses=responses, lang=lang))
                   + registry.schema_chars(responses=responses))
-        if not needs_compaction(history_chars(history), prefix, _window(creds)):
+        if not needs_compaction(input_chars(_history(conn, task_id, turn_id)), prefix, plan.input_tokens):
             return
-        older = [t["id"] for t in chain[:-(_KEEP_RECENT_TURNS + 1)]]
+        earlier = chain[:-1]
+        target = tokens_budget_chars(plan, _COMPACT_TARGET) - prefix - _SUMMARY_ALLOWANCE_CHARS
+        older: list[str] = []
+        for keep in range(min(_KEEP_RECENT_TURNS, len(earlier) - 1), -1, -1):
+            older = [t["id"] for t in earlier[:len(earlier) - keep]]
+            kept = to_input(store.items_for_turns(conn, [t["id"] for t in chain[len(older):]]))
+            if input_chars(kept) <= target:
+                break
         from agents import Agent, Runner
         model, settings = models.build(creds, clients, tools_allowed=False)
         agent = Agent(name="Summarizer", model=model, model_settings=settings, instructions=prompt.COMPACT_INSTRUCTIONS)
-        items = to_input(store.items_for_turns(conn, older))
+        ask = {"role": "user", "content": "Write the summary now."}
+        room = side_step_chars(plan, prompt.COMPACT_INSTRUCTIONS) - len(ask["content"])
+        items = fit(to_input(store.items_for_turns(conn, older)), room)
         try:
-            out = await Runner.run(agent, items + [{"role": "user", "content": "Write the summary now."}],
-                                   max_turns=1)
+            out = await Runner.run(agent, items + [ask], max_turns=1)
             summary = safety.clean_message(str(out.final_output or ""))[:8000]
         except Exception:  # noqa: BLE001 — compaction is an optimization, never a failure
             return
         if summary:
-            # Recorded on the oldest kept turn; history reads it first and skips the folded turns.
-            item = store.append_item(conn, task_id, chain[-(_KEEP_RECENT_TURNS + 1)]["id"], "compaction",
+            # Recorded on the oldest kept turn (the current one when every earlier
+            # turn folded); history reads it first and skips the folded turns.
+            item = store.append_item(conn, task_id, chain[len(older)]["id"], "compaction",
                                      {"summary": summary, "turns_folded": len(older), "folded": older})
             hub.item(task_id, item)
             rec.notice("compacted", turns_folded=len(older))
@@ -560,24 +668,109 @@ class Runtime:
                            resumed_from=turn_id, note=note)
 
 
-def _window(creds: dict[str, Any]) -> int:
-    return int(creds.get("context_window") or budget.context_window(creds.get("model")))
+def tokens_budget_chars(plan: budget.Plan, fraction: float) -> int:
+    """``fraction`` of the input budget (window − max_tokens), in characters."""
+    return budget.tokens_to_chars(plan.input_tokens * fraction)
 
 
-def history_chars(history: list[dict[str, Any]]) -> int:
-    return sum(len(str(h.get("content") or h.get("output") or h.get("arguments") or "")) for h in history)
+def side_step_chars(plan: budget.Plan, instructions: str) -> int:
+    """What a tool-less side step's history may take: its request fits the window it protects."""
+    return max(1_000, tokens_budget_chars(plan, _SIDE_STEP_FRACTION) - len(instructions))
 
 
-def needs_compaction(history: int, prefix: int, window_tokens: int) -> bool:
-    """Whether a request (fixed prefix + history, in chars) reaches the compaction threshold."""
-    return prefix + history >= window_tokens * _CHARS_PER_TOKEN * _COMPACT_FRACTION
+def needs_compaction(history_chars: int, prefix_chars: int, input_tokens: int) -> bool:
+    """Whether a request (fixed prefix + history, in chars) reaches the compaction
+    threshold of the input budget (window − max_tokens, in tokens)."""
+    return budget.est_tokens(prefix_chars + history_chars) >= input_tokens * _COMPACT_FRACTION
 
 
 def tool_output_chars(window_tokens: int) -> int:
     """What one tool output may put in front of the model: a quarter of the
     window, never above the absolute cap (60 000) nor below a workable floor."""
     return max(_MIN_TOOL_OUTPUT_CHARS,
-               min(registry.MODEL_CHARS_CAP, int(window_tokens * _CHARS_PER_TOKEN * _TOOL_OUTPUT_FRACTION)))
+               min(registry.MODEL_CHARS_CAP, budget.tokens_to_chars(window_tokens * _TOOL_OUTPUT_FRACTION)))
+
+
+def parse_tool_args(raw: str | None) -> dict[str, Any] | None:
+    """A call's arguments as an object; None when they are not JSON (an empty
+    string is no arguments). A small model's code fence around them is forgiven."""
+    text = (raw or "").strip()
+    if not text:
+        return {}
+    if text.startswith("```"):
+        text = text.strip("`").removeprefix("json").strip()
+    try:
+        value = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def coerce_args(args: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
+    """Coerce the shapes a small model gets wrong to what the schema declares:
+    a string where a list is expected (``"security"``, ``"a,b"``, ``'["a"]'``),
+    a number or boolean written as a string. Anything else passes unchanged."""
+    props = schema.get("properties") or {}
+    out = dict(args)
+    for name, value in args.items():
+        kind = (props.get(name) or {}).get("type")
+        if kind == "array" and isinstance(value, str):
+            text = value.strip()
+            parsed: Any = None
+            if text.startswith("["):
+                try:
+                    parsed = json.loads(text)
+                except ValueError:
+                    parsed = None
+            out[name] = parsed if isinstance(parsed, list) else [p.strip() for p in text.split(",") if p.strip()]
+        elif kind == "integer" and isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            out[name] = int(value.strip())
+        elif kind == "boolean" and isinstance(value, str) and value.strip().lower() in ("true", "false"):
+            out[name] = value.strip().lower() == "true"
+    return out
+
+
+def registry_target(args: dict[str, Any]) -> str:
+    bucket, key = args.get("bucket"), args.get("key")
+    return str(f"{bucket}/{key}" if bucket and key else bucket or args.get("provider_id") or "")[:200]
+
+
+_TOOL_TAGS = re.compile(r"<\|?/?(tool_call|function_call|tool_calls)\|?>|\[TOOL_CALLS\]", re.I)
+
+
+def looks_like_text_tool_call(text: str) -> bool:
+    """Whether a final message is a tool call written as text (a small model
+    that did not use the tool interface): ``<tool_call>`` tags, or a message that
+    is nothing but JSON naming a known tool with its arguments."""
+    body = (text or "").strip()
+    if not body:
+        return False
+    if _TOOL_TAGS.search(body):
+        return True
+    if body.startswith("```"):
+        body = body.strip("`").strip()
+        body = body[4:].strip() if body.lower().startswith("json") else body
+    if not body.startswith(("{", "[")):
+        return False
+    try:
+        value = json.loads(body)
+    except ValueError:
+        return False
+    calls = value if isinstance(value, list) else [value]
+    for c in calls:
+        if not isinstance(c, dict):
+            return False
+        fn = c.get("function") if isinstance(c.get("function"), dict) else c
+        if not (isinstance(fn.get("name"), str) and fn["name"] in registry.REGISTRY
+                and ("arguments" in fn or "parameters" in fn)):
+            return False
+    return bool(calls)
+
+
+def _add_usage(a: dict[str, Any] | None, b: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not a or not b:
+        return a or b
+    return {k: (a.get(k) or 0) + (b.get(k) or 0) for k in {*a, *b}}
 
 
 def _history(conn: Any, task_id: str, turn_id: str) -> list[dict[str, Any]]:

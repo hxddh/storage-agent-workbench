@@ -188,10 +188,12 @@ def test_the_dead_budgets_are_gone():
 
 
 def test_compaction_counts_the_fixed_prefix():
-    window = 16_384  # 65 536 chars; the threshold is 80 %
-    assert not runtime.needs_compaction(30_000, 0, window)
-    assert runtime.needs_compaction(30_000, 23_000, window)  # the same history, plus what every request carries
-    assert not runtime.needs_compaction(30_000, 23_000, 128_000)
+    # v10: against the input budget (window − max_tokens), at 3.2 chars/token.
+    small = budget.Plan(16_384, budget.completion_token_budget(None, 16_384)).input_tokens  # 14 336
+    large = budget.Plan(128_000, budget.completion_token_budget(None, 128_000)).input_tokens
+    assert not runtime.needs_compaction(30_000, 0, small)
+    assert runtime.needs_compaction(30_000, 23_000, small)  # the same history, plus what every request carries
+    assert not runtime.needs_compaction(30_000, 23_000, large)
 
 
 def test_a_small_window_compacts_what_history_alone_would_not(client):
@@ -212,7 +214,7 @@ def test_a_small_window_compacts_what_history_alone_would_not(client):
 
 
 def test_one_tool_output_is_bounded_by_a_small_window():
-    assert runtime.tool_output_chars(16_384) == 16_384
+    assert runtime.tool_output_chars(16_384) == 13_107  # v10: a quarter of the window at 3.2 chars/token
     assert runtime.tool_output_chars(128_000) == 60_000  # the absolute cap holds
     assert runtime.tool_output_chars(2_048) == 4_000
 
@@ -334,15 +336,20 @@ def test_a_review_finding_carries_the_estate_issue_name(client, monkeypatch):
 
 
 def test_a_survey_row_names_its_issues():
-    profile = {"success": True, "processed": 2, "summary": {"public_bucket_count": 1},
+    profile = {"success": True, "visible": 2, "processed": 2, "whole_account": True,
+               "summary": {"public_bucket_count": 1},
                "buckets": [{"bucket_name": "www", "access_status": "available", "publicly_exposed": True,
                             "encryption_status": "not_configured"},
                            {"bucket_name": "logs", "access_status": "available", "publicly_exposed": False,
                             "encryption_status": "available"}]}
     out = account_tools._compact(profile, "en")
-    assert set(out["buckets"][0]["issues"]) == {"public_exposure", "no_default_encryption"}
-    assert "issues" not in out["buckets"][1]
-    assert out["issues"]["public_exposure"] == {"title": "Bucket is publicly accessible", "severity": "high"}
+    table = out["buckets"]
+    rows = {r[0]: dict(zip(table["columns"], r)) for r in table["rows"]}
+    assert set(rows["www"]["issues"]) == {"public_exposure", "no_default_encryption"}
+    assert rows["logs"]["issues"] is None
+    public = next(i for i in out["issues"] if i["code"] == "public_exposure")
+    assert public == {"code": "public_exposure", "title": "Bucket is publicly accessible", "severity": "high",
+                      "buckets": 1, "names": ["www"]}
     assert account_tools._survey_summary(out) == "2 buckets, all readable; 1 public"
 
 
@@ -357,8 +364,7 @@ def test_tool_row_notes_read_as_short_plain_clauses():
     assert registry.tidy_summary("1 bucket(s) visible") == "1 bucket visible"
     assert len(registry.tidy_summary("x" * 200)) <= registry.SUMMARY_CHARS
     samples = {
-        "survey_account": {"success": True, "processed": 3, "summary": {},
-                           "buckets": [{"access_status": "available"}] * 3},
+        "survey_account": {"success": True, "issues": [], "coverage": {"visible": 3, "surveyed": 3}},
         "review_bucket_config": {"success": True, "findings": [{"category": "warning", "title": "a"}] * 19},
         "list_objects": {"success": True, "key_count": 12, "next_token": "t"},
         "list_buckets": {"success": True, "buckets": [{"name": "a"}]},

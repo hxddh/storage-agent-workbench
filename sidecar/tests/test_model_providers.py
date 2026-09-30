@@ -92,6 +92,8 @@ def test_probe(client, monkeypatch, code, ok, verified):
         return _Resp(code)
 
     monkeypatch.setattr(httpx2, "get", fake_get)
+    from app.api import providers as providers_api
+    monkeypatch.setattr(providers_api, "_probe_tool_call", lambda creds, plan: (None, "not asked"))  # no network
     resp = client.post(f"/providers/models/{pid}/test")
     body = resp.json()
     assert (body["ok"], body["api_key_verified"]) == (ok, verified)

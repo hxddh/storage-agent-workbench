@@ -11,7 +11,11 @@
 - reasoning effort for known-reasoning models.
 
 ``chat`` (every OpenAI-compatible endpoint): all tools sent, usage requested
-best-effort, parallel tool calls unless the endpoint proved it mishandles them.
+best-effort, parallel tool calls unless the endpoint proved it mishandles them;
+Ollama is asked for the planned window (``options.num_ctx``).
+
+``max_tokens`` and the window come from ``budget.plan`` — the one place both
+are decided.
 
 A per-turn client is created and closed by the runner — no SDK globals, so
 concurrent tasks never race on a shared default client.
@@ -62,9 +66,9 @@ def build(creds: dict[str, Any], clients: list[Any], *, tools_allowed: bool = Tr
     client = openai.AsyncOpenAI(**client_kwargs)
     clients.append(client)
     key = endpoint_key(creds)
-    window = int(creds.get("context_window") or budget.context_window(creds.get("model")))
+    plan = budget.plan(creds)
     settings: dict[str, Any] = {
-        "max_tokens": budget.completion_token_budget(creds.get("model"), window, creds.get("max_output_tokens")),
+        "max_tokens": plan.max_tokens,
         "timeout": MODEL_CALL_TIMEOUT_S,
         # Runner-managed retries for transient provider failures (SDK retry).
         "retry": ModelRetrySettings(max_retries=2),
@@ -87,11 +91,15 @@ def build(creds: dict[str, Any], clients: list[Any], *, tools_allowed: bool = Tr
         settings["store"] = False
         if budget.is_reasoning_model(creds.get("model")):
             settings["response_include"] = ["reasoning.encrypted_content"]
-        settings["context_management"] = [{"type": "compaction", "compact_threshold": int(window * 0.8)}]
+        settings["context_management"] = [{"type": "compaction", "compact_threshold": int(plan.window * 0.8)}]
     else:
         model = OpenAIChatCompletionsModel(model=creds["model"], openai_client=client)
         if key not in NO_USAGE:
             settings["include_usage"] = True
+        if creds.get("kind") == "ollama":
+            # Ollama loads a model with its own default context (often 2–4k) and
+            # silently drops the oldest input beyond it: ask for the planned window.
+            settings["extra_body"] = {"options": {"num_ctx": plan.window}}
     return model, ModelSettings(**settings)
 
 

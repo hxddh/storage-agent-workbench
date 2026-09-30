@@ -995,8 +995,8 @@ def review_bucket_observability(conn: sqlite3.Connection, provider_id: str, buck
     findings += _unsupported_findings(tagging["status"], "tagging")
 
     findings.append(_finding(OPPORTUNITY, "Deeper inventory review available",
-                             "Read the bucket's inventory configuration with get_bucket_config_detail "
-                             "(aspect 'inventory'), and run inventory_analysis on an inventory file for "
+                             "Read the bucket's inventory configuration with review_bucket_config "
+                             "(detail 'inventory'), and analyze an imported inventory file for "
                              "object-level capacity metrics."))
 
     return {

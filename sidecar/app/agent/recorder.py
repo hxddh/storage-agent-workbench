@@ -76,6 +76,7 @@ class Recorder:
         self._calls: dict[str, dict[str, Any]] = {}
         self._produced = False  # any model output (text or a tool call) this Turn
         self._closed = False
+        self.last_message = ""  # the latest agent_message of this Turn (its answer when it ends)
 
     def close(self) -> None:
         with self._lock:
@@ -94,6 +95,8 @@ class Recorder:
             item = store.append_item(self._conn, self.task_id, self.turn_id, type_, payload, item_id=item_id)
             if type_ in ("agent_message", "tool_call", "conclusion"):
                 self._produced = True
+            if type_ == "agent_message":
+                self.last_message = str(payload.get("text") or "")
         hub.item(self.task_id, item)
         return item
 
@@ -148,12 +151,25 @@ class Recorder:
         self._append("tool_call", {"call_id": call_id, "name": name, "args": args, "target": target})
 
     def tool_refused(self, call_id: str, name: str, args: dict[str, Any], reason: str) -> None:
+        from .tools.registry import tidy_summary
         self.tool_started(call_id, name, args, str(args.get("bucket") or args.get("provider_id") or ""))
         self._append("tool_output", {"call_id": call_id, "name": name, "ok": False, "refused": True,
-                                     "summary": redact_text(reason)[:240],
+                                     "summary": tidy_summary(redact_text(reason)),
                                      "model_output": f"Refused: {redact_text(reason)}"})
         store.audit(self._conn, actor="agent", action=f"tool.{name}", task_id=self.task_id,
                     target=str(args.get("bucket") or ""), ok=False, detail={"refused": reason})
+
+    def tool_skipped(self, call_id: str, name: str, args: dict[str, Any], target: str, *, ok: bool,
+                     summary: str, model_text: str) -> None:
+        """A call the runtime answered without running it (a repeat of a call this
+        Turn already made, arguments that were not JSON): recorded and audited
+        like any other call, so the stream and the audit stay complete."""
+        self.tool_started(call_id, name, args, target)
+        self._calls.pop(call_id, None)
+        self._append("tool_output", {"call_id": call_id, "name": name, "ok": ok, "summary": summary,
+                                     "duration_ms": 0, "detail": None, "model_output": model_text})
+        store.audit(self._conn, actor="agent", action=f"tool.{name}", task_id=self.task_id, target=target[:200],
+                    ok=ok, duration_ms=0, detail={"args": args, "summary": summary, "skipped": True})
 
     def tool_finished(self, call_id: str, name: str, ok: bool, summary: str, result: Any,
                       duration_ms: int, model_text: str | None = None) -> None:
