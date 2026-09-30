@@ -1,12 +1,11 @@
 # Documentation
 
-> **Current baseline: Storage Agent v9.0.0.** Built on the v5 rewrite around one
+> **Current baseline: Storage Agent v10.0.0.** Built on the v5 rewrite around one
 > idea — *the estate is the object, Agent Tasks are how work is done, and one item
 > stream is the truth* — v7 made a task one conversation; v8 is subtraction and
-> correctness: the bugs a full review found are fixed, the Agent has 30 tools
-> instead of 42, and the palette, the dollar estimate, dead endpoints and dead code
-> are gone; v8.1 closes the review's remaining findings; v9 makes the Agent fit small
-> models and keeps state consistent. See `docs/releases/9.0.0.md`.
+> correctness; v9 keeps state consistent; v10 makes a small local model actually
+> finish the work: one budget plan, 15 tools instead of 30, 5 skill cards instead
+> of 13, small-model guards and a scenario eval. See `docs/releases/10.0.0.md`.
 
 ## Source-of-truth order
 
