@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v8.1.0**
+**Current release: v10.0.0**
 
 Storage Agent is a local-first desktop Agent for object storage — AWS S3 and every S3-compatible service. Give it a goal or a problem; it investigates with real, read-only, bounded tools, stays steerable and stoppable while it works, and answers with evidence. What it learns about your storage — accounts, buckets, their posture and the Issues found there — outlives the task that learned it.
 
@@ -67,6 +67,19 @@ See [CLAUDE.md](CLAUDE.md), the implementation contract. Product or architecture
 ```sh
 cd sidecar && pip install -c requirements.lock -e ".[dev]" && pytest -q
 cd frontend && npm ci && npm test && npm run build && npm run test:e2e
+```
+
+## Orbs / remote machines
+
+`.agents/setup` prepares a fresh Amp orb (or any Debian 12 machine) with Python
+3.12, the editable sidecar plus dev/packaging extras, frontend dependencies,
+Playwright Chromium, and the Rust/Tauri Linux toolchain. It is idempotent:
+a warm run only verifies the restored snapshot. `.agents/resume` is the fast
+wake check and never installs. For a desktop build, stage the sidecar before
+`cargo check`:
+
+```sh
+.venv/bin/python scripts/build-sidecar-for-tauri.py
 ```
 
 ## License

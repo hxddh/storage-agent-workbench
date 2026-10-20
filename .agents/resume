@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Fast wake check for Storage Agent Workbench. Never installs anything: it only
+# verifies the snapshot's toolchain and points at .agents/setup when it is stale.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+missing=()
+
+[ -x .venv/bin/python ] || missing+=(".venv (run .agents/setup)")
+if [ -x .venv/bin/python ]; then
+  .venv/bin/python -c 'import sys, app.main; raise SystemExit(sys.version_info[:2] != (3, 12))' >/dev/null 2>&1 \
+    || missing+=(".venv is not a working Python 3.12 sidecar env (run .agents/setup)")
+fi
+[ -d frontend/node_modules ] || missing+=("frontend/node_modules (run .agents/setup)")
+if ! compgen -G "$HOME/.cache/ms-playwright/chromium-*" >/dev/null; then
+  missing+=("Playwright Chromium (run .agents/setup)")
+fi
+if ! command -v cargo >/dev/null 2>&1 && [ ! -x "$HOME/.cargo/bin/cargo" ]; then
+  missing+=("Rust cargo (run .agents/setup)")
+fi
+
+if [ "${#missing[@]}" -gt 0 ]; then
+  printf 'Storage Agent Workbench is not ready:\n' >&2
+  printf '  - %s\n' "${missing[@]}" >&2
+  exit 1
+fi
+
+printf 'Storage Agent Workbench ready: Python 3.12 sidecar, frontend deps, Chromium, Rust.\n'

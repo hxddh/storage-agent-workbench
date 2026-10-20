@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Prepare a fresh Storage Agent Workbench orb: Python 3.12 + sidecar dev/packaging
+# deps, frontend dependencies, Playwright Chromium, and the Linux Tauri toolchain.
+# Idempotent; safe to run again after an orb snapshot is refreshed.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+repo_root="$PWD"
+started=$SECONDS
+
+step() { printf '\n==> %s\n' "$*"; }
+done_step() { printf '    (%ss)\n' "$((SECONDS - started))"; }
+
+# --- Python 3.12 ---------------------------------------------------------------------
+step "Python 3.12"
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv is required but not on PATH" >&2
+  exit 1
+fi
+if ! uv python find 3.12 >/dev/null 2>&1; then
+  uv python install 3.12
+fi
+py312="$(uv python find 3.12)"
+if [ ! -x .venv/bin/python ] || ! .venv/bin/python -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 12))' >/dev/null 2>&1; then
+  rm -rf .venv
+  uv venv --python "$py312" .venv
+fi
+
+# Reinstall only when the editable package or the pinned closure changed.
+stamp=.venv/.sidecar-installed
+if [ ! -f "$stamp" ] || [ sidecar/pyproject.toml -nt "$stamp" ] || [ sidecar/requirements.lock -nt "$stamp" ]; then
+  step "Sidecar (editable, dev + packaging)"
+  uv pip install --python .venv/bin/python -c sidecar/requirements.lock -e "sidecar[dev,packaging]"
+  touch "$stamp"
+else
+  step "Sidecar dependencies already current"
+fi
+
+# --- Frontend ------------------------------------------------------------------------
+step "Frontend dependencies"
+if [ ! -d frontend/node_modules ] || [ frontend/package-lock.json -nt frontend/node_modules/.package-lock.json ]; then
+  (cd frontend && npm ci --no-audit --no-fund)
+else
+  echo "    node_modules already matches package-lock.json"
+fi
+
+# --- Playwright Chromium -------------------------------------------------------------
+step "Playwright Chromium"
+if ! compgen -G "$HOME/.cache/ms-playwright/chromium-*" >/dev/null; then
+  (cd frontend && npx playwright install --with-deps chromium)
+else
+  echo "    Chromium already cached"
+fi
+
+# --- Linux desktop toolchain (Tauri) -------------------------------------------------
+# The desktop build is a separate release gate, but a fresh orb should be able to
+# run `cargo check` without a toolchain scavenger hunt.
+step "Tauri Linux packages"
+tauri_packages=(
+  libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf
+  libayatana-appindicator3-dev build-essential curl wget file libssl-dev
+)
+missing=()
+for package in "${tauri_packages[@]}"; do
+  dpkg -s "$package" >/dev/null 2>&1 || missing+=("$package")
+done
+if [ "${#missing[@]}" -gt 0 ]; then
+  export DEBIAN_FRONTEND=noninteractive
+  # Orb processes run as the workspace user with passwordless sudo.
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq "${missing[@]}"
+else
+  echo "    packages already present"
+fi
+
+step "Rust toolchain"
+if [ ! -x "$HOME/.cargo/bin/cargo" ]; then
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --profile minimal --default-toolchain stable
+fi
+# shellcheck disable=SC1091
+source "$HOME/.cargo/env"
+rustc --version
+cargo --version
+cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+
+# --- Shell environment ----------------------------------------------------------------
+# A repo-scoped hook so `pytest` and `python` in a login shell use the 3.12 venv.
+marker="# Storage Agent Workbench orb environment"
+if ! grep -Fqx "$marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >>"$HOME/.bash_profile" <<EOF
+
+$marker
+if [[ "\$PWD" == "$repo_root" || "\$PWD" == "$repo_root/"* ]]; then
+  if [[ -d "$repo_root/.venv/bin" ]]; then
+    export PATH="$repo_root/.venv/bin:\$PATH"
+  fi
+fi
+EOF
+fi
+
+step "Verification"
+.venv/bin/python -c 'import sys, app.main; print("python", sys.version.split()[0], "sidecar", app.main.SERVICE_NAME)'
+node --version
+(cd frontend && npx playwright --version)
+cargo --version
+done_step
+printf '\nStorage Agent Workbench orb setup complete.\n'
+printf 'Desktop build: .venv/bin/python scripts/build-sidecar-for-tauri.py stages the sidecar before cargo check/build.\n'

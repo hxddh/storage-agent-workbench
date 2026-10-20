@@ -47,6 +47,7 @@ data/
 
 # ---- Local tooling (not part of the project) ----
 .claude/
+.amp/portals/
 
 # Playwright E2E artifacts (frontend/e2e is source; these are run output).
 frontend/playwright-report/
