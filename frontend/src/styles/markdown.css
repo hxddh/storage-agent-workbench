@@ -1,9 +1,9 @@
-/* v3.1 — markdown surfaces on design system v3 tokens (see agent/native-components.css).
+/* Markdown surfaces on design system v4 tokens.
  *
  * The Agent's answer as a document (components/Markdown.tsx). Layout and the
- * rules shared with other prose (outline card, blockquote rail, inline code
- * fill, tables) live in agent/native-document.css under `.agent-prose`; this
- * file owns only the colour and type of the renderer's own elements.
+ * rules shared with other prose (blockquote rail, inline code fill, tables)
+ * live in `document.css` under `.agent-prose`; this file owns only the colour
+ * and type of the renderer's own elements.
  */
 
 /* The reading column: 15px on the prose leading. */

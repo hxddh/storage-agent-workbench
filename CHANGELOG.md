@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [10.1.0] - 2026-10-20
+
+_A calmer, more truthful window._ See `docs/releases/10.1.0.md`.
+
+### Added
+
+- System theme (System · Light · Dark), following OS changes and persisting from the menu.
+- A readable compaction summary and a visible carried-steer notice in the work line.
+- A mobile attention layout that wraps the issue and its bucket list instead of truncating them.
+
+### Changed
+
+- New warm-graphite/paper and ink-blue visual system, an editorial home with three starter cards, a denser conversation, a clearer side pane and a pinned Settings save toolbar.
+- The running tool line uses present-progressive labels; the live answer is announced once.
+- A task title is generated in the background, off the Turn queue.
+- Tool targets and model-visible output pass through the exact-vault scrubber.
+
+### Fixed
+
+- A Direction containing an exact vault secret can no longer persist, reach the model, or appear in the report.
+- Parallel tool outputs publish in item order, and a gap is replayed instead of skipped by an SSE follower.
+- A withdrawn Direction is not a version, cannot be selected as the head, and cannot be resumed.
+- A stopped Turn keeps text written before the interrupted tool call.
+- Steers arriving after the last model call become the next Direction after failed or stopped Turns too.
+- Quick Ask renders a failed task or unreachable runtime instead of an empty body.
+- Settings no longer covers a credential field with its save row; the storage form fits through Secret key at the default height.
+- The title background step no longer holds a SQLite connection across the model call.
+- The sidebar and Composer no longer rerender for every streamed token.
+
+### Security
+
+- Exact vault values are masked at the item, live-stream, audit, notes and report boundaries as well as by credential patterns.
+
 ## [10.0.0] - 2026-09-30
 
 _A small local model finishes the work._ See `docs/releases/10.0.0.md`.

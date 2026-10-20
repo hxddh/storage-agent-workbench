@@ -21,6 +21,7 @@ export function QuickAsk() {
   const { model } = useTask(taskId);
   const all = useMemo(() => sections(model.turns, model.items, model.live), [model.turns, model.items, model.live]);
   const result = latestResult(all);
+  const failure = all.find((s) => s.turn.status === "failed" || s.turn.status === "interrupted");
   const live = model.live?.text ?? null;
   const working = model.state === "working" || model.state === "queued";
 
@@ -60,6 +61,13 @@ export function QuickAsk() {
           {result?.answer ? <Markdown text={result.answer} />
             : result?.conclusion?.answer ? <p className="result-answer">{result.conclusion.answer}</p>
               : live ? <Markdown text={live} /> : null}
+          {failure ? (
+            <p className="quiet-note"><StatusDot tone="danger" />
+              {failure.error?.message ?? failure.turn.error ?? t("turn.failed")}
+            </p>
+          ) : model.error ? (
+            <p className="quiet-note"><StatusDot tone="danger" />{model.error}</p>
+          ) : null}
           <Button size="sm" variant="ghost" icon="external" onClick={openMain}>{t("quick.open")}</Button>
         </div>
       ) : null}

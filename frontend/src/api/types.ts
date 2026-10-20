@@ -55,7 +55,7 @@ type Base<T extends string, P> = {
 
 export type NoticeEvent =
   | "started" | "completed" | "failed" | "cancelled" | "interrupted" | "resumed" | "stopped"
-  | "finalized" | "compacted" | "titled" | "imported";
+  | "finalized" | "compacted" | "titled" | "imported" | "carried" | "reprompted";
 
 export type Item =
   | Base<"user_message", { text: string; attachments?: Attachment[] }>
@@ -68,8 +68,9 @@ export type Item =
     }>
   | Base<"conclusion", { call_id: string; answer?: string; findings?: Finding[]; next_steps?: string[] }>
   | Base<"steer", { text: string }>
-  | Base<"compaction", { summary: string; turns_folded: number }>
-  | Base<"notice", { event: NoticeEvent; error?: string; reason?: string; title?: string; note?: string; queued?: boolean }>
+  | Base<"compaction", { summary: string; turns_folded: number; folded?: string[] }>
+  | Base<"notice", { event: NoticeEvent; error?: string; reason?: string; title?: string; note?: string;
+      queued?: boolean; steers?: number; turns_folded?: number }>
   | Base<"error", { message: string; action?: "settings" }>;
 
 export type ItemType = Item["type"];

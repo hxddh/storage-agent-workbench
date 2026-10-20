@@ -3,9 +3,9 @@ import type { ReactElement, ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 
 /**
- * Component library v3 (v3.0.0). Every control in the window is one of these;
- * the look lives in `agent/native-components.css` (`ui-*`), so a surface
- * composes controls instead of restyling them.
+ * Component library v4. Every control in the window is one of these;
+ * the look lives in `styles/components.css` (`ui-*`), so a surface composes
+ * controls instead of restyling them.
  */
 
 /**

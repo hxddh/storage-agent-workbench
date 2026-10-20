@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..security.redaction import redact_text
+from ..security.redaction import scrub_text
 
 _CONTEXT_NEEDLES = ("context length", "context_length_exceeded", "maximum context length")
 _CONTEXT_WEAK = ("context window", "input is too long", "prompt is too long")
@@ -71,7 +71,7 @@ def user_message(exc: BaseException) -> str:
         return "The model endpoint does not know this model. Check the model name in Settings › Models."
     if "connection" in name.lower() or "connect" in str(exc).lower()[:200]:
         return "The model endpoint could not be reached. Check the base URL and your network."
-    return "The Agent stopped with an error: " + redact_text(str(exc))[:300]
+    return "The Agent stopped with an error: " + scrub_text(str(exc))[:300]
 
 
 def is_websocket_failure(exc: BaseException) -> bool:

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
-import type { TaskSnapshot } from "../api/types";
+import type { LiveSegment, TaskSnapshot } from "../api/types";
 import { Icon } from "../components/icons";
 import { Markdown } from "../components/Markdown";
 import { Button, IconButton, StatusDot } from "../components/ui";
@@ -9,7 +9,7 @@ import { useCopy } from "../hooks/useCopy";
 import { useElapsed } from "../hooks/useElapsed";
 import { useI18n } from "../i18n";
 import { SEVERITY_TONE } from "../lib/severity";
-import { toolLabel } from "../lib/toolLabels";
+import { toolLabel, toolRunLabel } from "../lib/toolLabels";
 import { useApp } from "../shell/context";
 import { figures, versions, type Section, type ToolRow as Row } from "../store/derive";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
@@ -19,9 +19,9 @@ import { AnalysisFigures } from "../viz/AnalysisFigures";
  * (live: what the Agent is doing now; done: how many steps and how long —
  * it opens to the commentary and every call), then the answer.
  */
-export function Turn({ section, taskId, forks, setSnapshot, running }: {
+export function Turn({ section, taskId, forks, setSnapshot, running, live = null }: {
   section: Section; taskId: string; forks: Record<string, string[]>;
-  setSnapshot: (s: TaskSnapshot) => void; running: boolean;
+  setSnapshot: (s: TaskSnapshot) => void; running: boolean; live?: LiveSegment | null;
 }) {
   const { t } = useI18n();
   const s = section;
@@ -32,8 +32,10 @@ export function Turn({ section, taskId, forks, setSnapshot, running }: {
         ? <p className="turn-note">{t("turn.continued")}</p>
         : <Message section={s} taskId={taskId} forks={forks} setSnapshot={setSnapshot} />}
       {queued ? <Queued taskId={taskId} turnId={s.turn.id} /> : null}
-      {!queued ? <Activity section={s} running={running} /> : null}
-      <Answer section={s} running={running} />
+      {!queued ? <Activity section={s} running={running} live={live} /> : null}
+      {s.compacted && !s.blocks.some((b) => b.kind === "context")
+        ? <p className="turn-note">{t("work.compacted")}</p> : null}
+      <Answer section={s} running={running} live={live} />
       <Outcome section={s} taskId={taskId} running={running} />
     </section>
   );
@@ -108,11 +110,12 @@ function tools(section: Section): Row[] {
 }
 
 /** One line for the work. Live: the call running now. Done: steps and time; it opens. */
-function Activity({ section, running }: { section: Section; running: boolean }) {
+function Activity({ section, running, live }: { section: Section; running: boolean; live: LiveSegment | null }) {
   const { t, lang } = useI18n();
   const [open, setOpen] = useState(false);
   const rows = tools(section);
-  const commentary = section.blocks.filter((b) => b.kind === "commentary" || b.kind === "steer" || b.kind === "compacted");
+  const commentary = section.blocks.filter((b) => b.kind === "commentary" || b.kind === "steer"
+    || b.kind === "context" || b.kind === "carried");
   const start = section.turn.started_at ?? section.turn.created_at;
   const elapsed = useElapsed(start, running ? null : section.turn.finished_at, running, lang);
   if (!running && !rows.length && !commentary.length) return null;
@@ -120,8 +123,8 @@ function Activity({ section, running }: { section: Section; running: boolean }) 
   const failed = rows.filter((r) => r.status === "failed" || r.status === "refused").length;
   let label: string;
   if (running) {
-    label = now ? `${toolLabel(now.name, lang)}${now.target ? ` ${now.target}` : ""}`
-      : section.live?.text ? t("work.writing") : t("work.thinking");
+    label = now ? `${toolRunLabel(now.name, lang)}${now.target ? ` ${now.target}` : ""}`
+      : live?.text ? t("work.writing") : t("work.thinking");
   } else {
     label = rows.length === 1 ? t("work.step") : rows.length ? t("work.steps", { n: rows.length }) : t("work.notes");
   }
@@ -130,7 +133,9 @@ function Activity({ section, running }: { section: Section; running: boolean }) 
     <div className="activity-line" data-open={open ? "true" : "false"} data-live={running ? "true" : undefined}>
       <button type="button" className="activity-head" aria-expanded={open} onClick={() => setOpen(!open)}
         data-testid="activity-line">
-        {running ? <span className="ui-dot" data-tone="accent" data-pulse="true" aria-hidden /> : null}
+        {running
+          ? <span className="ui-dot" data-tone="accent" data-pulse="true" aria-hidden />
+          : <span className="activity-glyph" aria-hidden><Icon name="activity" size={14} /></span>}
         <span className="activity-label">{label}</span>
         {p && p.total > 0 ? (
           <span className="activity-progress">{t("tool.progress", { done: p.done.toLocaleString(), total: p.total.toLocaleString(), unit: p.unit })}</span>
@@ -145,7 +150,15 @@ function Activity({ section, running }: { section: Section; running: boolean }) 
           {section.blocks.map((b) => {
             if (b.kind === "commentary") return <div key={b.id} className="activity-note"><Markdown text={b.text} /></div>;
             if (b.kind === "steer") return <p key={b.id} className="activity-steer"><span>{t("work.steered")}</span> {b.text}</p>;
-            if (b.kind === "compacted") return <p key={b.id} className="activity-steer">{t("work.compacted")}</p>;
+            if (b.kind === "carried") return <p key={b.id} className="activity-carried">{t("work.carried", { n: b.count })}</p>;
+            if (b.kind === "context") {
+              return (
+                <details key={b.id} className="activity-context">
+                  <summary>{t("work.compacted")}{b.turns ? ` · ${t("work.turns", { n: b.turns })}` : ""}</summary>
+                  {b.summary ? <p>{b.summary}</p> : null}
+                </details>
+              );
+            }
             return (
               <ul key={b.id} className="call-list">
                 {b.tools.map((r) => <CallRow key={r.callId} row={r} />)}
@@ -181,7 +194,7 @@ function CallRow({ row }: { row: Row }) {
         <span className="call-glyph">
           {row.status === "running" ? <span className="ui-dot" data-tone="accent" data-pulse="true" aria-hidden /> : <Icon name={GLYPH[row.status]} size={14} />}
         </span>
-        <span className="call-verb">{toolLabel(row.name, lang)}</span>
+        <span className="call-verb">{row.status === "running" ? toolRunLabel(row.name, lang) : toolLabel(row.name, lang)}</span>
         {row.target ? <span className="call-target">{row.target}</span> : null}
         {row.summary ? <span className="call-note">{row.status === "refused" ? `${t("tool.refused")} — ` : ""}{row.summary}</span> : null}
       </button>
@@ -190,13 +203,13 @@ function CallRow({ row }: { row: Row }) {
 }
 
 /** The answer: streamed while live, the model's final message once done, the recorded findings under it. */
-function Answer({ section, running }: { section: Section; running: boolean }) {
+function Answer({ section, running, live }: { section: Section; running: boolean; live: LiveSegment | null }) {
   const c = section.conclusion;
   const fig = running ? null : figures(section);
   if (running) {
-    return section.live ? (
-      <div className="answer live-text" data-testid="live-answer">
-        <Markdown text={section.live.text} /><span className="caret" aria-hidden />
+    return live ? (
+      <div className="answer live-text" data-testid="live-answer" aria-live="polite">
+        <Markdown text={live.text} /><span className="caret" aria-hidden />
       </div>
     ) : null;
   }
@@ -238,7 +251,7 @@ function Outcome({ section, taskId, running }: { section: Section; taskId: strin
   const st = section.turn.status;
   if (st === "failed" || st === "interrupted") {
     return (
-      <div className="turn-outcome" data-testid="attention">
+      <div className="turn-outcome" data-tone={st} data-testid="attention">
         <StatusDot tone={st === "failed" ? "danger" : "warn"} />
         {/* The reason, when the runtime recorded one; a failure points at the model settings,
             an interruption (a restart) can simply continue. */}

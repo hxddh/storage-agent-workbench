@@ -10,7 +10,7 @@ import { openNativeFolder } from "../hooks/useNativeAgent";
 import { LANGS, useI18n, type Lang } from "../i18n";
 import { timeAgo } from "../lib/time";
 import { useApp } from "../shell/context";
-import { useTheme } from "../theme";
+import { useTheme, type Theme } from "../theme";
 import { CLOUD_PRESETS, MODEL_PRESETS, cloudEndpoint, isLocalProvider, parseList } from "./presets";
 
 const SECTIONS = ["general", "models", "storage"] as const;
@@ -67,7 +67,7 @@ function General() {
     setLang(l);
     void api.updateSettings({ language: l }).catch(() => {});
   };
-  const chooseTheme = (th: "light" | "dark") => {
+  const chooseTheme = (th: Theme) => {
     setTheme(th);
     void api.updateSettings({ theme: th }).catch(() => {});
   };
@@ -76,7 +76,11 @@ function General() {
       <div className="pref-row">
         <span id="pref-theme">{t("settings.theme")}</span>
         <Segmented labelId="pref-theme" value={theme} onChange={chooseTheme}
-          options={[{ value: "light", label: t("settings.theme.light") }, { value: "dark", label: t("settings.theme.dark") }]} />
+          options={[
+            { value: "system", label: t("settings.theme.system") },
+            { value: "light", label: t("settings.theme.light") },
+            { value: "dark", label: t("settings.theme.dark") },
+          ]} />
       </div>
       <div className="pref-row">
         <span id="pref-lang">{t("settings.language")}</span>
@@ -226,6 +230,17 @@ function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
 
   return (
     <form className="provider-editor" onSubmit={save} data-testid="model-editor">
+      <div className="editor-actions">
+        {/* The test result sits in the pinned row: it is in sight right after Save. */}
+        {probe ? (
+          <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
+        ) : null}
+        <Button type="submit" variant="primary" disabled={busy || !modelName.trim()}>{busy ? t("settings.testing") : t("settings.save")}</Button>
+        {model ? <Button onClick={() => void test()} disabled={busy}>{t("settings.test")}</Button> : null}
+        {model && !model.active ? <Button variant="ghost" onClick={() => void api.activateModel(model.id).then(onChanged, fail)}>{t("settings.makeActive")}</Button> : null}
+        <span className="editor-spacer" />
+        {model ? <Button variant="danger" onClick={() => void remove()}>{t("settings.delete")}</Button> : null}
+      </div>
       <Field label={t("field.kind")}>
         <Select value={preset} onChange={(e) => {
           const next = MODEL_PRESETS.find((x) => x.id === e.target.value)!;
@@ -256,17 +271,6 @@ function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
         </details>
       )}
       {model ? <p className="quiet-note">{t("field.apiStyle")}: {t(`settings.apiStyle.${model.api_style}`)}</p> : null}
-      <div className="editor-actions">
-        {/* The test result sits in the sticky row: it is in sight right after Save. */}
-        {probe ? (
-          <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
-        ) : null}
-        <Button type="submit" variant="primary" disabled={busy || !modelName.trim()}>{busy ? t("settings.testing") : t("settings.save")}</Button>
-        {model ? <Button onClick={() => void test()} disabled={busy}>{t("settings.test")}</Button> : null}
-        {model && !model.active ? <Button variant="ghost" onClick={() => void api.activateModel(model.id).then(onChanged, fail)}>{t("settings.makeActive")}</Button> : null}
-        <span className="editor-spacer" />
-        {model ? <Button variant="danger" onClick={() => void remove()}>{t("settings.delete")}</Button> : null}
-      </div>
     </form>
   );
 }
@@ -358,6 +362,17 @@ function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
     <div className="provider-editor">
       {cloud ? <WatchControl providerId={cloud.id} /> : null}
       <form className="provider-editor" onSubmit={save} data-testid="cloud-editor">
+        <div className="editor-actions">
+          {probe ? (
+            <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
+          ) : null}
+          <Button type="submit" variant="primary" disabled={busy}>{busy ? t("settings.testing") : t("settings.save")}</Button>
+          <span className="editor-spacer" />
+          {cloud ? <Button variant="danger" onClick={() => {
+            if (!window.confirm(t("nav.deleteConfirm", { title: cloud.name }))) return;
+            void api.deleteCloud(cloud.id).then(onDeleted, (e) => toast.error(e instanceof Error ? e.message : String(e)));
+          }}>{t("settings.delete")}</Button> : null}
+        </div>
         <Field label={t("field.providerType")}>
           <Select value={preset} onChange={(e) => {
             const next = CLOUD_PRESETS.find((x) => x.id === e.target.value)!;
@@ -391,17 +406,6 @@ function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
             <Field label={t("field.prefixes")} hint={t("field.listHint")}><TextInput value={form.prefixes} onChange={set("prefixes")} /></Field>
           </div>
         </details>
-        <div className="editor-actions">
-          {probe ? (
-            <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
-          ) : null}
-          <Button type="submit" variant="primary" disabled={busy}>{busy ? t("settings.testing") : t("settings.save")}</Button>
-          <span className="editor-spacer" />
-          {cloud ? <Button variant="danger" onClick={() => {
-            if (!window.confirm(t("nav.deleteConfirm", { title: cloud.name }))) return;
-            void api.deleteCloud(cloud.id).then(onDeleted, (e) => toast.error(e instanceof Error ? e.message : String(e)));
-          }}>{t("settings.delete")}</Button> : null}
-        </div>
       </form>
       {cloud ? (
         <div className="pref-group">

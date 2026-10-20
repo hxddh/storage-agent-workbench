@@ -1,7 +1,7 @@
-/* Storage Agent — design system v3 (v3.0.0).
-   A calibrated neutral ladder, one indigo accent for what is actionable,
-   selected, focused or in progress, and a separate status palette. Hairline
-   depth on the canvas; real elevation only on floating surfaces.
+/* Storage Agent — design system v4.
+   Warm graphite and paper surfaces, one ink-blue accent for what is
+   actionable, selected, focused or live, and a separate status palette.
+   Hairline depth on the canvas; real elevation only on floating surfaces.
    Nothing here invents runtime state. */
 
 @import "tailwindcss";
@@ -44,25 +44,25 @@
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  /* v3.0 — design system v3. A calibrated neutral ladder (cool, low chroma),
-     one indigo accent for what is actionable, selected or focused, and a
-     status palette kept apart from it. Every text step clears WCAG AA on the
-     surfaces it is used on (checked by e2e/contrast.spec.ts). */
-  --canvas: #0e0e10;
-  --sidebar: #161619;
-  --panel: #1b1b1f;
-  --elevated: #232327;
-  --bubble: #232327;
-  --hover: #2c2c32;
-  --edge: #25252a;
-  --edge-strong: #34343b;
+  /* v4.0 — an instrument, not a dashboard. A warm graphite ladder carries
+     depth; one ink-blue accent marks what is actionable, selected, focused or
+     live. Every text step clears WCAG AA on the worst surface it lands on
+     (checked by e2e/contrast.spec.ts). */
+  --canvas: #12110e;
+  --sidebar: #1a1814;
+  --panel: #201c18;
+  --elevated: #2a261f;
+  --bubble: #2b2720;
+  --hover: #353028;
+  --edge: #2d2922;
+  --edge-strong: #403a30;
   /* Accent — the one hue. Fill for the primary action, tint for selection,
      text for links and live progress, ring for focus. */
-  --accent: #5d5bd4;
-  --accent-soft: #6b69e0;
-  --accent-dim: rgba(109, 107, 240, 0.16);
+  --accent: #5964dc;
+  --accent-soft: #6570e4;
+  --accent-dim: rgba(101, 112, 228, 0.16);
   --accent-fg: #ffffff;
-  --accent-text: #a4a2ff;
+  --accent-text: #b3baff;
   /* Categorical order validated for CVD/normal-vision separation on the
    * dark panel (scripts: dataviz validate_palette). Never status colours. */
   --viz-1: #6c6af2;
@@ -74,35 +74,35 @@
   /* Text ladder: 100 primary · 200 strong secondary · 300 secondary ·
      400 tertiary · 500 meta (AA on every surface up to --elevated) ·
      600 disabled · 700 decorative, never text. */
-  --gray-100: #ededef;
-  --gray-200: #d1d1d6;
-  --gray-300: #b0b0b8;
-  --gray-400: #a1a1ab;
-  --gray-500: #9393a0;
-  --scrollbar-thumb: #2c2c32;
-  --scrollbar-thumb-hover: #3c3c44;
-  --selection: rgba(124, 122, 255, 0.28);
-  --focus-ring: rgba(124, 122, 255, 0.7);
-  --danger: #f26b6b;
-  --danger-bg: rgba(242, 107, 107, 0.1);
-  --danger-bg-strong: #2a1416;
-  --danger-border: rgba(242, 107, 107, 0.35);
-  --warn: #f0a43a;
-  --warn-fg: #f5bd6b;
-  --warn-bg: rgba(240, 164, 58, 0.1);
-  --warn-border: rgba(240, 164, 58, 0.35);
-  --success: #3fcf8e;
-  --success-bg: rgba(63, 207, 142, 0.1);
-  --success-border: rgba(63, 207, 142, 0.35);
-  --code-bg: #0a0a0c;
-  --scrim: rgba(4, 4, 6, 0.6);
-  --syn-str: #7ec699;
-  --syn-num: #e0a878;
-  --syn-kw: #c39ce8;
-  --syn-com: #8b94a5;
-  --syn-name: #86b8ff;
-  --syn-tag: #6fc3d6;
-  --syn-punct: #9aa2b1;
+  --gray-100: #f5f1e8;
+  --gray-200: #dad3c6;
+  --gray-300: #beb6a8;
+  --gray-400: #aaa192;
+  --gray-500: #a2998a;
+  --scrollbar-thumb: #353028;
+  --scrollbar-thumb-hover: #464036;
+  --selection: rgba(179, 186, 255, 0.26);
+  --focus-ring: rgba(179, 186, 255, 0.68);
+  --danger: #f2786d;
+  --danger-bg: rgba(242, 120, 109, 0.11);
+  --danger-bg-strong: #311917;
+  --danger-border: rgba(242, 120, 109, 0.34);
+  --warn: #e5a54e;
+  --warn-fg: #f0bd72;
+  --warn-bg: rgba(229, 165, 78, 0.11);
+  --warn-border: rgba(229, 165, 78, 0.34);
+  --success: #59c99a;
+  --success-bg: rgba(89, 201, 154, 0.1);
+  --success-border: rgba(89, 201, 154, 0.34);
+  --code-bg: #0d0c0a;
+  --scrim: rgba(8, 7, 6, 0.62);
+  --syn-str: #86c8a4;
+  --syn-num: #e2b07a;
+  --syn-kw: #c9a6ef;
+  --syn-com: #969083;
+  --syn-name: #8ab4ff;
+  --syn-tag: #75c9d8;
+  --syn-punct: #a8a092;
   /* Motion: three durations. `instant` is kept as an alias of `fast`. */
   --duration-instant: 120ms;
   --duration-fast: 120ms;
@@ -121,19 +121,19 @@
   --leading-prose: 1.7;
   --text-xl: 1.25rem;
   --leading-xl: 1.75rem;
-  --text-2xl: 1.75rem;
-  --leading-2xl: 2.125rem;
-  /* Radii: three. 6 controls · 10 cards and menus · 14 panels and dialogs. */
+  --text-2xl: 2.25rem;
+  --leading-2xl: 2.5rem;
+  /* Radii: three. 8 controls · 12 cards and menus · 16 panels and dialogs. */
   --radius-sm: 0.375rem;
   --radius: 0.375rem;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.625rem;
-  --radius-xl: 0.625rem;
-  --radius-2xl: 0.875rem;
-  --radius-3xl: 0.875rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1rem;
   --control-h: 2rem;
-  --header-h: 2.75rem;
-  --sidebar-w: 16.25rem;
+  --header-h: 3rem;
+  --sidebar-w: 17rem;
   --sidepane-w: 30rem;
   --doc-measure: 46rem;
   --doc-track: 64rem;
@@ -149,66 +149,68 @@
   --space-12: 3rem;
   /* Shadows: two. `elev` for menus and popovers, `pop` for dialogs and the
      inspector; `glow` stays as an alias of `pop`. */
-  --shadow-elev: 0 0 0 1px var(--edge-strong), 0 8px 24px -8px rgba(0, 0, 0, 0.6);
-  --shadow-pop: 0 0 0 1px var(--edge-strong), 0 24px 64px -16px rgba(0, 0, 0, 0.7), 0 8px 20px -8px rgba(0, 0, 0, 0.5);
+  --shadow-elev: 0 0 0 1px var(--edge-strong), 0 10px 30px -10px rgba(4, 3, 2, 0.68);
+  --shadow-pop: 0 0 0 1px var(--edge-strong), 0 30px 80px -20px rgba(4, 3, 2, 0.78), 0 10px 24px -10px rgba(4, 3, 2, 0.55);
   --shadow-glow: var(--shadow-pop);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --canvas: #ffffff;
-  --sidebar: #f4f4f5;
-  --panel: #f7f7f8;
+  /* Paper, not white: the light theme is a warm reading surface, not an
+     inverted dark one. Ink is warm graphite; the accent stays ink blue. */
+  --canvas: #f2eee5;
+  --sidebar: #e9e4d9;
+  --panel: #f9f6f0;
   --elevated: #ffffff;
-  --bubble: #f0f0f2;
-  --hover: #ebebee;
-  --edge: #e8e8eb;
-  --edge-strong: #d6d6db;
-  --accent: #4f46e5;
-  --accent-soft: #5b52f0;
-  --accent-dim: rgba(79, 70, 229, 0.09);
+  --bubble: #ebe5d9;
+  --hover: #e0d9cb;
+  --edge: #ddd6c9;
+  --edge-strong: #c9c0b1;
+  --accent: #3f4ecf;
+  --accent-soft: #3443c0;
+  --accent-dim: rgba(63, 78, 207, 0.09);
   --accent-fg: #ffffff;
-  --accent-text: #4338ca;
-  /* v3.1 — orange, aqua, gold and magenta stepped darker (same hues) so every
-   * series clears 3:1 on the white and panel surfaces; CVD separation and
-   * the normal-vision floor re-validated. */
+  --accent-text: #3543b8;
+  /* Series stay the same validated hues on warm paper: every series clears
+   * 3:1 on the panel surfaces; CVD separation and the normal-vision floor
+   * re-validated. */
   --viz-1: #4f46e5;
   --viz-2: #e05a26;
   --viz-3: #11906a;
   --viz-4: #ad7d00;
   --viz-5: #d24e86;
   --viz-6: #2a78d6;
-  --gray-100: #18181b;
-  --gray-200: #3f3f46;
-  --gray-300: #52525b;
-  --gray-400: #5f5f68;
-  --gray-500: #66666f;
-  --scrollbar-thumb: #dcdce0;
-  --scrollbar-thumb-hover: #c4c4ca;
-  --selection: rgba(79, 70, 229, 0.18);
-  --focus-ring: rgba(79, 70, 229, 0.55);
-  --danger: #c4271b;
-  --danger-bg: rgba(196, 39, 27, 0.07);
-  --danger-bg-strong: #fef2f1;
-  --danger-border: rgba(196, 39, 27, 0.3);
-  --warn: #b45309;
-  --warn-fg: #92400e;
-  --warn-bg: rgba(180, 83, 9, 0.08);
-  --warn-border: rgba(180, 83, 9, 0.3);
-  --success: #15803d;
-  --success-bg: rgba(21, 128, 61, 0.08);
-  --success-border: rgba(21, 128, 61, 0.3);
-  --code-bg: #f7f7f8;
-  --scrim: rgba(24, 24, 27, 0.28);
-  --syn-str: #0f7a4d;
-  --syn-num: #9a5b00;
-  --syn-kw: #7c3aed;
-  --syn-com: #5b6472;
-  --syn-name: #1d4ed8;
-  --syn-tag: #0e7490;
-  --syn-punct: #52586a;
-  --shadow-elev: 0 0 0 1px var(--edge), 0 8px 24px -10px rgba(24, 24, 27, 0.18);
-  --shadow-pop: 0 0 0 1px var(--edge), 0 24px 64px -16px rgba(24, 24, 27, 0.22), 0 8px 20px -8px rgba(24, 24, 27, 0.12);
+  --gray-100: #201d18;
+  --gray-200: #3c3831;
+  --gray-300: #4f4a42;
+  --gray-400: #5e5950;
+  --gray-500: #635e55;
+  --scrollbar-thumb: #d5cec0;
+  --scrollbar-thumb-hover: #bbb2a1;
+  --selection: rgba(53, 67, 184, 0.16);
+  --focus-ring: rgba(53, 67, 184, 0.5);
+  --danger: #b4271c;
+  --danger-bg: rgba(180, 39, 28, 0.07);
+  --danger-bg-strong: #fbece9;
+  --danger-border: rgba(180, 39, 28, 0.28);
+  --warn: #a45a08;
+  --warn-fg: #8a4a05;
+  --warn-bg: rgba(164, 90, 8, 0.08);
+  --warn-border: rgba(164, 90, 8, 0.28);
+  --success: #126e48;
+  --success-bg: rgba(18, 110, 72, 0.08);
+  --success-border: rgba(18, 110, 72, 0.28);
+  --code-bg: #f7f4ee;
+  --scrim: rgba(35, 31, 25, 0.30);
+  --syn-str: #0e764b;
+  --syn-num: #925600;
+  --syn-kw: #7534d0;
+  --syn-com: #646054;
+  --syn-name: #1e4bcc;
+  --syn-tag: #0d6d80;
+  --syn-punct: #57534b;
+  --shadow-elev: 0 0 0 1px var(--edge), 0 10px 30px -14px rgba(44, 38, 28, 0.22);
+  --shadow-pop: 0 0 0 1px var(--edge), 0 30px 80px -20px rgba(44, 38, 28, 0.28), 0 10px 24px -10px rgba(44, 38, 28, 0.14);
   --shadow-glow: var(--shadow-pop);
 }
 

@@ -1,10 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { TaskSnapshot } from "../api/types";
+import { Icon } from "../components/icons";
 import { useI18n } from "../i18n";
 import { useApp } from "../shell/context";
 import { sections } from "../store/derive";
 import { forksOf, type TaskModel } from "../store/task";
 import { Turn } from "./Turn";
+
+const MemoTurn = memo(Turn);
 
 /**
  * One Task as a conversation, oldest first: every turn is the user's message,
@@ -15,7 +18,9 @@ import { Turn } from "./Turn";
 export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot: (s: TaskSnapshot) => void }) {
   const { t } = useI18n();
   const app = useApp();
-  const all = useMemo(() => sections(model.turns, model.items, model.live), [model.turns, model.items, model.live]);
+  // Live text is passed only to the Turn that owns it. Rebuilding every
+  // section on every streamed token made long conversations quadratic.
+  const all = useMemo(() => sections(model.turns, model.items, null), [model.turns, model.items]);
   const forks = useMemo(() => forksOf(model), [model.snapshot?.forks, model.allTurns]); // eslint-disable-line react-hooks/exhaustive-deps
   const end = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -57,13 +62,16 @@ export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot
   return (
     <div className="task-page" data-testid="task-page">
       {all.length ? all.map((s) => (
-        <Turn key={s.turn.id} section={s} taskId={model.id} forks={forks} setSnapshot={setSnapshot}
-          running={s.turn.status === "running"} />
+        <MemoTurn key={s.turn.id} section={s} taskId={model.id} forks={forks} setSnapshot={setSnapshot}
+          running={s.turn.status === "running"}
+          live={model.live?.turn_id === s.turn.id ? model.live : null} />
       )) : <p className="quiet-note">{t("task.empty")}</p>}
       {steps.length ? (
         <div className="suggestions" data-testid="suggestions">
           {steps.map((s, i) => (
-            <button key={i} type="button" className="suggestion" onClick={() => app.prefill(s)}>{s}</button>
+            <button key={i} type="button" className="suggestion" onClick={() => app.prefill(s)}>
+              <span>{s}</span><Icon name="arrowRight" size={14} className="suggestion-arrow" />
+            </button>
           ))}
         </div>
       ) : null}

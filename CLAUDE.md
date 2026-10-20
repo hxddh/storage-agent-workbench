@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v10.0.0.**
+> **Implementation contract for Storage Agent v10.1.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md` and `docs/security.md`. Current code and the
@@ -131,7 +131,7 @@ Frontend structure: `api/` (the only module that talks to the Sidecar), `store/t
 
 ## 8. Design system
 
-Tokens live in `frontend/src/index.css` (see `docs/design-tokens.md`): a calibrated cool-neutral ladder, one restrained indigo accent (primary action, selection, focus, links, live progress), a separate status palette, five type sizes (11 · 13 · 15 · 20 · 28), a 4 px grid, three radii, two shadows, motion 120/200/280 ms honouring `prefers-reduced-motion`. Controls come from `components/ui.tsx`, styled in `styles/components.css`; surfaces live in `styles/app.css` and `styles/document.css`. No component carries a raw colour; status reads as a dot or badge beside neutral text. Motion uses CSS and View Transitions; there is no animation library.
+Tokens live in `frontend/src/index.css` (see `docs/design-tokens.md`): a warm graphite-and-paper neutral ladder, one restrained ink-blue accent (primary action, selection, focus, links, live progress), a separate status palette, five type sizes (11 · 13 · 15 · 20 · 36), a 4 px grid, three radii, two shadows, motion 120/200/280 ms honouring `prefers-reduced-motion`. Light, Dark and System are first-class; System follows the OS. Controls come from `components/ui.tsx`, styled in `styles/components.css`; surfaces live in `styles/app.css` and `styles/document.css`. No component carries a raw colour; status reads as a dot or badge beside neutral text. Motion uses CSS and View Transitions; there is no animation library.
 
 ## 9. Data ownership
 

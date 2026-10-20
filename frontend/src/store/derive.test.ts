@@ -79,11 +79,24 @@ describe("sections", () => {
     expect(s.blocks.map((b) => b.kind)).toEqual(["commentary"]);
   });
 
-  it("notes a compaction once", () => {
+  it("keeps the compaction summary once and makes it inspectable", () => {
     const all = sections([turn("t1"), turn("t2")], [
-      item("t1", "compaction", { summary: "s", folded: [] } as never),
-      item("t2", "notice", { event: "compacted" }),
+      item("t1", "compaction", { summary: "Earlier work", turns_folded: 2 } as never),
+      item("t2", "notice", { event: "compacted", turns_folded: 2 }),
     ], null);
-    expect(all.flatMap((s) => s.blocks.filter((b) => b.kind === "compacted"))).toHaveLength(1);
+    const contexts = all.flatMap((s) => s.blocks.filter((b) => b.kind === "context"));
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0].kind === "context" && contexts[0].summary).toBe("Earlier work");
+    expect(all[1].compacted).toBe(true);
+  });
+
+  it("keeps the text written before an interrupted tool call when the turn stops", () => {
+    const s = sections([turn("t1", { status: "cancelled" })], [
+      item("t1", "agent_message", { text: "Two buckets are public so far." }),
+      item("t1", "tool_call", { call_id: "a", name: "survey_account", args: {}, target: "prod" }),
+      item("t1", "notice", { event: "cancelled" }),
+    ], null)[0];
+    expect(s.answer).toBe("Two buckets are public so far.");
+    expect(s.stopped).toBe(true);
   });
 });

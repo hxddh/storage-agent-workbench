@@ -15,7 +15,7 @@ from typing import Any
 
 from ..core import store
 from ..engines import datasets
-from ..security.redaction import redact_text
+from ..security.redaction import redact_text, scrub_text
 
 _SEV = {"high": 0, "medium": 1, "low": 2, "info": 3}
 _EXCERPT = 800
@@ -168,4 +168,7 @@ def render(conn: Any, task_id: str, *, lang: str = "en") -> str:
                       f"{_t('tokens_in', lang)} · {usage['output_tokens']:,} {_t('tokens_out', lang)}"]
             if usage.get("requests") else [])
     section("safety", [f"- {_t('safety_1', lang)}", f"- {_t('safety_2', lang)}", f"- {_t('safety_3', lang)}"])
-    return "\n".join(lines).rstrip() + "\n"
+    # The report quotes Directions and Agent prose. Pattern redaction has already
+    # run per field; this final pass masks the exact values the local vault holds
+    # even when a provider's secret has no recognisable shape.
+    return scrub_text("\n".join(lines).rstrip()) + "\n"

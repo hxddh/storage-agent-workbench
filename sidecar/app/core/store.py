@@ -247,8 +247,13 @@ def siblings(conn: sqlite3.Connection, task_id: str) -> dict[str, list[str]]:
     """For each parent (or the root, key ''), its child turns in creation order.
     A Direction with more than one version is a fork point."""
     out: dict[str, list[str]] = {}
-    for r in conn.execute("SELECT id, parent_turn_id FROM turns WHERE task_id = ? AND kind != 'resume' "
-                          "ORDER BY created_at, rowid", (task_id,)).fetchall():
+    # A Direction withdrawn before it ran is not a version of anything. It leaves
+    # the branch (cancel_queued re-parents its children) and must not reappear in
+    # the version switcher.
+    for r in conn.execute(
+            "SELECT id, parent_turn_id FROM turns WHERE task_id = ? AND kind != 'resume' "
+            "AND NOT (status = 'cancelled' AND started_at IS NULL) "
+            "ORDER BY created_at, rowid", (task_id,)).fetchall():
         out.setdefault(r["parent_turn_id"] or "", []).append(r["id"])
     return out
 
@@ -347,9 +352,14 @@ def list_artifacts(conn: sqlite3.Connection, task_id: str) -> list[dict[str, Any
 def audit(conn: sqlite3.Connection, *, actor: str, action: str, task_id: str | None = None,
           target: str | None = None, ok: bool = True, duration_ms: int | None = None,
           detail: Any = None, commit: bool = True) -> None:
+    # Audit is a persistence boundary too: a filename, a provider error or a
+    # direct-call argument can echo a vault value back into it.
+    from ..security.redaction import scrub_text, scrub_value
+    target = scrub_text(target or "")[:300] or None
+    detail = scrub_value(detail) if detail is not None else None
     conn.execute("INSERT INTO audit (at, actor, action, task_id, target, ok, duration_ms, detail) "
                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                 (utcnow(), actor, action[:120], task_id, (target or "")[:300] or None, 1 if ok else 0,
+                 (utcnow(), actor, action[:120], task_id, target, 1 if ok else 0,
                   duration_ms, _dumps(detail) if detail is not None else None))
     if commit:
         conn.commit()

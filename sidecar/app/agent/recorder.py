@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from .. import db
 from ..core import hub, store
-from ..security.redaction import redact, redact_text
+from ..security.redaction import scrub_text, scrub_value
 from . import safety
 
 _UI_DETAIL_CHARS = 24_000
@@ -92,12 +92,21 @@ class Recorder:
             if self._closed:
                 # A tool thread that outlived its Stop or timeout: the turn's record is closed.
                 return {}
+            # The last boundary before anything durable: every item payload —
+            # including tool targets and model-visible output — is scrubbed of
+            # exact vault values and credential shapes, not just the fields
+            # whose callers remembered to clean.
+            payload = scrub_value(payload)
             item = store.append_item(self._conn, self.task_id, self.turn_id, type_, payload, item_id=item_id)
             if type_ in ("agent_message", "tool_call", "conclusion"):
                 self._produced = True
             if type_ == "agent_message":
                 self.last_message = str(payload.get("text") or "")
-        hub.item(self.task_id, item)
+            # Publish while the append lock is still held. Publishing outside it
+            # lets two parallel tool threads land seq+1 before seq; the SSE
+            # follower advances its cursor on the first one and then drops the
+            # earlier durable item as "already seen".
+            hub.item(self.task_id, item)
         return item
 
     def has_output(self) -> bool:
@@ -109,14 +118,18 @@ class Recorder:
         return self._append("notice", {"event": event, **fields})
 
     def user_message(self, text: str, attachments: list[dict[str, Any]] | None = None) -> None:
-        payload: dict[str, Any] = {"text": redact_text(text)}
+        # A Direction is replayed to the model, saved in SQLite and quoted in the
+        # report. Pattern redaction alone is not enough for a configured secret
+        # with a provider-specific shape, so the exact vault values are masked
+        # here too.
+        payload: dict[str, Any] = {"text": scrub_text(text)}
         if attachments:
-            payload["attachments"] = attachments
+            payload["attachments"] = scrub_value(attachments)
         self._append("user_message", payload)
 
     def steer(self, text: str) -> None:
         self.close_segment()
-        self._append("steer", {"text": redact_text(text)})
+        self._append("steer", {"text": scrub_text(text)})
 
     # -- model text --------------------------------------------------------------------
     def delta(self, text: str) -> None:
@@ -147,29 +160,34 @@ class Recorder:
     # -- tools -------------------------------------------------------------------------
     def tool_started(self, call_id: str, name: str, args: dict[str, Any], target: str) -> None:
         self.close_segment()
-        self._calls[call_id] = {"name": name, "args": args, "started": time.monotonic()}
-        self._append("tool_call", {"call_id": call_id, "name": name, "args": args, "target": target})
+        safe = scrub_value(args)
+        self._calls[call_id] = {"name": name, "args": safe, "started": time.monotonic()}
+        self._append("tool_call", {"call_id": call_id, "name": name, "args": safe, "target": target})
 
     def tool_refused(self, call_id: str, name: str, args: dict[str, Any], reason: str) -> None:
         from .tools.registry import tidy_summary
-        self.tool_started(call_id, name, args, str(args.get("bucket") or args.get("provider_id") or ""))
+        safe = scrub_value(args)
+        clean_reason = scrub_text(reason)
+        self.tool_started(call_id, name, safe, str(safe.get("bucket") or safe.get("provider_id") or ""))
         self._append("tool_output", {"call_id": call_id, "name": name, "ok": False, "refused": True,
-                                     "summary": tidy_summary(redact_text(reason)),
-                                     "model_output": f"Refused: {redact_text(reason)}"})
+                                     "summary": tidy_summary(clean_reason),
+                                     "model_output": f"Refused: {clean_reason}"})
         store.audit(self._conn, actor="agent", action=f"tool.{name}", task_id=self.task_id,
-                    target=str(args.get("bucket") or ""), ok=False, detail={"refused": reason})
+                    target=str(safe.get("bucket") or ""), ok=False, detail={"refused": clean_reason})
 
     def tool_skipped(self, call_id: str, name: str, args: dict[str, Any], target: str, *, ok: bool,
                      summary: str, model_text: str) -> None:
         """A call the runtime answered without running it (a repeat of a call this
         Turn already made, arguments that were not JSON): recorded and audited
         like any other call, so the stream and the audit stay complete."""
-        self.tool_started(call_id, name, args, target)
+        safe = scrub_value(args)
+        self.tool_started(call_id, name, safe, target)
         self._calls.pop(call_id, None)
-        self._append("tool_output", {"call_id": call_id, "name": name, "ok": ok, "summary": summary,
+        clean_summary = scrub_text(summary)
+        self._append("tool_output", {"call_id": call_id, "name": name, "ok": ok, "summary": clean_summary,
                                      "duration_ms": 0, "detail": None, "model_output": model_text})
         store.audit(self._conn, actor="agent", action=f"tool.{name}", task_id=self.task_id, target=target[:200],
-                    ok=ok, duration_ms=0, detail={"args": args, "summary": summary, "skipped": True})
+                    ok=ok, duration_ms=0, detail={"args": safe, "summary": clean_summary, "skipped": True})
 
     def tool_finished(self, call_id: str, name: str, ok: bool, summary: str, result: Any,
                       duration_ms: int, model_text: str | None = None) -> None:
@@ -178,21 +196,23 @@ class Recorder:
         call = self._calls.pop(call_id, {"args": {}})
         detail = None
         model_output = model_text
+        clean_summary = scrub_text(summary)
         if result is not None:
-            text = result if isinstance(result, str) else _json(result)
+            clean = scrub_value(result)
+            text = clean if isinstance(clean, str) else _json(clean)
             if model_output is None:
                 model_output = text[:60_000]
             detail = text[:_UI_DETAIL_CHARS]
-        self._append("tool_output", {"call_id": call_id, "name": name, "ok": ok, "summary": summary,
+        self._append("tool_output", {"call_id": call_id, "name": name, "ok": ok, "summary": clean_summary,
                                      "duration_ms": duration_ms, "detail": detail,
                                      "detail_truncated": bool(detail and model_output and len(model_output) > len(detail)),
                                      "model_output": model_output})
         store.audit(self._conn, actor="agent", action=f"tool.{name}", task_id=self.task_id,
                     target=str(call.get("args", {}).get("bucket") or call.get("args", {}).get("provider_id") or ""),
-                    ok=ok, duration_ms=duration_ms, detail={"args": call.get("args"), "summary": summary})
+                    ok=ok, duration_ms=duration_ms, detail={"args": call.get("args"), "summary": clean_summary})
         if result is not None:
             event = {"task_id": self.task_id, "turn_id": self.turn_id, "tool": name,
-                     "args": call.get("args", {}), "ok": ok, "result": result}
+                     "args": call.get("args", {}), "ok": ok, "result": clean}
             for hook in list(_hooks):
                 try:
                     hook(event)
@@ -216,8 +236,8 @@ class Recorder:
         try:
             c = Conclusion.model_validate(args)
         except ValidationError as exc:
-            return f"Not recorded: {redact_text(str(exc))[:400]}. Fix the fields and call again."
-        data = redact({
+            return f"Not recorded: {scrub_text(str(exc))[:400]}. Fix the fields and call again."
+        data = scrub_value({
             "findings": [{"title": f.title, "severity": f.severity,
                           **({"detail": f.detail} if f.detail else {})} for f in c.findings],
             "next_steps": [s[:200] for s in c.next_steps],

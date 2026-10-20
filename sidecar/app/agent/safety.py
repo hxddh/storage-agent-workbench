@@ -21,7 +21,7 @@ import json
 import re
 from typing import Any
 
-from ..security.redaction import REDACTED, redact_text
+from ..security.redaction import REDACTED, SecretScrubber, redact_text, scrub_text
 
 # Forbidden surface, matched on whole NAME TOKENS (split on non-alphanumeric),
 # not raw substrings — so legitimate names like `test_credentials` or
@@ -238,10 +238,12 @@ class StreamSanitizer:
 
     def __init__(self) -> None:
         self.emitted = ""
+        # Live text reaches the window before the durable item exists; it needs
+        # the exact-vault layer too, not only credential-shaped patterns.
+        self._scrub = SecretScrubber()
 
-    @staticmethod
-    def _visible(raw: str) -> str:
-        text = redact_text(strip_chain_of_thought_stream(raw))
+    def _visible(self, raw: str) -> str:
+        text = self._scrub.text(redact_text(strip_chain_of_thought_stream(raw)))
         return _STREAM_BARE_SECRET.sub(REDACTED, text)
 
     def push(self, raw_acc: str, final: bool = False) -> str:
@@ -264,8 +266,9 @@ class StreamSanitizer:
 
 
 def clean_message(text: str | None) -> str:
-    """The persisted form of model text: hidden reasoning stripped, secrets redacted."""
-    return redact_text(strip_chain_of_thought(text or ""))
+    """The persisted form of model text: hidden reasoning stripped, exact vault
+    values and credential-shaped strings redacted."""
+    return scrub_text(strip_chain_of_thought(text or ""))
 
 
 __all__ = [

@@ -31,8 +31,12 @@ export async function boot(page: Page, opts: { lang?: "en" | "zh"; theme?: "dark
     localStorage.setItem("saw.lang", lang);
     localStorage.setItem("saw.theme", theme);
   }, { lang: opts.lang ?? "en", theme: opts.theme ?? "dark" });
-  if (opts.lang) await api("/settings", { method: "PATCH", body: JSON.stringify({ language: opts.lang }) });
+  // The Sidecar's settings are shared across windows and win on load, so the
+  // requested theme must be set there too — a stale gallery preference must
+  // never turn a dark audit into a light one.
+  await api("/settings", { method: "PATCH", body: JSON.stringify({ theme: opts.theme ?? "dark", ...(opts.lang ? { language: opts.lang } : {}) }) });
   await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", opts.theme ?? "dark");
   await expect(page.getByTestId("composer-input")).toBeVisible({ timeout: 30_000 });
 }
 

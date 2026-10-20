@@ -35,7 +35,7 @@ from typing import Any
 from .. import db
 from ..core import hub, store
 from ..providers import models as model_providers
-from ..security.redaction import redact, redact_text
+from ..security.redaction import scrub_text, scrub_value
 from . import budget, errors, models, prompt, safety, tracing
 from .recorder import Recorder
 from .session import ItemsSession, fit, input_chars, shrink_outputs, to_input
@@ -87,6 +87,7 @@ class Runtime:
         self._thread: threading.Thread | None = None
         self._live: dict[str, _Live] = {}
         self._workers: dict[str, asyncio.Task[Any]] = {}
+        self._background: set[asyncio.Task[Any]] = set()
         self._lock = threading.Lock()
 
     # -- lifecycle ---------------------------------------------------------------------
@@ -129,6 +130,9 @@ class Runtime:
                 asyncio.run_coroutine_threadsafe(settle(), self._loop).result(6)
             except Exception:  # noqa: BLE001
                 pass
+        for task in list(self._background):
+            task.cancel()
+        self._background.clear()
         with self._lock:
             self._live.clear()
         self._workers.clear()
@@ -179,7 +183,7 @@ class Runtime:
             live = self._live.get(task_id)
             if live is not None and live.recorder is not None:
                 live.recorder.steer(text)  # closes the segment being written, then records the steer
-                live.steers.append(redact_text(text))
+                live.steers.append(scrub_text(text))
                 return {"steered": True, "turn_id": live.turn_id}
         return {"steered": False, "turn": self.submit(conn, task_id, text)}
 
@@ -317,18 +321,23 @@ class Runtime:
             store.touch_task(conn, task_id)
             conn.commit()
             rec.notice(status, **({"error": error} if error else {}))
-            if carried and status == "completed":
+            if carried:
                 # Steers that arrived after the model's last call: they become the
-                # next Direction instead of a steer the model never read.
+                # next Direction instead of a steer the model never read. This
+                # holds when the Turn failed or was stopped too — a steer is never
+                # acknowledged and then dropped.
                 rec.notice("carried", steers=len(carried))
             self._publish_turn(conn, task_id, turn_id)
             self._publish_state(conn, task_id)
             rec.close()
-            if carried and status == "completed":
+            if carried:
                 self.submit(conn, task_id, "\n\n".join(carried), parent_turn_id=turn_id)
             conn.close()
         if status == "completed":
-            await self._maybe_title(task_id, turn_id)
+            # Naming a task is a side step, not part of the Turn. Waiting for it
+            # here made the task's queue wait for a model call that can take the
+            # provider timeout; schedule it and let _drain pick the next Turn.
+            self._schedule_title(task_id, turn_id)
 
     async def _stream_turn(self, conn: Any, task_id: str, turn_id: str, creds: dict[str, Any],
                            rec: Recorder, live: _Live, clients: list[Any]) -> dict[str, Any]:
@@ -463,7 +472,7 @@ class Runtime:
     @staticmethod
     def _finalize_failed(rec: Recorder, why: str, usage: dict[str, Any] | None) -> dict[str, Any]:
         """The fallback answer could not be written either: a clear failure, never a canned success."""
-        message = FINALIZE_FAILED.format(why=redact_text(why)[:200].rstrip(". "))
+        message = FINALIZE_FAILED.format(why=scrub_text(why)[:200].rstrip(". "))
         rec._append("error", {"message": message})
         return {"status": "failed", "error": message, "usage": usage}
 
@@ -497,7 +506,7 @@ class Runtime:
                     repeated = key in live.calls_seen
                     live.calls_seen.add(key)
                 if repeated:
-                    safe = redact(args)
+                    safe = scrub_value(args)
                     rec.tool_skipped(call_id, _name, safe, registry_target(safe), ok=True,
                                      summary="repeated call, not run", model_text=REPEATED_CALL)
                     return REPEATED_CALL
@@ -528,7 +537,7 @@ class Runtime:
             text = safety.clean_message(str(out.final_output or ""))
         except Exception as exc:  # noqa: BLE001
             text = ""
-            logger.info("finalize failed: %s", redact_text(str(exc))[:200])
+            logger.info("finalize failed: %s", scrub_text(str(exc))[:200])
         return text or None
 
     async def _maybe_compact(self, conn: Any, task_id: str, turn_id: str, creds: dict[str, Any],
@@ -576,6 +585,10 @@ class Runtime:
             rec.notice("compacted", turns_folded=len(older))
 
     async def _maybe_title(self, task_id: str, turn_id: str) -> None:
+        # Read what the title step needs, then close the connection BEFORE the
+        # model call. A title is a side step; a slow or closed endpoint must not
+        # hold a SQLite read transaction (or block the next task/provider write)
+        # for the whole 30-second timeout.
         conn = db.connect()
         try:
             task = store.get_task(conn, task_id)
@@ -587,28 +600,50 @@ class Runtime:
             if not answer:
                 return
             creds = model_providers.credentials(conn)
-            clients: list[Any] = []
-            try:
-                from agents import Agent, Runner
-                model, settings = models.build(creds, clients, tools_allowed=False)
-                agent = Agent(name="Titler", model=model, model_settings=settings, instructions=prompt.TITLE_INSTRUCTIONS)
-                out = await Runner.run(agent, f"Request: {direction[:600]}\n\nResult: {answer[:1200]}",
-                                       max_turns=1)
-                title = safety.clean_message(str(out.final_output or "")).strip().strip('"').splitlines()
-            finally:
-                await models.close_clients(clients)
-            if title and title[0].strip():
-                if store.rename_task(conn, task_id, " ".join(title[0].split()[:8])[:120], source="agent"):
-                    rec = Recorder(task_id, turn_id)
-                    try:
-                        rec.notice("titled", title=store.get_task(conn, task_id)["title"])
-                    finally:
-                        rec.close()
-                    hub.publish_global("task", {"task_id": task_id, "title": store.get_task(conn, task_id)["title"]})
+        except Exception:  # noqa: BLE001 — the title step never fails a turn
+            return
+        finally:
+            conn.close()
+
+        clients: list[Any] = []
+        try:
+            from agents import Agent, Runner
+            model, settings = models.build(creds, clients, tools_allowed=False)
+            agent = Agent(name="Titler", model=model, model_settings=settings, instructions=prompt.TITLE_INSTRUCTIONS)
+            out = await Runner.run(agent, f"Request: {direction[:600]}\n\nResult: {answer[:1200]}",
+                                   max_turns=1)
+            title = safety.clean_message(str(out.final_output or "")).strip().strip('"').splitlines()
+        except Exception:  # noqa: BLE001 — the title step never fails a turn
+            return
+        finally:
+            await models.close_clients(clients)
+        if not title or not title[0].strip():
+            return
+        conn = db.connect()
+        try:
+            if store.rename_task(conn, task_id, " ".join(title[0].split()[:8])[:120], source="agent"):
+                rec = Recorder(task_id, turn_id)
+                try:
+                    rec.notice("titled", title=store.get_task(conn, task_id)["title"])
+                finally:
+                    rec.close()
+                hub.publish_global("task", {"task_id": task_id, "title": store.get_task(conn, task_id)["title"]})
         except Exception:  # noqa: BLE001 — the title step never fails a turn
             pass
         finally:
             conn.close()
+
+    def _schedule_title(self, task_id: str, turn_id: str) -> None:
+        """Name the task in the background; keep the task reference alive."""
+        task = asyncio.create_task(self._title_turn(task_id, turn_id))
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def _title_turn(self, task_id: str, turn_id: str) -> None:
+        try:
+            await asyncio.wait_for(self._maybe_title(task_id, turn_id), timeout=30)
+        except Exception:  # noqa: BLE001 — a title is a convenience, never a failure
+            logger.info("title step skipped", exc_info=True)
 
     # -- recovery ----------------------------------------------------------------------------
     def recover(self) -> int:

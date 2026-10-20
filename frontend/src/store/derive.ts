@@ -25,7 +25,8 @@ export type Block =
   | { kind: "commentary"; id: string; text: string }
   | { kind: "work"; id: string; tools: ToolRow[]; startedAt: string; endedAt: string | null }
   | { kind: "steer"; id: string; text: string }
-  | { kind: "compacted"; id: string };
+  | { kind: "carried"; id: string; count: number }
+  | { kind: "context"; id: string; summary: string; turns: number };
 
 export type Section = {
   turn: Turn;
@@ -37,6 +38,7 @@ export type Section = {
   error: ItemOf<"error">["payload"] | null;
   stopped: boolean;
   finalized: boolean;
+  compacted: boolean;
   live: LiveSegment | null;
   toolCount: number;
 };
@@ -66,6 +68,7 @@ function section(turn: Turn, items: Item[], live: LiveSegment | null): Section {
   let error: Section["error"] = null;
   let stopped = false;
   let finalized = false;
+  let compacted = false;
   let direction = turn.direction;
   let attachments: Section["attachments"];
   let lastToolIndex = -1;
@@ -120,13 +123,19 @@ function section(turn: Turn, items: Item[], live: LiveSegment | null): Section {
         group = null;
         break;
       case "compaction":
-        break; // the note comes from the turn's own `compacted` notice (once)
+        // The summary is model-visible context, but it was never inspectable in
+        // the window. Keep it on the item's own Turn (the oldest kept Turn) so
+        // the reader can see what the Agent now remembers.
+        blocks.push({ kind: "context", id: it.id, summary: String(it.payload.summary || ""),
+          turns: Number(it.payload.turns_folded || 0) });
+        break;
       case "notice":
         if (it.payload.event === "cancelled" || it.payload.event === "stopped") stopped = true;
         if (it.payload.event === "finalized") finalized = true;
-        if (it.payload.event === "compacted" && !blocks.some((b) => b.kind === "compacted")) {
-          blocks.unshift({ kind: "compacted", id: it.id });
+        if (it.payload.event === "carried") {
+          blocks.push({ kind: "carried", id: it.id, count: Number(it.payload.steers || 1) });
         }
+        if (it.payload.event === "compacted") compacted = true;
         break;
       case "error":
         error = it.payload;
@@ -139,7 +148,12 @@ function section(turn: Turn, items: Item[], live: LiveSegment | null): Section {
   // answer so far); a failed turn's last words are commentary.
   let answer: string | null = null;
   const last = messages[messages.length - 1];
-  if (last && last.index > lastToolIndex && (turn.status === "completed" || turn.status === "cancelled" || finalized || stopped)) {
+  const stoppedAnswer = (turn.status === "cancelled" || stopped) && last;
+  // A stopped Turn keeps what it had written even when the last text came
+  // before the tool call the stop interrupted. A completed/finalized Turn still
+  // needs a final message after its last call — that is what makes it the answer.
+  if (last && ((last.index > lastToolIndex && (turn.status === "completed" || turn.status === "cancelled" || finalized || stopped))
+      || stoppedAnswer)) {
     answer = last.item.payload.text;
     const at = blocks.findIndex((b) => b.kind === "commentary" && b.id === last.item.id);
     if (at >= 0) blocks.splice(at, 1);
@@ -148,7 +162,7 @@ function section(turn: Turn, items: Item[], live: LiveSegment | null): Section {
     for (const b of blocks) if (b.kind === "work") for (const r of b.tools) if (r.status === "running") r.status = "failed";
   }
   const toolCount = blocks.reduce((n, b) => n + (b.kind === "work" ? b.tools.length : 0), 0);
-  return { turn, direction, attachments, blocks, answer, conclusion, error, stopped, finalized, live, toolCount };
+  return { turn, direction, attachments, blocks, answer, conclusion, error, stopped, finalized, compacted, live, toolCount };
 }
 
 /** The latest turn that produced something to read. */

@@ -178,7 +178,12 @@ export function reduce(m: TaskModel, a: Action): TaskModel {
  */
 export function forksOf(m: TaskModel): Record<string, string[]> {
   const out: Record<string, string[]> = {};
-  for (const [k, ids] of Object.entries(m.snapshot?.forks ?? {})) out[k] = [...ids];
+  for (const [k, ids] of Object.entries(m.snapshot?.forks ?? {})) {
+    out[k] = ids.filter((id) => {
+      const t = m.allTurns[id];
+      return !(t && t.status === "cancelled" && !t.started_at);
+    });
+  }
   const known = Object.values(m.allTurns)
     .filter((t) => t.kind !== "resume" && t.status !== "cancelled")
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -293,5 +298,6 @@ export function useTask(id: string | null) {
   // Until the reset lands, never render the previous task's model under this task's id.
   const blank = useMemo(() => initial(id ?? ""), [id]);
   const current = model.id === (id ?? "") ? model : blank;
-  return { model: current, reload, setSnapshot: (s: TaskSnapshot) => dispatch({ type: "snapshot", snapshot: s }) };
+  const setSnapshot = useCallback((s: TaskSnapshot) => dispatch({ type: "snapshot", snapshot: s }), []);
+  return { model: current, reload, setSnapshot };
 }

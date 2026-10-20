@@ -27,7 +27,7 @@ function useSyncedPreferences() {
       // The first run follows the system language, and the Agent answers in it too.
       if (s.language) setLang(s.language);
       else void api.updateSettings({ language: lang }).catch(() => {});
-      if (s.theme === "light" || s.theme === "dark") setTheme(s.theme);
+      if (s.theme === "system" || s.theme === "light" || s.theme === "dark") setTheme(s.theme);
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }

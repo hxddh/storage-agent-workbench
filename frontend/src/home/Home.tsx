@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { Estate, Issue } from "../api/types";
 import { Composer } from "../composer/Composer";
+import { Icon, type IconName } from "../components/icons";
 import { StatusDot } from "../components/ui";
 import { setTrayStatus } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
@@ -19,23 +20,33 @@ export function Home() {
   const { t } = useI18n();
   const app = useApp();
   const noStorage = (app.clouds ?? []).length === 0;
-  const starters = [
-    { key: "access", needsStorage: false },
-    { key: "survey", needsStorage: true },
-    { key: "log", needsStorage: false },
-  ].filter((s) => !(s.needsStorage && noStorage && app.clouds !== null));
+  const starters: Array<{ key: string; needsStorage: boolean; icon: IconName }> = [
+    { key: "access", needsStorage: false, icon: "alert" },
+    { key: "survey", needsStorage: true, icon: "layers" },
+    { key: "log", needsStorage: false, icon: "activity" },
+  ];
+  const shown = starters.filter((s) => !(s.needsStorage && noStorage && app.clouds !== null));
   return (
     <div className="home" data-testid="home">
-      <h1 className="home-greeting">{t("home.greeting")}</h1>
-      <Composer taskId={null} busy={false} onCreated={app.openTask} autoFocus />
-      <div className="starters">
-        {starters.map((s) => (
-          <button key={s.key} type="button" className="starter" onClick={() => app.prefill(t(`home.starter.${s.key}Prompt`))}>
-            {t(`home.starter.${s.key}`)}
-          </button>
-        ))}
-      </div>
-      <Readiness />
+      <section className="home-hero">
+        <p className="home-kicker"><span className="home-kicker-mark" aria-hidden />{t("home.kicker")}</p>
+        <h1 className="home-greeting">{t("home.greeting")}</h1>
+        <p className="home-lede">{t("home.lede")}</p>
+        <Composer taskId={null} busy={false} onCreated={app.openTask} autoFocus />
+        <div className="starters">
+          {shown.map((s) => (
+            <button key={s.key} type="button" className="starter" onClick={() => app.prefill(t(`home.starter.${s.key}Prompt`))}>
+              <span className="starter-icon" aria-hidden><Icon name={s.icon} size={16} /></span>
+              <span className="starter-copy">
+                <span className="starter-label">{t(`home.starter.${s.key}`)}</span>
+                <span className="starter-hint">{t(`home.starter.${s.key}Hint`)}</span>
+              </span>
+              <Icon name="arrowRight" size={14} className="starter-arrow" />
+            </button>
+          ))}
+        </div>
+        <Readiness />
+      </section>
       <Attention />
     </div>
   );
@@ -95,7 +106,12 @@ function Attention() {
   const survey = () => app.prefill(t("home.starter.surveyPrompt"));
   return (
     <section className="attention" aria-labelledby={checked || groups.length ? "attention-label" : undefined} data-testid="needs-care">
-      {checked || groups.length ? <h2 id="attention-label" className="attention-title">{t("home.care")}</h2> : null}
+      {checked || groups.length ? (
+        <div className="attention-head">
+          <h2 id="attention-label" className="attention-title">{t("home.care")}</h2>
+          {estate.open_issue_count ? <span className="attention-count">{estate.open_issue_count}</span> : null}
+        </div>
+      ) : null}
       {groups.length ? (
         <ul className="attention-list">
           {groups.map((g) => <AttentionRow key={g.key} group={g} />)}

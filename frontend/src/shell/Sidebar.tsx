@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api } from "../api";
 import type { TaskRow } from "../api/types";
 import { Icon } from "../components/icons";
@@ -15,7 +15,7 @@ import { useApp } from "./context";
  * search, one chronological list grouped by day, Settings. State is a mark on the row; Ready paints
  * nothing. ↑/↓ move between tasks.
  */
-export function Sidebar() {
+export const Sidebar = memo(function Sidebar() {
   const { t } = useI18n();
   const app = useApp();
   const [query, setQuery] = useState("");
@@ -66,6 +66,10 @@ export function Sidebar() {
   return (
     <nav className="sidebar" aria-label={t("nav.tasks")} inert={!app.sidebar} data-open={app.sidebar ? "true" : "false"}>
       <div className="sidebar-chrome" data-tauri-drag-region>
+        <div className="sidebar-brand">
+          <span className="sidebar-brand-mark" aria-hidden><Icon name="storage" size={13} /></span>
+          <span>Storage Agent</span>
+        </div>
         <IconButton icon="sidebar" label={t("nav.hideSidebar")} onClick={() => app.setSidebar(false)} />
       </div>
       <div className="sidebar-top">
@@ -143,7 +147,7 @@ export function Sidebar() {
       </div>
     </nav>
   );
-}
+});
 
 function StateMark({ task }: { task: TaskRow }) {
   const { t } = useI18n();

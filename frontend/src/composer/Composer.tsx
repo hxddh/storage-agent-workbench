@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { memo, useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { api } from "../api";
 import { Icon } from "../components/icons";
 import { IconButton } from "../components/ui";
@@ -16,7 +16,7 @@ export const MAX_DIRECTION = 16_000;
  * Delegate (a new, queued Direction), never Steer. Editing a Direction sends
  * a new version of it — a fork of the task at that point.
  */
-export function Composer({ taskId, busy, onCreated, autoFocus = false }: {
+export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFocus = false }: {
   taskId: string | null;
   busy: boolean;
   onCreated?: (taskId: string) => void;
@@ -206,4 +206,4 @@ export function Composer({ taskId, busy, onCreated, autoFocus = false }: {
       {dragging ? <div className="composer-drop" aria-hidden>{t("composer.drop")}</div> : null}
     </form>
   );
-}
+});

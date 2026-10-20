@@ -16,7 +16,7 @@ from typing import Any
 
 from ..core import store as core_store
 from ..core.clock import utcnow
-from ..security.redaction import REDACTED, redact_text
+from ..security.redaction import REDACTED, scrub_text
 
 MAX_TEXT = 1000
 MAX_NOTES = 500
@@ -35,7 +35,7 @@ class NoteError(ValueError):
 
 
 def _clean(text: str) -> str:
-    text = _BARE_SECRET.sub(REDACTED, redact_text((text or "").strip()))[:MAX_TEXT].strip()
+    text = _BARE_SECRET.sub(REDACTED, scrub_text((text or "").strip()))[:MAX_TEXT].strip()
     if not text:
         raise NoteError("a note needs text")
     return text

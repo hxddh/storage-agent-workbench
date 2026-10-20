@@ -368,3 +368,19 @@ class SecretScrubber:
         if isinstance(value, (list, tuple)):
             return [self(v) for v in value]
         return value
+
+
+def scrub_value(value: Any) -> Any:
+    """Exact vault values + credential-shaped patterns, recursively.
+
+    This is the boundary helper for anything that may be persisted, replayed to
+    the model, shown to the user, or written to a report. Pattern redaction alone
+    misses a configured secret whose shape is provider-specific; the vault knows
+    the exact values.
+    """
+    return SecretScrubber()(redact(value))
+
+
+def scrub_text(text: str) -> str:
+    """The string form of :func:`scrub_value`."""
+    return SecretScrubber().text(redact_text(text or ""))

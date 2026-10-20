@@ -80,8 +80,14 @@ def upsert_bucket(conn: sqlite3.Connection, provider_id: str, bucket: str, *, re
 
 def _forget_bucket(conn: sqlite3.Connection, provider_id: str, bucket: str, *, source: str) -> list[dict[str, Any]]:
     changes = []
-    for row in conn.execute(f"SELECT id FROM issues WHERE provider_id = ? AND bucket = ? AND status IN "
+    for row in conn.execute(f"SELECT id, status FROM issues WHERE provider_id = ? AND bucket = ? AND status IN "
                             f"({','.join('?' * len(ACTIVE))})", (provider_id, bucket, *ACTIVE)).fetchall():
+        if row["status"] == "accepted":
+            # The reason a risk was accepted is memory about this bucket. The
+            # bucket no longer exists, so the reason must leave with it — the
+            # same rule set_accepted(false) and a resolving observation follow.
+            from . import notes
+            notes.drop_accept_reasons(conn, row["id"])
         _transition(conn, row["id"], "resolved", source=source, detail={"reason": "bucket_no_longer_listed"})
         changes.append({"issue_id": row["id"], "change": "resolved"})
     conn.execute("DELETE FROM estate_buckets WHERE provider_id = ? AND bucket = ?", (provider_id, bucket))

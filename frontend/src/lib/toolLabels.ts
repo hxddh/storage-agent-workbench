@@ -47,3 +47,28 @@ export function toolLabel(tool: string, lang: Lang): string {
   const spaced = tool.replace(/_/g, " ").trim();
   return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : tool;
 }
+
+/** Present-progressive labels for a call that is running right now. */
+const RUNNING: Record<string, { en: string; zh: string }> = {
+  list_buckets: { en: "Listing buckets", zh: "正在列出存储桶" },
+  probe_endpoint: { en: "Probing endpoint", zh: "正在探测端点" },
+  list_objects: { en: "Listing objects", zh: "正在列出对象" },
+  inspect_object: { en: "Inspecting object", zh: "正在检查对象" },
+  review_bucket_config: { en: "Reviewing bucket configuration", zh: "正在审查桶配置" },
+  survey_account: { en: "Surveying account", zh: "正在盘点账号" },
+  query_estate: { en: "Checking what is known", zh: "正在查询已知情况" },
+  fix_preview: { en: "Previewing a fix", zh: "正在生成修复预览" },
+  note: { en: "Keeping a note", zh: "正在记录备注" },
+  read_skill: { en: "Reading skill", zh: "正在读取技能" },
+  import_evidence: { en: "Importing evidence", zh: "正在导入证据" },
+  analyze_uploaded_file: { en: "Analyzing attached file", zh: "正在分析附件" },
+  triage_error: { en: "Triaging error", zh: "正在分诊错误" },
+  simulate_storage_cost: { en: "Simulating storage cost", zh: "正在模拟存储成本" },
+  record_conclusion: { en: "Recording conclusion", zh: "正在记录结论" },
+};
+
+export function toolRunLabel(tool: string, lang: Lang): string {
+  const known = RUNNING[tool];
+  if (known) return known[lang];
+  return lang === "zh" ? `正在执行 ${tool.replace(/_/g, " ")}` : `Working on ${tool.replace(/_/g, " ")}`;
+}

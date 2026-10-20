@@ -224,6 +224,8 @@ def switch_branch(task_id: str, body: HeadIn, conn: Any = Depends(get_conn)) -> 
     turn = store.get_turn(conn, body.turn_id)
     if turn is None or turn["task_id"] != task_id:
         raise HTTPException(status_code=404, detail="turn not found")
+    if turn["status"] == "cancelled" and not turn.get("started_at"):
+        raise HTTPException(status_code=409, detail="a withdrawn Direction has no version to read")
     store.set_head(conn, task_id, store.leaf_of(conn, task_id, body.turn_id))
     return snapshot(conn, task_id)
 
@@ -335,12 +337,18 @@ async def follow(task_id: str, request: Request, after: int = Query(default=0, g
                 if kind == "item":
                     if data["seq"] <= last:
                         continue
-                    if sub.queue.qsize() == 0 and data["seq"] > last:
-                        # Fill any gap a full queue may have dropped.
+                    if data["seq"] > last + 1:
+                        # The hub is best-effort: parallel tool threads can land
+                        # seq+1 first. Never advance the reader across a hole —
+                        # replay the durable items that fill it before yielding
+                        # the one that arrived early.
                         for it in await asyncio.to_thread(replay, last):
-                            if it["seq"] < data["seq"]:
-                                last = it["seq"]
-                                yield _sse("item", public_item(it), it["seq"])
+                            if it["seq"] >= data["seq"]:
+                                break
+                            last = it["seq"]
+                            yield _sse("item", public_item(it), it["seq"])
+                    if data["seq"] <= last:
+                        continue
                     last = data["seq"]
                     yield _sse("item", public_item(data), data["seq"])
                 else:
