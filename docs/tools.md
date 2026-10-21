@@ -295,6 +295,11 @@ chars of schema per request; v10 has 15 tools costing about 10 300.
 - **`query_estate`**: reads the local estate. No storage call.
   - Returns known buckets (region, posture projection, `last_checked_at`),
     at most 200 returned (300 read), plus `bucket_count` and up to 100 issues.
+  - v11: with a `provider_id` or a known `bucket`, also returns up to 20 notes
+    scoped to that account/bucket (`notes`) and up to 40 recent Issue events
+    (`issue_events`). Notes are remembered context, already redacted, and reach
+    the model only inside the tool-output envelope. No new tool or table; the
+    prompt digest remains the 12 most recent notes.
   - `status` accepts `active`, `care`, `all`, `open`, `fix_proposed`,
     `resolved`, `recurred` or `accepted`. Anything else falls back to
     `active`.

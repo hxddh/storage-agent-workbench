@@ -1,9 +1,9 @@
 [package]
 name = "storage-agent-workbench"
-version = "10.0.0"
+version = "11.0.0"
 description = "Local-first agent for object storage operations, analytics, and management on S3-compatible systems"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.95"
 license = "Apache-2.0"
 
 [lib]
@@ -11,11 +11,11 @@ name = "storage_agent_workbench_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7.3", features = [] }
 
 [dependencies]
 # tray-icon: the menu-bar / system-tray item (Open · Quick Ask · Quit).
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2.12.4", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # OS CSPRNG for the per-launch sidecar auth token. Tracks the current release
@@ -30,7 +30,7 @@ getrandom = "0.4"
 # the second instance's write silently discarded whatever the first had stored
 # (and SQLite/DuckDB contend on one app.db). The plugin hands the argv to the
 # already-running instance instead, which focuses its window.
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = "2.5.4"
 # Modern native-agent OS integrations (all Tauri v2, all local-only):
 # - dialog: reliable file pick / save (replaces ad-hoc anchor download)
 # - notification: task-completion / needs-decision toasts when window is backgrounded
@@ -38,15 +38,21 @@ tauri-plugin-single-instance = "2"
 # - updater: signed auto-update (requires signing; inert until pubkey+endpoints set)
 # - deep-link: storage-agent://task/<id> to open a Task from an external link
 # - opener: system browser / mail client for https:/mailto: links (replaces hand-rolled open)
-tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2"
-tauri-plugin-global-shortcut = "2"
-tauri-plugin-updater = "2"
-tauri-plugin-deep-link = "2"
-tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2.8.3"
+tauri-plugin-notification = "2.7.0"
+tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-updater = "2.14.0"
+tauri-plugin-deep-link = "2.6.2"
+tauri-plugin-opener = "2.7.2"
 # - window-state: remember the window's size / position / maximised state
 #   across launches (restored by the Rust side alone; no JS counterpart)
-tauri-plugin-window-state = "2"
+tauri-plugin-window-state = "2.5.0"
+
+# tauri-plugin-deep-link 2.6.2 initializes rust-ini 0.21.1's ParseOption; 0.21.3
+# added fields and its source no longer compiles. Pin the unified version until
+# the plugin releases a compatible build.
+[target.'cfg(target_os = "linux")'.dependencies]
+rust-ini = "=0.21.1"
 
 # NOTE: The Python FastAPI sidecar is packaged with PyInstaller as a ONE-DIR
 # bundle, shipped as a Tauri resource, and launched directly from src/lib.rs via

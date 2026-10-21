@@ -50,7 +50,7 @@ test("a model and a storage account are added in Settings; keys never come back"
 
 test("the window reads Chinese end to end", async ({ page }) => {
   await boot(page, { lang: "zh" });
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("今天要照看些什么？");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("问问你的存储。");
   await expect(page.getByTestId("new-task")).toContainText("新任务");
   await api("/settings", { method: "PATCH", body: JSON.stringify({ language: "en" }) });
 });

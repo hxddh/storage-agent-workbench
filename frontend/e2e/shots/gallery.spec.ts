@@ -45,7 +45,7 @@ const conclusion = {
   next_steps: ["Show me the fix for acme-www", "Watch this account daily", "Review acme-data lifecycle"],
 };
 
-test("the v7 contact sheet", async ({ page }) => {
+test("the v11 contact sheet", async ({ page }) => {
   test.setTimeout(240_000);
   fs.rmSync(OUT, { recursive: true, force: true });
   await reset();
@@ -65,7 +65,7 @@ test("the v7 contact sheet", async ({ page }) => {
     await open(page, "dark", "en");
     await shot(page, "home-empty-dark-en");
     await delegate(page, "Survey my storage account and tell me what needs care, most severe first.");
-    await expect(page.getByTestId("activity-line")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("run-trace")).toBeVisible({ timeout: 30_000 });
     await shot(page, "live-dark-en");
     await expect(page.getByTestId("answer")).toBeVisible({ timeout: 60_000 });
     await settled(page, 60_000);
@@ -75,7 +75,7 @@ test("the v7 contact sheet", async ({ page }) => {
     await expect(page.getByTestId("turn").last()).toContainText("new objects only", { timeout: 30_000 });
     await settled(page);
     await shot(page, "follow-up-dark-en");
-    await page.getByTestId("turn").first().getByTestId("activity-line").click();
+    await page.getByTestId("turn").first().getByTestId("run-trace").click();
     await page.getByTestId("titlebar-sidepane").click();
     await shot(page, "details-dark-en");
     await page.keyboard.press("Escape");
@@ -92,6 +92,14 @@ test("the v7 contact sheet", async ({ page }) => {
     await page.getByTestId("new-task").click();
     await expect(page.getByTestId("needs-care")).toBeVisible();
     await shot(page, "home-attention-dark-en");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await shot(page, "home-attention-mobile-dark-en");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByRole("button", { name: "Show sidebar" }).click();
+    await page.getByTestId("composer").getByRole("button", { name: "Add estate context" }).click();
+    await expect(page.getByTestId("context-picker")).toBeVisible();
+    await shot(page, "context-picker-dark-en");
+    await page.keyboard.press("Escape");
     await page.getByTestId("needs-care").getByTestId("issue-bucket").filter({ hasText: "acme-www" }).first().click();
     await expect(page.getByTestId("bucket-page")).toBeVisible();
     await page.getByTestId("note-input").fill("Serves the marketing site; owned by the growth team.");

@@ -54,9 +54,9 @@ INSTRUCTIONS = (
     "on an old observation.\n"
     "- When a tool result names an estate issue, use its title and severity in your findings.\n"
     "- When the turn investigated something, call record_conclusion once, right before your final answer.\n"
-    "- The user sees one line per tool call, not the results: end with one complete Markdown answer carrying "
-    "the data asked for (every item when asked to list; a paged listing is not a total), tables for "
-    "per-group measures, fenced code for configuration or commands.\n\n"
+    "- The window renders the result of every call (survey tables, lists, issues, fixes) and shows one\n"
+    "  row per call. Do not retype a table the window already shows: say what the result means, what is\n"
+    "  missing, and what to do. If the request asks for a complete list, give it in the answer.\n\n"
     "Safety rules:\n" + "\n".join(f"- {r}" for r in SAFETY_RULES)
 )
 

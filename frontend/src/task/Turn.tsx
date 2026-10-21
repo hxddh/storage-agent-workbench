@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { api } from "../api";
 import type { LiveSegment, TaskSnapshot } from "../api/types";
 import { Icon } from "../components/icons";
@@ -12,12 +11,12 @@ import { SEVERITY_TONE } from "../lib/severity";
 import { toolLabel, toolRunLabel } from "../lib/toolLabels";
 import { useApp } from "../shell/context";
 import { figures, versions, type Section, type ToolRow as Row } from "../store/derive";
+import { ResultView, viewFor } from "../tool/ResultView";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
 
 /**
- * One turn of the conversation: the user's message, one line for the work
- * (live: what the Agent is doing now; done: how many steps and how long —
- * it opens to the commentary and every call), then the answer.
+ * One turn of the conversation: the request, the run (visible while live, a
+ * receipt once settled), then the answer with its recorded findings.
  */
 export function Turn({ section, taskId, forks, setSnapshot, running, live = null }: {
   section: Section; taskId: string; forks: Record<string, string[]>;
@@ -32,7 +31,7 @@ export function Turn({ section, taskId, forks, setSnapshot, running, live = null
         ? <p className="turn-note">{t("turn.continued")}</p>
         : <Message section={s} taskId={taskId} forks={forks} setSnapshot={setSnapshot} />}
       {queued ? <Queued taskId={taskId} turnId={s.turn.id} /> : null}
-      {!queued ? <Activity section={s} running={running} live={live} /> : null}
+      {!queued ? <RunTrace section={s} running={running} live={live} /> : null}
       {s.compacted && !s.blocks.some((b) => b.kind === "context")
         ? <p className="turn-note">{t("work.compacted")}</p> : null}
       <Answer section={s} running={running} live={live} />
@@ -63,6 +62,15 @@ function Message({ section, taskId, forks, setSnapshot }: {
     <div className="message" data-testid="message">
       <div className="message-bubble">
         <p className="message-text">{section.direction}</p>
+        {section.context?.length ? (
+          <ul className="message-context" data-testid="message-context">
+            {section.context.map((c, i) => (
+              <li key={`${c.kind}-${i}`} className="context-pill" data-kind={c.kind}>
+                <span>{c.kind === "account" ? c.account : c.kind === "issue" ? (c.title ?? c.bucket) : c.bucket}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {section.attachments?.length ? (
           <ul className="message-files">
             {section.attachments.map((a) => (
@@ -109,77 +117,92 @@ function tools(section: Section): Row[] {
   return section.blocks.flatMap((b) => (b.kind === "work" ? b.tools : []));
 }
 
-/** One line for the work. Live: the call running now. Done: steps and time; it opens. */
-function Activity({ section, running, live }: { section: Section; running: boolean; live: LiveSegment | null }) {
+/** The run: every real call while it is live; one receipt once it has settled. */
+function RunTrace({ section, running, live }: { section: Section; running: boolean; live: LiveSegment | null }) {
   const { t, lang } = useI18n();
-  const [open, setOpen] = useState(false);
   const rows = tools(section);
-  const commentary = section.blocks.filter((b) => b.kind === "commentary" || b.kind === "steer"
-    || b.kind === "context" || b.kind === "carried");
   const start = section.turn.started_at ?? section.turn.created_at;
   const elapsed = useElapsed(start, running ? null : section.turn.finished_at, running, lang);
-  if (!running && !rows.length && !commentary.length) return null;
-  const now = [...rows].reverse().find((r) => r.status === "running");
+  const commentary = section.blocks.filter((b) => b.kind === "commentary" || b.kind === "steer"
+    || b.kind === "context" || b.kind === "carried");
   const failed = rows.filter((r) => r.status === "failed" || r.status === "refused").length;
-  let label: string;
+  const found = section.conclusion?.findings?.length ?? 0;
+  // The latest deterministic result with a known shape is rendered in place.
+  // Unknown or truncated details stay in Evidence; nothing is guessed.
+  const result = [...rows].reverse().find((r) => r.status === "ok" && viewFor(r)) ?? null;
+  if (!running && !rows.length && !commentary.length) return null;
+
   if (running) {
-    label = now ? `${toolRunLabel(now.name, lang)}${now.target ? ` ${now.target}` : ""}`
+    const now = [...rows].reverse().find((r) => r.status === "running");
+    const label = now ? `${toolRunLabel(now.name, lang)}${now.target ? ` ${now.target}` : ""}`
       : live?.text ? t("work.writing") : t("work.thinking");
-  } else {
-    label = rows.length === 1 ? t("work.step") : rows.length ? t("work.steps", { n: rows.length }) : t("work.notes");
-  }
-  const p = running ? now?.progress : null;
-  return (
-    <div className="activity-line" data-open={open ? "true" : "false"} data-live={running ? "true" : undefined}>
-      <button type="button" className="activity-head" aria-expanded={open} onClick={() => setOpen(!open)}
-        data-testid="activity-line">
-        {running
-          ? <span className="ui-dot" data-tone="accent" data-pulse="true" aria-hidden />
-          : <span className="activity-glyph" aria-hidden><Icon name="activity" size={14} /></span>}
-        <span className="activity-label">{label}</span>
-        {p && p.total > 0 ? (
-          <span className="activity-progress">{t("tool.progress", { done: p.done.toLocaleString(), total: p.total.toLocaleString(), unit: p.unit })}</span>
-        ) : null}
-        {failed && !running ? <span className="activity-meta">· {t("work.failed", { n: failed })}</span> : null}
-        <span className="activity-meta">· {elapsed}</span>
-        <Icon name="chevron" size={14} className="activity-caret" />
-      </button>
-      {running && !open ? <LiveNotes section={section} /> : null}
-      {open ? (
-        <div className="activity-body reveal">
-          {section.blocks.map((b) => {
-            if (b.kind === "commentary") return <div key={b.id} className="activity-note"><Markdown text={b.text} /></div>;
-            if (b.kind === "steer") return <p key={b.id} className="activity-steer"><span>{t("work.steered")}</span> {b.text}</p>;
-            if (b.kind === "carried") return <p key={b.id} className="activity-carried">{t("work.carried", { n: b.count })}</p>;
-            if (b.kind === "context") {
-              return (
-                <details key={b.id} className="activity-context">
-                  <summary>{t("work.compacted")}{b.turns ? ` · ${t("work.turns", { n: b.turns })}` : ""}</summary>
-                  {b.summary ? <p>{b.summary}</p> : null}
-                </details>
-              );
-            }
-            return (
-              <ul key={b.id} className="call-list">
-                {b.tools.map((r) => <CallRow key={r.callId} row={r} />)}
-              </ul>
-            );
-          })}
+    const progress = now?.progress;
+    return (
+      <div className="run-trace" data-live="true">
+        <div className="run-head" data-testid="run-trace">
+          <span className="ui-dot" data-tone="accent" data-pulse="true" aria-hidden />
+          <span className="run-label">{label}</span>
+          {progress && progress.total > 0 ? (
+            <span className="run-progress">{t("tool.progress", { done: progress.done.toLocaleString(),
+              total: progress.total.toLocaleString(), unit: progress.unit })}</span>
+          ) : null}
+          <span className="run-meta">· {t(rows.length === 1 ? "work.check" : "work.checks", { n: rows.length })}</span>
+          <span className="run-meta">· {elapsed}</span>
         </div>
-      ) : null}
-    </div>
+        <RunBody section={section} result={result} />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <details className="run-trace" data-live="false">
+        <summary className="run-receipt" data-testid="run-trace">
+          <span className="run-glyph" aria-hidden><Icon name="activity" size={14} /></span>
+          <span>{rows.length ? t(rows.length === 1 ? "work.check" : "work.checks", { n: rows.length }) : t("work.notes")}</span>
+          {found ? <span className="run-meta">· {t(found === 1 ? "work.finding" : "work.findings", { n: found })}</span> : null}
+          {failed ? <span className="run-meta run-failed">· {t("work.failed", { n: failed })}</span> : null}
+          <span className="run-meta">· {elapsed}</span>
+          <Icon name="chevron" size={14} className="run-caret" />
+        </summary>
+        <RunBody section={section} result={null} />
+      </details>
+      <SettledResult result={result} />
+    </>
   );
 }
 
-/** While work is live, the Agent's latest note (its short commentary) under the line. */
-function LiveNotes({ section }: { section: Section }) {
+/** The result is evidence, not prose: once settled it stays visible under the receipt. */
+function SettledResult({ result }: { result: Row | null }) {
+  if (!result) return null;
+  return <div className="run-result" data-testid="run-result"><ResultView row={result} /></div>;
+}
+
+function RunBody({ section, result }: { section: Section; result: Row | null }) {
   const { t } = useI18n();
-  const last = [...section.blocks].reverse().find((b) => b.kind === "commentary" || b.kind === "steer");
-  if (!last || (last.kind !== "commentary" && last.kind !== "steer")) return null;
-  // A steer reads as the reader's own words, labelled — never as unmarked text in the stream.
-  return last.kind === "steer"
-    ? <p className="activity-now activity-steer reveal"><span>{t("work.steered")}</span> {last.text}</p>
-    : <p className="activity-now reveal">{last.text}</p>;
+  return (
+    <div className="run-body" data-testid="run-body">
+      {section.blocks.map((b) => {
+        if (b.kind === "commentary") return <div key={b.id} className="run-note"><Markdown text={b.text} /></div>;
+        if (b.kind === "steer") return <p key={b.id} className="run-steer"><span>{t("work.steered")}</span> {b.text}</p>;
+        if (b.kind === "carried") return <p key={b.id} className="run-carried">{t("work.carried", { n: b.count })}</p>;
+        if (b.kind === "context") {
+          return (
+            <details key={b.id} className="run-context">
+              <summary>{t("work.compacted")}{b.turns ? ` · ${t("work.turns", { n: b.turns })}` : ""}</summary>
+              {b.summary ? <p>{b.summary}</p> : null}
+            </details>
+          );
+        }
+        return (
+          <ul key={b.id} className="call-list">
+            {b.tools.map((r) => <CallRow key={r.callId} row={r} />)}
+          </ul>
+        );
+      })}
+      {result ? <div className="run-result" data-testid="run-result"><ResultView row={result} /></div> : null}
+    </div>
+  );
 }
 
 const GLYPH: Record<Row["status"], "check" | "x" | "alert" | "tool"> = { ok: "check", failed: "x", refused: "alert", running: "tool" };
@@ -220,14 +243,18 @@ function Answer({ section, running, live }: { section: Section; running: boolean
   return (
     <div className="answer reveal" data-testid="answer">
       {text ? <Markdown text={text} /> : null}
-      {found.length ? <Findings findings={found} /> : null}
+      {found.length ? <Findings findings={found} evidence={c?.evidence} /> : null}
       {fig ? <AnalysisFigures provenance={fig} /> : null}
     </div>
   );
 }
 
-function Findings({ findings }: { findings: NonNullable<NonNullable<Section["conclusion"]>["findings"]> }) {
+function Findings({ findings, evidence }: {
+  findings: NonNullable<NonNullable<Section["conclusion"]>["findings"]>;
+  evidence?: NonNullable<Section["conclusion"]>["evidence"];
+}) {
   const { t } = useI18n();
+  const app = useApp();
   return (
     <ul className="findings" aria-label={t("turn.findings")} data-testid="findings">
       {findings.map((f, i) => (
@@ -235,6 +262,14 @@ function Findings({ findings }: { findings: NonNullable<NonNullable<Section["con
           <StatusDot tone={SEVERITY_TONE[f.severity] === "outline" ? "neutral" : SEVERITY_TONE[f.severity]} />
           <span className="sr-only">{t(`sev.${f.severity}`)}: </span>
           <span className="finding-title">{f.title}</span>
+          <span className="finding-actions">
+            {evidence?.length ? (
+              <button type="button" className="evidence-chip" title={t("tool.evidenceHint")}
+                onClick={() => app.setPane({ tab: "details" })}>
+                <Icon name="activity" size={12} />{t(evidence.length === 1 ? "tool.check" : "tool.checks", { n: evidence.length })}
+              </button>
+            ) : <span className="evidence-none">{t("tool.noCheck")}</span>}
+          </span>
           {f.detail ? <span className="finding-detail">{f.detail}</span> : null}
         </li>
       ))}

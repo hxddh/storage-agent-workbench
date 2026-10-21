@@ -8,8 +8,8 @@ missing=()
 
 [ -x .venv/bin/python ] || missing+=(".venv (run .agents/setup)")
 if [ -x .venv/bin/python ]; then
-  .venv/bin/python -c 'import sys, app.main; raise SystemExit(sys.version_info[:2] != (3, 12))' >/dev/null 2>&1 \
-    || missing+=(".venv is not a working Python 3.12 sidecar env (run .agents/setup)")
+  .venv/bin/python -c 'import sys, app.main; raise SystemExit(sys.version_info[:2] != (3, 14))' >/dev/null 2>&1 \
+    || missing+=(".venv is not a working Python 3.14 sidecar env (run .agents/setup)")
 fi
 [ -d frontend/node_modules ] || missing+=("frontend/node_modules (run .agents/setup)")
 if ! compgen -G "$HOME/.cache/ms-playwright/chromium-*" >/dev/null; then
@@ -25,4 +25,4 @@ if [ "${#missing[@]}" -gt 0 ]; then
   exit 1
 fi
 
-printf 'Storage Agent Workbench ready: Python 3.12 sidecar, frontend deps, Chromium, Rust.\n'
+printf 'Storage Agent Workbench ready: Python 3.14 sidecar, frontend deps, Chromium, Rust.\n'

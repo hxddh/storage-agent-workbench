@@ -52,11 +52,23 @@ def _only_account(conn: Any) -> str:
     return rows[0]["id"] if len(rows) == 1 else ""
 
 
+def _recent_issue_events(conn: Any, issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ids = [i["id"] for i in issues[:40] if i.get("id")]
+    if not ids:
+        return []
+    marks = ",".join("?" * len(ids))
+    rows = conn.execute(f"SELECT issue_id, kind, source, created_at FROM issue_events "
+                        f"WHERE issue_id IN ({marks}) ORDER BY id DESC LIMIT 40", tuple(ids)).fetchall()
+    return [{"issue_id": r["issue_id"], "kind": r["kind"], "source": r["source"],
+             "at": r["created_at"]} for r in rows]
+
+
 @tool(group="core", core=True, timeout=15, summarize=_estate_summary)
 def query_estate(provider_id: str = "", bucket: str = "", status: IssueStatus = "active",
                  survey_filter: SurveyFilter | None = None, since_last_survey: bool = False) -> dict[str, Any]:
-    """What earlier work established: known buckets and issues (ids, status). survey_filter: the latest
-    survey's buckets by posture; since_last_survey: what changed since the survey before. No new scan.
+    """What earlier work established: known buckets, issues (ids, status) and the notes kept on that account
+    or bucket. survey_filter: the latest survey's buckets by posture; since_last_survey: what changed since
+    the survey before. No new scan.
 
     Args:
         status: Which issues (active: still to act on).
@@ -72,9 +84,25 @@ def query_estate(provider_id: str = "", bucket: str = "", status: IssueStatus = 
     known = estate.buckets(conn, provider_id or None, limit=300)
     if bucket:
         known = [b for b in known if b["bucket"] == bucket]
-    return {"success": True, "buckets": known[:200], "bucket_count": len(known),
-            "issues": estate.list_issues(conn, status=status, provider_id=provider_id or None,
-                                         bucket=bucket or None, limit=100, lang=lang)}
+    issues = estate.list_issues(conn, status=status, provider_id=provider_id or None,
+                                bucket=bucket or None, limit=100, lang=lang)
+    out: dict[str, Any] = {"success": True, "buckets": known[:200], "bucket_count": len(known),
+                           "issues": issues}
+    # Notes are the estate's memory: the one kept about the bucket being read is
+    # worth more than the twelve most recent in the prompt. Bounded and already
+    # redacted; they reach the model inside the tool-output envelope.
+    scope = provider_id
+    if not scope and bucket:
+        pids = {b["provider_id"] for b in known}
+        scope = next(iter(pids)) if len(pids) == 1 else ""
+    if scope:
+        kept = estate_notes.list_notes(conn, provider_id=scope, bucket=bucket or None, limit=20)
+        if kept:
+            out["notes"] = kept
+    events = _recent_issue_events(conn, issues)
+    if events:
+        out["issue_events"] = events
+    return out
 
 
 def _survey_diff(conn: Any, provider_id: str) -> dict[str, Any]:

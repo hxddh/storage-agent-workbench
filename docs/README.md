@@ -1,20 +1,22 @@
 # Documentation
 
-> **Current baseline: Storage Agent v10.1.0.** Built on the v5 rewrite around one
+> **Current baseline: Storage Agent v11.0.0.** Built on the v5 rewrite around one
 > idea — *the estate is the object, Agent Tasks are how work is done, and one item
-> stream is the truth* — v7 made a task one conversation; v8 is subtraction and
-> correctness; v9 keeps state consistent; v10 makes a small local model finish
-> the work: one budget plan, 15 tools instead of 30, 5 skill cards instead of 13,
-> small-model guards and a scenario eval. v10.1 adds the warm graphite/ink window,
-> a System theme, a clearer home, conversation and Settings, and closes the review’s
-> stream, secret-boundary and Turn-lifecycle defects. See `docs/releases/10.1.0.md`.
+> stream is the truth*. v7 made a task one conversation; v8 was subtraction and
+> correctness; v9 kept state consistent; v10 made a small local model finish the
+> work. v11 makes the work legible: Home is an empty Task with the one docked
+> Composer, a live run trace becomes a receipt, deterministic results are rendered
+> from tool outputs instead of transcribed by the model, findings carry the turn's
+> checks as evidence, and `@` attaches estate context. The dependency closure is
+> refreshed on Python 3.14. See `docs/releases/11.0.0.md`.
 
 ## Source-of-truth order
 
 1. The code, and its executable contracts: `frontend/src/contracts.test.ts`,
-   `frontend/src/surfaces.test.tsx`, `frontend/src/estate/estate.test.tsx`,
-   `sidecar/tests/test_v500_*.py`, `sidecar/tests/test_v600_kernel.py`, the
-   Playwright suite in `frontend/e2e/`.
+   `frontend/src/surfaces.test.tsx`, `frontend/src/tool/ResultView.test.tsx`,
+   `frontend/src/estate/estate.test.tsx`,
+   `sidecar/tests/test_v500_*.py`, `sidecar/tests/test_v600_kernel.py`,
+   `sidecar/tests/test_v1100_agent_native.py`, the Playwright suite in `frontend/e2e/`.
 2. `CLAUDE.md` — the implementation contract.
 3. The canonical documents below.
 4. Release notes and the CHANGELOG — history, not specification.
@@ -29,7 +31,7 @@ When they disagree, the higher one wins; fix the lower one in the same PR.
 | **Direction** | What the user asked — the heading of a Turn, in their words. Editing it sends a new version (a fork). |
 | **Turn** | One Direction and the work it caused; queued, running, completed, failed, cancelled or interrupted. |
 | **Item** | One entry of the append-only stream (message, tool call/progress/output, conclusion, steer, compaction, notice, error). Everything shown is projected from items. |
-| **Conversation** | A task's page: every Turn on the branch, oldest first — the request, one activity line, the answer with its findings and figures. |
+| **Conversation** | A task's page: every Turn on the branch, oldest first — the request, the live run trace or its receipt, the rendered result, the answer with its findings and evidence. |
 | **Estate** | What the work established about the user's storage: accounts, known buckets, their posture and how it changed, Issues, notes. |
 | **Issue** | A deterministic observation about a bucket, with a lifecycle (open → fix proposed → resolved; recurred; accepted). |
 | **Fix pack** | An Issue's fix as text the user applies — AWS CLI, Terraform, the API document — with an impact preview drawn from evidence (or an honest *cannot tell*). |

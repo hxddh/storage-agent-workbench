@@ -5,7 +5,7 @@ test.beforeEach(reset);
 
 test("a fresh install says what is missing and starts nothing on its own", async ({ page }) => {
   await boot(page);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("What should we look after today?");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ask about your storage.");
   const ready = page.getByTestId("readiness");
   await expect(ready).toHaveText("Add a model and add a storage account to get started.");
   await expect(page.getByTestId("model-chip")).toHaveText("Set up a model…");

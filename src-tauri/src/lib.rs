@@ -46,7 +46,7 @@ const MENU_COMMANDS: &[(&str, &str, Option<&str>)] = &[
     ("stop", "Stop Execution", Some("CmdOrCtrl+.")),
     ("resume", "Resume Interrupted Execution", None),
     ("toggle-sidebar", "Toggle Sidebar", Some("CmdOrCtrl+\\")),
-    ("review", "Show Details", Some("CmdOrCtrl+I")),
+    ("review", "Show Evidence", Some("CmdOrCtrl+I")),
     ("search", "Search Tasks", Some("CmdOrCtrl+K")),
     ("focus-composer", "Focus Composer", Some("CmdOrCtrl+L")),
     ("theme", "Toggle Theme", None),

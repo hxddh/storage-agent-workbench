@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Install dependencies
         run: npm ci
       - name: Type check
@@ -41,10 +41,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install sidecar
         run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]"
       - name: Install frontend dependencies
@@ -75,8 +75,12 @@ jobs:
           retention-days: 7
 
   sidecar:
-    name: Sidecar import & tests
+    name: Sidecar import & tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
     defaults:
       run:
         working-directory: sidecar
@@ -84,7 +88,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - name: Install package (with dev extras)
         run: pip install -c requirements.lock -e ".[dev]"
       - name: Lint (ruff)
@@ -105,7 +109,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install package (dev + packaging extras)
         run: pip install -c requirements.lock -e ".[dev]" -e ".[packaging]"
       - name: Build packaged sidecar (PyInstaller)
@@ -124,10 +128,10 @@ jobs:
           workspaces: src-tauri
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Install sidecar deps (dev + packaging)
         run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI
@@ -174,10 +178,10 @@ jobs:
           workspaces: src-tauri
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Install Tauri Linux system deps
         run: |
           sudo apt-get update
@@ -224,10 +228,10 @@ jobs:
           workspaces: src-tauri
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Install sidecar deps (dev + packaging)
         run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI

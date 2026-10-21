@@ -18,15 +18,17 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 
 - The **sidebar** is New task, an in-place search, the task list grouped by day, and Settings — nothing else. In a narrow window it overlays the page. A row shows state as a mark: working (pulsing), queued, needs attention; a task the watch opened carries a shield.
 - **⌘K** focuses the sidebar search.
-- The **title bar** names the task and shows its real state; a hairline runs under it while work is live; its right-hand button opens **Details**.
-- The **Composer** is the only way to give the Agent work: *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. Files attach by button or drop (access logs, inventories); a file always makes a new request. The model chip shows which model the next turn uses; with none set up, Send waits and the chip says where to add one. Stopping keeps what was written so far as the answer.
+- The **title bar** names the task and shows its real state; a hairline runs under it while work is live; its right-hand button opens **Evidence**.
+- The **Composer** is the only way to give the Agent work, and it sits in the same dock on Home and on every task: *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. `@` attaches an account, bucket or open Issue as context; a context chip or a file always makes a new request, never a steer. Files attach by button or drop (access logs, inventories). The model chip shows which model the next turn uses; with none set up, Send waits and the chip says where to add one. Stopping keeps what was written so far as the answer. Context is focus, not authorization: the account's bucket/prefix scope is still enforced server-side.
 
-### Home — a new conversation, and what needs attention
+### Home — an empty Task
 
-The greeting, the Composer, three starters (*Diagnose an access error*, *Survey my storage account*, *Analyze an access log*) that only fill the Composer, then:
+Home is the same window as a Task with no Turns yet: one heading, the docked Composer, three quiet prompt chips (*Diagnose an access error*, *Survey my storage account*, *Analyze an access log*) that only fill the Composer, then:
 
 - **Getting started** — one sentence when a model or a storage account is missing, each part a link to the right Settings pane.
 - **Needs attention** — one row per kind of open Issue, most severe first, naming every bucket it was found on (three, then *+N*); a bucket opens in the side pane. Below, one quiet line per account: its buckets, when it was last checked, whether it is watched — storage never checked reads *name · not checked yet · Survey* (Survey fills the Composer), with no bucket count.
+
+There is no second layout and no separate estate page. The Composer never moves when a task starts.
 
 ### A bucket
 
@@ -38,13 +40,13 @@ An Issue shows **Show fix** and **Verify** (a read-only re-check that can resolv
 
 ### A task — one conversation, oldest first
 
-Every request reads top to bottom in the order it was made: the user's words as a message, one **activity line** (*Running: Reviewed bucket configuration acme-www* while live; *3 steps · 12s* when done, expanding to the commentary and each call), the answer as it streams, then the answer itself with the recorded findings as severity dots and figures from the deterministic analyses. A queued request shows *Queued* with *Withdraw*; a request that needs attention offers *Continue* or *Open Settings*. After the latest answer, up to three of its recorded next steps appear as suggestions that fill the Composer. A turn without a recorded conclusion shows its answer; nothing is guessed.
+Every request reads top to bottom in the order it was made: the user's message (with any context chips), the **run trace**, the rendered deterministic result, then the answer. While work is live the trace is open and shows every real call — verb, target, progress and result — with commentary and steers inline; when the turn settles it becomes one receipt (*2 checks · 1 finding · 12s*) that expands to the same calls. The result of a survey, listing, configuration review or fix preview is rendered from `tool_output.detail`; the model interprets it rather than retyping it. Findings carry the turn's successful calls as a quiet **2 checks** chip, or *No direct check* when there were none: this is a turn-level evidence chain, never a claim that each call proves each finding. A queued request shows *Queued* with *Withdraw*; a request that needs attention offers *Continue* or *Open Settings*. After the latest answer, up to three recorded next steps appear as suggestions that fill the Composer. A turn without a recorded conclusion shows its answer; nothing is guessed.
 
 A message can be **edited**: that sends a new version of it — a fork of the task at that point — and *1 / 2* switches between versions. Reloading, reconnecting or following up never reorders, drops or duplicates anything: the page is the item stream, merged by sequence.
 
-### Details
+### Evidence
 
-The one side pane for a task: *Save report* (the task report in the reader's language, as Markdown), token usage, every tool call (one opens with its arguments and output), and the attached files.
+The one side pane for a task: *Save report* (the task report in the reader's language, as Markdown), what this turn checked (one row per call, opening to its rendered result, arguments and raw JSON behind a *Raw* fold), attached files, and usage at the foot. It reads as evidence, not a developer inspector; raw payloads are never the default.
 
 ### Quick Ask
 
@@ -59,5 +61,6 @@ General (theme, language, the safety floor in three points; *Advanced*: skills, 
 - **The estate outlives the task.** Every task starts knowing the accounts, the known buckets, the open Issues and the notes.
 - **Nothing is invented.** Findings, Issues, progress and figures come from tool results and deterministic engines; a gap stays a gap.
 - **Read-only, bounded, stoppable.** No approval prompts, no plan mode, no modes: the one data-moving tool runs inside hard server-side bounds, and Stop ends any work — a stopped or timed-out tool ends at its next check.
+- **The run is legible.** The window shows the calls that actually happened while they happen; deterministic results are rendered, not narrated; a finding carries the checks from its turn or says it has none.
 - **One of everything**: one Agent, one submit path, one stream, one Composer, one side pane, one conversation.
 - **Native and quiet**: the platform's own chrome, one accent colour, English and Chinese throughout.

@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [11.0.0] - 2026-10-21
+
+_The run made legible._ See `docs/releases/11.0.0.md`.
+
+### Added
+
+- Home is an empty Task; one docked Composer, three quiet prompt chips, attention first.
+- A live run trace and a settled receipt, with real calls, progress, commentary and steers.
+- Deterministic result views rendered from `tool_output.detail` (survey, listing, issues, configuration, fix).
+- Turn-level evidence on conclusions and a checks/No direct check chip on each finding.
+- An **Evidence** side pane with rendered results, raw JSON behind a fold and usage at the foot.
+- `@` estate context for accounts, buckets and open Issues; optional `context` on a Direction, resolved and redacted server-side.
+- Scoped notes and recent Issue events in `query_estate`.
+
+### Changed
+
+- Design system v5: 28px page title, 6/8/12 radii, flat canvas, aligned reading column; no editorial hero or ambient wash.
+- The Agent is instructed to interpret deterministic results instead of retyping tables the window renders.
+- Python 3.14 build baseline, Node 24 LTS and the verified dependency closure; Tauri 2.12.4 / Rust 1.95.
+- The attention count reads *N open*; Evidence rows wrap instead of clipping.
+
+### Preserved
+
+- One Agent, one submit path, one item stream, Turn tree, forks, queue/withdraw, steer/stop/resume, compaction/finalize, 15 tools, schema head 2, read-only storage and the secret boundary.
+
 ## [10.1.0] - 2026-10-20
 
 _A calmer, more truthful window._ See `docs/releases/10.1.0.md`.

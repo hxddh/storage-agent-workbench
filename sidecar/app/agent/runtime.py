@@ -156,6 +156,7 @@ class Runtime:
     # -- public API (thread-safe; called from request handlers) --------------------------
     def submit(self, conn: Any, task_id: str, direction: str, *, kind: str = "direction",
                parent_turn_id: str | None = None, attachments: list[dict[str, Any]] | None = None,
+               context: list[dict[str, Any]] | None = None,
                resumed_from: str | None = None, note: str | None = None, kick: bool = True) -> dict[str, Any]:
         """Queue a Direction as a new turn and make sure the task's worker runs."""
         turn = store.create_turn(conn, task_id, direction, kind=kind, parent_turn_id=parent_turn_id,
@@ -166,7 +167,7 @@ class Runtime:
             if kind == "resume":
                 rec.notice("resumed", note=note or RESUME_NOTE, resumed_from=resumed_from)
             else:
-                rec.user_message(direction, attachments)
+                rec.user_message(direction, attachments, context)
         finally:
             rec.close()
         self._publish_state(conn, task_id)

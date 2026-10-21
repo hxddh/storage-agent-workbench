@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api";
-import type { CloudProvider, ModelProvider } from "../api/types";
+import type { CloudProvider, ContextRef, ModelProvider } from "../api/types";
 
 /**
  * Window state that more than one surface reads: where the reader is (the
@@ -9,7 +9,7 @@ import type { CloudProvider, ModelProvider } from "../api/types";
  */
 
 export type Route = { kind: "home" } | { kind: "task"; id: string };
-/** The one side pane: a task's Details (every call, files, the report), or one bucket. */
+/** The one side pane: a task's Evidence (every check, files, the report), or one bucket. */
 export type Pane =
   | { tab: "details"; callId?: string }
   | { tab: "bucket"; providerId: string; bucket: string }
@@ -30,8 +30,8 @@ type Ctx = {
   closeSettings: () => void;
   editing: Editing;
   setEditing: (e: Editing) => void;
-  draft: { text: string; nonce: number };
-  prefill: (text: string) => void;
+  draft: { text: string; nonce: number; context?: ContextRef[] };
+  prefill: (text: string, context?: ContextRef[]) => void;
   models: ModelProvider[] | null;
   clouds: CloudProvider[] | null;
   reloadProviders: () => Promise<void>;
@@ -70,7 +70,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sidebar, setSidebarState] = useState(storedSidebar);
   const [settings, setSettings] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
-  const [draft, setDraft] = useState({ text: "", nonce: 0 });
+  const [draft, setDraft] = useState<{ text: string; nonce: number; context?: ContextRef[] }>({ text: "", nonce: 0 });
   const [models, setModels] = useState<ModelProvider[] | null>(null);
   const [clouds, setClouds] = useState<CloudProvider[] | null>(null);
   const [online, setOnline] = useState(true);
@@ -145,7 +145,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     editing,
     setEditing,
     draft,
-    prefill: (text) => setDraft((d) => ({ text, nonce: d.nonce + 1 })),
+    prefill: (text, context) => setDraft((d) => ({ text, nonce: d.nonce + 1, ...(context?.length ? { context } : {}) })),
     models,
     clouds,
     reloadProviders,

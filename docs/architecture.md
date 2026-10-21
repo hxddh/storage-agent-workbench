@@ -90,4 +90,4 @@ The frontend's `store/task.ts` is one reducer over the snapshot (`GET /tasks/{id
 
 ## Dependencies
 
-Verified versions are pinned in `sidecar/requirements.lock` (openai-agents 0.22.3, openai 3.20, fastapi 0.141, sse-starlette 3.5, mcp 2.2, duckdb 1.5.6, pyarrow 25, pandas 3.0) and `frontend/package-lock.json` (React 19.3, Vite 8.3, Vitest 5, TypeScript 7, Tailwind 4.3, Playwright 1.63).
+Verified versions are pinned in `sidecar/requirements.lock` (openai-agents 0.24.0, openai 3.35.1, fastapi 0.156.4, starlette 1.9.0, sse-starlette 3.5, mcp 2.3, duckdb 1.5.6, pyarrow 26, pandas 3.0) and `frontend/package-lock.json` (React 19.3.1, Vite 8.3.4, Vitest 5.0.5, TypeScript 7, Tailwind 4.3, Playwright 1.64.1). The build baseline is Python 3.14; `requires-python` remains `>=3.12` and CI tests both.

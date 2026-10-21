@@ -11,6 +11,7 @@ import { toolLabel } from "../lib/toolLabels";
 import { useApp } from "../shell/context";
 import { allTools, sections, type ToolRow } from "../store/derive";
 import type { TaskModel } from "../store/task";
+import { ResultView, viewFor } from "../tool/ResultView";
 
 const MIN_W = 352;
 const MAX_W = 880;
@@ -88,8 +89,8 @@ export function Pane({ title, children, testId }: { title: string; children: Rea
 }
 
 /**
- * Details of one task: every call the Agent made (one opens as a document with
- * its arguments and output), the files attached or imported, and the report.
+ * Evidence for one task: what this turn checked (one opens as a document with
+ * its rendered result, arguments and raw output), the files, and the report.
  */
 export function Details({ model }: { model: TaskModel }) {
   const { t } = useI18n();
@@ -104,8 +105,6 @@ export function Details({ model }: { model: TaskModel }) {
     <Pane title={t("pane.details")} testId="inspector">
       {call ? <CallDetail row={call} /> : (
         <div className="details" data-testid="details">
-          <SaveReport taskId={model.id} title={model.snapshot?.task.title ?? "task"} />
-          <Usage usage={model.turns.map((x) => x.usage)} />
           <h3 className="pane-label">{t("pane.calls", { n: tools.length })}</h3>
           {tools.length ? (
             <ul className="details-calls">
@@ -127,6 +126,8 @@ export function Details({ model }: { model: TaskModel }) {
               </ul>
             </>
           ) : null}
+          <SaveReport taskId={model.id} title={model.snapshot?.task.title ?? "task"} />
+          <Usage usage={model.turns.map((x) => x.usage)} />
         </div>
       )}
     </Pane>
@@ -142,6 +143,7 @@ function CallLine({ row }: { row: ToolRow }) {
         onClick={() => app.setPane({ tab: "details", callId: row.callId })}>
         <span className="call-verb">{toolLabel(row.name, lang)}</span>
         {row.target ? <span className="call-target">{row.target}</span> : null}
+        {row.summary ? <span className="call-note">{row.summary}</span> : null}
         {row.durationMs != null ? <small>{(row.durationMs / 1000).toFixed(1)}s</small> : null}
       </button>
     </li>
@@ -211,23 +213,32 @@ function readableArgs(args: ToolRow["args"], clouds: Array<{ id: string; name: s
 function CallDetail({ row }: { row: ToolRow }) {
   const { t, lang } = useI18n();
   const app = useApp();
+  const view = viewFor(row);
   return (
     <div className="call-detail" data-testid="call-detail">
       <Button size="sm" variant="ghost" icon="arrowLeft" onClick={() => app.setPane({ tab: "details" })}>
         {t("pane.back")}
       </Button>
       <h3 className="call-title">{toolLabel(row.name, lang)}</h3>
-      <p className="quiet-note"><code>{row.name}</code>{row.durationMs != null ? ` · ${(row.durationMs / 1000).toFixed(1)}s` : ""}</p>
-      {row.summary ? <p>{row.summary}</p> : null}
-      <h4 className="pane-label">{t("tool.args")}</h4>
-      <Markdown text={"```json\n" + JSON.stringify(readableArgs(row.args, app.clouds), null, 2) + "\n```"} />
-      {row.detail ? (
-        <>
-          <h4 className="pane-label">{t("tool.output")}</h4>
-          <Markdown text={"```json\n" + pretty(row.detail) + "\n```"} />
-          {row.detailTruncated ? <p className="quiet-note">{t("tool.truncated")}</p> : null}
-        </>
-      ) : null}
+      <p className="evidence-meta">
+        <code>{row.name}</code>{row.durationMs != null ? ` · ${(row.durationMs / 1000).toFixed(1)}s` : ""}
+        {row.summary ? ` · ${row.summary}` : ""}
+      </p>
+      {view ? <ResultView row={row} /> : (
+        <p className="quiet-note result-gap">{row.detailTruncated ? t("result.truncatedGap") : t("tool.noView")}</p>
+      )}
+      <details className="raw-fold" open={!view}>
+        <summary>{t("tool.raw")}</summary>
+        <h4 className="pane-label">{t("tool.args")}</h4>
+        <Markdown text={"```json\n" + JSON.stringify(readableArgs(row.args, app.clouds), null, 2) + "\n```"} />
+        {row.detail ? (
+          <>
+            <h4 className="pane-label">{t("tool.output")}</h4>
+            <Markdown text={"```json\n" + pretty(row.detail) + "\n```"} />
+            {row.detailTruncated ? <p className="quiet-note">{t("tool.truncated")}</p> : null}
+          </>
+        ) : null}
+      </details>
     </div>
   );
 }

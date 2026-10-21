@@ -1,8 +1,8 @@
 # Storage Agent
 
-**Current release: v10.1.0**
+**Current release: v11.0.0**
 
-Storage Agent is a local-first desktop Agent for object storage — AWS S3 and every S3-compatible service. Give it a goal or a problem; it investigates with real, read-only, bounded tools, stays steerable and stoppable while it works, and answers with evidence. What it learns about your storage — accounts, buckets, their posture and the Issues found there — outlives the task that learned it.
+Storage Agent is a local-first desktop Agent for object storage — AWS S3 and every S3-compatible service. Give it a goal or a problem; it investigates with real, read-only, bounded tools, shows the work while it runs, stays steerable and stoppable, and answers with evidence. What it learns about your storage — accounts, buckets, their posture and the Issues found there — outlives the task that learned it.
 
 > **The estate is the object; Agent Tasks are how work is done. One item stream is the truth.**
 
@@ -10,10 +10,11 @@ It is not a chatbot wrapped around a storage console, and it never writes to you
 
 ## How it works
 
-- **One conversation.** A task reads top to bottom, oldest first: your request, one line for what the Agent did (expand it for each step), the answer with its findings and figures. Follow up as often as you like — nothing is reordered, dropped or repeated, across reloads too. Suggested next steps fill the Composer.
-- **Send, add to the request, stop.** One Composer: send a request at rest; add to it while the Agent works; stop it and keep what it found. A request sent while the Agent works is queued.
-- **Edit a request.** The Agent answers the new version on its own branch; switch between versions. **Details** holds the report, usage and every tool call.
-- **Your storage.** Surveys and reviews are remembered per account. The home lists what needs attention, most severe first; a row opens the bucket — its Issues, configuration, notes and history. An opt-in watch re-checks an account on a schedule and opens one task when something new turns up.
+- **One conversation, one run.** A task reads top to bottom: your request, the live run trace (each real call, its progress and result), then a receipt when it settles, the rendered deterministic result, the answer with its findings and evidence, and the figures. Follow up as often as you like — nothing is reordered, dropped or repeated, across reloads too.
+- **Point at the estate.** `@` in the Composer attaches an account, bucket or open Issue. Context focuses the request; it never grants access — the account's bucket/prefix scope is still enforced server-side.
+- **Send, add to the request, stop.** One Composer, docked in the same place on Home and every task: send at rest; add to it while the Agent works; stop it and keep what it found. A request sent while the Agent works is queued.
+- **Edit a request.** The Agent answers the new version on its own branch; switch between versions. **Evidence** holds the report, usage, every check (with its arguments, rendered result and raw output) and attached files.
+- **Your storage.** Surveys and reviews are remembered per account. Home is an empty task: what needs attention comes first, most severe first; a row opens the bucket — its Issues, configuration, notes and history. An opt-in watch re-checks an account on a schedule and opens one task when something new turns up.
 - **Fix packs.** Each Issue's fix comes as an AWS CLI command, a Terraform resource or the API document, with a preview of what applying it would change drawn from evidence (anonymous requests in the bucket's access logs, existing lifecycle rules) — or a plain *cannot tell*. Verify re-checks it read-only and closes the Issue; if the problem comes back, it reopens.
 - **Quick Ask.** ⌘⇧Space opens a small window for one question; the tray says what needs attention.
 - **Your models.** OpenAI (Responses API, with hosted tool search and server-side compaction), Anthropic, DeepSeek, OpenRouter, or local models (Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint).
@@ -72,7 +73,7 @@ cd frontend && npm ci && npm test && npm run build && npm run test:e2e
 ## Orbs / remote machines
 
 `.agents/setup` prepares a fresh Amp orb (or any Debian 12 machine) with Python
-3.12, the editable sidecar plus dev/packaging extras, frontend dependencies,
+3.14, the editable sidecar plus dev/packaging extras, frontend dependencies,
 Playwright Chromium, and the Rust/Tauri Linux toolchain. It is idempotent:
 a warm run only verifies the restored snapshot. `.agents/resume` is the fast
 wake check and never installs. For a desktop build, stage the sidecar before

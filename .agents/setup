@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prepare a fresh Storage Agent Workbench orb: Python 3.12 + sidecar dev/packaging
+# Prepare a fresh Storage Agent Workbench orb: Python 3.14 + sidecar dev/packaging
 # deps, frontend dependencies, Playwright Chromium, and the Linux Tauri toolchain.
 # Idempotent; safe to run again after an orb snapshot is refreshed.
 set -euo pipefail
@@ -11,19 +11,19 @@ started=$SECONDS
 step() { printf '\n==> %s\n' "$*"; }
 done_step() { printf '    (%ss)\n' "$((SECONDS - started))"; }
 
-# --- Python 3.12 ---------------------------------------------------------------------
-step "Python 3.12"
+# --- Python 3.14 ---------------------------------------------------------------------
+step "Python 3.14"
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv is required but not on PATH" >&2
   exit 1
 fi
-if ! uv python find 3.12 >/dev/null 2>&1; then
-  uv python install 3.12
+if ! uv python find 3.14 >/dev/null 2>&1; then
+  uv python install 3.14
 fi
-py312="$(uv python find 3.12)"
-if [ ! -x .venv/bin/python ] || ! .venv/bin/python -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 12))' >/dev/null 2>&1; then
+py314="$(uv python find 3.14)"
+if [ ! -x .venv/bin/python ] || ! .venv/bin/python -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 14))' >/dev/null 2>&1; then
   rm -rf .venv
-  uv venv --python "$py312" .venv
+  uv venv --python "$py314" .venv
 fi
 
 # Reinstall only when the editable package or the pinned closure changed.
@@ -85,7 +85,7 @@ cargo --version
 cargo fetch --locked --manifest-path src-tauri/Cargo.toml
 
 # --- Shell environment ----------------------------------------------------------------
-# A repo-scoped hook so `pytest` and `python` in a login shell use the 3.12 venv.
+# A repo-scoped hook so `pytest` and `python` in a login shell use the 3.14 venv.
 marker="# Storage Agent Workbench orb environment"
 if ! grep -Fqx "$marker" "$HOME/.bash_profile" 2>/dev/null; then
   cat >>"$HOME/.bash_profile" <<EOF

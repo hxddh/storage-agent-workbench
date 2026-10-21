@@ -10,6 +10,7 @@ import { initial, reduce } from "./store/task";
 import { TaskPage } from "./task/TaskPage";
 import { item, resetSeq, snapshot, turn } from "./test/fixtures";
 import { ThemeProvider } from "./theme";
+import { viewFor } from "./tool/ResultView";
 
 const model = [{ id: "m1", name: "Fake", kind: "openai-compatible", base_url: null, model: "gpt-5", api_style: "chat",
   has_api_key: false, context_window: null, max_output_tokens: null, reasoning_effort: null, reasoning_capable: false, active: true }];
@@ -42,10 +43,10 @@ function modelOf(turns = [turn("t1")], items = [
 }
 
 describe("the task page", () => {
-  it("reads as a conversation: the message, one line for the work, the answer and its findings", async () => {
+  it("reads as a conversation: the message, the run trace, the answer and its findings", async () => {
     await act(async () => { render(wrap(<TaskPage model={modelOf()} setSnapshot={() => {}} />)); });
     expect(screen.getByTestId("message")).toHaveTextContent("Survey my account");
-    expect(screen.getByTestId("activity-line")).toHaveTextContent("1 step");
+    expect(screen.getByTestId("run-trace")).toHaveTextContent("1 check");
     const answer = screen.getByTestId("answer");
     expect(answer).toHaveTextContent("full");
     expect(screen.getByTestId("findings")).toHaveTextContent("acme-www is public");
@@ -54,6 +55,43 @@ describe("the task page", () => {
     expect(screen.queryByText("Work log")).toBeNull();
     expect(screen.queryByTestId("outputs")).toBeNull();
   });
+
+  it("keeps every real call visible while the run is live", async () => {
+    const m = modelOf([turn("t1", { status: "running" })], [
+      item("t1", "user_message", { text: "Look" }),
+      item("t1", "tool_call", { call_id: "a", name: "query_estate", args: {}, target: "prod" }),
+      item("t1", "tool_output", { call_id: "a", name: "query_estate", ok: true, summary: "2 buckets" }),
+      item("t1", "tool_call", { call_id: "b", name: "list_buckets", args: {}, target: "prod" }),
+      item("t1", "tool_progress", { call_id: "b", name: "list_buckets", done: 2, total: 4, unit: "buckets" }),
+    ]);
+    await act(async () => { render(wrap(<TaskPage model={m} setSnapshot={() => {}} />)); });
+    expect(screen.getByTestId("run-trace")).toHaveTextContent("2 checks");
+    expect(screen.getByTestId("run-body")).toBeVisible();
+    expect(screen.getAllByText("Listing buckets").length).toBeGreaterThan(0);
+    expect(screen.getByText("2 of 4 buckets")).toBeInTheDocument();
+  });
+
+  it("renders a survey result from the call detail, not from the answer prose", async () => {
+    const detail = JSON.stringify({ success: true, coverage: { surveyed: 1 },
+      buckets: { columns: ["bucket", "publicly_exposed"], rows: [["acme-www", true]] } });
+    const m = modelOf([turn("t1")], [
+      item("t1", "user_message", { text: "Survey" }),
+      item("t1", "tool_call", { call_id: "a", name: "survey_account", args: {}, target: "prod" }),
+      item("t1", "tool_output", { call_id: "a", name: "survey_account", ok: true, summary: "1 bucket", detail }),
+      item("t1", "agent_message", { text: "One bucket is public." }),
+    ]);
+    await act(async () => { render(wrap(<TaskPage model={m} setSnapshot={() => {}} />)); });
+    fireEvent.click(screen.getByTestId("run-trace"));
+    expect(screen.getByTestId("tool-table")).toHaveTextContent("acme-www");
+    expect(screen.getByTestId("tool-table")).toHaveTextContent("Yes");
+  });
+
+  it("renders a repeatable result view only for known shapes", () => {
+    expect(viewFor({ name: "survey_account", detail: "{\"buckets\":{\"columns\":[\"bucket\"],\"rows\":[[\"b\"]]}}",
+      detailTruncated: false })?.kind).toBe("survey");
+    expect(viewFor({ name: "survey_account", detail: "{", detailTruncated: false })).toBeNull();
+  });
+
 
   it("a follow-up comes after the first turn, oldest first, each with its own answer", async () => {
     const turns = [turn("t1"), turn("t2", { parent_turn_id: "t1" })];
@@ -108,6 +146,39 @@ describe("the Composer", () => {
     rerender(wrap(<Composer taskId="task-1" busy />));
     expect(screen.getByTestId("composer-send")).toHaveAccessibleName("Add to the request");
     expect(screen.getByTestId("composer-stop")).toBeInTheDocument();
+  });
+
+  it("attaches an estate bucket as context and sends the ref, never a sentence", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      let body: unknown = {};
+      if (url.includes("/providers/models")) body = model;
+      else if (url.includes("/providers/clouds")) body = [{ id: "p1", name: "acme-prod", provider_type: "s3-compatible",
+        endpoint_url: null, region: null, addressing_style: null, signature_version: null, allowed_buckets: [],
+        allowed_prefixes: [], has_access_key: true, has_secret_key: true, has_session_token: false }];
+      else if (url.includes("/estate/providers/p1/buckets")) body = { buckets: [{ bucket: "acme-www", region: "us-east-1",
+        last_checked_at: null, open_issues: { high: 0, medium: 0, low: 0 } }], notes: [] };
+      else if (url.includes("/estate")) body = { providers: [], bucket_count: 0, issues: [], open_issue_count: 0, last_watch_at: null };
+      else if (url.endsWith("/tasks")) body = { task: { id: "task-new" } };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    render(wrap(<Composer taskId={null} busy={false} />));
+    await act(async () => {});
+    const input = screen.getByTestId("composer-input");
+    fireEvent.change(input, { target: { value: "@" } });
+    await act(async () => {});
+    const option = await screen.findByRole("option", { name: /acme-www/ });
+    fireEvent.click(option);
+    expect(screen.getByText("acme-www")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "Review this bucket" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await act(async () => {});
+    const submit = calls.find((c) => c.url.endsWith("/tasks") && c.init?.method === "POST");
+    expect(submit).toBeTruthy();
+    const body = JSON.parse(String(submit?.init?.body));
+    expect(body.context).toEqual([{ kind: "bucket", provider_id: "p1", bucket: "acme-www" }]);
+    expect(body.direction).toBe("Review this bucket");
   });
 
   it("a file while busy makes the action Send (a new message), never a steer", async () => {

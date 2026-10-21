@@ -27,7 +27,7 @@ test("what a survey learns outlives the task: the home says what needs attention
   await delegate(page, "Survey my storage account");
   await expect(page.getByTestId("answer")).toContainText("Surveyed both buckets.", { timeout: 30_000 });
   await settled(page);
-  await page.getByTestId("activity-line").click();
+  await page.getByTestId("run-trace").click();
   await expect(page.locator(".call-row").first()).toHaveAttribute("data-status", "ok");
   await expect(page.locator(".call-row").first()).toContainText("Surveyed account");
 
@@ -69,9 +69,10 @@ test("a bucket opens beside the Composer: its issues, a fix that says what it ca
     await expect(issue.getByTestId("impact")).toHaveAttribute("data-verdict", /low|caution|unknown/);
   }
 
-  // Ask about this bucket fills the Composer in place; it never submits.
+  // Ask about this bucket attaches it to the Composer in place; it never submits.
   await sheet.getByTestId("ask-bucket").click();
-  await expect(page.getByTestId("composer-input")).toHaveValue(/acme-www/);
+  await expect(page.getByTestId("composer").locator(".context-chip")).toContainText("acme-www");
+  await expect(page.getByTestId("composer-input")).toHaveValue("");
   await expect(page.getByTestId("home")).toBeVisible();
   expect(s3.requests.filter((r) => /^(PUT|POST|DELETE) /.test(r))).toEqual([]);
 });

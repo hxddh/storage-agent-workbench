@@ -4,31 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "storage-agent-sidecar"
-version = "10.0.0"
+version = "11.0.0"
 description = "Local FastAPI sidecar for Storage Agent Workbench"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 dependencies = [
-    "fastapi>=0.140",
+    "fastapi>=0.156.4,<0.157",
     "uvicorn[standard]>=0.50",
     # The task stream (Server-Sent Events, resumable by item seq).
-    "sse-starlette>=3.4",
+    "sse-starlette>=3.5,<4",
     # The opt-in read-only MCP server is built on the official SDK (2.x).
-    "mcp>=2.2,<3",
-    "cryptography>=42",
-    "boto3>=1.34",
-    "botocore>=1.34",
-    "duckdb>=0.10",
-    "pyarrow>=14",
-    "pandas>=2.0",
+    "mcp>=2.3,<3",
+    "cryptography>=50.0.2",
+    "boto3>=1.43.116",
+    "botocore>=1.43.116",
+    "duckdb>=1.5.6",
+    "pyarrow>=26.0.0",
+    "pandas>=3.0.6",
     "python-multipart>=0.0.9",
     # The provider-test route makes one live HTTP call. `openai` pulls httpx2 in
     # anyway, but declaring it is the point: it used to be taken transitively
     # (as `httpx`), and when the OpenAI 3.x major switched distributions the
     # import silently became dev-extra-only — green tests, 500 in the packaged
     # app. Runtime imports are declared here, not inherited.
-    "httpx2>=2.0",
+    "httpx2>=2.15.1",
     # Floors keep us off ancient versions; upper bounds are deliberately loose so
     # new agent-SDK features flow in automatically. `openai` still needs no
     # explicit cap here — `openai-agents` constrains it, and that constraint MOVED
@@ -39,10 +39,10 @@ dependencies = [
     # allow all of them and only guard the 1.0 boundary (a pre-1.0 SDK's 1.0 is
     # typically a rewrite → worth a human-reviewed bump); the openai floor is what
     # keeps the resolver on an agents line that agrees with it.
-    "openai>=3.20",
-    # 0.22: hosted tool search + deferred namespaces, ToolOutputTrimmer, per-tool
+    "openai>=3.35.1,<4",
+    # 0.24: hosted tool search + deferred namespaces, ToolOutputTrimmer, per-tool
     # timeouts and input guardrails, server-side compaction settings, model retry.
-    "openai-agents>=0.22.3,<1",
+    "openai-agents>=0.24.0,<1",
     # NOTE: the ranges above say what the code SUPPORTS. What was actually
     # VERIFIED is pinned in requirements.lock, which CI and packaging install
     # with `-c`. Before that file existed these ranges resolved at install time,
@@ -69,7 +69,7 @@ dev = [
 # Packaging tooling (Phase 08). Kept separate so the core install and CI test
 # job stay lean; `pip install -e ".[packaging]"` to build the bundled sidecar.
 packaging = [
-    "pyinstaller>=6.3",
+    "pyinstaller>=6.22,<7",
 ]
 
 [tool.setuptools]
@@ -96,7 +96,7 @@ testpaths = ["tests"]
 # annotations` string annotations, F401/F541/E702 are cosmetic).
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]

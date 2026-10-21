@@ -1,15 +1,17 @@
 # Design tokens
 
-> **Storage Agent v10 — design system v4, a quiet instrument.**
+> **Storage Agent v11 — design system v5, the run made legible.**
 >
 > Presentation contract for the native Agent Task window. Tokens never invent
 > runtime state, progress, or capabilities.
 
-v4 replaces the cool-neutral / indigo system with **warm graphite and paper,
-one ink-blue accent**, and a calmer reading rhythm. The product is still one
-window: a sidebar, a title bar, one conversation, one Composer, and one side
-pane. Controls come from the component library; components do not invent raw
-colours, arbitrary type sizes, radii, or transitions.
+v5 keeps **warm graphite and paper, one ink-blue accent** and the same five-size
+scale, and subtracts the editorial layer: Home is an empty Task, the Composer is
+docked in one place, and the run trace/result/evidence replace the old
+landing-page and developer-inspector chrome. The product is still one window: a
+sidebar, a title bar, one conversation, one Composer, and one side pane.
+Controls come from the component library; components do not invent raw colours,
+arbitrary type sizes, radii, or transitions.
 
 Both themes are first-class. A third preference, **System**, follows the OS and
 is the default until the reader chooses Light or Dark.
@@ -87,7 +89,7 @@ Five sizes, each with one job:
 | `--text-sm` | 13px / 20px | interface, sidebar, controls, tool rows |
 | `--text-prose` | 15px / 1.7 | reading, answers, reports |
 | `--text-xl` | 20px / 28px | a conclusion's focal answer |
-| `--text-2xl` | 36px / 40px | the home's one `<h1>` |
+| `--text-2xl` | 28px / 36px | the page's one `<h1>` (Home) |
 
 Faces: the platform UI face first (SF Pro on macOS, Segoe UI Variable on
 Windows), vendored **Inter Variable** where the platform face is not a UI face,
@@ -100,13 +102,13 @@ from fading text.
 Spacing is a 4px grid: `--space-1` (4) · `-2` (8) · `-3` (12) · `-4` (16) ·
 `-5` (20) · `-6` (24) · `-8` (32) · `-10` (40) · `-12` (48).
 
-Radii are three: **6px** small controls · **8px** controls · **12px** cards and
-menus · **16px** panels and dialogs. The aliases `--radius-sm` … `--radius-3xl`
-keep every surface on the same scale.
+Radii are three: **6px** small controls · **8px** surfaces and menus · **12px**
+the Composer and side pane. The aliases `--radius-sm` … `--radius-3xl` keep
+every surface on the same scale.
 
 Shadows are two: `--shadow-elev` for menus and popovers, `--shadow-pop` for
-dialogs and the overlaid side pane. The canvas itself carries a soft ambient
-wash and hairline edges, not a stack of cards.
+dialogs and the overlaid side pane. The canvas is flat; depth comes from
+hairline separators and surface steps, not a stack of cards or an ambient wash.
 
 Icons are 16px (14px in dense rows) at a 1.5 stroke with rounded joins.
 
@@ -116,9 +118,17 @@ Icons are 16px (14px in dense rows) at a 1.5 stroke with rounded joins.
 for tables and figure cards. `--sidebar-w: 17rem`; the side pane is resizable
 from 352 to 880px and starts at 420px. `--header-h: 3rem`; `--control-h: 2rem`.
 
-The home is an editorial start surface: an eyebrow, one greeting, one Composer,
-three starter cards, then the estate's attention and account lines. It uses
-the same reading column and never becomes a dashboard.
+Home is an empty Task, not an editorial start surface: one 28px heading, three
+quiet prompt chips, the estate's attention and account lines, and the same
+docked Composer as every task. There is no eyebrow, hero, starter card or
+separate estate page.
+
+The Task page is request → **run trace** → rendered result → answer → findings.
+The trace is open while work is live (one row per real call, real progress) and
+becomes a receipt when settled; its result view renders `tool_output.detail`
+deterministically. Findings carry a quiet checks chip that opens Evidence, or
+*No direct check*. Evidence is the one side pane: a human heading, one row per
+call, rendered result first and raw JSON behind a fold.
 
 ## Components
 
@@ -134,10 +144,12 @@ lives in `styles/components.css`.
   live.
 - `Segmented` (`ui-segmented`), `Field` + `TextInput` / `Select`.
 
-The Composer is the only Agent input. Its send control is a round accent
-button when ready; the model chip names the real active model and opens the
-real provider list. The save row in Settings is a pinned toolbar above the
-fields, so it stays in reach without covering a credential field.
+The Composer is the only Agent input, docked at the same position on Home and
+every task. Its send control is a round accent button when ready; the model
+chip names the real active model and opens the real provider list; `@` opens one
+searchable estate picker and selected refs read as chips. The save row in
+Settings is a pinned toolbar above the fields, so it stays in reach without
+covering a credential field.
 
 ## Motion
 

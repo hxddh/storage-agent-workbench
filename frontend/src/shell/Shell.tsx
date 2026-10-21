@@ -138,11 +138,9 @@ export function Shell() {
           {taskId ? <TaskPage key={taskId} model={model} setSnapshot={setSnapshot} />
             : <Home />}
         </div>
-        {taskId ? (
-          <div className="dock">
-            <Composer key={taskId} taskId={taskId} busy={busy} />
-          </div>
-        ) : null}
+        <div className="dock">
+          <Composer key={taskId ?? "home"} taskId={taskId} busy={busy} onCreated={app.openTask} autoFocus={!taskId} />
+        </div>
       </main>
       {taskId && app.pane?.tab === "details" ? <Details model={model} /> : null}
       {app.pane?.tab === "bucket" ? <BucketSheet key={`${app.pane.providerId}/${app.pane.bucket}`}

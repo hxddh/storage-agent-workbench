@@ -1,7 +1,6 @@
 import { sidecarBaseUrl, sidecarToken } from "../config";
 import { ApiError, UPLOAD_TIMEOUT_MS, authHeaders, boundedController, errorDetail, request } from "./client";
-import type {
-  BucketPage, BucketRow, CloudProvider, Estate, FileRow, Impact, Issue, ModelProvider, Note, ProbeResult, Settings, TaskRow,
+import type { BucketPage, BucketRow, CloudProvider, ContextRef, Estate, FileRow, Impact, Issue, ModelProvider, Note, ProbeResult, Settings, TaskRow,
   TaskSnapshot, Watch,
 } from "./types";
 
@@ -15,14 +14,15 @@ export const api = {
   // tasks — the one submit path
   tasks: (q?: string) => request<{ tasks: TaskRow[] }>(`/tasks${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   task: (id: string) => request<TaskSnapshot>(`/tasks/${id}`),
-  createTask: (direction?: string, origin: "user" | "quick_ask" = "user") =>
-    request<TaskSnapshot>("/tasks", { method: "POST", ...json({ direction: direction || null, origin }) }),
+  createTask: (direction?: string, origin: "user" | "quick_ask" = "user", context: ContextRef[] = []) =>
+    request<TaskSnapshot>("/tasks", { method: "POST", ...json({ direction: direction || null, origin, context }) }),
   renameTask: (id: string, title: string) => request<TaskRow>(`/tasks/${id}`, { method: "PATCH", ...json({ title }) }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: "DELETE" }),
-  submit: (id: string, direction: string, opts: { parentTurnId?: string | null; attachments?: string[] } = {}) =>
+  submit: (id: string, direction: string, opts: { parentTurnId?: string | null; attachments?: string[]; context?: ContextRef[] } = {}) =>
     request<{ turn_id: string; status: string }>(`/tasks/${id}/turns`, {
       method: "POST",
-      ...json({ direction, parent_turn_id: opts.parentTurnId ?? null, attachments: opts.attachments ?? [] }),
+      ...json({ direction, parent_turn_id: opts.parentTurnId ?? null, attachments: opts.attachments ?? [],
+        context: opts.context ?? [] }),
     }),
   steer: (id: string, text: string) =>
     request<{ steered: boolean; turn_id: string }>(`/tasks/${id}/steer`, { method: "POST", ...json({ text }) }),

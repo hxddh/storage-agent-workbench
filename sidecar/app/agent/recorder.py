@@ -27,6 +27,7 @@ from . import safety
 _UI_DETAIL_CHARS = 24_000
 _PROGRESS_MIN_INTERVAL_S = 1.0
 _PROGRESS_MAX_PER_CALL = 120
+_EVIDENCE_EXCLUDE = {"record_conclusion", "read_skill", "note"}
 
 ToolOutputHook = Callable[[dict[str, Any]], None]
 _hooks: list[ToolOutputHook] = []
@@ -74,6 +75,9 @@ class Recorder:
         self._open: dict[str, Any] | None = None  # the segment being written
         self._progress: dict[str, tuple[float, int]] = {}
         self._calls: dict[str, dict[str, Any]] = {}
+        # Successful calls are the Turn's evidence. It is attached to the
+        # conclusion deterministically — the model never names its own proof.
+        self._evidence: list[dict[str, Any]] = []
         self._produced = False  # any model output (text or a tool call) this Turn
         self._closed = False
         self.last_message = ""  # the latest agent_message of this Turn (its answer when it ends)
@@ -117,7 +121,8 @@ class Recorder:
     def notice(self, event: str, **fields: Any) -> dict[str, Any]:
         return self._append("notice", {"event": event, **fields})
 
-    def user_message(self, text: str, attachments: list[dict[str, Any]] | None = None) -> None:
+    def user_message(self, text: str, attachments: list[dict[str, Any]] | None = None,
+                     context: list[dict[str, Any]] | None = None) -> None:
         # A Direction is replayed to the model, saved in SQLite and quoted in the
         # report. Pattern redaction alone is not enough for a configured secret
         # with a provider-specific shape, so the exact vault values are masked
@@ -125,6 +130,8 @@ class Recorder:
         payload: dict[str, Any] = {"text": scrub_text(text)}
         if attachments:
             payload["attachments"] = scrub_value(attachments)
+        if context:
+            payload["context"] = scrub_value(context)
         self._append("user_message", payload)
 
     def steer(self, text: str) -> None:
@@ -161,7 +168,7 @@ class Recorder:
     def tool_started(self, call_id: str, name: str, args: dict[str, Any], target: str) -> None:
         self.close_segment()
         safe = scrub_value(args)
-        self._calls[call_id] = {"name": name, "args": safe, "started": time.monotonic()}
+        self._calls[call_id] = {"name": name, "args": safe, "target": target, "started": time.monotonic()}
         self._append("tool_call", {"call_id": call_id, "name": name, "args": safe, "target": target})
 
     def tool_refused(self, call_id: str, name: str, args: dict[str, Any], reason: str) -> None:
@@ -210,6 +217,10 @@ class Recorder:
         store.audit(self._conn, actor="agent", action=f"tool.{name}", task_id=self.task_id,
                     target=str(call.get("args", {}).get("bucket") or call.get("args", {}).get("provider_id") or ""),
                     ok=ok, duration_ms=duration_ms, detail={"args": call.get("args"), "summary": clean_summary})
+        if ok and name not in _EVIDENCE_EXCLUDE:
+            self._evidence.append({"call_id": call_id, "name": name,
+                                   "target": str(call.get("target") or "")[:200],
+                                   "summary": clean_summary})
         if result is not None:
             event = {"task_id": self.task_id, "turn_id": self.turn_id, "tool": name,
                      "args": call.get("args", {}), "ok": ok, "result": clean}
@@ -242,6 +253,11 @@ class Recorder:
                           **({"detail": f.detail} if f.detail else {})} for f in c.findings],
             "next_steps": [s[:200] for s in c.next_steps],
         })
+        # Turn-level evidence: the successful calls this Turn actually made,
+        # most recent eight. The surface calls them "checks in this turn", never
+        # proof of one finding.
+        if self._evidence:
+            data["evidence"] = scrub_value(self._evidence[-8:])
         self._append("conclusion", {"call_id": call_id, **data})
         return "Conclusion recorded."
 

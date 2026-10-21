@@ -30,7 +30,7 @@ test.afterEach(async () => {
   await model.close();
 });
 
-test("a message becomes a conversation: the work in one line, the answer, Details beside it", async ({ page }) => {
+test("a message becomes a conversation: the work while live, the answer, Evidence beside it", async ({ page }) => {
   await boot(page);
   await delegate(page, "What evidence do I have attached?");
   await expect(page.getByTestId("task-page")).toBeVisible();
@@ -38,7 +38,7 @@ test("a message becomes a conversation: the work in one line, the answer, Detail
   await settled(page);
 
   await expect(page.getByTestId("message")).toHaveText(/What evidence do I have attached\?/);
-  await expect(page.getByTestId("activity-line")).toContainText("1 step");
+  await expect(page.getByTestId("run-trace")).toContainText("1 check");
   const answer = page.getByTestId("answer");
   await expect(answer.locator("table")).toBeVisible();
   await expect(page.getByTestId("findings")).toContainText("No access log attached");
@@ -52,11 +52,11 @@ test("a message becomes a conversation: the work in one line, the answer, Detail
   await page.getByTestId("suggestions").getByRole("button", { name: /Attach last week's access log/ }).click();
   await expect(page.getByTestId("composer-input")).toHaveValue("Attach last week's access log");
 
-  // The work line opens to every call; a call opens in Details.
-  await page.getByTestId("activity-line").click();
+  // The receipt opens to every real call; a call opens in Evidence.
+  await page.getByTestId("run-trace").click();
   await page.locator(".call-row button", { hasText: "Checked what is known" }).click();
   await expect(page.getByTestId("call-detail")).toContainText("query_estate");
-  await page.getByRole("button", { name: "All calls" }).click();
+  await page.getByRole("button", { name: "All checks" }).click();
   await expect(page.getByTestId("details")).toContainText("Save report");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("inspector")).toHaveCount(0);

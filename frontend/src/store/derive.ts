@@ -32,6 +32,7 @@ export type Section = {
   turn: Turn;
   direction: string;
   attachments: ItemOf<"user_message">["payload"]["attachments"];
+  context: ItemOf<"user_message">["payload"]["context"];
   blocks: Block[];
   answer: string | null;
   conclusion: ItemOf<"conclusion">["payload"] | null;
@@ -71,6 +72,7 @@ function section(turn: Turn, items: Item[], live: LiveSegment | null): Section {
   let compacted = false;
   let direction = turn.direction;
   let attachments: Section["attachments"];
+  let context: Section["context"];
   let lastToolIndex = -1;
   const messages: Array<{ index: number; item: ItemOf<"agent_message"> }> = [];
 
@@ -79,6 +81,7 @@ function section(turn: Turn, items: Item[], live: LiveSegment | null): Section {
       case "user_message":
         direction = it.payload.text;
         attachments = it.payload.attachments;
+        context = it.payload.context;
         break;
       case "agent_message":
         messages.push({ index: blocks.length, item: it });
@@ -162,7 +165,7 @@ function section(turn: Turn, items: Item[], live: LiveSegment | null): Section {
     for (const b of blocks) if (b.kind === "work") for (const r of b.tools) if (r.status === "running") r.status = "failed";
   }
   const toolCount = blocks.reduce((n, b) => n + (b.kind === "work" ? b.tools.length : 0), 0);
-  return { turn, direction, attachments, blocks, answer, conclusion, error, stopped, finalized, compacted, live, toolCount };
+  return { turn, direction, attachments, context, blocks, answer, conclusion, error, stopped, finalized, compacted, live, toolCount };
 }
 
 /** The latest turn that produced something to read. */

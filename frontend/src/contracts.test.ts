@@ -44,9 +44,10 @@ describe("the window", () => {
     for (const part of ["<Sidebar", 'className="titlebar"', 'className="document"', "<Composer", "<Details", "<BucketSheet"]) {
       expect(shell).toContain(part);
     }
-    // One Composer on a task page; the home renders its own (the only start surface).
+    // One Composer in the Shell, docked for both the home (an empty Task) and a task.
     expect(shell.match(/<Composer\b/g)).toHaveLength(1);
-    expect(read(path.join(SRC, "home/Home.tsx")).match(/<Composer\b/g)).toHaveLength(1);
+    expect(read(path.join(SRC, "home/Home.tsx")).match(/<Composer\b/g)).toBeNull();
+    expect(shell).toContain("taskId={taskId} busy={busy}");
     // The sidebar is New task, search, the list and Settings — no separate areas.
     const sidebar = read(path.join(SRC, "shell/Sidebar.tsx"));
     for (const gone of ["nav-home", "nav-estate", "openEstate"]) expect(sidebar).not.toContain(gone);

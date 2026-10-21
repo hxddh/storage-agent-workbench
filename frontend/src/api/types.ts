@@ -43,6 +43,18 @@ export type Severity = "high" | "medium" | "low" | "info";
 export type Finding = { title: string; severity: Severity; detail?: string };
 export type Attachment = { dataset_id: string; filename: string; type: string };
 
+/** One estate ref the reader pointed at in the Composer. Context is focus,
+ * never authorization: provider bucket/prefix scope remains the boundary. */
+export type ContextRef = {
+  kind: "account" | "bucket" | "issue";
+  provider_id: string;
+  bucket?: string;
+  issue_id?: string;
+};
+/** The resolved form stored in a user_message: names come from the estate. */
+export type ContextItem = ContextRef & { account: string; title?: string };
+export type Evidence = { call_id: string; name: string; target: string; summary: string };
+
 type Base<T extends string, P> = {
   seq: number;
   id: string;
@@ -58,7 +70,7 @@ export type NoticeEvent =
   | "finalized" | "compacted" | "titled" | "imported" | "carried" | "reprompted";
 
 export type Item =
-  | Base<"user_message", { text: string; attachments?: Attachment[] }>
+  | Base<"user_message", { text: string; attachments?: Attachment[]; context?: ContextItem[] }>
   | Base<"agent_message", { text: string }>
   | Base<"tool_call", { call_id: string; name: string; args: Record<string, unknown>; target: string }>
   | Base<"tool_progress", { call_id: string; name: string; done: number; total: number; unit: string }>
@@ -66,7 +78,8 @@ export type Item =
       call_id: string; name: string; ok: boolean; refused?: boolean; summary: string;
       duration_ms?: number; detail?: string | null; detail_truncated?: boolean;
     }>
-  | Base<"conclusion", { call_id: string; answer?: string; findings?: Finding[]; next_steps?: string[] }>
+  | Base<"conclusion", { call_id: string; answer?: string; findings?: Finding[]; next_steps?: string[];
+      evidence?: Evidence[] }>
   | Base<"steer", { text: string }>
   | Base<"compaction", { summary: string; turns_folded: number; folded?: string[] }>
   | Base<"notice", { event: NoticeEvent; error?: string; reason?: string; title?: string; note?: string;

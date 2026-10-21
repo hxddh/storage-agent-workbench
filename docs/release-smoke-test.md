@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v10.1.0.**
+> **Current baseline: Storage Agent v11.0.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -23,26 +23,27 @@ A user must be able to recognize and use the product without reading source code
 
 ### Home and navigation
 
-- [ ] A fresh install shows the greeting (the page's one heading), the **Composer** and three starters — not a wizard. A starter only fills the Composer. Without a model or storage account one sentence says what to add, each part a link to Settings; the survey starter is hidden without storage.
+- [ ] A fresh install shows one heading, the **docked Composer** and three quiet prompt chips — not a wizard or a landing hero. A chip only fills the Composer. Without a model or storage account one sentence says what to add, each part a link to Settings; the survey chip is hidden without storage.
 - [ ] The UI follows the system language on first run (Chinese on a Chinese system) until the user picks one.
 - [ ] The sidebar is New task, search, the task list grouped by day, and Settings — no Home or Estate entries. Rows show Working (pulsing), Queued, Needs attention; Rename and Delete work; ↑/↓ move between tasks.
-- [ ] With storage configured, **Needs attention** shows one row per kind of Issue, most severe first, naming every bucket (three, then *+N*); a bucket opens the **bucket sheet**. One quiet line per account shows buckets, last check and watch; storage never checked reads *name · not checked yet · Survey* with no bucket count.
-- [ ] ⌘K focuses the sidebar search; ⌘I toggles Details; Esc closes the pane; its edge drags (352–880 px). Dark and light themes are both first-class.
+- [ ] With storage configured, **Needs attention** shows one row per kind of Issue, most severe first, naming every bucket (three, then *+N*); the count says *N open*; a bucket opens the **bucket sheet**. One quiet line per account shows buckets, last check and watch; storage never checked reads *name · not checked yet · Survey* with no bucket count.
+- [ ] ⌘K focuses the sidebar search; ⌘I toggles Evidence; Esc closes the pane; its edge drags (352–880 px). Dark and light themes are both first-class.
 
 ### One control path
 
-- [ ] There is exactly one Composer. At rest it sends; while work is live it offers **Add to the request** (a steer) and **Stop**. A file always makes a new, queued request.
+- [ ] There is exactly one Composer, docked at the same position on Home and a task. At rest it sends; while work is live it offers **Add to the request** (a steer) and **Stop**. A file or a context chip always makes a new, queued request.
+- [ ] `@` opens the estate picker; an account, bucket or Issue becomes a chip; it never submits. Context is focus, not scope.
 - [ ] The model chip is backed by the real provider list; with the Sidecar unreachable it reads **Runtime offline**.
 
 ### A task is one conversation
 
-- [ ] Requests read top to bottom, oldest first: the message, one activity line (*the running tool* or *Thinking* while live; *n steps · t* when done, expanding to commentary and each call), the streaming text, then the answer with findings as severity dots and figures from the deterministic analyses.
+- [ ] Requests read top to bottom, oldest first: the message with its context chips, the **run trace** (every real call and progress while live; a receipt when settled), the rendered deterministic result, the streaming text, then the answer with findings as severity dots and evidence checks. A finding without a successful call says *No direct check*.
 - [ ] Send four follow-ups in a row, some while the previous one works: each answer lands under its own request; nothing is reordered, duplicated or left showing *Working*. Reload mid-run and after: the page is identical.
 - [ ] A request queued behind running work shows *Queued* with **Withdraw**; withdrawing removes it and later requests still run.
 - [ ] Editing a message sends a new version; *1 / 2* switches between versions without a reload.
 - [ ] After the latest answer, up to three recorded next steps appear as suggestions; one fills the Composer and is not sent.
 - [ ] A running `survey_account` / `import_evidence` row shows real counts; a tool row names the storage account, not its id.
-- [ ] **Details** shows Save report (the report in the UI language, conclusion first), usage, every tool call (one opens with arguments and output) and attached files. The conversation reflows beside it; nothing is clipped.
+- [ ] **Evidence** shows Save report (the report in the UI language, conclusion first), what this turn checked (one row per call, opening to its rendered result, arguments and raw output behind a *Raw* fold), attached files and usage at the foot. The conversation reflows beside it; nothing is clipped.
 
 ### Steering, stopping and recovery
 

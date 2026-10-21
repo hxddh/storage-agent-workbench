@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { Estate, Issue } from "../api/types";
-import { Composer } from "../composer/Composer";
-import { Icon, type IconName } from "../components/icons";
 import { StatusDot } from "../components/ui";
 import { setTrayStatus } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
@@ -11,42 +9,33 @@ import { timeAgo } from "../lib/time";
 import { useApp } from "../shell/context";
 
 /**
- * The home is a new conversation: the greeting, the Composer, three starters
- * that only fill it — and, below, what needs attention in the storage the
- * Agent knows (each opens its bucket beside the Composer). Nothing here
- * submits work except the Composer.
+ * Home is an empty Task: the same title bar, document and docked Composer as
+ * any conversation. The estate's state sits directly under the one heading;
+ * prompt chips only fill the Composer, and nothing here submits work.
  */
 export function Home() {
   const { t } = useI18n();
   const app = useApp();
   const noStorage = (app.clouds ?? []).length === 0;
-  const starters: Array<{ key: string; needsStorage: boolean; icon: IconName }> = [
-    { key: "access", needsStorage: false, icon: "alert" },
-    { key: "survey", needsStorage: true, icon: "layers" },
-    { key: "log", needsStorage: false, icon: "activity" },
+  const starters: Array<{ key: string; needsStorage: boolean }> = [
+    { key: "access", needsStorage: false },
+    { key: "survey", needsStorage: true },
+    { key: "log", needsStorage: false },
   ];
   const shown = starters.filter((s) => !(s.needsStorage && noStorage && app.clouds !== null));
   return (
     <div className="home" data-testid="home">
-      <section className="home-hero">
-        <p className="home-kicker"><span className="home-kicker-mark" aria-hidden />{t("home.kicker")}</p>
+      <header className="home-head">
         <h1 className="home-greeting">{t("home.greeting")}</h1>
-        <p className="home-lede">{t("home.lede")}</p>
-        <Composer taskId={null} busy={false} onCreated={app.openTask} autoFocus />
-        <div className="starters">
+        <div className="home-prompts" aria-label={t("home.suggestions")}>
           {shown.map((s) => (
-            <button key={s.key} type="button" className="starter" onClick={() => app.prefill(t(`home.starter.${s.key}Prompt`))}>
-              <span className="starter-icon" aria-hidden><Icon name={s.icon} size={16} /></span>
-              <span className="starter-copy">
-                <span className="starter-label">{t(`home.starter.${s.key}`)}</span>
-                <span className="starter-hint">{t(`home.starter.${s.key}Hint`)}</span>
-              </span>
-              <Icon name="arrowRight" size={14} className="starter-arrow" />
+            <button key={s.key} type="button" className="prompt-chip" onClick={() => app.prefill(t(`home.starter.${s.key}Prompt`))}>
+              {t(`home.starter.${s.key}`)}
             </button>
           ))}
         </div>
         <Readiness />
-      </section>
+      </header>
       <Attention />
     </div>
   );
@@ -109,7 +98,7 @@ function Attention() {
       {checked || groups.length ? (
         <div className="attention-head">
           <h2 id="attention-label" className="attention-title">{t("home.care")}</h2>
-          {estate.open_issue_count ? <span className="attention-count">{estate.open_issue_count}</span> : null}
+          {estate.open_issue_count ? <span className="attention-count">{t("home.openCount", { n: estate.open_issue_count })}</span> : null}
         </div>
       ) : null}
       {groups.length ? (
@@ -171,6 +160,7 @@ function AttentionRow({ group }: { group: Group }) {
       <StatusDot tone={tone === "outline" ? "neutral" : tone} />
       <span className="sr-only">{t(`sev.${group.severity}`)}: </span>
       <span className="attention-issue">{group.title}</span>
+      <span className="attention-note">{t("home.issueCount", { n: group.issues.length })}</span>
       {group.recurred ? <span className="attention-note">{t("issue.status.recurred")}</span> : null}
       <span className="attention-where">
         {shown.map((i) => (

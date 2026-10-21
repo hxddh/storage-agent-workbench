@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
-from typing import Annotated, Any, AsyncIterator
+from typing import Annotated, Any, AsyncIterator, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import PlainTextResponse, Response
@@ -23,7 +23,10 @@ from ..agent.runtime import RUNTIME
 from ..core import hub, store
 from ..db import connect, get_conn
 from ..engines import datasets
+from ..estate import store as estate
+from ..providers import clouds
 from ..reports import report
+from ..security.redaction import redact_text
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 events_router = APIRouter(tags=["events"])
@@ -44,9 +47,18 @@ def public_item(item: dict[str, Any]) -> dict[str, Any]:
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_DIRECTION_CHARS)]
 
 
+class ContextIn(BaseModel):
+    """The estate the reader pointed at in the Composer — focus, never scope."""
+    kind: Literal["account", "bucket", "issue"]
+    provider_id: str | None = Field(default=None, max_length=80)
+    bucket: str | None = Field(default=None, max_length=255)
+    issue_id: str | None = Field(default=None, max_length=80)
+
+
 class TaskIn(BaseModel):
     direction: str | None = Field(default=None, max_length=MAX_DIRECTION_CHARS)
     origin: str = Field(default="user", pattern="^(user|quick_ask)$")
+    context: list[ContextIn] = Field(default_factory=list, max_length=8)
 
 
 class TaskPatch(BaseModel):
@@ -59,6 +71,7 @@ class TurnIn(BaseModel):
     # (a fork). "" : a new first Direction (a fork at the root).
     parent_turn_id: str | None = None
     attachments: list[str] = Field(default_factory=list, max_length=20)
+    context: list[ContextIn] = Field(default_factory=list, max_length=8)
 
 
 class SteerIn(BaseModel):
@@ -89,6 +102,50 @@ def _attachments(conn: Any, task_id: str, ids: list[str]) -> list[dict[str, Any]
             raise HTTPException(status_code=422, detail="unknown attachment for this task")
         out.append({"dataset_id": ds["id"], "filename": ds["filename"], "type": ds["dataset_type"]})
     return out
+
+
+def _context(conn: Any, refs: list[ContextIn]) -> list[dict[str, Any]] | None:
+    """Resolve the Composer's context refs to estate-known labels.
+
+    Context is focus, never authorization: this only checks that the reader
+    pointed at something the estate knows. Provider bucket/prefix scope stays
+    the security boundary.
+    """
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for c in refs[:8]:
+        provider_id = (c.provider_id or "").strip()
+        if c.kind == "issue":
+            issue = estate.get_issue(conn, c.issue_id or "")
+            if issue is None:
+                raise HTTPException(status_code=422, detail="unknown issue in context")
+            provider_id = issue["provider_id"]
+        if not provider_id:
+            raise HTTPException(status_code=422, detail=f"{c.kind} context needs a provider_id")
+        cloud = clouds.get(conn, provider_id)
+        if cloud is None:
+            raise HTTPException(status_code=422, detail="unknown storage account in context")
+        ref: dict[str, Any] = {"kind": c.kind, "provider_id": provider_id,
+                               "account": redact_text(cloud.name)}
+        key: tuple[Any, ...] = (c.kind, provider_id)
+        if c.kind == "bucket":
+            bucket = (c.bucket or "").strip()
+            if not bucket:
+                raise HTTPException(status_code=422, detail="bucket context needs a bucket")
+            known = conn.execute("SELECT 1 FROM estate_buckets WHERE provider_id = ? AND bucket = ?",
+                                 (provider_id, bucket)).fetchone()
+            if known is None:
+                raise HTTPException(status_code=422, detail="unknown bucket in context")
+            ref["bucket"] = bucket
+            key += (bucket,)
+        elif c.kind == "issue":
+            ref.update({"issue_id": issue["id"], "bucket": issue["bucket"],
+                        "title": redact_text(issue["title"])})
+            key += (issue["id"],)
+        if key not in seen:
+            seen.add(key)
+            out.append(ref)
+    return out or None
 
 
 def snapshot(conn: Any, task_id: str) -> dict[str, Any]:
@@ -136,10 +193,11 @@ def list_tasks(q: str | None = Query(default=None, max_length=200), conn: Any = 
 def create_task(body: TaskIn, conn: Any = Depends(get_conn)) -> dict[str, Any]:
     """A new task; with a Direction it starts working at once."""
     direction = (body.direction or "").strip()
+    context = _context(conn, body.context) if direction else None
     task = store.create_task(conn, _seed_title(direction), origin=body.origin)
     hub.publish_global("task", {"task_id": task["id"], "state": "ready", "title": task["title"], "created": True})
     if direction:
-        RUNTIME.submit(conn, task["id"], direction)
+        RUNTIME.submit(conn, task["id"], direction, context=context)
     return snapshot(conn, task["id"])
 
 
@@ -181,7 +239,7 @@ def submit(task_id: str, body: TurnIn, conn: Any = Depends(get_conn)) -> dict[st
             raise HTTPException(status_code=422, detail="unknown parent turn")
     attachments = _attachments(conn, task_id, body.attachments)
     turn = RUNTIME.submit(conn, task_id, body.direction.strip(), parent_turn_id=body.parent_turn_id,
-                          attachments=attachments or None)
+                          attachments=attachments or None, context=_context(conn, body.context))
     return {"turn_id": turn["id"], "status": turn["status"]}
 
 

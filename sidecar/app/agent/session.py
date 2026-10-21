@@ -99,6 +99,25 @@ def to_input(items: list[dict[str, Any]], *, skip_steers_of: str | None = None) 
         if t == "user_message":
             flush()
             text = p.get("text", "")
+            if p.get("context"):
+                # The reader's focus, replayed as data: account / bucket / issue
+                # names the estate resolved when the Direction was submitted.
+                # It is context, not authorization; the scope guardrail remains
+                # the only boundary.
+                refs = []
+                for c in p["context"][:8]:
+                    if not isinstance(c, dict):
+                        continue
+                    bits = [str(c.get("kind") or "")]
+                    if c.get("account"):
+                        bits.append(str(c["account"]))
+                    if c.get("bucket"):
+                        bits.append(f"bucket {c['bucket']}")
+                    if c.get("title"):
+                        bits.append(f"issue {c['title']}")
+                    refs.append(" · ".join(b for b in bits if b))
+                if refs:
+                    text += "\n[Context: " + "; ".join(refs) + "]"
             if p.get("attachments"):
                 # One line per file, with the id analyze_uploaded_file takes (no lookup step for a small model).
                 for a in p["attachments"]:

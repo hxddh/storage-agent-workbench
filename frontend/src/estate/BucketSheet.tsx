@@ -31,7 +31,7 @@ export function BucketSheet({ providerId, bucket }: { providerId: string; bucket
   const care = page?.issues.filter((i) => i.status !== "resolved" || touched.has(i.id)) ?? [];
   const past = page?.issues.filter((i) => i.status === "resolved" && !touched.has(i.id)) ?? [];
   const ask = () => {
-    app.prefill(t("bucket.askPrompt", { bucket, account }));
+    app.prefill("", [{ kind: "bucket", provider_id: providerId, bucket }]);
   };
   return (
     <Pane title={bucket} testId="bucket-sheet">
