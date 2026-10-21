@@ -157,6 +157,14 @@ describe("motion", () => {
   });
 });
 
+describe("v6 restraint", () => {
+  it("never reintroduces uppercase micro-labels", () => {
+    const styles = ["index.css", "styles/app.css", "styles/components.css", "styles/document.css", "styles/markdown.css"]
+      .map((f) => readFileSync(join(__dirname, f), "utf8")).join("\n");
+    expect(styles).not.toMatch(/text-transform:\s*uppercase/);
+  });
+});
+
 describe("spacing classes", () => {
   it("never uses a bare step Tailwind does not define", () => {
     // `w-6.5` and `w-13` look plausible and compile to NOTHING. This is the only

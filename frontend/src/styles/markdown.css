@@ -1,4 +1,4 @@
-/* Markdown surfaces on design system v4 tokens.
+/* Markdown surfaces on design system v6 tokens.
  *
  * The Agent's answer as a document (components/Markdown.tsx). Layout and the
  * rules shared with other prose (blockquote rail, inline code fill, tables)
@@ -21,8 +21,6 @@
   font-size: var(--text-2xs);
   font-weight: 500;
   line-height: var(--leading-2xs);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 .md-outline-link {
   color: var(--gray-500);
@@ -44,7 +42,7 @@
 .md-h5,
 .md-h6 { font-size: var(--text-sm); line-height: var(--leading-sm); }
 .md-h5 { color: var(--gray-300); }
-.md-h6 { color: var(--gray-400); letter-spacing: 0.06em; text-transform: uppercase; }
+.md-h6 { color: var(--gray-400); }
 
 /* ---------- Blocks ---------- */
 .md-rule { border: 0; border-top: 1px solid var(--edge); }
@@ -86,7 +84,7 @@
 .md-code {
   overflow: hidden;
   border: 1px solid var(--edge);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--code-bg);
 }
 .md-code-head {
@@ -100,8 +98,6 @@
   color: var(--gray-500);
   font-size: var(--text-2xs);
   line-height: var(--leading-2xs);
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
 }
 .md-code-copy,
 .md-table-copy {
@@ -128,10 +124,10 @@
 
 /* ---------- Inline ---------- */
 .md-code-inline {
-  border: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
-  border-radius: var(--radius-md);
-  padding: 0.1em 0.3em;
-  background: var(--elevated);
+  border: 0;
+  border-radius: 3px;
+  padding: 0.08em 0.28em;
+  background: var(--hover);
   color: var(--gray-200);
 }
 .md-strong { color: var(--gray-100); font-weight: 600; }

@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [Unreleased]
+
+### Changed
+
+- Design system v6: cool graphite and white surfaces, one blue accent, a 24 px page title and a flat document. Content no longer lives in cards; the Composer is the only elevated input. Findings state their turn-level evidence once instead of repeating a checks chip on every row. Settings is a compact dialog, and the side pane, bucket sheet, notes and figure views use rows and hairlines rather than nested boxes.
+
 ## [11.0.0] - 2026-10-21
 
 _The run made legible._ See `docs/releases/11.0.0.md`.

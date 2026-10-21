@@ -56,6 +56,25 @@ describe("the task page", () => {
     expect(screen.queryByTestId("outputs")).toBeNull();
   });
 
+  it("states turn-level evidence once, under the findings, not on every row", async () => {
+    const evidence = [
+      { call_id: "a", name: "survey_account", target: "prod", summary: "4 buckets" },
+      { call_id: "b", name: "query_estate", target: "prod", summary: "2 issues" },
+    ];
+    const m = modelOf([turn("t1")], [
+      item("t1", "user_message", { text: "Survey" }),
+      item("t1", "conclusion", { call_id: "c", findings: [
+        { title: "Public bucket", severity: "high" },
+        { title: "No encryption", severity: "medium" },
+      ], evidence }),
+      item("t1", "agent_message", { text: "Two things need care." }),
+    ]);
+    await act(async () => { render(wrap(<TaskPage model={m} setSnapshot={() => {}} />)); });
+    expect(screen.getByTestId("findings")).not.toHaveTextContent("checks");
+    expect(screen.getByText("Evidence · 2 checks")).toBeInTheDocument();
+    expect(screen.getAllByText("Evidence · 2 checks")).toHaveLength(1);
+  });
+
   it("keeps every real call visible while the run is live", async () => {
     const m = modelOf([turn("t1", { status: "running" })], [
       item("t1", "user_message", { text: "Look" }),

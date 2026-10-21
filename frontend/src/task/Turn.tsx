@@ -241,7 +241,7 @@ function Answer({ section, running, live }: { section: Section; running: boolean
   const found = c?.findings ?? [];
   if (!text && !found.length && !fig) return null;
   return (
-    <div className="answer reveal" data-testid="answer">
+    <div className="answer" data-testid="answer">
       {text ? <Markdown text={text} /> : null}
       {found.length ? <Findings findings={found} evidence={c?.evidence} /> : null}
       {fig ? <AnalysisFigures provenance={fig} /> : null}
@@ -256,24 +256,27 @@ function Findings({ findings, evidence }: {
   const { t } = useI18n();
   const app = useApp();
   return (
-    <ul className="findings" aria-label={t("turn.findings")} data-testid="findings">
-      {findings.map((f, i) => (
-        <li key={i} className="finding" data-severity={f.severity}>
-          <StatusDot tone={SEVERITY_TONE[f.severity] === "outline" ? "neutral" : SEVERITY_TONE[f.severity]} />
-          <span className="sr-only">{t(`sev.${f.severity}`)}: </span>
-          <span className="finding-title">{f.title}</span>
-          <span className="finding-actions">
-            {evidence?.length ? (
-              <button type="button" className="evidence-chip" title={t("tool.evidenceHint")}
-                onClick={() => app.setPane({ tab: "details" })}>
-                <Icon name="activity" size={12} />{t(evidence.length === 1 ? "tool.check" : "tool.checks", { n: evidence.length })}
-              </button>
-            ) : <span className="evidence-none">{t("tool.noCheck")}</span>}
-          </span>
-          {f.detail ? <span className="finding-detail">{f.detail}</span> : null}
-        </li>
-      ))}
-    </ul>
+    <div className="findings-wrap">
+      <ul className="findings" aria-label={t("turn.findings")} data-testid="findings">
+        {findings.map((f, i) => (
+          <li key={i} className="finding" data-severity={f.severity}>
+            <StatusDot tone={SEVERITY_TONE[f.severity] === "outline" ? "neutral" : SEVERITY_TONE[f.severity]} />
+            <span className="sr-only">{t(`sev.${f.severity}`)}: </span>
+            <span className="finding-title">{f.title}</span>
+            {f.detail ? <span className="finding-detail">{f.detail}</span> : null}
+          </li>
+        ))}
+      </ul>
+      {/* Evidence is turn-level, so it is said once for the findings it supports. */}
+      <p className="finding-source">
+        {evidence?.length ? (
+          <button type="button" className="link" title={t("tool.evidenceHint")}
+            onClick={() => app.setPane({ tab: "details" })}>
+            {t(evidence.length === 1 ? "tool.evidence1" : "tool.evidenceN", { n: evidence.length })}
+          </button>
+        ) : t("tool.noCheck")}
+      </p>
+    </div>
   );
 }
 

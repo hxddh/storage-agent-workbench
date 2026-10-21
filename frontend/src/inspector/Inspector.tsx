@@ -15,7 +15,7 @@ import { ResultView, viewFor } from "../tool/ResultView";
 
 const MIN_W = 352;
 const MAX_W = 880;
-const DEFAULT_W = 420;
+const DEFAULT_W = 380;
 
 function storedWidth(): number {
   try {
@@ -157,7 +157,7 @@ function Usage({ usage }: { usage: Array<TaskModel["turns"][number]["usage"]> })
   }), { requests: 0, input: 0, output: 0 });
   if (!sum.requests) return null;
   return (
-    <p className="quiet-note">
+    <p className="pane-usage">
       {sum.input || sum.output
         ? t(sum.requests === 1 ? "pane.usage1" : "pane.usage", { req: sum.requests, inTok: sum.input.toLocaleString(), outTok: sum.output.toLocaleString() })
         : t(sum.requests === 1 ? "pane.request" : "pane.requests", { req: sum.requests })}

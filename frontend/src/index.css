@@ -1,7 +1,7 @@
-/* Storage Agent — design system v4.
-   Warm graphite and paper surfaces, one ink-blue accent for what is
+/* Storage Agent — design system v6.
+   Cool graphite and a clean white paper; one blue accent for what is
    actionable, selected, focused or live, and a separate status palette.
-   Hairline depth on the canvas; real elevation only on floating surfaces.
+   The document is flat; elevation exists only on floating surfaces.
    Nothing here invents runtime state. */
 
 @import "tailwindcss";
@@ -44,25 +44,22 @@
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  /* v4.0 — an instrument, not a dashboard. A warm graphite ladder carries
-     depth; one ink-blue accent marks what is actionable, selected, focused or
-     live. Every text step clears WCAG AA on the worst surface it lands on
-     (checked by e2e/contrast.spec.ts). */
-  --canvas: #12110e;
-  --sidebar: #1a1814;
-  --panel: #201c18;
-  --elevated: #2a261f;
-  --bubble: #2b2720;
-  --hover: #353028;
-  --edge: #2d2922;
-  --edge-strong: #403a30;
-  /* Accent — the one hue. Fill for the primary action, tint for selection,
-     text for links and live progress, ring for focus. */
-  --accent: #5964dc;
-  --accent-soft: #6570e4;
-  --accent-dim: rgba(101, 112, 228, 0.16);
+  /* v6 — cool graphite, one clear blue. Depth lives in a narrow neutral ladder;
+     surfaces are separated by a step and a hairline, not by cards or shadows.
+     The accent marks action, selection, focus and live work only. */
+  --canvas: #090a0c;
+  --sidebar: #12141a;
+  --panel: #171a20;
+  --elevated: #1e2128;
+  --bubble: #1b1e24;
+  --hover: #292d35;
+  --edge: #23262d;
+  --edge-strong: #343841;
+  --accent: #2f5fe3;
+  --accent-soft: #2a55cc;
+  --accent-dim: rgba(147, 180, 255, 0.14);
   --accent-fg: #ffffff;
-  --accent-text: #b3baff;
+  --accent-text: #93b4ff;
   /* Categorical order validated for CVD/normal-vision separation on the
    * dark panel (scripts: dataviz validate_palette). Never status colours. */
   --viz-1: #6c6af2;
@@ -72,37 +69,36 @@
   --viz-5: #d55181;
   --viz-6: #3987e5;
   /* Text ladder: 100 primary · 200 strong secondary · 300 secondary ·
-     400 tertiary · 500 meta (AA on every surface up to --elevated) ·
-     600 disabled · 700 decorative, never text. */
-  --gray-100: #f5f1e8;
-  --gray-200: #dad3c6;
-  --gray-300: #beb6a8;
-  --gray-400: #aaa192;
-  --gray-500: #a2998a;
-  --scrollbar-thumb: #353028;
-  --scrollbar-thumb-hover: #464036;
-  --selection: rgba(179, 186, 255, 0.26);
-  --focus-ring: rgba(179, 186, 255, 0.68);
-  --danger: #f2786d;
-  --danger-bg: rgba(242, 120, 109, 0.11);
+     400 tertiary · 500 meta (AA on every surface up to --hover). */
+  --gray-100: #f4f5f7;
+  --gray-200: #d7d9df;
+  --gray-300: #b0b4bd;
+  --gray-400: #9ca1ab;
+  --gray-500: #9297a3;
+  --scrollbar-thumb: #2b2f37;
+  --scrollbar-thumb-hover: #3a3f49;
+  --selection: rgba(147, 180, 255, 0.24);
+  --focus-ring: rgba(147, 180, 255, 0.62);
+  --danger: #ff8a80;
+  --danger-bg: rgba(255, 138, 128, 0.12);
   --danger-bg-strong: #311917;
-  --danger-border: rgba(242, 120, 109, 0.34);
-  --warn: #e5a54e;
-  --warn-fg: #f0bd72;
-  --warn-bg: rgba(229, 165, 78, 0.11);
-  --warn-border: rgba(229, 165, 78, 0.34);
-  --success: #59c99a;
-  --success-bg: rgba(89, 201, 154, 0.1);
-  --success-border: rgba(89, 201, 154, 0.34);
-  --code-bg: #0d0c0a;
-  --scrim: rgba(8, 7, 6, 0.62);
-  --syn-str: #86c8a4;
-  --syn-num: #e2b07a;
-  --syn-kw: #c9a6ef;
-  --syn-com: #969083;
+  --danger-border: rgba(255, 138, 128, 0.34);
+  --warn: #f5c26b;
+  --warn-fg: #f5c26b;
+  --warn-bg: rgba(245, 194, 107, 0.12);
+  --warn-border: rgba(245, 194, 107, 0.34);
+  --success: #6bddae;
+  --success-bg: rgba(107, 221, 174, 0.11);
+  --success-border: rgba(107, 221, 174, 0.34);
+  --code-bg: #08090b;
+  --scrim: rgba(4, 5, 7, 0.66);
+  --syn-str: #7dd3a8;
+  --syn-num: #e5b567;
+  --syn-kw: #c4a7ff;
+  --syn-com: #8a8f98;
   --syn-name: #8ab4ff;
-  --syn-tag: #75c9d8;
-  --syn-punct: #a8a092;
+  --syn-tag: #7dd3e0;
+  --syn-punct: #a6acb8;
   /* Motion: three durations. `instant` is kept as an alias of `fast`. */
   --duration-instant: 120ms;
   --duration-fast: 120ms;
@@ -112,18 +108,18 @@
   --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
   --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
   /* Type: five sizes, each with one job. 11 label · 13 interface ·
-     15 reading · 20 conclusion · 28 page title. Five sizes, five names. */
+     15 reading · 20 conclusion · 24 page title. */
   --text-2xs: 0.6875rem;
   --leading-2xs: 1rem;
   --text-sm: 0.8125rem;
   --leading-sm: 1.25rem;
   --text-prose: 0.9375rem;
-  --leading-prose: 1.7;
+  --leading-prose: 1.65;
   --text-xl: 1.25rem;
   --leading-xl: 1.75rem;
-  --text-2xl: 1.75rem;
-  --leading-2xl: 2.25rem;
-  /* Radii: three. 6 controls · 8 surfaces · 12 the Composer and side pane. */
+  --text-2xl: 1.5rem;
+  --leading-2xl: 2rem;
+  /* Radii: three. 6 controls · 8 menus · 12 the Composer and side pane. */
   --radius-sm: 0.375rem;
   --radius: 0.375rem;
   --radius-md: 0.5rem;
@@ -132,11 +128,11 @@
   --radius-2xl: 0.75rem;
   --radius-3xl: 0.75rem;
   --control-h: 2rem;
-  --header-h: 3rem;
-  --sidebar-w: 17rem;
-  --sidepane-w: 30rem;
-  --doc-measure: 46rem;
-  --doc-track: 64rem;
+  --header-h: 2.75rem;
+  --sidebar-w: 15rem;
+  --sidepane-w: 24rem;
+  --doc-measure: 44rem;
+  --doc-track: 60rem;
   /* 4px grid. */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -147,70 +143,68 @@
   --space-8: 2rem;
   --space-10: 2.5rem;
   --space-12: 3rem;
-  /* Shadows: two. `elev` for menus and popovers, `pop` for dialogs and the
-     inspector; `glow` stays as an alias of `pop`. */
-  --shadow-elev: 0 0 0 1px var(--edge-strong), 0 10px 30px -10px rgba(4, 3, 2, 0.68);
-  --shadow-pop: 0 0 0 1px var(--edge-strong), 0 30px 80px -20px rgba(4, 3, 2, 0.78), 0 10px 24px -10px rgba(4, 3, 2, 0.55);
+  /* Shadows: menus and dialogs only. The document is flat. */
+  --shadow-elev: 0 0 0 1px var(--edge-strong), 0 12px 32px -18px rgba(0, 0, 0, 0.72);
+  --shadow-pop: 0 0 0 1px var(--edge-strong), 0 32px 72px -28px rgba(0, 0, 0, 0.82), 0 8px 20px -12px rgba(0, 0, 0, 0.55);
   --shadow-glow: var(--shadow-pop);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  /* Paper, not white: the light theme is a warm reading surface, not an
-     inverted dark one. Ink is warm graphite; the accent stays ink blue. */
-  --canvas: #f2eee5;
-  --sidebar: #e9e4d9;
-  --panel: #f9f6f0;
+  /* A clean white reading surface; the rail and side pane are one quiet step
+     darker. Ink is cool graphite, not sepia; the accent stays the same blue. */
+  --canvas: #ffffff;
+  --sidebar: #f5f6f8;
+  --panel: #f4f5f8;
   --elevated: #ffffff;
-  --bubble: #ebe5d9;
-  --hover: #e0d9cb;
-  --edge: #ddd6c9;
-  --edge-strong: #c9c0b1;
-  --accent: #3f4ecf;
-  --accent-soft: #3443c0;
-  --accent-dim: rgba(63, 78, 207, 0.09);
+  --bubble: #f1f3f6;
+  --hover: #e9ebef;
+  --edge: #e4e6eb;
+  --edge-strong: #d2d6de;
+  --accent: #2557d6;
+  --accent-soft: #1f4ab8;
+  --accent-dim: rgba(37, 87, 214, 0.08);
   --accent-fg: #ffffff;
-  --accent-text: #3543b8;
-  /* Series stay the same validated hues on warm paper: every series clears
-   * 3:1 on the panel surfaces; CVD separation and the normal-vision floor
-   * re-validated. */
+  --accent-text: #1d4ed8;
+  /* Series stay the same validated hues; every series clears 3:1 on the
+   * surfaces and the normal-vision floor is re-validated. */
   --viz-1: #4f46e5;
   --viz-2: #e05a26;
   --viz-3: #11906a;
   --viz-4: #ad7d00;
   --viz-5: #d24e86;
   --viz-6: #2a78d6;
-  --gray-100: #201d18;
-  --gray-200: #3c3831;
-  --gray-300: #4f4a42;
-  --gray-400: #5e5950;
-  --gray-500: #635e55;
-  --scrollbar-thumb: #d5cec0;
-  --scrollbar-thumb-hover: #bbb2a1;
-  --selection: rgba(53, 67, 184, 0.16);
-  --focus-ring: rgba(53, 67, 184, 0.5);
-  --danger: #b4271c;
-  --danger-bg: rgba(180, 39, 28, 0.07);
+  --gray-100: #181a1f;
+  --gray-200: #30343c;
+  --gray-300: #4b505a;
+  --gray-400: #5f6571;
+  --gray-500: #626976;
+  --scrollbar-thumb: #d8dbe1;
+  --scrollbar-thumb-hover: #c3c8d1;
+  --selection: rgba(37, 87, 214, 0.14);
+  --focus-ring: rgba(37, 87, 214, 0.46);
+  --danger: #b42318;
+  --danger-bg: rgba(180, 35, 24, 0.07);
   --danger-bg-strong: #fbece9;
-  --danger-border: rgba(180, 39, 28, 0.28);
-  --warn: #a45a08;
-  --warn-fg: #8a4a05;
-  --warn-bg: rgba(164, 90, 8, 0.08);
-  --warn-border: rgba(164, 90, 8, 0.28);
-  --success: #126e48;
-  --success-bg: rgba(18, 110, 72, 0.08);
-  --success-border: rgba(18, 110, 72, 0.28);
-  --code-bg: #f7f4ee;
-  --scrim: rgba(35, 31, 25, 0.30);
-  --syn-str: #0e764b;
-  --syn-num: #925600;
-  --syn-kw: #7534d0;
-  --syn-com: #646054;
-  --syn-name: #1e4bcc;
-  --syn-tag: #0d6d80;
-  --syn-punct: #57534b;
-  --shadow-elev: 0 0 0 1px var(--edge), 0 10px 30px -14px rgba(44, 38, 28, 0.22);
-  --shadow-pop: 0 0 0 1px var(--edge), 0 30px 80px -20px rgba(44, 38, 28, 0.28), 0 10px 24px -10px rgba(44, 38, 28, 0.14);
+  --danger-border: rgba(180, 35, 24, 0.26);
+  --warn: #a15c00;
+  --warn-fg: #a15c00;
+  --warn-bg: rgba(161, 92, 0, 0.08);
+  --warn-border: rgba(161, 92, 0, 0.26);
+  --success: #157347;
+  --success-bg: rgba(21, 115, 71, 0.07);
+  --success-border: rgba(21, 115, 71, 0.26);
+  --code-bg: #f6f7f9;
+  --scrim: rgba(18, 20, 26, 0.32);
+  --syn-str: #0f6b46;
+  --syn-num: #8a4b00;
+  --syn-kw: #6b3fc0;
+  --syn-com: #5f6672;
+  --syn-name: #1d4ed8;
+  --syn-tag: #0e6a78;
+  --syn-punct: #525866;
+  --shadow-elev: 0 0 0 1px var(--edge), 0 12px 32px -20px rgba(18, 20, 26, 0.22);
+  --shadow-pop: 0 0 0 1px var(--edge), 0 32px 72px -28px rgba(18, 20, 26, 0.26), 0 8px 20px -12px rgba(18, 20, 26, 0.12);
   --shadow-glow: var(--shadow-pop);
 }
 

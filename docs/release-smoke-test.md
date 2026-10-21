@@ -23,7 +23,7 @@ A user must be able to recognize and use the product without reading source code
 
 ### Home and navigation
 
-- [ ] A fresh install shows one heading, the **docked Composer** and three quiet prompt chips — not a wizard or a landing hero. A chip only fills the Composer. Without a model or storage account one sentence says what to add, each part a link to Settings; the survey chip is hidden without storage.
+- [ ] A fresh install shows one heading, the **docked Composer** and three quiet prompt links — not a wizard or a landing hero. A link only fills the Composer. Without a model or storage account one sentence says what to add, each part a link to Settings; the survey link is hidden without storage.
 - [ ] The UI follows the system language on first run (Chinese on a Chinese system) until the user picks one.
 - [ ] The sidebar is New task, search, the task list grouped by day, and Settings — no Home or Estate entries. Rows show Working (pulsing), Queued, Needs attention; Rename and Delete work; ↑/↓ move between tasks.
 - [ ] With storage configured, **Needs attention** shows one row per kind of Issue, most severe first, naming every bucket (three, then *+N*); the count says *N open*; a bucket opens the **bucket sheet**. One quiet line per account shows buckets, last check and watch; storage never checked reads *name · not checked yet · Survey* with no bucket count.
@@ -37,7 +37,7 @@ A user must be able to recognize and use the product without reading source code
 
 ### A task is one conversation
 
-- [ ] Requests read top to bottom, oldest first: the message with its context chips, the **run trace** (every real call and progress while live; a receipt when settled), the rendered deterministic result, the streaming text, then the answer with findings as severity dots and evidence checks. A finding without a successful call says *No direct check*.
+- [ ] Requests read top to bottom, oldest first: the message with its context chips, the **run trace** (every real call and progress while live; a receipt when settled), the rendered deterministic result, the streaming text, then the answer with findings as a flat list of severity dots and one *Evidence · n checks* line for the turn. A turn without a successful call says *No direct check*.
 - [ ] Send four follow-ups in a row, some while the previous one works: each answer lands under its own request; nothing is reordered, duplicated or left showing *Working*. Reload mid-run and after: the page is identical.
 - [ ] A request queued behind running work shows *Queued* with **Withdraw**; withdrawing removes it and later requests still run.
 - [ ] Editing a message sends a new version; *1 / 2* switches between versions without a reload.

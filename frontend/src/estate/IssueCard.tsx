@@ -74,7 +74,7 @@ export function IssueCard({ issue: initial, onChange }: { issue: Issue; onChange
         <Icon name="chevron" size={14} className="issue-caret" />
       </button>
       {open ? (
-        <div className="issue-body reveal">
+        <div className="issue-body">
           {issue.detail ? <p className="issue-detail">{issue.detail}</p> : null}
           <div className="issue-actions">
             {issue.fixable ? (

@@ -94,8 +94,19 @@ test("the v11 contact sheet", async ({ page }) => {
     await shot(page, "home-attention-dark-en");
     await page.setViewportSize({ width: 390, height: 844 });
     await shot(page, "home-attention-mobile-dark-en");
-    await page.setViewportSize({ width: 1440, height: 900 });
     await page.getByRole("button", { name: "Show sidebar" }).click();
+    await page.getByTestId("open-settings").click();
+    await shot(page, "settings-mobile-dark-en");
+    await page.getByRole("button", { name: "Close" }).click();
+    await page.getByTestId("task-list").getByText("Account survey · acme-prod").click();
+    await expect(page.getByTestId("answer").first()).toBeVisible();
+    await shot(page, "conversation-mobile-dark-en");
+    await page.getByRole("button", { name: "Show sidebar" }).click();
+    await page.getByTestId("new-task").click();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    if (await page.getByRole("button", { name: "Show sidebar" }).count()) {
+      await page.getByRole("button", { name: "Show sidebar" }).click();
+    }
     await page.getByTestId("composer").getByRole("button", { name: "Add estate context" }).click();
     await expect(page.getByTestId("context-picker")).toBeVisible();
     await shot(page, "context-picker-dark-en");

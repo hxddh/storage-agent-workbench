@@ -1,20 +1,22 @@
 # Design tokens
 
-> **Storage Agent v11 — design system v5, the run made legible.**
+> **Storage Agent v11 — design system v6, the quiet document.**
 >
 > Presentation contract for the native Agent Task window. Tokens never invent
 > runtime state, progress, or capabilities.
 
-v5 keeps **warm graphite and paper, one ink-blue accent** and the same five-size
-scale, and subtracts the editorial layer: Home is an empty Task, the Composer is
-docked in one place, and the run trace/result/evidence replace the old
-landing-page and developer-inspector chrome. The product is still one window: a
-sidebar, a title bar, one conversation, one Composer, and one side pane.
-Controls come from the component library; components do not invent raw colours,
-arbitrary type sizes, radii, or transitions.
+v6 is a subtraction pass after the v11 release review. The window had drifted
+into boxes: a glowing Composer, a bordered row per finding, a full-width card
+per suggestion, boxed notes, boxed issue rows, an inspector of uppercase labels,
+and a warm-paper palette that fought the blue live state. v6 keeps one surface —
+the document — and lets typography and hairlines carry hierarchy.
 
-Both themes are first-class. A third preference, **System**, follows the OS and
-is the default until the reader chooses Light or Dark.
+The information hierarchy follows the current agent products rather than their
+chrome: Codex's one document and bottom Composer, Cursor's inline context and
+compact tool rows, Qoder's single conversation plus one task monitor. What we
+take is restraint: one fixed rail, one reading column, one input, work shown as
+a trace and results shown as a document. We do not take an IDE file tree, task
+cards, a plan canvas, or a second navigation tree.
 
 ## Source of truth
 
@@ -23,54 +25,71 @@ is the default until the reader chooses Light or Dark.
 | CSS variables (colour, type, spacing, radius, shadow, motion, measure) | `frontend/src/index.css` |
 | Tailwind mapping | `frontend/tailwind.config.js` |
 | Component library (Button, IconButton, Kbd, Badge, StatusDot, Segmented, Field / TextInput / Select) | `frontend/src/components/ui.tsx` |
-| Component styles (`ui-*`), menus, scrim, the `ui-pop-in` / `ui-pulse` keyframes | `frontend/src/styles/components.css` |
-| Window, sidebar, title bar, Composer, home, Task page, side pane, Settings, Quick Ask, motion | `frontend/src/styles/app.css` |
-| Prose, tables, figures, toasts, the `reveal-in` keyframe | `frontend/src/styles/document.css` |
+| Component styles (`ui-*`), menus, scrim, keyframes | `frontend/src/styles/components.css` |
+| Window, sidebar, title bar, Composer, home, Task page, side pane, Settings, Quick Ask | `frontend/src/styles/app.css` |
+| Prose, tables, figures, toasts | `frontend/src/styles/document.css` |
 | Rendered Markdown | `frontend/src/styles/markdown.css` |
 | Figures (`ChartFrame`, marks, legend, tooltip) | `frontend/src/viz/marks.tsx` |
-| Enforcement | `frontend/src/design-tokens.test.ts`, `frontend/src/theme.tokens.test.ts`, `frontend/src/theme.test.tsx`, `frontend/src/contracts.test.ts`, `e2e/contrast.spec.ts` |
+| Enforcement | `frontend/src/design-tokens.test.ts`, `frontend/src/theme.tokens.test.ts`, `frontend/src/contracts.test.ts`, `e2e/contrast.spec.ts` |
 
-Every text step clears WCAG AA (4.5:1) against `--hover`, the worst surface it
-can land on, and the rendered product is audited text node by text node in both
-themes.
+Both themes are first-class. **System** follows the OS and is the default until
+the reader chooses Light or Dark. Every text step clears WCAG AA (4.5:1)
+against `--hover`, the worst surface it can land on, and the rendered product is
+audited text node by text node in both themes.
+
+## The surface rule
+
+The document is the product. A content section does not get a border, a radius,
+a background, or a shadow. Hierarchy comes from:
+
+1. **one accent** for action, selection, focus and live work;
+2. **type** — 11 meta, 13 interface, 15 reading, 20 focal, 24 page title;
+3. **space** — a 4 px grid with 16–32 px between content groups;
+4. **hairlines** — one rule where two groups genuinely meet.
+
+Only six things are surfaces: the Composer, menus/popovers, toasts, the side
+pane, the Settings dialog, and code blocks. That is the whole elevation vocabulary.
 
 ## Colour
 
-### Warm neutral ladder
+### Cool neutral ladder
 
-Dark surfaces, darkest first:
-`--canvas #12110e` < `--sidebar #1a1814` < `--panel #201c18` <
-`--elevated #2a261f` < `--hover #353028`;
-edges `--edge #2d2922`, `--edge-strong #403a30`.
+Dark, darkest first:
+`--canvas #090a0c` < `--sidebar #12141a` < `--panel #171a20` <
+`--elevated #1e2128` < `--hover #292d35`;
+edges `--edge #23262d` / `--edge-strong #343841`.
 
-Light surfaces (paper, not white):
-`--canvas #f2eee5`, `--sidebar #e9e4d9`, `--panel #f9f6f0`,
-`--elevated #ffffff`, `--hover #e0d9cb`, edges `#ddd6c9` / `#c9c0b1`.
-The user's message has its own `--bubble` (`#2b2720` dark, `#ebe5d9` light).
+Light, clean white:
+`--canvas #ffffff`, `--sidebar #f5f6f8`, `--panel #f4f5f8`,
+`--elevated #ffffff`, `--hover #e9ebef`;
+edges `#e4e6eb` / `#d2d6de`. The user's message has its own `--bubble`
+(`#1b1e24` dark, `#f1f3f6` light).
 
 Ink: `--gray-100` primary · `--gray-200` strong secondary · `--gray-300`
 secondary · `--gray-400` tertiary · `--gray-500` meta. There is no 600/700
 text step; quiet text stays readable.
 
-### Accent — ink blue, one hue
+The ladder is one cool hue axis in both themes. It is deliberately narrow: the
+canvas and the rail are a step apart, not a card floating on a page.
+
+### Accent — one blue
 
 | Token | Dark | Light | Use |
 | --- | --- | --- | --- |
-| `--accent` | `#5964dc` | `#3f4ecf` | fill of the primary action, Composer send |
-| `--accent-soft` | `#6570e4` | `#3443c0` | hover step of the fill |
+| `--accent` | `#2f5fe3` | `#2557d6` | fill of the primary action, send, selected task |
+| `--accent-soft` | `#2a55cc` | `#1f4ab8` | hover step of the fill |
 | `--accent-fg` | `#ffffff` | `#ffffff` | label on an accent fill |
-| `--accent-text` | `#b3baff` | `#3543b8` | links, live progress, the working dot, accent icons |
-| `--accent-dim` | 16% tint | 9% tint | selection, active rows, tinted icon wells |
+| `--accent-text` | `#93b4ff` | `#1d4ed8` | links, live progress, the working dot |
+| `--accent-dim` | 14% tint | 8% tint | focus ring, selection tint |
 
-`--focus-ring` and `--selection` derive from the same hue. Accent marks what is
-actionable, selected, focused or live — never decoration, headings or status.
+Accent marks what is actionable, selected, focused or live — never decoration,
+headings or status. There is one hue.
 
 ### Status
 
-`--danger`, `--warn` / `--warn-fg`, `--success`, each with a `-bg` and
-`-border`. Status is carried by a dot or a badge beside neutral text, never by
-coloured prose or a coloured figure. High / medium / low / info findings use
-the status palette for their dot only.
+`--danger`, `--warn` / `--warn-fg`, `--success`, each with a `-bg` and a
+`-border`. Status is a dot or a badge beside neutral text, never coloured prose
+or a coloured figure. Findings use the status palette for the dot only.
 
 ### Figures and code
 
@@ -86,77 +105,86 @@ Five sizes, each with one job:
 | Token | Size / leading | Use |
 | --- | --- | --- |
 | `--text-2xs` | 11px / 16px | labels, meta, key caps, badges |
-| `--text-sm` | 13px / 20px | interface, sidebar, controls, tool rows |
-| `--text-prose` | 15px / 1.7 | reading, answers, reports |
+| `--text-sm` | 13px / 20px | interface, sidebar, controls, prompt links |
+| `--text-prose` | 15px / 1.65 | reading, answers, reports |
 | `--text-xl` | 20px / 28px | a conclusion's focal answer |
-| `--text-2xl` | 28px / 36px | the page's one `<h1>` (Home) |
+| `--text-2xl` | 24px / 32px | the page's one `<h1>` (Home) |
 
 Faces: the platform UI face first (SF Pro on macOS, Segoe UI Variable on
 Windows), vendored **Inter Variable** where the platform face is not a UI face,
 and **JetBrains Mono Variable** for tool names, keys, payloads and code. CJK
 falls through to the platform face. Rank comes from size, weight and space, not
-from fading text.
+from fading text or uppercase micro-labels. There are no uppercase section
+labels in the window.
 
 ## Spacing, radius, elevation
 
-Spacing is a 4px grid: `--space-1` (4) · `-2` (8) · `-3` (12) · `-4` (16) ·
+Spacing is a 4 px grid: `--space-1` (4) · `-2` (8) · `-3` (12) · `-4` (16) ·
 `-5` (20) · `-6` (24) · `-8` (32) · `-10` (40) · `-12` (48).
 
-Radii are three: **6px** small controls · **8px** surfaces and menus · **12px**
-the Composer and side pane. The aliases `--radius-sm` … `--radius-3xl` keep
-every surface on the same scale.
+Radii are three: **6 px** controls · **8 px** menus · **12 px** the Composer,
+side pane and Settings. The aliases `--radius-sm` … `--radius-3xl` keep every
+surface on the same scale.
 
-Shadows are two: `--shadow-elev` for menus and popovers, `--shadow-pop` for
-dialogs and the overlaid side pane. The canvas is flat; depth comes from
-hairline separators and surface steps, not a stack of cards or an ambient wash.
+Shadows are two: `--shadow-elev` for menus and popovers, `--shadow-pop` for the
+Settings dialog and the overlaid side pane. The Composer has no shadow. The
+canvas is flat.
 
-Icons are 16px (14px in dense rows) at a 1.5 stroke with rounded joins.
+Icons are 16 px (14 px in dense rows) at a 1.5 stroke with rounded joins.
 
 ## Measure and layout
 
-`--doc-measure: 46rem` is the reading column; `--doc-track: 64rem` is the track
-for tables and figure cards. `--sidebar-w: 17rem`; the side pane is resizable
-from 352 to 880px and starts at 420px. `--header-h: 3rem`; `--control-h: 2rem`.
+`--doc-measure: 44rem` (704 px) is the reading column; `--doc-track: 60rem` is
+the track for tables and figures. `--sidebar-w: 15rem` (240 px); the side pane
+is resizable from 352 to 880 px and starts at 380 px. `--header-h: 2.75rem`
+(44 px); `--control-h: 2rem` (32 px).
 
-Home is an empty Task, not an editorial start surface: one 28px heading, three
-quiet prompt chips, the estate's attention and account lines, and the same
-docked Composer as every task. There is no eyebrow, hero, starter card or
-separate estate page.
+Home is an empty Task, not a landing page: one 24 px heading, three prompt
+**text links** separated by a dot (stacked below 720 px), one readiness line,
+then the estate's attention and account lines, and the same docked Composer as
+every task. Nothing on Home submits work except the Composer.
 
-The Task page is request → **run trace** → rendered result → answer → findings.
-The trace is open while work is live (one row per real call, real progress) and
-becomes a receipt when settled; its result view renders `tool_output.detail`
-deterministically. Findings carry a quiet checks chip that opens Evidence, or
-*No direct check*. Evidence is the one side pane: a human heading, one row per
-call, rendered result first and raw JSON behind a fold.
+The Task page is request → **run trace** → rendered result → answer → findings
+→ next steps. The trace is one quiet line while live (real calls and real
+progress expand below it) and becomes one receipt when settled. Deterministic
+results render from `tool_output.detail` as part of the document: a table has a
+header rule and row rules, not a card. Findings are a flat list with a severity
+dot; the turn's successful calls are said **once** after the list as
+`Evidence · n checks`, or `No direct check`. The per-finding chip is gone: it
+repeated the same turn-level fact on every row and implied a precision the data
+does not have.
+
+Evidence is the one side pane: a human heading, one row per call (verb, target,
+time, summary), the rendered result first, raw JSON behind a *Raw* fold,
+attached files, Save report, and usage at the foot. It is not an inspector of
+uppercase labels.
 
 ## Components
 
 `components/ui.tsx` is the only place a control's shape is decided; the look
 lives in `styles/components.css`.
 
-- `Button` (`ui-btn`, `data-variant`): `primary` (accent fill, one per
-  surface), `secondary` (raised neutral), `ghost`, `danger`; sizes `sm` / `md`.
-- `IconButton` (`ui-icon-btn`): square; its label is the accessible name and
-  tooltip.
-- `Kbd` (`ui-kbd`): one cap per key.
-- `Badge` / `StatusDot`: tone by meaning; the dot pulses only while work is
-  live.
-- `Segmented` (`ui-segmented`), `Field` + `TextInput` / `Select`.
+- `Button` (`ui-btn`, `data-variant`): one filled `primary` per surface;
+  `secondary` is a hairline, `ghost` is text, `danger` is text in the danger ink.
+- `IconButton` (`ui-icon-btn`): 26 px square; its label is the accessible name
+  and tooltip.
+- `Kbd` (`ui-kbd`): one quiet cap per key.
+- `Badge` / `StatusDot`: tone by meaning; the dot pulses only while work is live.
+- `Segmented` (`ui-segmented`): a 2 px inset track, not a row of pills.
+- `Field` + `TextInput` / `Select`: 32 px, one hairline, focus is one blue ring.
 
 The Composer is the only Agent input, docked at the same position on Home and
-every task. Its send control is a round accent button when ready; the model
-chip names the real active model and opens the real provider list; `@` opens one
-searchable estate picker and selected refs read as chips. The save row in
-Settings is a pinned toolbar above the fields, so it stays in reach without
-covering a credential field.
+every task. Its border is neutral at rest and on focus; there is no glow. The
+send control is a small accent circle only when ready. Attach and `@` are quiet
+icons; the model chip is a text control, not a pill. Selected context reads as a
+24 px text token on `--hover`, not a bordered card.
 
 ## Motion
 
 | Token | Value | Use |
 | --- | --- | --- |
 | `--duration-fast` | 120ms | hover, controls, chrome |
-| `--duration-base` | 200ms | menus, reveal, the progress hairline |
+| `--duration-base` | 200ms | menus, view transitions, the progress hairline |
 | `--duration-slow` | 280ms | sheets, dialogs, the side pane, sidebar collapse |
 | `--duration-instant` | 120ms | alias of fast |
 
@@ -165,13 +193,11 @@ Easing: `--ease-out` `cubic-bezier(0.2, 0.8, 0.2, 1)`, `--ease-emphasized`
 
 `prefers-reduced-motion` zeros animation and transition durations, stops the
 pulsing dot and the progress hairline, and leaves opaque surfaces static.
-Loading uses skeletons, not spinners. Live work is a pulsing dot with a real
-elapsed timer. The only determinate meter is one whose counts the runtime
-reported, never a time estimate.
+Content does not slide in on every render; a settled answer is simply there.
 
 ## Keyboard and focus
 
-Focus is a 2px `--focus-ring` outside a 1px canvas gap, following the
+Focus is a 2 px `--focus-ring` outside a 1 px canvas gap, following the
 element's own radius. Opt out only with `data-focus-ring="container"` when an
 ancestor already draws the ring (the Composer does).
 
@@ -183,6 +209,7 @@ and ⌘. stops live work.
 ## Non-goals
 
 Tokens must not imply a second Agent, a synthetic plan or stepper, an approval
-pause, a status bar, a permanent inspector column, or a second presentation
-lifecycle. The accent never signals status; status colours never mark series or
-decoration. The side pane is the one place a Task's durable outputs open.
+pause, a status bar, a permanent inspector column, a card per content block, or
+a second presentation lifecycle. The accent never signals status; status colours
+never mark series or decoration. The side pane is the one place a Task's durable
+outputs open.
