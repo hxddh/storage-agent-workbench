@@ -219,7 +219,9 @@ def rename_task(task_id: str, body: TaskPatch, conn: Any = Depends(get_conn)) ->
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(task_id: str, conn: Any = Depends(get_conn)) -> Response:
     _task_or_404(conn, task_id)
-    RUNTIME.stop(task_id)
+    # Stop and let the worker settle before its rows disappear: a Turn finishing
+    # against a deleted Task used to leave a SQLite write transaction open.
+    RUNTIME.discard(task_id)
     store.delete_task(conn, task_id)
     store.audit(conn, actor="user", action="task.delete", task_id=task_id)
     shutil.rmtree(config.data_dir() / "tasks" / task_id, ignore_errors=True)

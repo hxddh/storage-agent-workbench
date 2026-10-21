@@ -88,6 +88,9 @@ class Runtime:
         self._live: dict[str, _Live] = {}
         self._workers: dict[str, asyncio.Task[Any]] = {}
         self._background: set[asyncio.Task[Any]] = set()
+        # Task IDs being deleted: no worker may start or continue one of their
+        # turns. IDs are never reused, so a tombstone stays for the process.
+        self._discarded: set[str] = set()
         self._lock = threading.Lock()
 
     # -- lifecycle ---------------------------------------------------------------------
@@ -135,6 +138,7 @@ class Runtime:
         self._background.clear()
         with self._lock:
             self._live.clear()
+            self._discarded.clear()
         self._workers.clear()
 
     def _call_soon(self, fn: Any, *args: Any) -> None:
@@ -198,6 +202,39 @@ class Runtime:
             self._call_soon(live.result.cancel)
         return True
 
+    def discard(self, task_id: str, timeout: float = 5.0) -> bool:
+        """Stop a task being deleted and wait for its worker to settle.
+
+        DELETE used to stop the live turn and delete the row in the same breath.
+        The Turn then tried to record its final notice against a task that no
+        longer existed: the foreign key failed, the exception escaped the
+        runtime's cleanup, and the still-open SQLite transaction locked every
+        later write. The tombstone makes a late worker a no-op; the wait makes
+        the common path finish before the rows disappear.
+        """
+        with self._lock:
+            self._discarded.add(task_id)
+            live = self._live.get(task_id)
+            worker = self._workers.get(task_id)
+        if live is not None:
+            live.cancel.set()
+            if live.result is not None:
+                self._call_soon(live.result.cancel)
+        if self._loop is None or worker is None or worker.done():
+            return True
+
+        async def settle() -> bool:
+            try:
+                await asyncio.wait_for(asyncio.shield(worker), timeout)
+            except (TimeoutError, asyncio.CancelledError):
+                return worker.done()
+            return True
+
+        try:
+            return bool(asyncio.run_coroutine_threadsafe(settle(), self._loop).result(timeout + 1.0))
+        except Exception:  # noqa: BLE001 — a delete must not fail because a turn was slow
+            return False
+
     def cancel_queued(self, conn: Any, task_id: str, turn_id: str) -> bool:
         turn = store.get_turn(conn, turn_id)
         if turn is None or turn["task_id"] != task_id:
@@ -246,6 +283,9 @@ class Runtime:
     # -- worker ------------------------------------------------------------------------------
     async def _drain(self, task_id: str) -> None:
         while True:
+            with self._lock:
+                if task_id in self._discarded:
+                    return
             conn = db.connect()
             try:
                 # The oldest queued turn whose parent is not itself still waiting:
@@ -269,7 +309,13 @@ class Runtime:
         rec = Recorder(task_id, turn_id)
         live = _Live(turn_id, recorder=rec)
         with self._lock:
-            self._live[task_id] = live
+            discarded = task_id in self._discarded
+            if not discarded:
+                self._live[task_id] = live
+        if discarded:
+            rec.close()
+            conn.close()
+            return
         clients: list[Any] = []
         status, error = "completed", None
         usage: dict[str, Any] | None = None
@@ -313,27 +359,41 @@ class Runtime:
             status, error = "failed", errors.user_message(exc)
             rec._append("error", {"message": error})
         finally:
-            rec.close_segment()
+            try:
+                rec.close_segment()
+            except Exception:  # noqa: BLE001 — cleanup must still close the connections
+                logger.exception("could not close the open segment of turn %s", turn_id)
             with self._lock:
                 self._live.pop(task_id, None)
                 carried, live.steers[:] = list(live.steers), []
-            await models.close_clients(clients)
-            store.set_turn_status(conn, turn_id, status, error=error, usage=usage)
-            store.touch_task(conn, task_id)
-            conn.commit()
-            rec.notice(status, **({"error": error} if error else {}))
-            if carried:
-                # Steers that arrived after the model's last call: they become the
-                # next Direction instead of a steer the model never read. This
-                # holds when the Turn failed or was stopped too — a steer is never
-                # acknowledged and then dropped.
-                rec.notice("carried", steers=len(carried))
-            self._publish_turn(conn, task_id, turn_id)
-            self._publish_state(conn, task_id)
-            rec.close()
-            if carried:
-                self.submit(conn, task_id, "\n\n".join(carried), parent_turn_id=turn_id)
-            conn.close()
+            try:
+                await models.close_clients(clients)
+            except Exception:  # noqa: BLE001 — a transport teardown never hides the Turn's outcome
+                logger.exception("could not close model clients for turn %s", turn_id)
+            try:
+                store.set_turn_status(conn, turn_id, status, error=error, usage=usage)
+                store.touch_task(conn, task_id)
+                conn.commit()
+                rec.notice(status, **({"error": error} if error else {}))
+                if carried:
+                    # Steers that arrived after the model's last call: they become the
+                    # next Direction instead of a steer the model never read. This
+                    # holds when the Turn failed or was stopped too — a steer is never
+                    # acknowledged and then dropped.
+                    rec.notice("carried", steers=len(carried))
+                self._publish_turn(conn, task_id, turn_id)
+                self._publish_state(conn, task_id)
+                if carried and store.get_task(conn, task_id) is not None:
+                    self.submit(conn, task_id, "\n\n".join(carried), parent_turn_id=turn_id)
+            except Exception:  # noqa: BLE001 — always release the database below
+                logger.exception("could not settle turn %s on task %s", turn_id, task_id)
+                try:
+                    conn.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+            finally:
+                rec.close()
+                conn.close()
         if status == "completed":
             # Naming a task is a side step, not part of the Turn. Waiting for it
             # here made the task's queue wait for a model call that can take the

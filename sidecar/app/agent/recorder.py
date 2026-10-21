@@ -12,6 +12,8 @@ react to tool results without the tools knowing about them.
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 import threading
 import time
 from collections.abc import Callable
@@ -31,6 +33,7 @@ _EVIDENCE_EXCLUDE = {"record_conclusion", "read_skill", "note"}
 
 ToolOutputHook = Callable[[dict[str, Any]], None]
 _hooks: list[ToolOutputHook] = []
+logger = logging.getLogger(__name__)
 
 
 def on_tool_output(hook: ToolOutputHook) -> ToolOutputHook:
@@ -101,7 +104,19 @@ class Recorder:
             # exact vault values and credential shapes, not just the fields
             # whose callers remembered to clean.
             payload = scrub_value(payload)
-            item = store.append_item(self._conn, self.task_id, self.turn_id, type_, payload, item_id=item_id)
+            try:
+                item = store.append_item(self._conn, self.task_id, self.turn_id, type_, payload, item_id=item_id)
+            except sqlite3.IntegrityError:
+                # The Task was deleted under a Turn that was still unwinding.
+                # Its rows are gone with it (ON DELETE CASCADE), so there is
+                # nothing left to record. Roll back — a failed INSERT can leave
+                # a write transaction open — and stop writing for this Turn. If
+                # we let this escape, the runtime's cleanup would be skipped and
+                # the open transaction would lock every later write.
+                self._conn.rollback()
+                self._closed = True
+                logger.info("task %s was deleted while turn %s was running", self.task_id, self.turn_id)
+                return {}
             if type_ in ("agent_message", "tool_call", "conclusion"):
                 self._produced = True
             if type_ == "agent_message":

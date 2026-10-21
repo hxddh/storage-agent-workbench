@@ -29,6 +29,10 @@ _The run made legible._ See `docs/releases/11.0.0.md`.
 
 - One Agent, one submit path, one item stream, Turn tree, forks, queue/withdraw, steer/stop/resume, compaction/finalize, 15 tools, schema head 2, read-only storage and the secret boundary.
 
+### Fixed
+
+- Deleting a task while its Turn was finalizing can no longer leave an open SQLite write transaction that locks every later write. Delete now stops and drains the task's worker first; a Turn whose task vanished stops recording and rolls back.
+
 ## [10.1.0] - 2026-10-20
 
 _A calmer, more truthful window._ See `docs/releases/10.1.0.md`.
