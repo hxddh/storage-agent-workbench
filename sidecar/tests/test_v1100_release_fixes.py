@@ -1,10 +1,13 @@
-"""Regression contracts for the v11.0.0 release blocker.
+"""Regression contracts for the v11 release fixes.
 
 Deleting a Task while its Turn was finalizing made the Turn's last item fail
 its foreign key. The exception escaped the runtime's cleanup, leaving the
 recorder connection open; its write transaction then locked every later write
 for the life of the Sidecar. These tests pin both halves of the fix: a vanished
 task stops recording cleanly, and DELETE stops the worker before the rows go.
+
+v11.1 also pins one consistent read for a task snapshot: a turn that settles
+between two SELECTs must not produce "ready" around a turn still shown running.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ import time
 from app import db
 from app.agent.recorder import Recorder
 from app.agent.runtime import RUNTIME
+from app.api import tasks as tasks_api
 from app.core import store
 from tests.fake_model import FakeModel, text_turn
 
@@ -22,6 +26,29 @@ def _use(client, fake: FakeModel) -> str:
     return client.post("/providers/models", json={
         "name": "fake", "kind": "openai-compatible", "base_url": fake.base_url, "model": "fake-model",
     }).json()["id"]
+
+
+def test_a_snapshot_reads_the_task_and_its_turns_from_one_transaction(conn, monkeypatch):
+    task = store.create_task(conn, "t")
+    turn = store.create_turn(conn, task["id"], "one", status="running")
+
+    real_branch = store.branch
+
+    def branch_then_finish(c, task_id, head_turn_id=None):
+        out = real_branch(c, task_id, head_turn_id)
+        # The turn settles after `branch` read it but before the snapshot asks
+        # for the active turns. A snapshot must still tell one coherent story.
+        other = db.connect()
+        try:
+            store.set_turn_status(other, turn["id"], "completed")
+        finally:
+            other.close()
+        return out
+
+    monkeypatch.setattr(tasks_api.store, "branch", branch_then_finish)
+    snap = tasks_api.snapshot(conn, task["id"])
+    assert snap["turns"][0]["status"] == "running"
+    assert snap["state"] == "working"
 
 
 def test_a_turn_whose_task_vanished_stops_recording_without_locking_sqlite(conn, monkeypatch):

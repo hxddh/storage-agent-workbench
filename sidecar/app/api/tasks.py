@@ -149,30 +149,36 @@ def _context(conn: Any, refs: list[ContextIn]) -> list[dict[str, Any]] | None:
 
 
 def snapshot(conn: Any, task_id: str) -> dict[str, Any]:
-    task = _task_or_404(conn, task_id)
-    chain = store.branch(conn, task_id)
-    items = [public_item(i) for i in store.items_for_turns(conn, [t["id"] for t in chain])]
-    forks = {parent: kids for parent, kids in store.siblings(conn, task_id).items() if len(kids) > 1}
-    active = store.active_turns(conn, task_id)
-    last = store.head_status(conn, task_id)
-    running = next((t["id"] for t in active if t["status"] == "running"), None)
-    queued = [t for t in active if t["status"] == "queued"]
-    return {
-        "task": task,
-        "state": store.task_state("running" if running else ("queued" if queued else None),
-                                  last),
-        "running_turn_id": running,
-        "queued": [{"turn_id": t["id"], "direction": t["direction"], "created_at": t["created_at"]} for t in queued],
-        "turns": [store.turn_public(t) for t in chain],
-        "head_turn_id": task["head_turn_id"],
-        "items": items,
-        "forks": forks,
-        "live": hub.live_snapshot(task_id),
-        "files": [_file_out(d) for d in datasets.list_for_task(conn, task_id)],
-        "artifacts": [{k: a[k] for k in ("id", "kind", "title", "turn_id", "provider_id", "created_at")}
-                      for a in store.list_artifacts(conn, task_id)],
-        "last_seq": store.last_seq(conn, task_id),
-    }
+    # One read transaction for the whole snapshot. A turn can settle between
+    # two SELECTs on separate autocommit reads: `branch` would still show it
+    # running while `active_turns` already sees it completed, and the window
+    # would paint "ready" around a running turn. WAL gives this transaction a
+    # stable view without blocking the turn's writes.
+    with conn:
+        conn.execute("BEGIN")
+        task = _task_or_404(conn, task_id)
+        chain = store.branch(conn, task_id)
+        items = [public_item(i) for i in store.items_for_turns(conn, [t["id"] for t in chain])]
+        forks = {parent: kids for parent, kids in store.siblings(conn, task_id).items() if len(kids) > 1}
+        active = store.active_turns(conn, task_id)
+        last = store.head_status(conn, task_id)
+        running = next((t["id"] for t in active if t["status"] == "running"), None)
+        queued = [t for t in active if t["status"] == "queued"]
+        return {
+            "task": task,
+            "state": store.task_state("running" if running else ("queued" if queued else None), last),
+            "running_turn_id": running,
+            "queued": [{"turn_id": t["id"], "direction": t["direction"], "created_at": t["created_at"]} for t in queued],
+            "turns": [store.turn_public(t) for t in chain],
+            "head_turn_id": task["head_turn_id"],
+            "items": items,
+            "forks": forks,
+            "live": hub.live_snapshot(task_id),
+            "files": [_file_out(d) for d in datasets.list_for_task(conn, task_id)],
+            "artifacts": [{k: a[k] for k in ("id", "kind", "title", "turn_id", "provider_id", "created_at")}
+                          for a in store.list_artifacts(conn, task_id)],
+            "last_seq": store.last_seq(conn, task_id),
+        }
 
 
 def _file_out(d: dict[str, Any]) -> dict[str, Any]:
