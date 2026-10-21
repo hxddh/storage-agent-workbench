@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v11.0.0**
+**Current release: v11.1.0**
 
 Storage Agent is a local-first desktop Agent for object storage — AWS S3 and every S3-compatible service. Give it a goal or a problem; it investigates with real, read-only, bounded tools, shows the work while it runs, stays steerable and stoppable, and answers with evidence. What it learns about your storage — accounts, buckets, their posture and the Issues found there — outlives the task that learned it.
 

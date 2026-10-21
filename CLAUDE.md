@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v11.0.0.**
+> **Implementation contract for Storage Agent v11.1.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md` and `docs/security.md`. Current code and the

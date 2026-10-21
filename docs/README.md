@@ -1,14 +1,14 @@
 # Documentation
 
-> **Current baseline: Storage Agent v11.0.0.** Built on the v5 rewrite around one
+> **Current baseline: Storage Agent v11.1.0.** Built on the v5 rewrite around one
 > idea — *the estate is the object, Agent Tasks are how work is done, and one item
 > stream is the truth*. v7 made a task one conversation; v8 was subtraction and
 > correctness; v9 kept state consistent; v10 made a small local model finish the
-> work. v11 makes the work legible: Home is an empty Task with the one docked
-> Composer, a live run trace becomes a receipt, deterministic results are rendered
-> from tool outputs instead of transcribed by the model, findings carry the turn's
-> checks as evidence, and `@` attaches estate context. The dependency closure is
-> refreshed on Python 3.14. See `docs/releases/11.0.0.md`.
+> work; v11 made the work legible. v11.1 is the visual and interaction release:
+> design system v6 keeps one flat document, one docked Composer and one side pane,
+> with no content cards, one blue accent and a compact Settings dialog. The run
+> trace, rendered deterministic results and turn-level Evidence are unchanged.
+> See `docs/releases/11.1.0.md`.
 
 ## Source-of-truth order
 

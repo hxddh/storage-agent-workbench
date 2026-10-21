@@ -4,7 +4,9 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
-## [Unreleased]
+## [11.1.0] - 2026-10-21
+
+_The window, made quiet._ See `docs/releases/11.1.0.md`.
 
 ### Changed
 

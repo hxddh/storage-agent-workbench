@@ -1,6 +1,6 @@
 # Design tokens
 
-> **Storage Agent v11 — design system v6, the quiet document.**
+> **Storage Agent v11.1 — design system v6, the quiet document.**
 >
 > Presentation contract for the native Agent Task window. Tokens never invent
 > runtime state, progress, or capabilities.
