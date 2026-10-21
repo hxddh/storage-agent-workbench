@@ -16,14 +16,15 @@ const survey = JSON.stringify({
 });
 
 describe("deterministic result views", () => {
-  it("renders a survey from the tool detail, with the issue summary and coverage", () => {
+  it("renders a survey as a table and coverage, without a repeated issue summary", () => {
     const view = viewFor({ name: "survey_account", detail: survey, detailTruncated: false });
     expect(view?.kind).toBe("survey");
     render(<I18nProvider><ResultView row={{ name: "survey_account", detail: survey, detailTruncated: false }} /></I18nProvider>);
     const table = screen.getByTestId("tool-table");
     expect(table).toHaveTextContent("acme-www");
     expect(table).toHaveTextContent("Yes");
-    expect(screen.getAllByText("Publicly exposed").length).toBeGreaterThan(0);
+    expect(table).toHaveTextContent("Publicly exposed");
+    expect(document.querySelector(".result-issues")).toBeNull();
     expect(screen.getByText(/2 buckets checked/)).toBeInTheDocument();
   });
 

@@ -7,6 +7,7 @@ import { Button, IconButton } from "../components/ui";
 import { saveTextFile } from "../config";
 import { useI18n } from "../i18n";
 import { fmtBytes } from "../lib/format";
+import { revealInScroller } from "../lib/scroll";
 import { toolLabel } from "../lib/toolLabels";
 import { useApp } from "../shell/context";
 import { allTools, sections, type ToolRow } from "../store/derive";
@@ -99,13 +100,25 @@ export function Details({ model }: { model: TaskModel }) {
   const tools = useMemo(() => allTools(all), [all]);
   const files = model.snapshot?.files ?? [];
   const pane = app.pane;
+  const focusCall = pane?.tab === "details" ? pane.callId : undefined;
+  // A tool row in the conversation opens the pane at that exact call, not at
+  // the top of a long run. The row expands as it scrolls into view.
+  useEffect(() => {
+    if (!focusCall) return;
+    const frame = requestAnimationFrame(() => {
+      const target = [...document.querySelectorAll<HTMLElement>("[data-call-id]")]
+        .find((el) => el.dataset.callId === focusCall);
+      revealInScroller(target, "center");
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusCall]);
   if (!pane || pane.tab !== "details") return null;
   return (
     <Pane title={t("pane.details")} testId="inspector">
       <div className="details" data-testid="details">
         {tools.length ? (
           <ul className="details-calls">
-            {tools.map((r) => <CallLine key={r.callId} row={r} />)}
+            {tools.map((r) => <CallLine key={r.callId} row={r} focus={r.callId === focusCall} />)}
           </ul>
         ) : <p className="quiet-note">{t("pane.noCalls")}</p>}
         {files.length ? (
@@ -130,13 +143,14 @@ export function Details({ model }: { model: TaskModel }) {
   );
 }
 
-function CallLine({ row }: { row: ToolRow }) {
+function CallLine({ row, focus }: { row: ToolRow; focus: boolean }) {
   const { t, lang } = useI18n();
   const app = useApp();
   const [open, setOpen] = useState(false);
   const view = viewFor(row);
+  useEffect(() => { if (focus) setOpen(true); }, [focus]);
   return (
-    <li>
+    <li data-call-id={row.callId}>
       <details className="call-evidence" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
         <summary data-testid="evidence-call" data-status={row.status} data-tool={row.name}>
           <span className="call-verb">{toolLabel(row.name, lang)}</span>

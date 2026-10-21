@@ -1,14 +1,15 @@
 # Documentation
 
-> **Current baseline: Storage Agent v12.0.0.** Built on the v5 rewrite around one
-> idea — *the estate is the object, Agent Tasks are how work is done, and one item
-> stream is the truth*. v7 made a task one conversation; v8 was subtraction and
-> correctness; v9 kept state consistent; v10 made a small local model finish the
-> work; v11 made the work legible. v12 is an editorial subtraction: a turn is one
-> assistant article (receipt, answer, deterministic result, findings, one next
-> step), state and identity are said once, Evidence is one pane with one level,
-> and the Composer's file and estate context share one `+` menu. No runtime,
-> schema or tool change. See `docs/releases/12.0.0.md`.
+> **Current release: Storage Agent v12.1.0; these canonical documents describe
+> the current `main`.** Built on the v5 rewrite around one idea — *the estate is
+> the object, Agent Tasks are how work is done, and one item stream is the
+> truth*. v7 made a task one conversation; v8 was subtraction and correctness;
+> v9 kept state consistent; v10 made a small local model finish the work; v11
+> made the work legible; v12 made a turn one assistant article. v12.1 settles
+> the start: Home is one sentence and one Composer, the estate lives in the
+> Storage sheet, and no next-step prompt is painted. No schema, route or
+> tool-set change. See `docs/releases/12.1.0.md`; release notes are history,
+> these documents are the current specification.
 
 ## Source-of-truth order
 
@@ -31,7 +32,7 @@ When they disagree, the higher one wins; fix the lower one in the same PR.
 | **Direction** | What the user asked — the heading of a Turn, in their words. Editing it sends a new version (a fork). |
 | **Turn** | One Direction and the work it caused; queued, running, completed, failed, cancelled or interrupted. |
 | **Item** | One entry of the append-only stream (message, tool call/progress/output, conclusion, steer, compaction, notice, error). Everything shown is projected from items. |
-| **Conversation** | A task's page: every Turn on the branch, oldest first — the request, the live run trace or its quiet receipt, then one assistant article: answer, rendered result, findings and one next step. |
+| **Conversation** | A task's page: every Turn on the branch, oldest first — the request, the live run trace or its quiet receipt, then one assistant article: answer, rendered result and findings. |
 | **Estate** | What the work established about the user's storage: accounts, known buckets, their posture and how it changed, Issues, notes. |
 | **Issue** | A deterministic observation about a bucket, with a lifecycle (open → fix proposed → resolved; recurred; accepted). |
 | **Fix pack** | An Issue's fix as text the user applies — AWS CLI, Terraform, the API document — with an impact preview drawn from evidence (or an honest *cannot tell*). |

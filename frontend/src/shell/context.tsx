@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api";
-import type { CloudProvider, ContextRef, ModelProvider } from "../api/types";
+import type { Attachment, CloudProvider, ContextItem, ContextRef, ModelProvider } from "../api/types";
 
 /**
  * Window state that more than one surface reads: where the reader is (the
@@ -9,12 +9,13 @@ import type { CloudProvider, ContextRef, ModelProvider } from "../api/types";
  */
 
 export type Route = { kind: "home" } | { kind: "task"; id: string };
-/** The one side pane: a task's Evidence (every check, files, the report), or one bucket. */
+/** The one side pane: a task's Evidence, the Storage estate, or one bucket. */
 export type Pane =
-  | { tab: "details" }
+  | { tab: "details"; callId?: string }
+  | { tab: "storage" }
   | { tab: "bucket"; providerId: string; bucket: string }
   | null;
-export type Editing = { turnId: string; parentTurnId: string | null; text: string } | null;
+export type Editing = { turnId: string; parentTurnId: string | null; text: string; context?: ContextItem[]; attachments?: Attachment[] } | null;
 
 type Ctx = {
   route: Route;
@@ -91,16 +92,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  useEffect(() => {
-    if (route.kind !== "task") return;
-    try { localStorage.setItem("sa.saw.task", "1"); } catch { /* per device */ }
-  }, [route]);
-
   const navigate = useCallback((hash: string, next: Route) => {
     const go = () => {
       if (window.location.hash !== hash) window.history.pushState(null, "", hash || "#/");
       setRoute(next);
       if (isNarrow()) setSidebarState(false); // the overlay gives the page back once a page is chosen
+      // A task switch may keep its pane; Home has no task pane, so a stale
+      // Evidence state must not reappear when the next task opens.
+      if (isNarrow() || next.kind === "home") setPane(null);
       setEditing(null);
       setDraft({ text: "", nonce: 0 }); // a draft belongs to the page it was written on
     };

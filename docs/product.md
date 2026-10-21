@@ -16,23 +16,28 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 
 **Sidebar · title bar · one conversation · one Composer**, plus one closable side pane.
 
-- The **sidebar** is New task, an in-place search, the task list grouped by day, and Settings — nothing else. In a narrow window it overlays the page. A row shows state as a mark: working (pulsing), queued, needs attention; a task the watch opened carries a shield.
+- The **sidebar** is New task, an in-place search, the task list grouped by day, **Storage** and Settings — nothing else. Storage carries the estate's open-Issue count. In a narrow window it overlays the page. A row shows state as a mark: working (pulsing), queued, needs attention; a task the watch opened carries a shield.
 - **⌘K** focuses the sidebar search.
 - The **title bar** is chrome: the task name appears there only when the sidebar is collapsed (the sidebar already names the selected task), and its right-hand button opens **Evidence**. Work state lives in the sidebar row, the live trace and Stop — it is never repeated as a second pill, and there is no progress hairline.
-- The **Composer** is the only way to give the Agent work, and it sits in the same dock on Home and on every task: *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. The `+` menu holds **Attach a file** and **Add estate context** (`@`); a context chip or a file always makes a new request, never a steer. Files attach by menu or drop (access logs, inventories). The model chip shows which model the next turn uses; with none set up, Send waits and the chip says where to add one. Stopping keeps what was written so far as the answer. Context is focus, not authorization: the account's bucket/prefix scope is still enforced server-side.
+- The **Composer** is the only way to give the Agent work. It is centred on Home and docked at the foot of a task; it is one component with one behaviour. *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. The `+` menu holds **Attach a file** and **Add estate context** (`@`); a context chip or a file always makes a new request, never a steer. Files attach by menu or drop (access logs, inventories). The model chip shows which model the next turn uses; with none set up, Send waits and the chip says where to add one. Stopping keeps what was written so far as the answer. Context is focus, not authorization: the account's bucket/prefix scope is still enforced server-side.
 
-### Home — an empty Task
+### Home — a start, not a dashboard
 
-Home is the same window as a Task with no Turns yet: one heading, the docked Composer, and — only until the first task has been opened on this device — three quiet prompt links (*Diagnose an access error*, *Survey my storage account*, *Analyze an access log*) that only fill the Composer. Then:
+Home is one sentence, one Composer, and nothing to scan first:
 
-- **Getting started** — one sentence when a model or a storage account is missing, each part a link to the right Settings pane.
-- **Needs attention** — one row per kind of open Issue, most severe first, naming every bucket it was found on (three, then *+N*); a bucket opens in the side pane. Below, one quiet line per account: its buckets, when it was last checked, whether it is watched — storage never checked reads *name · not checked yet · Survey* (Survey fills the Composer), with no bucket count.
+- the greeting is the page's one `<h1>`;
+- the Composer sits directly beneath it, in the reading column;
+- there are no starter cards, prompt links, readiness paragraphs, account lines or issue tables on Home.
 
-There is no second layout and no separate estate page. The Composer never moves when a task starts.
+Everything about the estate lives one click away under **Storage** in the sidebar. A reader can ask immediately, or open Storage to see accounts and what needs attention. Nothing on Home submits work on its own.
+
+### Storage
+
+The **Storage sheet** (the side pane) is the estate surface: one row per account with its buckets, last check and watch mark, then **Needs attention** — one row per kind of open Issue, most severe first, naming every bucket it was found on (three, then *+N*). The bucket count opens a folded bucket index; a bucket name opens its sheet, including a healthy bucket with no Issue. When no account has been checked, the sheet says so; an unchecked account offers *Survey*, which closes the sheet and fills the Composer. The sheet is read-only and never submits work.
 
 ### A bucket
 
-The **bucket sheet** (the side pane) is where the storage itself is the subject: what needs attention (the resolved Issues folded below), its configuration as last checked (only what deviates: exposure that is on, a read that failed, a missing protection), the notes kept about it, and its history (posture changes and Issue events, folded). *Ask about this bucket* fills the Composer; it never submits.
+The **bucket sheet** (the side pane) is where the storage itself is the subject: what needs attention (the resolved Issues folded below), its configuration as last checked (only what deviates: exposure that is on, a read that failed, a missing protection), the notes kept about it, and its history (posture changes and Issue events, folded). *Ask about this bucket* closes the sheet and fills the Composer with a bucket context chip; it never submits.
 
 An Issue shows **Show fix** and **Verify** (a read-only re-check that can resolve it); its *More* menu holds *Open task* and *Accept risk* (with an optional reason, kept as a note). The **fix** is the AWS CLI command, a Terraform resource or the API document — copy whichever you apply changes with — with an **impact preview**: one verdict sentence on what applying it would change, from the evidence the estate holds, with its reasons folded under it. For a public access block it counts the anonymous requests in the bucket's attached S3 server access logs; for lifecycle rules it says whether existing rules would be replaced. When the evidence cannot tell, it says so and what would answer it.
 
@@ -40,9 +45,9 @@ An Issue shows **Show fix** and **Verify** (a read-only re-check that can resolv
 
 ### A task — one conversation, one assistant article
 
-Every request reads top to bottom in the order it was made: the user's message (with any context chips), then **one assistant article**. While work is live the article opens with the **run trace** — every real call, verb, target, progress and result, with commentary and steers inline. When the turn settles the trace becomes one quiet receipt (*2 checks · 1s*) that does not expand; the answer follows, then the rendered deterministic result of a survey, listing, configuration review or fix preview from `tool_output.detail`, then the findings as a flat list with a severity dot, then at most one recorded next step that fills the Composer. There is no second suggestion block and no evidence line repeated under the findings: the title bar's **Evidence** is the one entry to the calls. A queued request shows *Queued* with *Withdraw*; a request that needs attention offers *Continue* or *Open Settings*. A turn without a recorded conclusion shows its answer; nothing is guessed.
+Every request reads top to bottom in the order it was made: the user's message (with any context chips), then **one assistant article**. While work is live the article opens with the **run trace** — every real call, verb, target, progress and result, with commentary and steers inline. When the turn settles the trace becomes one quiet receipt (*2 checks · 1s*) that does not expand; the answer follows, then the rendered deterministic result of a survey, listing, configuration review or fix preview from `tool_output.detail`, then the findings as a flat list with a severity dot. There is no next-step prompt, no second suggestion block and no evidence line repeated under the findings: the title bar's **Evidence** is the one entry to the calls. A queued request shows *Queued* with *Withdraw*; a request that needs attention offers *Continue* or *Open Settings*. A turn without a recorded conclusion shows its answer; nothing is guessed.
 
-A message can be **edited**: that sends a new version of it — a fork of the task at that point — and *1 / 2* switches between versions. Reloading, reconnecting or following up never reorders, drops or duplicates anything: the page is the item stream, merged by sequence.
+A message can be **edited**: that sends a new version of it — a fork of the task at that point — and *1 / 2* switches between versions. The fork keeps the message's estate context and attached files. Reloading, reconnecting or following up never reorders, drops or duplicates anything: the page is the item stream, merged by sequence.
 
 ### Evidence
 

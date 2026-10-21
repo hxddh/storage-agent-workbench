@@ -180,6 +180,14 @@ fn get_sidecar_token(state: State<SidecarState>) -> String {
     state.token.clone()
 }
 
+/// Hide the summoned Quick Ask window (Esc / its close control).
+#[tauri::command]
+fn hide_quick(app: AppHandle) {
+    if let Some(win) = app.get_webview_window("quick") {
+        let _ = win.hide();
+    }
+}
+
 /// Save app-generated text (a markdown report) into the user's Downloads
 /// directory and return the written path. WKWebView ignores the `download`
 /// attribute on blob: URLs, so the frontend's anchor-download was a silent
@@ -575,7 +583,13 @@ pub fn run() {
         // Size / position / maximised state come back on the next launch.
         // The plugin saves on close and restores on window creation by itself;
         // the frontend never touches it.
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        //
+        // Quick Ask is summoned, never restored: it is `visible: false` in the
+        // config, but the plugin's default flags include VISIBLE, so quitting
+        // while it was open used to bring back a small always-on-top window on
+        // the next launch. Tracking only the main window keeps that popup out
+        // of startup while still remembering the window the user actually uses.
+        .plugin(tauri_plugin_window_state::Builder::new().with_denylist(&["quick"]).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -592,6 +606,21 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Quick Ask is a summoned utility, not a startup surface. It is
+            // hidden by config and excluded from window-state, and this guard
+            // makes the invariant explicit on platforms whose window managers
+            // show a webview before its configured visibility is applied.
+            if let Some(quick) = app.get_webview_window("quick") {
+                // Linux/Windows draw the app menu inside each window; a 560 px
+                // utility should not inherit the main window's menu bar. An
+                // empty window menu is the portable way to take it off this
+                // window without touching the main window's menu.
+                if let Ok(empty) = Menu::new(app) {
+                    let _ = quick.set_menu(empty);
+                }
+                let _ = quick.hide_menu();
+                let _ = quick.hide();
+            }
             // Deep links: the OS open-url event (macOS, and Linux/Windows once
             // the scheme is registered) → one `deep-link-request` event. On
             // Linux/Windows dev builds the scheme is registered at runtime so
@@ -730,7 +759,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![get_sidecar_url, get_sidecar_token,
-                                                 save_report, open_external, notify,
+                                                 hide_quick, save_report, open_external, notify,
                                                  set_window_title, open_app_folder,
                                                  open_task_in_main, set_tray_status])
         .build(tauri::generate_context!())

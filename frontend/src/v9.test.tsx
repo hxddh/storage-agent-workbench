@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useEffect, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "./components/Toast";
-import { Home } from "./home/Home";
+import { StorageSheet } from "./estate/StorageSheet";
 import { formatDuration } from "./hooks/useElapsed";
 import { I18nProvider } from "./i18n";
 import { Settings } from "./settings/Settings";
@@ -88,7 +88,7 @@ describe("v9: settings", () => {
   });
 });
 
-describe("v9: home", () => {
+describe("v9: storage sheet", () => {
   it("storage never checked is one quiet line with a Survey link — no bucket count, no heading", async () => {
     serve((url) => {
       if (url.includes("/providers/clouds")) return [{ id: "p1", name: "acme-prod" }];
@@ -99,9 +99,10 @@ describe("v9: home", () => {
       }
       return {};
     });
-    await act(async () => { render(wrap(<Home />)); });
+    await act(async () => { render(wrap(<StorageSheet />)); });
     const line = await screen.findByTestId("estate");
-    expect(line).toHaveTextContent("acme-prod · not checked yet · Survey");
+    expect(line).toHaveTextContent("acme-prod");
+    expect(line).toHaveTextContent("not checked yet · Survey");
     expect(line).not.toHaveTextContent("0 buckets");
     expect(screen.queryByText("Needs attention")).toBeNull();
     expect(screen.getByTestId("not-checked")).toHaveTextContent("Survey");

@@ -304,6 +304,7 @@ def test_an_old_conclusion_with_an_answer_still_replays_and_reports(conn):
                                                            "severity": "high"}], "next_steps": ["Fix it"]}
     md = report.render(conn, task["id"])
     assert "## Conclusion" in md and "Yes: www is public." in md and "**HIGH** — Bucket is publicly accessible" in md
+    assert "Next steps" not in md and "Fix it" not in md
 
 
 # --- the Responses backend -------------------------------------------------------------------

@@ -120,6 +120,7 @@ snapshot of the task's current branch:
   Item payloads are specified in [data-model.md](data-model.md#items). A
   `conclusion` item's payload is `{call_id, findings, next_steps, evidence?}` (v11);
   `evidence` is the runner's turn-level successful-call list, not model input.
+  `next_steps` is legacy: the window and the report no longer read it.
   one recorded before v9 may also carry `answer` — read it as optional.
   That field holds the text the model read; the UI reads `detail` instead.
 

@@ -51,9 +51,9 @@ test("a message becomes a conversation: the work while live, the answer, Evidenc
   await expect(page.getByTestId("task-title")).toHaveText("Attached evidence check");
   await page.getByTestId("show-sidebar").click();
 
-  // One next step fills the Composer and sends nothing.
-  await page.getByTestId("next-step").click();
-  await expect(page.getByTestId("composer-input")).toHaveValue("Attach last week's access log");
+  // No follow-up card or next-step prompt is painted.
+  await expect(page.getByTestId("next-step")).toHaveCount(0);
+  await expect(page.getByTestId("suggestions")).toHaveCount(0);
 
   // Evidence is one pane; a call expands in place.
   await page.getByTestId("titlebar-sidepane").click();

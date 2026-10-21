@@ -41,24 +41,26 @@ describe("one submit path", () => {
 describe("the window", () => {
   it("is sidebar · title bar · one document · one Composer, plus one side pane", () => {
     const shell = read(path.join(SRC, "shell/Shell.tsx"));
-    for (const part of ["<Sidebar", 'className="titlebar"', 'className="document"', "<Composer", "<Details", "<BucketSheet"]) {
+    for (const part of ["<Sidebar", 'className="titlebar"', 'className="document"', "<Composer", "<Details", "<StorageSheet", "<BucketSheet"]) {
       expect(shell).toContain(part);
     }
-    // One Composer in the Shell, docked for both the home (an empty Task) and a task.
+    // One visible Composer: Home carries it before a task exists; the task dock
+    // carries it afterwards. They are never mounted together.
     expect(shell.match(/<Composer\b/g)).toHaveLength(1);
-    expect(read(path.join(SRC, "home/Home.tsx")).match(/<Composer\b/g)).toBeNull();
+    expect(read(path.join(SRC, "home/Home.tsx")).match(/<Composer\b/g)).toHaveLength(1);
     expect(shell).toContain("taskId={taskId} busy={busy}");
-    // The sidebar is New task, search, the list and Settings — no separate areas.
+    // The sidebar is New task, search, the list, Storage and Settings.
     const sidebar = read(path.join(SRC, "shell/Sidebar.tsx"));
     for (const gone of ["nav-home", "nav-estate", "openEstate"]) expect(sidebar).not.toContain(gone);
+    expect(sidebar).toContain('data-testid="open-storage"');
   });
 
-  it("a turn is one assistant article: one receipt, one next step, no suggestion block", () => {
+  it("a turn is one assistant article: one receipt, no follow-up suggestion", () => {
     const turn = read(path.join(SRC, "task/Turn.tsx"));
     expect(turn.match(/<article\b/g)).toHaveLength(1);
     expect(turn).toContain('className="assistant"');
-    expect(turn).toContain('data-testid="next-step"');
-    expect(turn).toContain("s.conclusion?.next_steps?.[0]");
+    expect(turn).not.toContain('data-testid="next-step"');
+    expect(turn).not.toContain("next_steps");
     expect(turn).not.toContain("suggestions");
     expect(turn).not.toContain("Evidence ·");
   });
@@ -86,17 +88,22 @@ describe("the window", () => {
     expect(composer).not.toContain("context-trigger");
   });
 
-  it("shows first-run prompts only until a task has been opened", () => {
-    expect(read(path.join(SRC, "home/Home.tsx"))).toContain("sa.saw.task");
-    expect(read(path.join(SRC, "shell/context.tsx"))).toContain("sa.saw.task");
+  it("keeps Home to one sentence and one Composer; Storage lives in the sheet", () => {
+    const home = read(path.join(SRC, "home/Home.tsx"));
+    expect(home).toContain("<Composer");
+    expect(home).not.toContain("Attention");
+    expect(home).not.toContain("readiness");
+    expect(home).not.toMatch(/\bapi\./);
+    expect(fs.existsSync(path.join(SRC, "estate/StorageSheet.tsx"))).toBe(true);
+    expect(read(path.join(SRC, "shell/Sidebar.tsx"))).toContain('data-testid="open-storage"');
   });
 
   it("groups repeated missing protections into one row", () => {
     expect(read(path.join(SRC, "estate/BucketSheet.tsx"))).toContain("bucket.missingProtections");
   });
 
-  it("starters, one next step and Ask about this bucket only fill the Composer — they never submit", () => {
-    const files = ["home/Home.tsx", "task/Turn.tsx", "estate/BucketSheet.tsx"].map((f) => read(path.join(SRC, f)));
+  it("Survey and Ask about this bucket only fill the Composer — they never submit", () => {
+    const files = ["estate/BucketSheet.tsx", "estate/StorageSheet.tsx"].map((f) => read(path.join(SRC, f)));
     for (const text of files) {
       expect(text).toMatch(/app\.prefill\(/);
       expect(text).not.toMatch(/api\.(submit|createTask|steer)\(/);
@@ -105,7 +112,7 @@ describe("the window", () => {
 
   it("the estate never submits work and never writes to storage", () => {
     const estate = source.filter((p) => rel(p).startsWith("estate/"));
-    expect(estate.map(rel).sort()).toEqual(["estate/BucketSheet.tsx", "estate/IssueCard.tsx", "estate/Notes.tsx"]);
+    expect(estate.map(rel).sort()).toEqual(["estate/BucketSheet.tsx", "estate/IssueCard.tsx", "estate/Notes.tsx", "estate/StorageSheet.tsx"]);
     for (const p of estate) expect(read(p)).not.toMatch(/api\.(submit|createTask|steer|resume)\(/);
   });
 
@@ -183,6 +190,8 @@ describe("the native shell", () => {
     const quick = conf.app.windows.find((w: { label?: string }) => w.label === "quick");
     expect(quick.url).toBe("index.html?view=quick");
     expect(quick.visible).toBe(false);
+    // A summoned window is never restored as a startup popup.
+    expect(fs.readFileSync(path.join(ROOT, "src-tauri/src/lib.rs"), "utf8")).toContain('with_denylist(&["quick"])');
     expect(read(path.join(SRC, "quick/QuickAsk.tsx"))).toContain('api.createTask(q, "quick_ask")');
   });
 });

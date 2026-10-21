@@ -3,7 +3,7 @@ import { useEffect, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Composer } from "./composer/Composer";
 import { ToastProvider } from "./components/Toast";
-import { Home } from "./home/Home";
+import { StorageSheet } from "./estate/StorageSheet";
 import { I18nProvider } from "./i18n";
 import { Settings } from "./settings/Settings";
 import { AppProvider, useApp } from "./shell/context";
@@ -115,7 +115,7 @@ describe("v10: the task page", () => {
   });
 });
 
-describe("v10: home", () => {
+describe("v10: storage sheet", () => {
   it("Needs attention keeps a stable order: severity, then title; buckets by name", async () => {
     const issue = (id: string, bucket: string, code: string, title: string, severity: string) => ({
       id, provider_id: "p1", bucket, code, title, severity, status: "open", detail: "", fixable: true, fix: null, source_task_id: null,
@@ -133,10 +133,28 @@ describe("v10: home", () => {
       }
       return {};
     });
-    await act(async () => { render(wrap(<Home />)); });
+    await act(async () => { render(wrap(<StorageSheet />)); });
     const rows = await screen.findAllByTestId("issue");
     expect(rows.map((r) => r.querySelector(".attention-issue")?.textContent)).toEqual([
       "Bucket is publicly accessible", "Incomplete multipart uploads are never cleaned up", "No default encryption"]);
     expect([...rows[2].querySelectorAll("[data-testid=issue-bucket]")].map((b) => b.textContent)).toEqual(["acme-data", "acme-www"]);
+  });
+
+  it("never says nothing needs care while an account has not been checked", async () => {
+    const provider = (id: string, name: string, checked: string | null) => ({
+      provider_id: id, name, provider_type: "aws-s3", bucket_count: checked ? 3 : 0, last_checked_at: checked,
+      open_issues: { high: 0, medium: 0, low: 0 }, watch: { enabled: false, interval_hours: 24 },
+    });
+    serve((url) => {
+      if (url.includes("/estate")) {
+        return { providers: [provider("p1", "acme-prod", "2026-09-30T00:00:00Z"), provider("p2", "acme-staging", null)],
+          issues: [], open_issue_count: 0 };
+      }
+      return {};
+    });
+    await act(async () => { render(wrap(<StorageSheet />)); });
+    expect(await screen.findByText("acme-staging")).toBeTruthy();
+    expect(screen.getByTestId("not-checked")).toHaveTextContent("Survey");
+    expect(screen.queryByText("Needs attention")).toBeNull();
   });
 });

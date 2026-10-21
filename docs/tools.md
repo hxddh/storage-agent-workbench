@@ -338,13 +338,14 @@ chars of schema per request; v10 has 15 tools costing about 10 300.
     → `error`.
   - The 12 most recent notes reach every turn inside the untrusted-data envelope (`estate_notes`) as
     remembered context.
-- **`record_conclusion`**: records the turn's findings and next steps (see
+- **`record_conclusion`**: records the turn's findings (see
   [Execution](#execution-invoketd-tool_ctx-raw_args), step 2), once, right
   before the final answer; the window shows them under the answer. The
   schema carries `maxItems` 8 / 4. The arguments are validated by the
   recorder's `Conclusion` model:
   - `findings`: optional, at most 8, each `Finding {title: 1–240 chars, severity: high|medium|low|info, detail?: ≤ 600 chars}`;
-  - `next_steps`: optional, at most 4, each cut to 200 chars;
+  - `next_steps`: legacy and kept for older turns; no longer painted or
+    reported, and the tool tells the model to leave it empty;
   - at least one finding or next step (v9: there is no `answer` field — the
     answer is the Turn's final message).
 

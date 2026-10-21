@@ -64,6 +64,13 @@ test("the v12 contact sheet", async ({ page }) => {
   try {
     await open(page, "dark", "en");
     await shot(page, "home-empty-dark-en");
+    await page.setViewportSize({ width: 560, height: 340 });
+    await page.goto("/?view=quick");
+    await expect(page.getByTestId("quick-ask")).toBeVisible();
+    await shot(page, "quick-ask-dark-en");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/");
+    await expect(page.getByTestId("composer-input")).toBeVisible({ timeout: 30_000 });
     await delegate(page, "Survey my storage account and tell me what needs care, most severe first.");
     await expect(page.getByTestId("run-trace")).toBeVisible({ timeout: 30_000 });
     await shot(page, "live-dark-en");
@@ -91,10 +98,14 @@ test("the v12 contact sheet", async ({ page }) => {
     await shot(page, "edited-version-dark-en");
 
     await page.getByTestId("new-task").click();
-    await expect(page.getByTestId("needs-care")).toBeVisible();
-    await shot(page, "home-attention-dark-en");
+    await shot(page, "home-dark-en");
+    await page.getByTestId("open-storage").click();
+    await expect(page.getByTestId("storage-sheet")).toBeVisible();
+    await shot(page, "storage-sheet-dark-en");
     await page.setViewportSize({ width: 390, height: 844 });
-    await shot(page, "home-attention-mobile-dark-en");
+    await shot(page, "storage-sheet-mobile-dark-en");
+    await page.getByTestId("storage-sheet").getByRole("button", { name: "Close" }).click();
+    await shot(page, "home-mobile-dark-en");
     await page.getByRole("button", { name: "Show sidebar" }).click();
     await page.getByTestId("open-settings").click();
     await shot(page, "settings-mobile-dark-en");
@@ -114,6 +125,7 @@ test("the v12 contact sheet", async ({ page }) => {
     await expect(page.getByTestId("context-picker")).toBeVisible();
     await shot(page, "context-picker-dark-en");
     await page.keyboard.press("Escape");
+    await page.getByTestId("open-storage").click();
     await page.getByTestId("needs-care").getByTestId("issue-bucket").filter({ hasText: "acme-www" }).first().click();
     await expect(page.getByTestId("bucket-page")).toBeVisible();
     await page.getByTestId("note-input").fill("Serves the marketing site; owned by the growth team.");
@@ -144,6 +156,9 @@ test("the v12 contact sheet", async ({ page }) => {
     await expect(page.getByTestId("answer").first()).toBeVisible();
     await shot(page, "conversation-dark-zh");
     await page.getByTestId("new-task").click();
+    await page.getByTestId("open-storage").click();
+    await expect(page.getByTestId("storage-sheet")).toBeVisible();
+    await shot(page, "storage-sheet-dark-zh");
     await page.getByTestId("needs-care").getByTestId("issue-bucket").first().click();
     await expect(page.getByTestId("bucket-page")).toBeVisible();
     await shot(page, "bucket-sheet-dark-zh");

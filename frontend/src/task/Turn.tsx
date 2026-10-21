@@ -16,8 +16,8 @@ import { AnalysisFigures } from "../viz/AnalysisFigures";
 
 /**
  * One turn: the request, then one assistant article. The article carries a
- * single receipt (or the live trace), the answer, the deterministic result,
- * the findings and at most one next step. Nothing repeats the receipt.
+ * single receipt (or the live trace), the answer, the deterministic result and
+ * the findings. Nothing repeats the receipt, and no follow-up is suggested.
  */
 export function Turn({ section, taskId, forks, setSnapshot, running, live = null }: {
   section: Section; taskId: string; forks: Record<string, string[]>;
@@ -30,7 +30,6 @@ export function Turn({ section, taskId, forks, setSnapshot, running, live = null
   const result = !running ? primaryResult(rows) : null;
   const found = s.conclusion?.findings ?? [];
   const fig = !running ? figures(s) : null;
-  const next = !running && s.turn.status === "completed" ? (s.conclusion?.next_steps?.[0] ?? null) : null;
   return (
     <section className="turn" data-status={s.turn.status} data-testid="turn">
       {s.turn.kind === "resume"
@@ -45,7 +44,6 @@ export function Turn({ section, taskId, forks, setSnapshot, running, live = null
           {result ? <SettledResult result={result} /> : null}
           {fig ? <AnalysisFigures provenance={fig} /> : null}
           {found.length ? <Findings findings={found} /> : null}
-          {next ? <NextStep text={next} /> : null}
           <Outcome section={s} taskId={taskId} running={running} />
         </article>
       )}
@@ -104,7 +102,8 @@ function Message({ section, taskId, forks, setSnapshot }: {
         ) : null}
         {settled ? (
           <IconButton icon="compose" size="sm" label={t("turn.edit")} data-testid="edit-message"
-            onClick={() => app.setEditing({ turnId: turn.id, parentTurnId: turn.parent_turn_id, text: section.direction })} />
+            onClick={() => app.setEditing({ turnId: turn.id, parentTurnId: turn.parent_turn_id, text: section.direction,
+              context: section.context, attachments: section.attachments })} />
         ) : null}
         <IconButton icon={copied ? "check" : "copy"} size="sm" label={copied ? t("common.copied") : t("common.copy")}
           onClick={() => copy(section.direction)} />
@@ -230,7 +229,7 @@ function CallRow({ row }: { row: Row }) {
   return (
     <li className="call-row" data-status={row.status}>
       <button type="button" data-tool={row.name} title={row.name}
-        onClick={() => app.setPane({ tab: "details" })}>
+        onClick={() => app.setPane({ tab: "details", callId: row.callId })}>
         <span className="call-glyph">
           {row.status === "running" ? <span className="ui-dot" data-tone="accent" data-pulse="true" aria-hidden /> : <Icon name={GLYPH[row.status]} size={14} />}
         </span>
@@ -273,19 +272,6 @@ function Findings({ findings }: {
         </li>
       ))}
     </ul>
-  );
-}
-
-/** One recorded next step, never a row of cards. */
-function NextStep({ text }: { text: string }) {
-  const { t } = useI18n();
-  const app = useApp();
-  return (
-    <button type="button" className="next-step" data-testid="next-step" onClick={() => app.prefill(text)}>
-      <span className="next-step-label">{t("turn.next")}</span>
-      <span className="next-step-text">{text}</span>
-      <Icon name="arrowRight" size={14} className="next-step-arrow" />
-    </button>
   );
 }
 

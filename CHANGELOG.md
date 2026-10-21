@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [12.1.0] - 2026-10-21
+
+_A quiet start._ See `docs/releases/12.1.0.md`.
+
+### Changed
+
+- Home is one heading and one Composer. Starter cards, prompt links, readiness paragraphs, account lines and the Issue table are gone; the estate lives in the **Storage** sheet in the sidebar.
+- Storage shows accounts, last check, watch, a folded bucket index (including healthy buckets) and Needs attention. **Nothing needs care** is shown only when every account has been checked.
+- A Turn ends with its findings. Recorded `next_steps` remain accepted for older items but are no longer painted or reported.
+- Survey results, inline code and mobile tables are more readable; the duplicate issue summary above a survey table is gone.
+- Quick Ask is compact (560×340), has no inherited Linux/Windows app menu, closes on Esc or its top-right button, and is never restored at launch.
+- Settings actions sit at the end of the editor; a section change starts at the top. Editing a message keeps its estate context and attached files.
+
+### Fixed
+
+- A persisted Quick Ask visibility can no longer open a popup at startup.
+- A stale Evidence pane no longer survives a return to Home and reappears on the next task.
+- No false “Nothing needs care right now” while an account has never been checked.
+
 ## [12.0.0] - 2026-10-21
 
 _One turn, one article._ See `docs/releases/12.0.0.md`.

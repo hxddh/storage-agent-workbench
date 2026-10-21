@@ -1,10 +1,10 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Composer } from "./composer/Composer";
 import { ToastProvider } from "./components/Toast";
 import { I18nProvider } from "./i18n";
-import { AppProvider } from "./shell/context";
+import { AppProvider, useApp } from "./shell/context";
 import type { TaskModel } from "./store/task";
 import { initial, reduce } from "./store/task";
 import { TaskPage } from "./task/TaskPage";
@@ -43,7 +43,7 @@ function modelOf(turns = [turn("t1")], items = [
 }
 
 describe("the task page", () => {
-  it("reads as one assistant article: receipt, answer, findings, one next step", async () => {
+  it("reads as one assistant article: receipt, answer, findings, no follow-up", async () => {
     await act(async () => { render(wrap(<TaskPage model={modelOf()} setSnapshot={() => {}} />)); });
     expect(screen.getByTestId("message")).toHaveTextContent("Survey my account");
     expect(screen.getByTestId("assistant")).toBeInTheDocument();
@@ -51,7 +51,7 @@ describe("the task page", () => {
     const answer = screen.getByTestId("answer");
     expect(answer).toHaveTextContent("full");
     expect(screen.getByTestId("findings")).toHaveTextContent("acme-www is public");
-    expect(screen.getByTestId("next-step")).toHaveTextContent("Show the fix");
+    expect(screen.queryByTestId("next-step")).toBeNull();
     expect(screen.queryByTestId("suggestions")).toBeNull();
     expect(screen.queryByTestId("run-body")).toBeNull();
     // No result/work-log split, no outputs bar.
@@ -59,7 +59,7 @@ describe("the task page", () => {
     expect(screen.queryByTestId("outputs")).toBeNull();
   });
 
-  it("keeps the findings and next step as they are, without a second evidence line", async () => {
+  it("keeps the findings, without a second evidence line or a follow-up", async () => {
     const evidence = [
       { call_id: "a", name: "survey_account", target: "prod", summary: "4 buckets" },
       { call_id: "b", name: "query_estate", target: "prod", summary: "2 issues" },
@@ -75,10 +75,8 @@ describe("the task page", () => {
     await act(async () => { render(wrap(<TaskPage model={m} setSnapshot={() => {}} />)); });
     expect(screen.getByTestId("findings")).not.toHaveTextContent("checks");
     expect(screen.queryByText("Evidence · 2 checks")).toBeNull();
-    const next = screen.getAllByTestId("next-step");
-    expect(next).toHaveLength(1);
-    expect(next[0]).toHaveTextContent("Show the fix");
-    expect(next[0]).not.toHaveTextContent("Check again");
+    expect(screen.queryByTestId("next-step")).toBeNull();
+    expect(screen.getByTestId("task-page")).not.toHaveTextContent("Show the fix");
   });
 
   it("keeps every real call visible while the run is live", async () => {
@@ -218,6 +216,22 @@ describe("the Composer", () => {
     const body = JSON.parse(String(submit?.init?.body));
     expect(body.context).toEqual([{ kind: "bucket", provider_id: "p1", bucket: "acme-www" }]);
     expect(body.direction).toBe("Review this bucket");
+  });
+
+  it("keeps the estate context and attachments when a message is edited", async () => {
+    function Harness() {
+      const app = useApp();
+      useEffect(() => {
+        app.setEditing({ turnId: "t1", parentTurnId: null, text: "Why is acme-www public?",
+          context: [{ kind: "bucket", provider_id: "p1", bucket: "acme-www", account: "acme-prod" }],
+          attachments: [{ dataset_id: "d1", filename: "access.log", type: "access_log" }] });
+      }, []); // eslint-disable-line react-hooks/exhaustive-deps
+      return <Composer taskId="task-1" busy={false} />;
+    }
+    render(wrap(<Harness />));
+    await act(async () => {});
+    expect(screen.getByText("acme-www")).toBeInTheDocument();
+    expect(screen.getByTestId("kept-attachment")).toHaveTextContent("access.log");
   });
 
   it("a file while busy makes the action Send (a new message), never a steer", async () => {

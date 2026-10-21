@@ -105,7 +105,7 @@ Five sizes, each with one job:
 | Token | Size / leading | Use |
 | --- | --- | --- |
 | `--text-2xs` | 11px / 16px | labels, meta, key caps, badges |
-| `--text-sm` | 13px / 20px | interface, sidebar, controls, prompt links |
+| `--text-sm` | 13px / 20px | interface, sidebar, controls, secondary text |
 | `--text-prose` | 15px / 1.65 | reading, answers, reports |
 | `--text-xl` | 20px / 28px | a conclusion's focal answer |
 | `--text-2xl` | 24px / 32px | the page's one `<h1>` (Home) |
@@ -139,25 +139,24 @@ the track for tables and figures. `--sidebar-w: 15rem` (240 px); the side pane
 is resizable from 352 to 880 px and starts at 480 px. `--header-h: 2.75rem`
 (44 px); `--control-h: 2rem` (32 px).
 
-Home is an empty Task, not a landing page: one 24 px heading, three prompt
-**text links** separated by a dot on first run only (stacked below 720 px), one
-readiness line, then the estate's attention and account lines, and the same
-docked Composer as every task. The content is centred in the document above the
-dock; a short home is balanced rather than pinned to the top. Nothing on Home
-submits work except the Composer.
+Home is a start, not a dashboard: one 24 px heading, the Composer centred
+directly beneath it, and nothing else in the document. There are no prompt
+links, readiness paragraphs, cards, account lines or issue tables on Home; the
+estate lives in the Storage sheet opened from the sidebar. The heading and
+Composer share one measured column and stay centred in the viewport.
 
 The Task page is request → **one assistant article**: receipt → answer →
-rendered result → findings → one next step. The trace is open while live (real
-calls and real progress below it) and becomes one quiet receipt when settled; the
-receipt does not expand. Deterministic results render from `tool_output.detail`
-as part of the document: a table has a header rule and row rules, not a card.
-Findings are a flat list with a severity dot and no evidence line: the title
-bar's Evidence is the one entry to the calls. At most the first recorded next
-step appears, as a text line, never a row of cards.
+rendered result → findings. The trace is open while live (real calls and real
+progress below it) and becomes one quiet receipt when settled; the receipt does
+not expand. Deterministic results render from `tool_output.detail` as part of the
+document: a table has a header rule and row rules, not a card. Findings are a
+flat list with a severity dot and no evidence line: the title bar's Evidence is
+the one entry to the calls. No next-step prompt is painted.
 
 Evidence is the one side pane, one level: a human heading, one row per call
 (verb, target, time, summary), which expands in place to the rendered result and
-raw data; Save report, attached files and usage folded at the foot. There is no
+raw data; Save report, attached files and usage folded at the foot. Opening a
+call from the live trace opens that call, not the top of a long list. There is no
 second page and no Back control. It is not an inspector of uppercase labels.
 
 ## Components
@@ -174,8 +173,8 @@ lives in `styles/components.css`.
 - `Segmented` (`ui-segmented`): a 2 px inset track, not a row of pills.
 - `Field` + `TextInput` / `Select`: 32 px, one hairline, focus is one blue ring.
 
-The Composer is the only Agent input, docked at the same position on Home and
-every task. Its border is neutral at rest and on focus; there is no glow. The
+The Composer is the only Agent input: centred on Home, docked at the foot of a
+task. Its border is neutral at rest and on focus; there is no glow. The
 send control is a small accent circle only when ready. Three controls at rest:
 the `+` menu (Attach a file · Add estate context), the model chip and Send; a
 context picker opened from the menu draws its focus ring on the popover, not as

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { boot, delegate, reset, settled } from "./app";
+import { addStorage, boot, delegate, reset, settled } from "./app";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel, type FakeModel } from "./fake-model";
+import { startFakeS3 } from "./fake-s3";
 
 let model: FakeModel | null = null;
 let providerId = "";
@@ -9,6 +10,53 @@ test.beforeEach(reset);
 test.afterEach(async () => {
   if (providerId) await dropModelProvider(providerId);
   await model?.close();
+});
+
+test("a live call opens its own evidence, not the top of the run", async ({ page }) => {
+  model = await startFakeModel([toolTurn("query_estate", {}), textTurn("word ".repeat(300))], { deltaDelayMs: 30 });
+  providerId = await useFakeModel(model.baseUrl);
+  await boot(page);
+  await delegate(page, "Take your time");
+  const row = page.getByTestId("run-body").locator(".call-row button").first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.click();
+  const inspector = page.getByTestId("inspector");
+  await expect(inspector).toBeVisible();
+  await expect(inspector.locator("li[data-call-id] details[open]")).toHaveCount(1);
+});
+
+test("editing a request keeps the estate context it was written with", async ({ page }) => {
+  const s3 = await startFakeS3({ "acme-www": ["index.html"] });
+  try {
+    const storageId = await addStorage(s3.endpointUrl);
+    model = await startFakeModel([
+      toolTurn("survey_account", { provider_id: storageId }), textTurn("Surveyed."),
+      textTurn("It is public."),
+    ]);
+    providerId = await useFakeModel(model.baseUrl);
+    await boot(page);
+    await delegate(page, "Survey my storage account");
+    await expect(page.getByTestId("answer")).toContainText("Surveyed.", { timeout: 30_000 });
+    await settled(page);
+
+    await page.getByTestId("new-task").click();
+    await page.getByTestId("composer-plus").click();
+    await page.getByTestId("composer-menu").getByRole("menuitem", { name: "Add estate context" }).click();
+    const option = page.getByTestId("context-picker").getByRole("option").filter({ hasText: "acme-www" }).first();
+    await expect(option).toBeVisible({ timeout: 15_000 });
+    await option.click();
+    await page.getByTestId("composer-input").fill("Why is acme-www public?");
+    await page.getByTestId("composer-send").click();
+    await expect(page.getByTestId("answer")).toContainText("It is public.", { timeout: 30_000 });
+    await settled(page);
+
+    const message = page.getByTestId("message").filter({ hasText: "Why is acme-www public?" });
+    await message.hover();
+    await message.getByTestId("edit-message").click();
+    await expect(page.getByTestId("composer").locator(".context-chip")).toContainText("acme-www");
+  } finally {
+    await s3.close();
+  }
 });
 
 test("while it works the Composer adds to the request, and Stop keeps the partial work", async ({ page }) => {

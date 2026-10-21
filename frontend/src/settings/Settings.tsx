@@ -25,11 +25,14 @@ export function Settings() {
   const app = useApp();
   const ref = useRef<HTMLDialogElement>(null);
   const section = (SECTIONS as readonly string[]).includes(app.settings ?? "") ? (app.settings as SectionId) : "general";
+  const body = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const d = ref.current;
     if (d && !d.open) d.showModal();
   }, []);
+  // A section starts at its top, never at the previous section's scroll offset.
+  useEffect(() => { body.current?.scrollTo?.({ top: 0 }); }, [section]);
 
   return (
     <dialog ref={ref} className="settings" aria-labelledby="settings-title" onClose={() => app.closeSettings()}
@@ -48,7 +51,7 @@ export function Settings() {
           <h3>{t(LABEL[section])}</h3>
           <IconButton icon="close" label={t("common.close")} onClick={() => app.closeSettings()} />
         </header>
-        <div className="settings-pane-body">
+        <div className="settings-pane-body" ref={body}>
           {section === "general" ? <General /> : null}
           {section === "models" ? <Models /> : null}
           {section === "storage" ? <Storage /> : null}
@@ -234,17 +237,6 @@ function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
 
   return (
     <form className="provider-editor" onSubmit={save} data-testid="model-editor">
-      <div className="editor-actions">
-        {/* The test result sits in the pinned row: it is in sight right after Save. */}
-        {probe ? (
-          <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
-        ) : null}
-        <Button type="submit" variant="primary" disabled={busy || !modelName.trim()}>{busy ? t("settings.testing") : t("settings.save")}</Button>
-        {model ? <Button onClick={() => void test()} disabled={busy}>{t("settings.test")}</Button> : null}
-        {model && !model.active ? <Button variant="ghost" onClick={() => void api.activateModel(model.id).then(onChanged, fail)}>{t("settings.makeActive")}</Button> : null}
-        <span className="editor-spacer" />
-        {model ? <Button variant="danger" onClick={() => void remove()}>{t("settings.delete")}</Button> : null}
-      </div>
       <Field label={t("field.kind")}>
         <Select value={preset} onChange={(e) => {
           const next = MODEL_PRESETS.find((x) => x.id === e.target.value)!;
@@ -275,6 +267,16 @@ function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
         </details>
       )}
       {model ? <p className="quiet-note">{t("field.apiStyle")}: {t(`settings.apiStyle.${model.api_style}`)}</p> : null}
+      <div className="editor-actions">
+        {probe ? (
+          <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
+        ) : null}
+        <Button type="submit" variant="primary" disabled={busy || !modelName.trim()}>{busy ? t("settings.testing") : t("settings.save")}</Button>
+        {model ? <Button onClick={() => void test()} disabled={busy}>{t("settings.test")}</Button> : null}
+        {model && !model.active ? <Button variant="ghost" onClick={() => void api.activateModel(model.id).then(onChanged, fail)}>{t("settings.makeActive")}</Button> : null}
+        <span className="editor-spacer" />
+        {model ? <Button variant="danger" onClick={() => void remove()}>{t("settings.delete")}</Button> : null}
+      </div>
     </form>
   );
 }
@@ -308,8 +310,8 @@ function Storage() {
       </div>
       {editing ? <CloudEditor key={editing === "new" ? "new" : editing.id} cloud={editing === "new" ? null : editing}
         initialProbe={probe}
-        onSaved={(from, c, p) => { saved(from, c, p); void app.reloadProviders(); }}
-        onDeleted={() => { open(null); void app.reloadProviders(); }} /> : null}
+        onSaved={(from, c, p) => { saved(from, c, p); void app.reloadProviders(); app.estateChanged(); }}
+        onDeleted={() => { open(null); void app.reloadProviders(); app.estateChanged(); }} /> : null}
     </div>
   );
 }
@@ -366,17 +368,6 @@ function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
     <div className="provider-editor">
       {cloud ? <WatchControl providerId={cloud.id} /> : null}
       <form className="provider-editor" onSubmit={save} data-testid="cloud-editor">
-        <div className="editor-actions">
-          {probe ? (
-            <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
-          ) : null}
-          <Button type="submit" variant="primary" disabled={busy}>{busy ? t("settings.testing") : t("settings.save")}</Button>
-          <span className="editor-spacer" />
-          {cloud ? <Button variant="danger" onClick={() => {
-            if (!window.confirm(t("nav.deleteConfirm", { title: cloud.name }))) return;
-            void api.deleteCloud(cloud.id).then(onDeleted, (e) => toast.error(e instanceof Error ? e.message : String(e)));
-          }}>{t("settings.delete")}</Button> : null}
-        </div>
         <Field label={t("field.providerType")}>
           <Select value={preset} onChange={(e) => {
             const next = CLOUD_PRESETS.find((x) => x.id === e.target.value)!;
@@ -410,6 +401,17 @@ function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
             <Field label={t("field.prefixes")} hint={t("field.listHint")}><TextInput value={form.prefixes} onChange={set("prefixes")} /></Field>
           </div>
         </details>
+        <div className="editor-actions">
+          {probe ? (
+            <p className="probe" data-ok={probe.ok ? "true" : "false"} data-testid="probe"><StatusDot tone={probe.ok ? "success" : "danger"} />{probe.detail}</p>
+          ) : null}
+          <Button type="submit" variant="primary" disabled={busy}>{busy ? t("settings.testing") : t("settings.save")}</Button>
+          <span className="editor-spacer" />
+          {cloud ? <Button variant="danger" onClick={() => {
+            if (!window.confirm(t("nav.deleteConfirm", { title: cloud.name }))) return;
+            void api.deleteCloud(cloud.id).then(onDeleted, (e) => toast.error(e instanceof Error ? e.message : String(e)));
+          }}>{t("settings.delete")}</Button> : null}
+        </div>
       </form>
       {cloud ? (
         <div className="pref-group">
@@ -430,6 +432,7 @@ const WATCH_OPTIONS = [
 
 function WatchControl({ providerId }: { providerId: string }) {
   const { t } = useI18n();
+  const app = useApp();
   const toast = useToast();
   const [watch, setWatch] = useState<Watch | null>(null);
   useEffect(() => { api.watch(providerId).then(setWatch).catch(() => setWatch(null)); }, [providerId]);
@@ -446,7 +449,8 @@ function WatchControl({ providerId }: { providerId: string }) {
       <Segmented labelId={`watch-${providerId}`} value={WATCH_OPTIONS.some((o) => o.value === value) ? value : "24"}
         onChange={(v) => {
           const o = WATCH_OPTIONS.find((x) => x.value === v)!;
-          void api.setWatch(providerId, o.hours > 0, o.hours || watch.interval_hours).then(setWatch, (e) => toast.error(e instanceof Error ? e.message : String(e)));
+          void api.setWatch(providerId, o.hours > 0, o.hours || watch.interval_hours)
+            .then((w) => { setWatch(w); app.estateChanged(); }, (e) => toast.error(e instanceof Error ? e.message : String(e)));
         }}
         options={WATCH_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))} />
       <p className="quiet-note">{t("watch.note")}</p>

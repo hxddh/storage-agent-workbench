@@ -1,11 +1,13 @@
 """The Task report: a Markdown document projected from the task's items.
 
-Conclusion first, one findings list, the Agent's next steps, the record of
-each Direction, coverage and gaps from the tool trace, outputs and attached
-evidence, usage, and an always-present Safety section. Only this module's own
-words are localized (en/zh); the Agent's words are reproduced as recorded.
-Redacted and bounded; no raw rows, no secrets, no chain-of-thought (none is
-ever stored). A section with nothing behind it is not written.
+Conclusion first, one findings list, the record of each Direction, coverage and
+gaps from the tool trace, outputs and attached evidence, usage, and an
+always-present Safety section. Recorded next steps are deliberately not
+reported: the window offers no follow-up prompts and the report is the same
+surface. Only this module's own words are localized (en/zh); the Agent's words
+are reproduced as recorded. Redacted and bounded; no raw rows, no secrets, no
+chain-of-thought (none is ever stored). A section with nothing behind it is not
+written.
 """
 
 from __future__ import annotations
@@ -25,7 +27,6 @@ _COPY = {
     "goal": ("Goal", "目标"),
     "conclusion": ("Conclusion", "结论"),
     "findings": ("Findings", "发现"),
-    "next": ("Next steps", "后续步骤"),
     "record": ("What was done", "工作记录"),
     "coverage": ("Coverage and gaps", "覆盖范围与缺口"),
     "tools": ("Tools used", "使用的工具"),
@@ -119,7 +120,6 @@ def render(conn: Any, task_id: str, *, lang: str = "en") -> str:
         f"- **{f.get('severity', 'info').upper()}** — {_oneline(f.get('title'), 240)}"
         + (f"  \n  {_oneline(f.get('detail'), 600)}" if f.get("detail") else "")
         for f in _findings(items)])
-    section("next", [f"- {_oneline(s, 200)}" for s in (latest or {}).get("next_steps") or []])
 
     record: list[str] = []
     for n, turn in enumerate(chain[-_MAX_TURNS:], 1):

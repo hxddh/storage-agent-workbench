@@ -4,6 +4,7 @@ import { Composer } from "../composer/Composer";
 import { hasNativeTrafficLights, openExternal } from "../config";
 import { IconButton } from "../components/ui";
 import { BucketSheet } from "../estate/BucketSheet";
+import { StorageSheet } from "../estate/StorageSheet";
 import { Home } from "../home/Home";
 import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
@@ -57,7 +58,7 @@ export function Shell() {
       case "toggle-sidebar": app.setSidebar(!app.sidebar); break;
       case "theme": theme.toggle(); break;
       case "stop": if (taskId) void api.stop(taskId); break;
-      case "review": if (taskId) app.setPane(app.pane ? null : { tab: "details" }); break; // the toggle closes whatever pane is open
+      case "review": if (taskId) app.setPane(app.pane?.tab === "details" ? null : { tab: "details" }); break; // Evidence shows; pressing again closes it
       case "focus-composer": document.querySelector<HTMLTextAreaElement>("[data-testid=composer-input]")?.focus(); break;
       case "release-notes": void openExternal("https://github.com/hxddh/storage-agent-workbench/releases"); break;
       case "rename-task": {
@@ -105,13 +106,13 @@ export function Shell() {
       <Sidebar />
       {/* Narrow window only (CSS): tapping outside the overlaid sidebar closes it. */}
       {app.sidebar ? <div className="scrim" aria-hidden onClick={() => app.setSidebar(false)} /> : null}
-      <main className="main" aria-busy={busy}>
+      <main className="main" aria-busy={busy} data-home={taskId ? undefined : "true"}>
         <header className="titlebar" data-tauri-drag-region>
           <div className="titlebar-start">
             {!app.sidebar ? (
               <>
                 <IconButton icon="sidebar" label={t("nav.showSidebar")} data-testid="show-sidebar" onClick={() => app.setSidebar(true)} />
-                <IconButton icon="compose" label={t("nav.newTask")} onClick={() => app.goHome()} />
+                {taskId ? <IconButton icon="compose" label={t("nav.newTask")} onClick={() => app.goHome()} /> : null}
               </>
             ) : null}
           </div>
@@ -120,21 +121,24 @@ export function Shell() {
           </div>
           <div className="titlebar-end">
             {taskId ? (
-              <IconButton icon="panelRight" label={app.pane ? t("pane.close") : t("pane.open")} data-testid="titlebar-sidepane"
-                aria-pressed={!!app.pane} onClick={() => command("review")} />
+              <IconButton icon="panelRight" label={app.pane?.tab === "details" ? t("pane.close") : t("pane.open")} data-testid="titlebar-sidepane"
+                aria-pressed={app.pane?.tab === "details"} onClick={() => command("review")} />
             ) : null}
           </div>
         </header>
         {/* A scrolling page is not a Tab stop of its own (the keys still scroll it once focus is inside). */}
         <div className="document" data-testid="document" tabIndex={-1}>
           {taskId ? <TaskPage key={taskId} model={model} setSnapshot={setSnapshot} />
-            : <Home />}
+            : <Home onCreated={app.openTask} />}
         </div>
-        <div className="dock">
-          <Composer key={taskId ?? "home"} taskId={taskId} busy={busy} onCreated={app.openTask} autoFocus={!taskId} />
-        </div>
+        {taskId ? (
+          <div className="dock">
+            <Composer key={taskId} taskId={taskId} busy={busy} onCreated={app.openTask} />
+          </div>
+        ) : null}
       </main>
       {taskId && app.pane?.tab === "details" ? <Details model={model} /> : null}
+      {app.pane?.tab === "storage" ? <StorageSheet /> : null}
       {app.pane?.tab === "bucket" ? <BucketSheet key={`${app.pane.providerId}/${app.pane.bucket}`}
         providerId={app.pane.providerId} bucket={app.pane.bucket} /> : null}
       {app.settings ? <Settings /> : null}

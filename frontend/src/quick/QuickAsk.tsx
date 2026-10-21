@@ -1,8 +1,8 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { Markdown } from "../components/Markdown";
-import { Button, StatusDot } from "../components/ui";
-import { tauriInvoke } from "../config";
+import { Button, IconButton, StatusDot } from "../components/ui";
+import { hasNativeTrafficLights, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
 import { latestResult, sections } from "../store/derive";
 import { useTask } from "../store/task";
@@ -47,10 +47,17 @@ export function QuickAsk() {
     if (invoke) void invoke("open_task_in_main", { taskId }).catch(() => {});
     else window.open(`${window.location.pathname}#/task/${taskId}`, "_blank");
   };
+  const invoke = tauriInvoke();
+  const hide = () => {
+    if (invoke) void invoke("hide_quick").catch(() => {});
+  };
 
   return (
-    <div className="quick" data-testid="quick-ask">
-      <form onSubmit={ask} className="quick-form" data-tauri-drag-region>
+    <div className="quick" data-testid="quick-ask" data-empty={!taskId ? "true" : undefined}
+      data-traffic-lights={hasNativeTrafficLights() ? "true" : undefined}>
+      {invoke ? <IconButton icon="close" label={t("common.close")} className="quick-close" onClick={hide} /> : null}
+      <form onSubmit={ask} className="quick-form" data-tauri-drag-region
+        onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); hide(); } }}>
         <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={t("quick.placeholder")}
           aria-label={t("quick.title")} className="quick-input" data-focus-ring="container" />
       </form>

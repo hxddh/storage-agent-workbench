@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { BucketPage, TimelineEntry } from "../api/types";
 import { Button, StatusDot } from "../components/ui";
+import { Icon } from "../components/icons";
 import { useI18n } from "../i18n";
 import { SEVERITY_TONE } from "../lib/severity";
 import { timeAgo } from "../lib/time";
@@ -21,7 +22,8 @@ export function BucketSheet({ providerId, bucket }: { providerId: string; bucket
   const [page, setPage] = useState<BucketPage | null>(null);
   const [missing, setMissing] = useState(false);
   const reload = useCallback(() => {
-    api.bucket(providerId, bucket, lang).then((p) => { setPage(p); setMissing(false); }).catch(() => setMissing(true));
+    api.bucket(providerId, bucket, lang).then((p) => { setPage(p); setMissing(false); })
+      .catch(() => { setPage(null); setMissing(true); });
   }, [providerId, bucket, lang]);
   useEffect(() => reload(), [reload]);
   const account = app.clouds?.find((c) => c.id === providerId)?.name ?? "";
@@ -31,11 +33,16 @@ export function BucketSheet({ providerId, bucket }: { providerId: string; bucket
   const care = page?.issues.filter((i) => i.status !== "resolved" || touched.has(i.id)) ?? [];
   const past = page?.issues.filter((i) => i.status === "resolved" && !touched.has(i.id)) ?? [];
   const ask = () => {
+    app.setPane(null);
     app.prefill("", [{ kind: "bucket", provider_id: providerId, bucket }]);
   };
   return (
     <Pane title={bucket} testId="bucket-sheet">
       <div className="bucket" data-testid="bucket-page">
+        <button type="button" className="link bucket-back" data-testid="bucket-back"
+          onClick={() => app.setPane({ tab: "storage" })}>
+          <Icon name="arrowLeft" size={13} />{t("storage.title")}
+        </button>
         <p className="bucket-meta">
           {[account, page?.region, page?.last_checked_at ? t("home.checked", { when: timeAgo(page.last_checked_at, t) }) : null]
             .filter(Boolean).join(" · ")}

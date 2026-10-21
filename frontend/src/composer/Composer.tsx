@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { api } from "../api";
-import type { ContextRef, Issue } from "../api/types";
+import type { Attachment, ContextRef, Issue } from "../api/types";
 import { Icon } from "../components/icons";
 import { IconButton } from "../components/ui";
 import { useToast } from "../components/Toast";
@@ -39,10 +39,12 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
   const toast = useToast();
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [kept, setKept] = useState<Attachment[]>([]);
   const [context, setContext] = useState<Selected[]>([]);
   const [sending, setSending] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [picker, setPicker] = useState(false);
+  const [contextLoading, setContextLoading] = useState(false);
   const [menu, setMenu] = useState(false);
   const [options, setOptions] = useState<Option[]>([]);
   const [query, setQuery] = useState("");
@@ -51,10 +53,21 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
   const contextInput = useRef<HTMLInputElement>(null);
   const filePicker = useRef<HTMLInputElement>(null);
   const editing = app.editing;
+  /** Turn a stored ref (with its estate names) or a draft ref into a chip. */
+  const selectedFrom = (refs: Array<ContextRef & { account?: string; title?: string }>): Selected[] => refs.map((r) => {
+    const account = r.account ?? app.clouds?.find((c) => c.id === r.provider_id)?.name ?? r.provider_id;
+    const label = r.kind === "account" ? account : r.kind === "bucket" ? (r.bucket ?? account) : (r.title ?? t("context.issue"));
+    const hint = r.kind === "account" ? t("context.accountHint") : account;
+    return { kind: r.kind, provider_id: r.provider_id, ...(r.bucket ? { bucket: r.bucket } : {}),
+      ...(r.issue_id ? { issue_id: r.issue_id } : {}), label, hint };
+  });
   // Focus on arrival only when nothing else holds focus (⌘K may have just
   // moved it to the search field while this page was mounting).
   useEffect(() => {
     if (!autoFocus) return;
+    // On a phone the keyboard is the user's decision; an empty home does not
+    // steal the first tap or resize the window on launch.
+    if (window.matchMedia?.("(max-width: 720px)").matches) return;
     const activeEl = document.activeElement;
     if (!activeEl || activeEl === document.body) area.current?.focus();
   }, [autoFocus]);
@@ -62,12 +75,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
   useEffect(() => {
     if (app.draft.nonce === 0) return;
     setText(app.draft.text);
-    const refs = app.draft.context ?? [];
-    setContext(refs.map((r) => {
-      const account = app.clouds?.find((c) => c.id === r.provider_id)?.name ?? r.provider_id;
-      return { ...r, label: r.kind === "account" ? account : r.kind === "bucket" ? (r.bucket ?? account) : t("context.issue"),
-        hint: r.kind === "account" ? t("context.accountHint") : account };
-    }));
+    setContext(selectedFrom(app.draft.context ?? []));
     requestAnimationFrame(() => {
       area.current?.focus();
       area.current?.setSelectionRange(app.draft.text.length, app.draft.text.length);
@@ -77,11 +85,16 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
   useEffect(() => {
     if (!editing) return;
     setText(editing.text);
+    // A fork keeps the estate focus it was written with; the refs are resolved
+    // names already stored on the message, not a second lookup.
+    setContext(selectedFrom(editing.context ?? []));
+    setKept(editing.attachments ?? []);
     requestAnimationFrame(() => area.current?.focus());
-  }, [editing]);
+  }, [editing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setFiles([]);
+    setKept([]);
     setContext([]);
     setPicker(false);
     setMenu(false);
@@ -97,7 +110,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
   const trimmed = text.trim();
   // Context applies to a request, not a steer: with a chip (or a file) the
   // Composer always creates / queues a Direction.
-  const steering = busy && files.length === 0 && context.length === 0 && !editing;
+  const steering = busy && files.length === 0 && kept.length === 0 && context.length === 0 && !editing;
   const tooLong = text.length > MAX_DIRECTION;
   const noModel = app.models !== null && !app.models.some((m) => m.active);
   const canSend = !sending && !tooLong && trimmed.length > 0 && app.online && (steering || !noModel);
@@ -106,28 +119,33 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
 
   /** Accounts, known buckets and open issues — one searchable estate, not a second page. */
   const loadContext = async () => {
-    const clouds = app.clouds ?? [];
-    if (!clouds.length) { setOptions([]); return; }
-    const [estate, buckets] = await Promise.all([
-      api.estate(lang).catch(() => null),
-      Promise.all(clouds.map((c) => api.buckets(c.id).catch(() => ({ buckets: [], notes: [] })))),
-    ]);
-    const names = new Map(clouds.map((c) => [c.id, c.name]));
-    const out: Option[] = clouds.map((c) => ({ kind: "account", provider_id: c.id, label: c.name,
-      hint: t("context.accountHint") }));
-    for (const [i, res] of buckets.entries()) {
-      const provider = clouds[i];
-      for (const b of res.buckets) {
-        out.push({ kind: "bucket", provider_id: provider.id, bucket: b.bucket, label: b.bucket,
-          hint: names.get(provider.id) ?? "" });
+    setContextLoading(true);
+    try {
+      const clouds = app.clouds ?? [];
+      if (!clouds.length) { setOptions([]); return; }
+      const [estate, buckets] = await Promise.all([
+        api.estate(lang).catch(() => null),
+        Promise.all(clouds.map((c) => api.buckets(c.id).catch(() => ({ buckets: [], notes: [] })))),
+      ]);
+      const names = new Map(clouds.map((c) => [c.id, c.name]));
+      const out: Option[] = clouds.map((c) => ({ kind: "account", provider_id: c.id, label: c.name,
+        hint: t("context.accountHint") }));
+      for (const [i, res] of buckets.entries()) {
+        const provider = clouds[i];
+        for (const b of res.buckets) {
+          out.push({ kind: "bucket", provider_id: provider.id, bucket: b.bucket, label: b.bucket,
+            hint: names.get(provider.id) ?? "" });
+        }
       }
+      for (const issue of (estate?.issues ?? []) as Issue[]) {
+        out.push({ kind: "issue", provider_id: issue.provider_id, bucket: issue.bucket, issue_id: issue.id,
+          label: issue.title, hint: `${names.get(issue.provider_id) ?? issue.provider_name} · ${issue.bucket}` });
+      }
+      const seen = new Set<string>();
+      setOptions(out.filter((o) => (seen.has(keyOf(o)) ? false : (seen.add(keyOf(o)), true))));
+    } finally {
+      setContextLoading(false);
     }
-    for (const issue of (estate?.issues ?? []) as Issue[]) {
-      out.push({ kind: "issue", provider_id: issue.provider_id, bucket: issue.bucket, issue_id: issue.id,
-        label: issue.title, hint: `${names.get(issue.provider_id) ?? issue.provider_name} · ${issue.bucket}` });
-    }
-    const seen = new Set<string>();
-    setOptions(out.filter((o) => (seen.has(keyOf(o)) ? false : (seen.add(keyOf(o)), true))));
   };
 
   const openContext = () => {
@@ -205,7 +223,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
           }
           id = (await api.createTask()).task.id;
         }
-        const attachments: string[] = [];
+        const attachments: string[] = kept.map((a) => a.dataset_id);
         for (const file of files) attachments.push((await api.upload(id, file)).id);
         await api.submit(id, trimmed, {
           attachments,
@@ -217,6 +235,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
       }
       setText("");
       setFiles([]);
+      setKept([]);
       setContext([]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
@@ -260,6 +279,8 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
   };
 
   const label = sending && files.length ? t("composer.uploading") : steering ? t("composer.steer") : t("composer.send");
+  const placeholder = busy && !editing ? t("composer.placeholderBusy")
+    : taskId ? t("composer.followUp") : t("composer.placeholder");
 
   return (
     <form
@@ -276,7 +297,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
         <div className="composer-editing">
           <Icon name="compose" size={14} />
           <span>{t("composer.editing")}</span>
-          <button type="button" onClick={() => { app.setEditing(null); setText(""); }}>{t("common.cancel")}</button>
+          <button type="button" onClick={() => { app.setEditing(null); setText(""); setContext([]); setKept([]); }}>{t("common.cancel")}</button>
         </div>
       ) : null}
       {context.length ? (
@@ -290,8 +311,16 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
           ))}
         </ul>
       ) : null}
-      {files.length ? (
+      {files.length || kept.length ? (
         <ul className="composer-files" aria-label={t("composer.files")}>
+          {kept.map((a) => (
+            <li key={a.dataset_id} data-testid="kept-attachment">
+              <Icon name="file" size={14} />
+              <span>{a.filename}</span>
+              <IconButton icon="x" size="sm" label={t("composer.remove", { name: a.filename })}
+                onClick={() => setKept(kept.filter((x) => x.dataset_id !== a.dataset_id))} />
+            </li>
+          ))}
           {files.map((f, i) => (
             <li key={`${f.name}-${i}`}>
               <Icon name="file" size={14} />
@@ -308,18 +337,20 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
           <div className="context-search">
             <Icon name="search" size={14} />
             <input ref={contextInput} value={query} placeholder={t("context.search")} aria-label={t("context.search")}
-              role="combobox" aria-autocomplete="list" aria-controls="context-options" aria-expanded="true"
-              aria-activedescendant={filtered[active] ? `context-${keyOf(filtered[active])}` : undefined}
+              role="combobox" aria-autocomplete="list" aria-controls={!contextLoading && filtered.length ? "context-options" : undefined}
+              aria-expanded="true" aria-busy={contextLoading}
+              aria-activedescendant={!contextLoading && filtered[active] ? `context-${keyOf(filtered[active])}` : undefined}
               onChange={(e) => setQuery(e.target.value)}
               data-focus-ring="container"
               onKeyDown={(e) => {
                 if (e.key === "Escape") { setPicker(false); area.current?.focus(); }
                 else if (e.key === "ArrowDown") { e.preventDefault(); setActive((n) => Math.min(filtered.length - 1, n + 1)); }
                 else if (e.key === "ArrowUp") { e.preventDefault(); setActive((n) => Math.max(0, n - 1)); }
-                else if (e.key === "Enter" && filtered[active]) { e.preventDefault(); choose(filtered[active]); }
+                else if (e.key === "Enter" && !contextLoading && filtered[active]) { e.preventDefault(); choose(filtered[active]); }
               }} />
           </div>
-          {filtered.length ? (
+          {contextLoading ? <p className="quiet-note context-empty">{t("storage.loading")}</p>
+            : filtered.length ? (
             <ul className="context-options" id="context-options" role="listbox" aria-label={t("context.search")}>
               {filtered.map((o, i) => (
                 <li key={keyOf(o)}>
@@ -340,8 +371,8 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
         ref={area}
         value={text}
         rows={1}
-        aria-label={busy ? t("composer.placeholderBusy") : t("composer.placeholder")}
-        placeholder={busy && !editing ? t("composer.placeholderBusy") : t("composer.placeholder")}
+        aria-label={placeholder}
+        placeholder={placeholder}
         onChange={(e) => onText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

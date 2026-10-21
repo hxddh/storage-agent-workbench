@@ -3,7 +3,7 @@ import { api } from "../api";
 import type { TaskRow } from "../api/types";
 import { Icon } from "../components/icons";
 import { IconButton, Kbd, StatusDot } from "../components/ui";
-import { notifyNative } from "../hooks/useNativeAgent";
+import { notifyNative, setTrayStatus } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
 import { useDismiss } from "../lib/useDismiss";
 import { localDayKey, previousDayKey } from "../lib/time";
@@ -16,10 +16,11 @@ import { useApp } from "./context";
  * nothing. ↑/↓ move between tasks.
  */
 export const Sidebar = memo(function Sidebar() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const app = useApp();
   const [query, setQuery] = useState("");
   const { tasks, online } = useTaskList(query.trim());
+  const [openIssues, setOpenIssues] = useState<number | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const menuRef = useDismiss<HTMLLIElement>(menu !== null, () => setMenu(null));
@@ -28,6 +29,22 @@ export const Sidebar = memo(function Sidebar() {
 
   useEffect(() => app.setOnline(online), [online]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The one ambient estate signal in the rail: open Issues, read once and
+  // refreshed after an Issue changes. The Storage sheet carries the detail;
+  // the native tray tooltip is the same number, so it stays current off Home.
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.estate(lang)
+      .then((e) => {
+        if (!alive) return;
+        setOpenIssues(e.open_issue_count);
+        void setTrayStatus(e.open_issue_count ? t("home.openCount", { n: e.open_issue_count }) : t("home.careEmpty"));
+      })
+      .catch(() => { if (alive) setOpenIssues(null); });
+    void load();
+    const timer = setInterval(load, 60_000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [lang, t, app.estateRev]);
   // A task the watch opened while this window was open is worth one OS notification.
   const known = useRef<Set<string> | null>(null);
   useEffect(() => {
@@ -137,10 +154,18 @@ export const Sidebar = memo(function Sidebar() {
         ))}
       </div>
       <div className="sidebar-foot">
-        <button type="button" className="sidebar-link" onClick={() => app.openSettings()} data-testid="open-settings">
-          <Icon name="settings" size={16} />
-          <span>{t("nav.settings")}</span>
-        </button>
+        <div className="sidebar-foot-links">
+          <button type="button" className="sidebar-link" onClick={() => app.setPane({ tab: "storage" })} data-testid="open-storage"
+            aria-current={app.pane?.tab === "storage" ? "page" : undefined}>
+            <Icon name="storage" size={16} />
+            <span>{t("nav.storage")}</span>
+            {openIssues ? <span className="sidebar-count" title={t("home.openCount", { n: openIssues })} aria-label={t("home.openCount", { n: openIssues })}>{openIssues}</span> : null}
+          </button>
+          <button type="button" className="sidebar-link" onClick={() => app.openSettings()} data-testid="open-settings">
+            <Icon name="settings" size={16} />
+            <span>{t("nav.settings")}</span>
+          </button>
+        </div>
         {!online ? (
           <span className="sidebar-offline"><StatusDot tone="danger" />{t("nav.offline")}</span>
         ) : null}
@@ -162,7 +187,9 @@ function StateMark({ task }: { task: TaskRow }) {
 
 function RenameField({ task, onDone }: { task: TaskRow; onDone: () => void }) {
   const [value, setValue] = useState(task.title);
+  const cancelled = useRef(false);
   const save = async () => {
+    if (cancelled.current) return;
     const title = value.trim();
     if (title && title !== task.title) await api.renameTask(task.id, title.slice(0, 120));
     onDone();
@@ -178,7 +205,7 @@ function RenameField({ task, onDone }: { task: TaskRow; onDone: () => void }) {
       onBlur={() => void save()}
       onKeyDown={(e) => {
         if (e.key === "Enter") void save();
-        if (e.key === "Escape") onDone();
+        if (e.key === "Escape") { cancelled.current = true; onDone(); }
       }}
     />
   );

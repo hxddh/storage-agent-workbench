@@ -98,7 +98,7 @@ function Table({ columns, common, rows, omitted }: { columns: string[]; common: 
         <thead><tr>{head.map((c) => <th key={c}>{label(c, t)}</th>)}</tr></thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>{head.map((_, j) => <td key={j} data-num={typeof r[j] === "number" ? "true" : undefined}>{humanize(r[j])}</td>)}</tr>
+            <tr key={i}>{head.map((_, j) => <td key={j} data-label={label(head[j], t)} data-num={typeof r[j] === "number" ? "true" : undefined}>{humanize(r[j])}</td>)}</tr>
           ))}
         </tbody>
       </table>
@@ -154,7 +154,6 @@ export function ResultView({ row }: { row: { name: string; detail: string | null
   if (view.kind === "survey") {
     return (
       <div className="tool-result" data-kind="survey" data-testid="tool-result">
-        <Issues issues={view.issues} />
         <Table columns={view.columns} common={view.common} rows={view.rows} omitted={view.omitted} />
         <Coverage coverage={view.coverage} />
       </div>

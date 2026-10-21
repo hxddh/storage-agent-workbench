@@ -52,6 +52,8 @@ cargo tauri build    # or: cargo tauri dev
 
 - `bundle.active` is `true`; the macOS bundle is **ad-hoc deep-signed** (no
   hardened runtime, not notarized) — see [../docs/signing.md](../docs/signing.md).
-- The only custom Tauri commands are `get_sidecar_url` and `get_sidecar_token`;
-  no user shell access.
+- The shell's custom commands are `get_sidecar_url`, `get_sidecar_token`,
+  `hide_quick`, `save_report`, `open_external`, `notify`, `set_window_title`,
+  `open_app_folder`, `open_task_in_main` and `set_tray_status`; there is no user
+  shell access.
 - No auto-update yet.

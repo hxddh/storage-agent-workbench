@@ -18,7 +18,7 @@ test.afterEach(async () => {
   await s3.close();
 });
 
-test("what a survey learns outlives the task: the home says what needs attention", async ({ page }) => {
+test("what a survey learns outlives the task: Storage says what needs attention", async ({ page }) => {
   const storageId = await addStorage(s3.endpointUrl);
   model = await startFakeModel([toolTurn("survey_account", { provider_id: storageId }),
     textTurn("Surveyed both buckets.")]);
@@ -34,9 +34,17 @@ test("what a survey learns outlives the task: the home says what needs attention
   await page.keyboard.press("Escape");
 
   await page.getByTestId("new-task").click();
+  await page.getByTestId("open-storage").click();
+  await expect(page.getByTestId("storage-sheet")).toBeVisible();
   await expect(page.getByTestId("estate")).toContainText("acme-prod");
   await expect(page.getByTestId("estate")).toContainText("2 buckets");
   await expect(page.getByTestId("needs-care").getByTestId("issue").first()).toBeVisible();
+  // The account's bucket index opens only when asked; a healthy bucket is reachable.
+  await page.getByTestId("storage-buckets").locator("summary").click();
+  await page.getByTestId("storage-buckets").getByRole("button", { name: "acme-logs" }).click();
+  await expect(page.getByTestId("bucket-sheet")).toContainText("acme-logs");
+  await page.getByTestId("bucket-back").click();
+  await expect(page.getByTestId("needs-care")).toBeVisible();
   expect(s3.requests.filter((r) => /^(PUT|POST|DELETE) /.test(r))).toEqual([]);
 });
 
@@ -50,10 +58,17 @@ test("a bucket opens beside the Composer: its issues, a fix that says what it ca
   await settled(page);
 
   await page.getByTestId("new-task").click();
+  await page.getByTestId("open-storage").click();
   await page.getByTestId("needs-care").getByTestId("issue-bucket").filter({ hasText: "acme-www" }).first().click();
   const sheet = page.getByTestId("bucket-sheet");
   await expect(sheet).toContainText("acme-www");
   await expect(page.getByTestId("composer")).toBeVisible(); // the Composer stays beside it
+
+  // The bucket sheet goes back to Storage, never to a blank page.
+  await page.getByTestId("bucket-back").click();
+  await expect(page.getByTestId("storage-sheet")).toBeVisible();
+  await page.getByTestId("needs-care").getByTestId("issue-bucket").filter({ hasText: "acme-www" }).first().click();
+  await expect(page.getByTestId("bucket-sheet")).toContainText("acme-www");
 
   // A note is kept on the bucket and survives a reopen.
   await page.getByTestId("note-input").fill("Serves the marketing site.");
