@@ -77,7 +77,7 @@ function humanize(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
   if (value === true) return "Yes";
   if (value === false) return "No";
-  return String(value).replace(/_/g, " ");
+  return String(value).replace(/_/g, " ").replace(/\s*,\s*/g, " · ");
 }
 
 function Table({ columns, common, rows, omitted }: { columns: string[]; common: Json; rows: unknown[][]; omitted: number }) {

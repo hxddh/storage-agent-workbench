@@ -11,7 +11,7 @@ import type { CloudProvider, ContextRef, ModelProvider } from "../api/types";
 export type Route = { kind: "home" } | { kind: "task"; id: string };
 /** The one side pane: a task's Evidence (every check, files, the report), or one bucket. */
 export type Pane =
-  | { tab: "details"; callId?: string }
+  | { tab: "details" }
   | { tab: "bucket"; providerId: string; bucket: string }
   | null;
 export type Editing = { turnId: string; parentTurnId: string | null; text: string } | null;
@@ -90,6 +90,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+
+  useEffect(() => {
+    if (route.kind !== "task") return;
+    try { localStorage.setItem("sa.saw.task", "1"); } catch { /* per device */ }
+  }, [route]);
 
   const navigate = useCallback((hash: string, next: Route) => {
     const go = () => {

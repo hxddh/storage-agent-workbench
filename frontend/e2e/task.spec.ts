@@ -44,20 +44,23 @@ test("a message becomes a conversation: the work while live, the answer, Evidenc
   await expect(page.getByTestId("findings")).toContainText("No access log attached");
   await expect(page.getByText("Work log")).toHaveCount(0);
 
-  // The agent names the task; the sidebar and title bar follow.
-  await expect(page.getByTestId("task-title")).toHaveText("Attached evidence check", { timeout: 15_000 });
-  await expect(page.getByTestId("task-list")).toContainText("Attached evidence check");
+  // The agent names the task; the sidebar owns the identity.
+  await expect(page.getByTestId("task-title")).toHaveCount(0);
+  await expect(page.getByTestId("task-list")).toContainText("Attached evidence check", { timeout: 15_000 });
+  await page.getByTestId("hide-sidebar").click();
+  await expect(page.getByTestId("task-title")).toHaveText("Attached evidence check");
+  await page.getByTestId("show-sidebar").click();
 
-  // A suggestion fills the Composer and sends nothing.
-  await page.getByTestId("suggestions").getByRole("button", { name: /Attach last week's access log/ }).click();
+  // One next step fills the Composer and sends nothing.
+  await page.getByTestId("next-step").click();
   await expect(page.getByTestId("composer-input")).toHaveValue("Attach last week's access log");
 
-  // The receipt opens to every real call; a call opens in Evidence.
-  await page.getByTestId("run-trace").click();
-  await page.locator(".call-row button", { hasText: "Checked what is known" }).click();
-  await expect(page.getByTestId("call-detail")).toContainText("query_estate");
-  await page.getByRole("button", { name: "All checks" }).click();
-  await expect(page.getByTestId("details")).toContainText("Save report");
+  // Evidence is one pane; a call expands in place.
+  await page.getByTestId("titlebar-sidepane").click();
+  const inspector = page.getByTestId("inspector");
+  await expect(inspector).toContainText("Save report");
+  await inspector.getByTestId("evidence-call").first().click();
+  await expect(inspector.getByTestId("call-detail").first()).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("inspector")).toHaveCount(0);
 });

@@ -50,5 +50,7 @@ export async function delegate(page: Page, text: string): Promise<void> {
 
 export async function settled(page: Page, timeout = 30_000): Promise<void> {
   await expect(page.getByTestId("task-page")).toBeVisible({ timeout });
-  await expect(page.getByTestId("task-state")).toHaveCount(0, { timeout });
+  // Every visible Turn has left queued/running; state is not repeated in the title bar.
+  await expect(page.locator('[data-testid="turn"][data-status="running"], [data-testid="turn"][data-status="queued"]'))
+    .toHaveCount(0, { timeout });
 }

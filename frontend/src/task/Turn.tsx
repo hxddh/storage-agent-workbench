@@ -15,8 +15,9 @@ import { ResultView, viewFor } from "../tool/ResultView";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
 
 /**
- * One turn of the conversation: the request, the run (visible while live, a
- * receipt once settled), then the answer with its recorded findings.
+ * One turn: the request, then one assistant article. The article carries a
+ * single receipt (or the live trace), the answer, the deterministic result,
+ * the findings and at most one next step. Nothing repeats the receipt.
  */
 export function Turn({ section, taskId, forks, setSnapshot, running, live = null }: {
   section: Section; taskId: string; forks: Record<string, string[]>;
@@ -25,17 +26,29 @@ export function Turn({ section, taskId, forks, setSnapshot, running, live = null
   const { t } = useI18n();
   const s = section;
   const queued = s.turn.status === "queued";
+  const rows = tools(s);
+  const result = !running ? primaryResult(rows) : null;
+  const found = s.conclusion?.findings ?? [];
+  const fig = !running ? figures(s) : null;
+  const next = !running && s.turn.status === "completed" ? (s.conclusion?.next_steps?.[0] ?? null) : null;
   return (
     <section className="turn" data-status={s.turn.status} data-testid="turn">
       {s.turn.kind === "resume"
         ? <p className="turn-note">{t("turn.continued")}</p>
         : <Message section={s} taskId={taskId} forks={forks} setSnapshot={setSnapshot} />}
-      {queued ? <Queued taskId={taskId} turnId={s.turn.id} /> : null}
-      {!queued ? <RunTrace section={s} running={running} live={live} /> : null}
-      {s.compacted && !s.blocks.some((b) => b.kind === "context")
-        ? <p className="turn-note">{t("work.compacted")}</p> : null}
-      <Answer section={s} running={running} live={live} />
-      <Outcome section={s} taskId={taskId} running={running} />
+      {queued ? <Queued taskId={taskId} turnId={s.turn.id} /> : (
+        <article className="assistant" data-testid="assistant">
+          <RunTrace section={s} running={running} live={live} />
+          {s.compacted && !s.blocks.some((b) => b.kind === "context")
+            ? <p className="turn-note">{t("work.compacted")}</p> : null}
+          <Answer section={s} running={running} live={live} />
+          {result ? <SettledResult result={result} /> : null}
+          {fig ? <AnalysisFigures provenance={fig} /> : null}
+          {found.length ? <Findings findings={found} /> : null}
+          {next ? <NextStep text={next} /> : null}
+          <Outcome section={s} taskId={taskId} running={running} />
+        </article>
+      )}
     </section>
   );
 }
@@ -117,7 +130,23 @@ function tools(section: Section): Row[] {
   return section.blocks.flatMap((b) => (b.kind === "work" ? b.tools : []));
 }
 
-/** The run: every real call while it is live; one receipt once it has settled. */
+/** The one deterministic result worth placing under the answer: a survey first,
+ * then the narrower views, never merely the last call. */
+const RESULT_RANK: Record<string, number> = { survey: 0, estate: 1, buckets: 2, config: 3, fix: 4 };
+function primaryResult(rows: Row[]): Row | null {
+  let best: Row | null = null;
+  let rank = Number.POSITIVE_INFINITY;
+  for (const row of rows) {
+    if (row.status !== "ok") continue;
+    const view = viewFor(row);
+    if (!view) continue;
+    const next = RESULT_RANK[view.kind] ?? 99;
+    if (next <= rank) { best = row; rank = next; }
+  }
+  return best;
+}
+
+/** The run: every real call while it is live; one quiet receipt once it has settled. */
 function RunTrace({ section, running, live }: { section: Section; running: boolean; live: LiveSegment | null }) {
   const { t, lang } = useI18n();
   const rows = tools(section);
@@ -126,11 +155,7 @@ function RunTrace({ section, running, live }: { section: Section; running: boole
   const commentary = section.blocks.filter((b) => b.kind === "commentary" || b.kind === "steer"
     || b.kind === "context" || b.kind === "carried");
   const failed = rows.filter((r) => r.status === "failed" || r.status === "refused").length;
-  const found = section.conclusion?.findings?.length ?? 0;
-  // The latest deterministic result with a known shape is rendered in place.
-  // Unknown or truncated details stay in Evidence; nothing is guessed.
-  const result = [...rows].reverse().find((r) => r.status === "ok" && viewFor(r)) ?? null;
-  if (!running && !rows.length && !commentary.length) return null;
+  const result = running ? primaryResult(rows) : null;
 
   if (running) {
     const now = [...rows].reverse().find((r) => r.status === "running");
@@ -154,27 +179,19 @@ function RunTrace({ section, running, live }: { section: Section; running: boole
     );
   }
 
+  if (!rows.length && !commentary.length) return null;
   return (
-    <>
-      <details className="run-trace" data-live="false">
-        <summary className="run-receipt" data-testid="run-trace">
-          <span className="run-glyph" aria-hidden><Icon name="activity" size={14} /></span>
-          <span>{rows.length ? t(rows.length === 1 ? "work.check" : "work.checks", { n: rows.length }) : t("work.notes")}</span>
-          {found ? <span className="run-meta">· {t(found === 1 ? "work.finding" : "work.findings", { n: found })}</span> : null}
-          {failed ? <span className="run-meta run-failed">· {t("work.failed", { n: failed })}</span> : null}
-          <span className="run-meta">· {elapsed}</span>
-          <Icon name="chevron" size={14} className="run-caret" />
-        </summary>
-        <RunBody section={section} result={null} />
-      </details>
-      <SettledResult result={result} />
-    </>
+    <div className="run-receipt" data-testid="run-trace" data-live="false">
+      <span className="run-glyph" aria-hidden><Icon name="activity" size={14} /></span>
+      <span>{rows.length ? t(rows.length === 1 ? "work.check" : "work.checks", { n: rows.length }) : t("work.notes")}</span>
+      {failed ? <span className="run-meta run-failed">· {t("work.failed", { n: failed })}</span> : null}
+      <span className="run-meta">· {elapsed}</span>
+    </div>
   );
 }
 
-/** The result is evidence, not prose: once settled it stays visible under the receipt. */
-function SettledResult({ result }: { result: Row | null }) {
-  if (!result) return null;
+/** The latest deterministic result with a known shape, rendered as part of the answer. */
+function SettledResult({ result }: { result: Row }) {
   return <div className="run-result" data-testid="run-result"><ResultView row={result} /></div>;
 }
 
@@ -213,7 +230,7 @@ function CallRow({ row }: { row: Row }) {
   return (
     <li className="call-row" data-status={row.status}>
       <button type="button" data-tool={row.name} title={row.name}
-        onClick={() => app.setPane({ tab: "details", callId: row.callId })}>
+        onClick={() => app.setPane({ tab: "details" })}>
         <span className="call-glyph">
           {row.status === "running" ? <span className="ui-dot" data-tone="accent" data-pulse="true" aria-hidden /> : <Icon name={GLYPH[row.status]} size={14} />}
         </span>
@@ -225,10 +242,9 @@ function CallRow({ row }: { row: Row }) {
   );
 }
 
-/** The answer: streamed while live, the model's final message once done, the recorded findings under it. */
+/** The answer text: streamed while live, the model's final message once done. */
 function Answer({ section, running, live }: { section: Section; running: boolean; live: LiveSegment | null }) {
   const c = section.conclusion;
-  const fig = running ? null : figures(section);
   if (running) {
     return live ? (
       <div className="answer live-text" data-testid="live-answer" aria-live="polite">
@@ -238,45 +254,38 @@ function Answer({ section, running, live }: { section: Section; running: boolean
   }
   // A conclusion recorded before v9 carries its own answer; newer ones do not.
   const text = section.answer ?? c?.answer ?? null;
-  const found = c?.findings ?? [];
-  if (!text && !found.length && !fig) return null;
+  if (!text) return null;
+  return <div className="answer" data-testid="answer"><Markdown text={text} /></div>;
+}
+
+function Findings({ findings }: {
+  findings: NonNullable<NonNullable<Section["conclusion"]>["findings"]>;
+}) {
+  const { t } = useI18n();
   return (
-    <div className="answer" data-testid="answer">
-      {text ? <Markdown text={text} /> : null}
-      {found.length ? <Findings findings={found} evidence={c?.evidence} /> : null}
-      {fig ? <AnalysisFigures provenance={fig} /> : null}
-    </div>
+    <ul className="findings" aria-label={t("turn.findings")} data-testid="findings">
+      {findings.map((f, i) => (
+        <li key={i} className="finding" data-severity={f.severity}>
+          <StatusDot tone={SEVERITY_TONE[f.severity] === "outline" ? "neutral" : SEVERITY_TONE[f.severity]} />
+          <span className="sr-only">{t(`sev.${f.severity}`)}: </span>
+          <span className="finding-title">{f.title}</span>
+          {f.detail ? <span className="finding-detail">{f.detail}</span> : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 
-function Findings({ findings, evidence }: {
-  findings: NonNullable<NonNullable<Section["conclusion"]>["findings"]>;
-  evidence?: NonNullable<Section["conclusion"]>["evidence"];
-}) {
+/** One recorded next step, never a row of cards. */
+function NextStep({ text }: { text: string }) {
   const { t } = useI18n();
   const app = useApp();
   return (
-    <div className="findings-wrap">
-      <ul className="findings" aria-label={t("turn.findings")} data-testid="findings">
-        {findings.map((f, i) => (
-          <li key={i} className="finding" data-severity={f.severity}>
-            <StatusDot tone={SEVERITY_TONE[f.severity] === "outline" ? "neutral" : SEVERITY_TONE[f.severity]} />
-            <span className="sr-only">{t(`sev.${f.severity}`)}: </span>
-            <span className="finding-title">{f.title}</span>
-            {f.detail ? <span className="finding-detail">{f.detail}</span> : null}
-          </li>
-        ))}
-      </ul>
-      {/* Evidence is turn-level, so it is said once for the findings it supports. */}
-      <p className="finding-source">
-        {evidence?.length ? (
-          <button type="button" className="link" title={t("tool.evidenceHint")}
-            onClick={() => app.setPane({ tab: "details" })}>
-            {t(evidence.length === 1 ? "tool.evidence1" : "tool.evidenceN", { n: evidence.length })}
-          </button>
-        ) : t("tool.noCheck")}
-      </p>
-    </div>
+    <button type="button" className="next-step" data-testid="next-step" onClick={() => app.prefill(text)}>
+      <span className="next-step-label">{t("turn.next")}</span>
+      <span className="next-step-text">{text}</span>
+      <Icon name="arrowRight" size={14} className="next-step-arrow" />
+    </button>
   );
 }
 
@@ -291,11 +300,8 @@ function Outcome({ section, taskId, running }: { section: Section; taskId: strin
     return (
       <div className="turn-outcome" data-tone={st} data-testid="attention">
         <StatusDot tone={st === "failed" ? "danger" : "warn"} />
-        {/* The reason, when the runtime recorded one; a failure points at the model settings,
-            an interruption (a restart) can simply continue. */}
         <span className="turn-outcome-text">{section.error?.message ?? section.turn.error
           ?? (st === "interrupted" ? t("turn.interrupted") : t("turn.failed"))}</span>
-        {/* Continue picks the work up again; a failure may also need the model settings. */}
         <Button size="sm" onClick={() => void api.resume(taskId, section.turn.id).catch((e) => toast.error(String(e)))}>{t("turn.resume")}</Button>
         {st === "failed" ? <Button size="sm" variant="ghost" onClick={() => app.openSettings("models")}>{t("turn.openSettings")}</Button> : null}
       </div>

@@ -27,9 +27,11 @@ test("what a survey learns outlives the task: the home says what needs attention
   await delegate(page, "Survey my storage account");
   await expect(page.getByTestId("answer")).toContainText("Surveyed both buckets.", { timeout: 30_000 });
   await settled(page);
-  await page.getByTestId("run-trace").click();
-  await expect(page.locator(".call-row").first()).toHaveAttribute("data-status", "ok");
-  await expect(page.locator(".call-row").first()).toContainText("Surveyed account");
+  await page.getByTestId("titlebar-sidepane").click();
+  const inspector = page.getByTestId("inspector");
+  await expect(inspector.getByTestId("evidence-call").first()).toHaveAttribute("data-status", "ok");
+  await expect(inspector.getByTestId("evidence-call").first()).toContainText("Surveyed account");
+  await page.keyboard.press("Escape");
 
   await page.getByTestId("new-task").click();
   await expect(page.getByTestId("estate")).toContainText("acme-prod");

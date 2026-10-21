@@ -96,6 +96,9 @@ function Configuration({ posture }: { posture: Record<string, unknown> }) {
   const keys = ORDER.filter((k) => k in posture && posture[k] !== null && posture[k] !== undefined && posture[k] !== "");
   const shown = keys.filter((k) => deviates(k, posture[k]));
   if (!keys.length) return null;
+  // Repeated "Not configured" protections read as one gap, not five rows.
+  const missing = shown.filter((k) => PROTECTIONS.has(k) && posture[k] === "not_configured");
+  const rest = shown.filter((k) => !missing.includes(k));
   const value = (k: string, v: unknown) => {
     if (v === true) return t("posture.yes");
     if (v === false) return t("posture.no");
@@ -108,12 +111,18 @@ function Configuration({ posture }: { posture: Record<string, unknown> }) {
       <h3 className="pane-label">{t("bucket.config")}</h3>
       {shown.length ? (
         <dl className="config-list">
-          {shown.map((k) => (
+          {rest.map((k) => (
             <div key={k} className="config-row">
               <dt>{t(`posture.${k}`)}</dt>
               <dd>{value(k, posture[k])}</dd>
             </div>
           ))}
+          {missing.length ? (
+            <div className="config-row" data-group="missing">
+              <dt>{t("bucket.missingProtections")}</dt>
+              <dd>{missing.map((k) => t(`posture.${k}`)).join(" · ")}</dd>
+            </div>
+          ) : null}
         </dl>
       ) : <p className="quiet-note">{t("bucket.configClean")}</p>}
     </div>

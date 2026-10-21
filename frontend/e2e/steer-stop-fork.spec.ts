@@ -16,10 +16,9 @@ test("while it works the Composer adds to the request, and Stop keeps the partia
   providerId = await useFakeModel(model.baseUrl);
   await boot(page);
   await delegate(page, "Take your time");
-  await expect(page.getByTestId("task-state")).toHaveText("Working");
+  await expect(page.getByTestId("composer-stop")).toBeVisible();
   await expect(page.getByTestId("composer-send")).toHaveAccessibleName("Add to the request");
   await delegate(page, "Focus on the logs bucket");
-  await page.getByTestId("run-trace").click();
   await expect(page.getByTestId("turn").last()).toContainText("Focus on the logs bucket");
   await page.getByTestId("composer-stop").click();
   await settled(page);

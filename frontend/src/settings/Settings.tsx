@@ -90,14 +90,18 @@ function General() {
       {data?.vault.unreadable ? (
         <p className="pref-warn"><StatusDot tone="danger" />{t("settings.vaultUnreadable")}</p>
       ) : null}
-      <div className="pref-group">
-        <h4 className="pref-group-title">{t("settings.safety")}</h4>
+      <details className="pref-safety" data-testid="settings-safety">
+        <summary>
+          <Icon name="shield" size={15} />
+          <span>{t("settings.safety")}</span>
+          <small>{t("settings.safety.summary")}</small>
+        </summary>
         <ul className="safety-points">
           {[1, 2, 3].map((n) => (
-            <li key={n}><Icon name="shield" size={16} /><span>{t(`settings.safety.${n}`)}</span></li>
+            <li key={n}><span>{t(`settings.safety.${n}`)}</span></li>
           ))}
         </ul>
-      </div>
+      </details>
       <details className="pref-advanced" data-testid="settings-advanced">
         <summary>{t("settings.advanced")}</summary>
         <Skills />

@@ -23,17 +23,22 @@ export function Home() {
     { key: "log", needsStorage: false },
   ];
   const shown = starters.filter((s) => !(s.needsStorage && noStorage && app.clouds !== null));
+  const firstRun = (() => {
+    try { return !localStorage.getItem("sa.saw.task"); } catch { return true; }
+  })();
   return (
     <div className="home" data-testid="home">
       <header className="home-head">
         <h1 className="home-greeting">{t("home.greeting")}</h1>
-        <div className="home-prompts" aria-label={t("home.suggestions")}>
-          {shown.map((s) => (
-            <button key={s.key} type="button" className="prompt-chip" onClick={() => app.prefill(t(`home.starter.${s.key}Prompt`))}>
-              {t(`home.starter.${s.key}`)}
-            </button>
-          ))}
-        </div>
+        {firstRun ? (
+          <div className="home-prompts" aria-label={t("home.suggestions")}>
+            {shown.map((s) => (
+              <button key={s.key} type="button" className="prompt-chip" onClick={() => app.prefill(t(`home.starter.${s.key}Prompt`))}>
+                {t(`home.starter.${s.key}`)}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <Readiness />
       </header>
       <Attention />

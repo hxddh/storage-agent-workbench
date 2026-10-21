@@ -1,8 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { TaskSnapshot } from "../api/types";
-import { Icon } from "../components/icons";
 import { useI18n } from "../i18n";
-import { useApp } from "../shell/context";
 import { sections } from "../store/derive";
 import { forksOf, type TaskModel } from "../store/task";
 import { Turn } from "./Turn";
@@ -17,7 +15,6 @@ const MemoTurn = memo(Turn);
  */
 export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot: (s: TaskSnapshot) => void }) {
   const { t } = useI18n();
-  const app = useApp();
   // Live text is passed only to the Turn that owns it. Rebuilding every
   // section on every streamed token made long conversations quadratic.
   const all = useMemo(() => sections(model.turns, model.items, null), [model.turns, model.items]);
@@ -55,10 +52,6 @@ export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot
   if (!model.snapshot) {
     return <div className="task-page" aria-busy="true"><p className="quiet-note">{model.error ?? t("task.loading")}</p></div>;
   }
-  const busy = model.state === "working" || model.state === "queued";
-  const last = all[all.length - 1];
-  const steps = !busy && last?.turn.status === "completed" ? (last.conclusion?.next_steps ?? []).slice(0, 3) : [];
-
   return (
     <div className="task-page" data-testid="task-page">
       {all.length ? all.map((s) => (
@@ -66,15 +59,6 @@ export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot
           running={s.turn.status === "running"}
           live={model.live?.turn_id === s.turn.id ? model.live : null} />
       )) : <p className="quiet-note">{t("task.empty")}</p>}
-      {steps.length ? (
-        <div className="suggestions" data-testid="suggestions">
-          {steps.map((s, i) => (
-            <button key={i} type="button" className="suggestion" onClick={() => app.prefill(s)}>
-              <span>{s}</span><Icon name="arrowRight" size={14} className="suggestion-arrow" />
-            </button>
-          ))}
-        </div>
-      ) : null}
       <div ref={end} className="task-end" aria-hidden />
     </div>
   );

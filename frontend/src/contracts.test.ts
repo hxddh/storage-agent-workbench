@@ -1,5 +1,5 @@
 /**
- * The v7 window contract, executable. If an intentional replacement is
+ * The window contract, executable. If an intentional replacement is
  * needed, change the code, this file and the canonical docs together.
  */
 import fs from "node:fs";
@@ -53,15 +53,50 @@ describe("the window", () => {
     for (const gone of ["nav-home", "nav-estate", "openEstate"]) expect(sidebar).not.toContain(gone);
   });
 
-  it("a task reads as a conversation, oldest first — no result/work-log split", () => {
-    const page = read(path.join(SRC, "task/TaskPage.tsx"));
-    expect(page).toContain("all.map((s) =>");
-    for (const gone of ["latestResult", "work-log", "resultPointer", "<Result"]) expect(page).not.toContain(gone);
-    expect(fs.existsSync(path.join(SRC, "task/Result.tsx"))).toBe(false);
+  it("a turn is one assistant article: one receipt, one next step, no suggestion block", () => {
+    const turn = read(path.join(SRC, "task/Turn.tsx"));
+    expect(turn.match(/<article\b/g)).toHaveLength(1);
+    expect(turn).toContain('className="assistant"');
+    expect(turn).toContain('data-testid="next-step"');
+    expect(turn).toContain("s.conclusion?.next_steps?.[0]");
+    expect(turn).not.toContain("suggestions");
+    expect(turn).not.toContain("Evidence ·");
   });
 
-  it("starters, suggestions and Ask about this bucket only fill the Composer — they never submit", () => {
-    const files = ["home/Home.tsx", "task/TaskPage.tsx", "estate/BucketSheet.tsx"].map((f) => read(path.join(SRC, f)));
+  it("has one state and one task identity", () => {
+    const shell = read(path.join(SRC, "shell/Shell.tsx"));
+    expect(shell).not.toContain("task-state");
+    expect(shell).not.toContain("state-pill");
+    expect(shell).not.toContain("titlebar-progress");
+    expect(shell).toContain("!app.sidebar && title");
+  });
+
+  it("has one Evidence level: calls expand in place, with no second page", () => {
+    const inspector = read(path.join(SRC, "inspector/Inspector.tsx"));
+    expect(inspector).toContain('data-testid="evidence-call"');
+    expect(inspector).toContain("call-evidence");
+    expect(inspector).not.toContain("pane.back");
+    expect(inspector).not.toContain("callId?");
+  });
+
+  it("the Composer has one add menu, one model chip and one send/stop action", () => {
+    const composer = read(path.join(SRC, "composer/Composer.tsx"));
+    expect(composer).toContain('data-testid="composer-plus"');
+    expect(composer).toContain('data-testid="composer-menu"');
+    expect(composer).not.toContain("context-trigger");
+  });
+
+  it("shows first-run prompts only until a task has been opened", () => {
+    expect(read(path.join(SRC, "home/Home.tsx"))).toContain("sa.saw.task");
+    expect(read(path.join(SRC, "shell/context.tsx"))).toContain("sa.saw.task");
+  });
+
+  it("groups repeated missing protections into one row", () => {
+    expect(read(path.join(SRC, "estate/BucketSheet.tsx"))).toContain("bucket.missingProtections");
+  });
+
+  it("starters, one next step and Ask about this bucket only fill the Composer — they never submit", () => {
+    const files = ["home/Home.tsx", "task/Turn.tsx", "estate/BucketSheet.tsx"].map((f) => read(path.join(SRC, f)));
     for (const text of files) {
       expect(text).toMatch(/app\.prefill\(/);
       expect(text).not.toMatch(/api\.(submit|createTask|steer)\(/);

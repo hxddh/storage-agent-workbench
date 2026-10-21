@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { api } from "../api";
 import { Composer } from "../composer/Composer";
 import { hasNativeTrafficLights, openExternal } from "../config";
-import { IconButton, StatusDot } from "../components/ui";
+import { IconButton } from "../components/ui";
 import { BucketSheet } from "../estate/BucketSheet";
 import { Home } from "../home/Home";
 import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "../hooks/useNativeAgent";
@@ -99,7 +99,6 @@ export function Shell() {
   }, [app, command, taskId, busy]);
 
   const title = taskId ? model.snapshot?.task.title ?? "" : "";
-  const state = taskId ? model.state : null;
 
   return (
     <div className="window" data-traffic-lights={hasNativeTrafficLights() ? "true" : undefined} data-sidebar={app.sidebar ? "open" : "closed"} data-pane={app.pane ? "open" : "closed"}>
@@ -111,19 +110,13 @@ export function Shell() {
           <div className="titlebar-start">
             {!app.sidebar ? (
               <>
-                <IconButton icon="sidebar" label={t("nav.showSidebar")} onClick={() => app.setSidebar(true)} />
+                <IconButton icon="sidebar" label={t("nav.showSidebar")} data-testid="show-sidebar" onClick={() => app.setSidebar(true)} />
                 <IconButton icon="compose" label={t("nav.newTask")} onClick={() => app.goHome()} />
               </>
             ) : null}
           </div>
           <div className="titlebar-center" data-tauri-drag-region>
-            <span className="titlebar-title" data-testid="task-title">{title}</span>
-            {state && state !== "ready" ? (
-              <span className="state-pill" data-state={state} data-testid="task-state">
-                <StatusDot tone={state === "working" ? "accent" : state === "needs_attention" ? "warn" : "neutral"} pulse={state === "working"} />
-                {t(`state.${state}`)}
-              </span>
-            ) : null}
+            {!app.sidebar && title ? <span className="titlebar-title" data-testid="task-title">{title}</span> : null}
           </div>
           <div className="titlebar-end">
             {taskId ? (
@@ -131,7 +124,6 @@ export function Shell() {
                 aria-pressed={!!app.pane} onClick={() => command("review")} />
             ) : null}
           </div>
-          {busy ? <div className="titlebar-progress" aria-hidden /> : null}
         </header>
         {/* A scrolling page is not a Tab stop of its own (the keys still scroll it once focus is inside). */}
         <div className="document" data-testid="document" tabIndex={-1}>
@@ -146,7 +138,8 @@ export function Shell() {
       {app.pane?.tab === "bucket" ? <BucketSheet key={`${app.pane.providerId}/${app.pane.bucket}`}
         providerId={app.pane.providerId} bucket={app.pane.bucket} /> : null}
       {app.settings ? <Settings /> : null}
-      <span className="sr-only" aria-live="polite">{state ? t(`state.${state}`) : ""}</span>
+      {/* State is painted once (sidebar), and announced once for screen readers. */}
+      <span className="sr-only" aria-live="polite">{taskId ? t(`state.${model.state}`) : ""}</span>
     </div>
   );
 }

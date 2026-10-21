@@ -225,9 +225,12 @@ class Recorder:
             if model_output is None:
                 model_output = text[:60_000]
             detail = text[:_UI_DETAIL_CHARS]
+        # `detail_truncated` is about the UI copy, not about how long the model's
+        # enveloped output was: a complete JSON result must still render as a
+        # table when `model_output` happens to be longer than the 24k UI copy.
         self._append("tool_output", {"call_id": call_id, "name": name, "ok": ok, "summary": clean_summary,
                                      "duration_ms": duration_ms, "detail": detail,
-                                     "detail_truncated": bool(detail and model_output and len(model_output) > len(detail)),
+                                     "detail_truncated": bool(detail and len(text) > _UI_DETAIL_CHARS),
                                      "model_output": model_output})
         store.audit(self._conn, actor="agent", action=f"tool.{name}", task_id=self.task_id,
                     target=str(call.get("args", {}).get("bucket") or call.get("args", {}).get("provider_id") or ""),

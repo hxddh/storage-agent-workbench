@@ -43,20 +43,23 @@ function modelOf(turns = [turn("t1")], items = [
 }
 
 describe("the task page", () => {
-  it("reads as a conversation: the message, the run trace, the answer and its findings", async () => {
+  it("reads as one assistant article: receipt, answer, findings, one next step", async () => {
     await act(async () => { render(wrap(<TaskPage model={modelOf()} setSnapshot={() => {}} />)); });
     expect(screen.getByTestId("message")).toHaveTextContent("Survey my account");
+    expect(screen.getByTestId("assistant")).toBeInTheDocument();
     expect(screen.getByTestId("run-trace")).toHaveTextContent("1 check");
     const answer = screen.getByTestId("answer");
     expect(answer).toHaveTextContent("full");
     expect(screen.getByTestId("findings")).toHaveTextContent("acme-www is public");
-    expect(screen.getByTestId("suggestions")).toHaveTextContent("Show the fix");
+    expect(screen.getByTestId("next-step")).toHaveTextContent("Show the fix");
+    expect(screen.queryByTestId("suggestions")).toBeNull();
+    expect(screen.queryByTestId("run-body")).toBeNull();
     // No result/work-log split, no outputs bar.
     expect(screen.queryByText("Work log")).toBeNull();
     expect(screen.queryByTestId("outputs")).toBeNull();
   });
 
-  it("states turn-level evidence once, under the findings, not on every row", async () => {
+  it("keeps the findings and next step as they are, without a second evidence line", async () => {
     const evidence = [
       { call_id: "a", name: "survey_account", target: "prod", summary: "4 buckets" },
       { call_id: "b", name: "query_estate", target: "prod", summary: "2 issues" },
@@ -66,13 +69,16 @@ describe("the task page", () => {
       item("t1", "conclusion", { call_id: "c", findings: [
         { title: "Public bucket", severity: "high" },
         { title: "No encryption", severity: "medium" },
-      ], evidence }),
+      ], evidence, next_steps: ["Show the fix", "Check again"] }),
       item("t1", "agent_message", { text: "Two things need care." }),
     ]);
     await act(async () => { render(wrap(<TaskPage model={m} setSnapshot={() => {}} />)); });
     expect(screen.getByTestId("findings")).not.toHaveTextContent("checks");
-    expect(screen.getByText("Evidence · 2 checks")).toBeInTheDocument();
-    expect(screen.getAllByText("Evidence · 2 checks")).toHaveLength(1);
+    expect(screen.queryByText("Evidence · 2 checks")).toBeNull();
+    const next = screen.getAllByTestId("next-step");
+    expect(next).toHaveLength(1);
+    expect(next[0]).toHaveTextContent("Show the fix");
+    expect(next[0]).not.toHaveTextContent("Check again");
   });
 
   it("keeps every real call visible while the run is live", async () => {
@@ -97,10 +103,12 @@ describe("the task page", () => {
       item("t1", "user_message", { text: "Survey" }),
       item("t1", "tool_call", { call_id: "a", name: "survey_account", args: {}, target: "prod" }),
       item("t1", "tool_output", { call_id: "a", name: "survey_account", ok: true, summary: "1 bucket", detail }),
+      item("t1", "tool_call", { call_id: "b", name: "review_bucket_config", args: {}, target: "acme-www" }),
+      item("t1", "tool_output", { call_id: "b", name: "review_bucket_config", ok: true, summary: "checked",
+        detail: "{\"bucket\":\"acme-www\",\"sections\":{}}" }),
       item("t1", "agent_message", { text: "One bucket is public." }),
     ]);
     await act(async () => { render(wrap(<TaskPage model={m} setSnapshot={() => {}} />)); });
-    fireEvent.click(screen.getByTestId("run-trace"));
     expect(screen.getByTestId("tool-table")).toHaveTextContent("acme-www");
     expect(screen.getByTestId("tool-table")).toHaveTextContent("Yes");
   });
@@ -157,6 +165,18 @@ describe("the task page", () => {
 });
 
 describe("the Composer", () => {
+  it("puts attach and estate context behind one add menu", async () => {
+    render(wrap(<Composer taskId="task-1" busy={false} />));
+    await act(async () => {});
+    expect(screen.queryByTestId("composer-menu")).toBeNull();
+    fireEvent.click(screen.getByTestId("composer-plus"));
+    const menu = screen.getByTestId("composer-menu");
+    expect(menu).toHaveTextContent("Attach a file");
+    expect(menu).toHaveTextContent("Add estate context");
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByTestId("composer-menu")).toBeNull();
+  });
+
   it("sends at rest; adds to the running request with Stop beside it while work is live", async () => {
     const { rerender } = render(wrap(<Composer taskId="task-1" busy={false} />));
     await act(async () => {});

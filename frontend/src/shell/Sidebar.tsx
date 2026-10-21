@@ -70,7 +70,7 @@ export const Sidebar = memo(function Sidebar() {
           <span className="sidebar-brand-mark" aria-hidden><Icon name="storage" size={13} /></span>
           <span>Storage Agent</span>
         </div>
-        <IconButton icon="sidebar" label={t("nav.hideSidebar")} onClick={() => app.setSidebar(false)} />
+        <IconButton icon="sidebar" label={t("nav.hideSidebar")} data-testid="hide-sidebar" onClick={() => app.setSidebar(false)} />
       </div>
       <div className="sidebar-top">
         <button type="button" className="sidebar-new" data-active={app.route.kind === "home" ? "true" : undefined}

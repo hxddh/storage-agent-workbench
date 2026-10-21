@@ -15,7 +15,7 @@ import { ResultView, viewFor } from "../tool/ResultView";
 
 const MIN_W = 352;
 const MAX_W = 880;
-const DEFAULT_W = 380;
+const DEFAULT_W = 480;
 
 function storedWidth(): number {
   try {
@@ -89,8 +89,8 @@ export function Pane({ title, children, testId }: { title: string; children: Rea
 }
 
 /**
- * Evidence for one task: what this turn checked (one opens as a document with
- * its rendered result, arguments and raw output), the files, and the report.
+ * Evidence for one task in one scroll: every check expands in place to its
+ * rendered result and raw data; there is no second page or Back control.
  */
 export function Details({ model }: { model: TaskModel }) {
   const { t } = useI18n();
@@ -100,52 +100,71 @@ export function Details({ model }: { model: TaskModel }) {
   const files = model.snapshot?.files ?? [];
   const pane = app.pane;
   if (!pane || pane.tab !== "details") return null;
-  const call = pane.callId ? tools.find((r) => r.callId === pane.callId) ?? null : null;
   return (
     <Pane title={t("pane.details")} testId="inspector">
-      {call ? <CallDetail row={call} /> : (
-        <div className="details" data-testid="details">
-          <h3 className="pane-label">{t("pane.calls", { n: tools.length })}</h3>
-          {tools.length ? (
-            <ul className="details-calls">
-              {tools.map((r) => <CallLine key={r.callId} row={r} />)}
+      <div className="details" data-testid="details">
+        {tools.length ? (
+          <ul className="details-calls">
+            {tools.map((r) => <CallLine key={r.callId} row={r} />)}
+          </ul>
+        ) : <p className="quiet-note">{t("pane.noCalls")}</p>}
+        {files.length ? (
+          <>
+            <h3 className="pane-label">{t("pane.files", { n: files.length })}</h3>
+            <ul className="details-files">
+              {files.map((f) => (
+                <li key={f.id}>
+                  <Icon name="file" size={14} />
+                  <span className="details-file-name">{f.filename}</span>
+                  <small>{[fmtBytes(f.size_bytes), f.rows != null ? t("pane.rows", { n: f.rows.toLocaleString() }) : null]
+                    .filter(Boolean).join(" · ")}</small>
+                </li>
+              ))}
             </ul>
-          ) : <p className="quiet-note">{t("pane.noCalls")}</p>}
-          {files.length ? (
-            <>
-              <h3 className="pane-label">{t("pane.files", { n: files.length })}</h3>
-              <ul className="details-files">
-                {files.map((f) => (
-                  <li key={f.id}>
-                    <Icon name="file" size={14} />
-                    <span className="details-file-name">{f.filename}</span>
-                    <small>{[fmtBytes(f.size_bytes), f.rows != null ? t("pane.rows", { n: f.rows.toLocaleString() }) : null]
-                      .filter(Boolean).join(" · ")}</small>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : null}
-          <SaveReport taskId={model.id} title={model.snapshot?.task.title ?? "task"} />
-          <Usage usage={model.turns.map((x) => x.usage)} />
-        </div>
-      )}
+          </>
+        ) : null}
+        <SaveReport taskId={model.id} title={model.snapshot?.task.title ?? "task"} />
+        <Usage usage={model.turns.map((x) => x.usage)} />
+      </div>
     </Pane>
   );
 }
 
 function CallLine({ row }: { row: ToolRow }) {
-  const { lang } = useI18n();
+  const { t, lang } = useI18n();
   const app = useApp();
+  const [open, setOpen] = useState(false);
+  const view = viewFor(row);
   return (
     <li>
-      <button type="button" data-status={row.status} data-tool={row.name}
-        onClick={() => app.setPane({ tab: "details", callId: row.callId })}>
-        <span className="call-verb">{toolLabel(row.name, lang)}</span>
-        {row.target ? <span className="call-target">{row.target}</span> : null}
-        {row.summary ? <span className="call-note">{row.summary}</span> : null}
-        {row.durationMs != null ? <small>{(row.durationMs / 1000).toFixed(1)}s</small> : null}
-      </button>
+      <details className="call-evidence" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+        <summary data-testid="evidence-call" data-status={row.status} data-tool={row.name}>
+          <span className="call-verb">{toolLabel(row.name, lang)}</span>
+          {row.target ? <span className="call-target">{row.target}</span> : null}
+          {row.summary ? <span className="call-note">{row.summary}</span> : null}
+          {row.status === "failed" || row.status === "refused"
+            ? <span className="sr-only">{t(row.status === "refused" ? "tool.refused" : "tool.failed")}</span> : null}
+          {row.durationMs != null ? <small>{(row.durationMs / 1000).toFixed(1)}s</small> : null}
+          <Icon name="chevron" size={13} className="call-caret" />
+        </summary>
+        <div className="call-evidence-body" data-testid="call-detail">
+          {view ? <ResultView row={row} /> : (
+            <p className="quiet-note result-gap">{row.detailTruncated ? t("result.truncatedGap") : t("tool.noView")}</p>
+          )}
+          <details className="raw-fold" open={!view}>
+            <summary>{t("tool.raw")}</summary>
+            <h4 className="pane-label">{t("tool.args")}</h4>
+            <Markdown text={"```json\n" + JSON.stringify(readableArgs(row.args, app.clouds), null, 2) + "\n```"} />
+            {row.detail ? (
+              <>
+                <h4 className="pane-label">{t("tool.output")}</h4>
+                <Markdown text={"```json\n" + pretty(row.detail) + "\n```"} />
+                {row.detailTruncated ? <p className="quiet-note">{t("tool.truncated")}</p> : null}
+              </>
+            ) : null}
+          </details>
+        </div>
+      </details>
     </li>
   );
 }
@@ -157,11 +176,14 @@ function Usage({ usage }: { usage: Array<TaskModel["turns"][number]["usage"]> })
   }), { requests: 0, input: 0, output: 0 });
   if (!sum.requests) return null;
   return (
-    <p className="pane-usage">
-      {sum.input || sum.output
-        ? t(sum.requests === 1 ? "pane.usage1" : "pane.usage", { req: sum.requests, inTok: sum.input.toLocaleString(), outTok: sum.output.toLocaleString() })
-        : t(sum.requests === 1 ? "pane.request" : "pane.requests", { req: sum.requests })}
-    </p>
+    <details className="usage-fold">
+      <summary>{t("pane.usageLabel")}</summary>
+      <p className="pane-usage">
+        {sum.input || sum.output
+          ? t(sum.requests === 1 ? "pane.usage1" : "pane.usage", { req: sum.requests, inTok: sum.input.toLocaleString(), outTok: sum.output.toLocaleString() })
+          : t(sum.requests === 1 ? "pane.request" : "pane.requests", { req: sum.requests })}
+      </p>
+    </details>
   );
 }
 
@@ -208,37 +230,4 @@ function readableArgs(args: ToolRow["args"], clouds: Array<{ id: string; name: s
   const id = args && typeof args === "object" ? (args as Record<string, unknown>).provider_id : undefined;
   const name = typeof id === "string" ? clouds?.find((c) => c.id === id)?.name : undefined;
   return name ? { ...(args as Record<string, unknown>), provider_id: name } : args;
-}
-
-function CallDetail({ row }: { row: ToolRow }) {
-  const { t, lang } = useI18n();
-  const app = useApp();
-  const view = viewFor(row);
-  return (
-    <div className="call-detail" data-testid="call-detail">
-      <Button size="sm" variant="ghost" icon="arrowLeft" onClick={() => app.setPane({ tab: "details" })}>
-        {t("pane.back")}
-      </Button>
-      <h3 className="call-title">{toolLabel(row.name, lang)}</h3>
-      <p className="evidence-meta">
-        <code>{row.name}</code>{row.durationMs != null ? ` · ${(row.durationMs / 1000).toFixed(1)}s` : ""}
-        {row.summary ? ` · ${row.summary}` : ""}
-      </p>
-      {view ? <ResultView row={row} /> : (
-        <p className="quiet-note result-gap">{row.detailTruncated ? t("result.truncatedGap") : t("tool.noView")}</p>
-      )}
-      <details className="raw-fold" open={!view}>
-        <summary>{t("tool.raw")}</summary>
-        <h4 className="pane-label">{t("tool.args")}</h4>
-        <Markdown text={"```json\n" + JSON.stringify(readableArgs(row.args, app.clouds), null, 2) + "\n```"} />
-        {row.detail ? (
-          <>
-            <h4 className="pane-label">{t("tool.output")}</h4>
-            <Markdown text={"```json\n" + pretty(row.detail) + "\n```"} />
-            {row.detailTruncated ? <p className="quiet-note">{t("tool.truncated")}</p> : null}
-          </>
-        ) : null}
-      </details>
-    </div>
-  );
 }

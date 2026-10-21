@@ -1,6 +1,6 @@
 # Design tokens
 
-> **Storage Agent v11.1 — design system v6, the quiet document.**
+> **Storage Agent v12 — design system v6, one article.**
 >
 > Presentation contract for the native Agent Task window. Tokens never invent
 > runtime state, progress, or capabilities.
@@ -136,28 +136,29 @@ Icons are 16 px (14 px in dense rows) at a 1.5 stroke with rounded joins.
 
 `--doc-measure: 44rem` (704 px) is the reading column; `--doc-track: 60rem` is
 the track for tables and figures. `--sidebar-w: 15rem` (240 px); the side pane
-is resizable from 352 to 880 px and starts at 380 px. `--header-h: 2.75rem`
+is resizable from 352 to 880 px and starts at 480 px. `--header-h: 2.75rem`
 (44 px); `--control-h: 2rem` (32 px).
 
 Home is an empty Task, not a landing page: one 24 px heading, three prompt
-**text links** separated by a dot (stacked below 720 px), one readiness line,
-then the estate's attention and account lines, and the same docked Composer as
-every task. Nothing on Home submits work except the Composer.
+**text links** separated by a dot on first run only (stacked below 720 px), one
+readiness line, then the estate's attention and account lines, and the same
+docked Composer as every task. The content is centred in the document above the
+dock; a short home is balanced rather than pinned to the top. Nothing on Home
+submits work except the Composer.
 
-The Task page is request → **run trace** → rendered result → answer → findings
-→ next steps. The trace is one quiet line while live (real calls and real
-progress expand below it) and becomes one receipt when settled. Deterministic
-results render from `tool_output.detail` as part of the document: a table has a
-header rule and row rules, not a card. Findings are a flat list with a severity
-dot; the turn's successful calls are said **once** after the list as
-`Evidence · n checks`, or `No direct check`. The per-finding chip is gone: it
-repeated the same turn-level fact on every row and implied a precision the data
-does not have.
+The Task page is request → **one assistant article**: receipt → answer →
+rendered result → findings → one next step. The trace is open while live (real
+calls and real progress below it) and becomes one quiet receipt when settled; the
+receipt does not expand. Deterministic results render from `tool_output.detail`
+as part of the document: a table has a header rule and row rules, not a card.
+Findings are a flat list with a severity dot and no evidence line: the title
+bar's Evidence is the one entry to the calls. At most the first recorded next
+step appears, as a text line, never a row of cards.
 
-Evidence is the one side pane: a human heading, one row per call (verb, target,
-time, summary), the rendered result first, raw JSON behind a *Raw* fold,
-attached files, Save report, and usage at the foot. It is not an inspector of
-uppercase labels.
+Evidence is the one side pane, one level: a human heading, one row per call
+(verb, target, time, summary), which expands in place to the rendered result and
+raw data; Save report, attached files and usage folded at the foot. There is no
+second page and no Back control. It is not an inspector of uppercase labels.
 
 ## Components
 
@@ -175,16 +176,19 @@ lives in `styles/components.css`.
 
 The Composer is the only Agent input, docked at the same position on Home and
 every task. Its border is neutral at rest and on focus; there is no glow. The
-send control is a small accent circle only when ready. Attach and `@` are quiet
-icons; the model chip is a text control, not a pill. Selected context reads as a
-24 px text token on `--hover`, not a bordered card.
+send control is a small accent circle only when ready. Three controls at rest:
+the `+` menu (Attach a file · Add estate context), the model chip and Send; a
+context picker opened from the menu draws its focus ring on the popover, not as
+a second box around the search field. The model chip is a text control, not a
+pill. Selected context reads as a 24 px text token on `--hover`, not a bordered
+card.
 
 ## Motion
 
 | Token | Value | Use |
 | --- | --- | --- |
 | `--duration-fast` | 120ms | hover, controls, chrome |
-| `--duration-base` | 200ms | menus, view transitions, the progress hairline |
+| `--duration-base` | 200ms | menus, view transitions |
 | `--duration-slow` | 280ms | sheets, dialogs, the side pane, sidebar collapse |
 | `--duration-instant` | 120ms | alias of fast |
 
@@ -192,8 +196,8 @@ Easing: `--ease-out` `cubic-bezier(0.2, 0.8, 0.2, 1)`, `--ease-emphasized`
 `cubic-bezier(0.3, 0, 0, 1)`, `--ease-in-out` for cycles.
 
 `prefers-reduced-motion` zeros animation and transition durations, stops the
-pulsing dot and the progress hairline, and leaves opaque surfaces static.
-Content does not slide in on every render; a settled answer is simply there.
+pulsing dot, and leaves opaque surfaces static. Content does not slide in on
+every render; a settled answer is simply there.
 
 ## Keyboard and focus
 

@@ -43,6 +43,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
   const [sending, setSending] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [picker, setPicker] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [options, setOptions] = useState<Option[]>([]);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -83,6 +84,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
     setFiles([]);
     setContext([]);
     setPicker(false);
+    setMenu(false);
   }, [taskId]);
 
   useEffect(() => {
@@ -128,15 +130,37 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
     setOptions(out.filter((o) => (seen.has(keyOf(o)) ? false : (seen.add(keyOf(o)), true))));
   };
 
-  const openPicker = () => {
-    setPicker((v) => {
-      const next = !v;
-      if (next) void loadContext();
-      return next;
-    });
+  const openContext = () => {
+    setMenu(false);
+    setPicker(true);
     setQuery("");
     setActive(0);
+    void loadContext();
   };
+
+  useEffect(() => {
+    if (!picker && !menu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setPicker(false);
+      setMenu(false);
+      area.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picker, menu]);
+
+  useEffect(() => {
+    if (!picker && !menu) return;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest(".composer-tools, .context-popover")) return;
+      setPicker(false);
+      setMenu(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [picker, menu]);
 
   useEffect(() => {
     if (!picker) return;
@@ -287,6 +311,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
               role="combobox" aria-autocomplete="list" aria-controls="context-options" aria-expanded="true"
               aria-activedescendant={filtered[active] ? `context-${keyOf(filtered[active])}` : undefined}
               onChange={(e) => setQuery(e.target.value)}
+              data-focus-ring="container"
               onKeyDown={(e) => {
                 if (e.key === "Escape") { setPicker(false); area.current?.focus(); }
                 else if (e.key === "ArrowDown") { e.preventDefault(); setActive((n) => Math.min(filtered.length - 1, n + 1)); }
@@ -337,11 +362,22 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
         </p>
       ) : null}
       <div className="composer-bar">
-        <IconButton icon="paperclip" label={t("composer.attach")} onClick={() => filePicker.current?.click()} />
+        <div className="composer-tools">
+          <IconButton icon="plus" label={t("composer.add")} aria-expanded={menu}
+            data-testid="composer-plus" onClick={() => { setMenu((v) => !v); setPicker(false); }} />
+          {menu ? (
+            <div className="composer-menu" role="menu" aria-label={t("composer.add")} data-testid="composer-menu">
+              <button type="button" role="menuitem" onClick={() => { setMenu(false); filePicker.current?.click(); }}>
+                <Icon name="paperclip" size={15} /><span>{t("composer.attach")}</span>
+              </button>
+              <button type="button" role="menuitem" onClick={openContext}>
+                <Icon name="search" size={15} /><span>{t("context.add")}</span><kbd>@</kbd>
+              </button>
+            </div>
+          ) : null}
+        </div>
         <input ref={filePicker} type="file" hidden multiple accept=".log,.txt,.csv,.tsv,.json,.jsonl,.gz,.parquet,.orc"
           onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} data-testid="composer-file" />
-        <button type="button" className="context-trigger" aria-label={t("context.add")} title={t("context.add")}
-          aria-expanded={picker} onClick={openPicker}>@</button>
         <ModelChip />
         <span className="composer-spacer" />
         {busy ? (

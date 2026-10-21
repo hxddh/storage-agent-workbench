@@ -1,14 +1,14 @@
 # Documentation
 
-> **Current baseline: Storage Agent v11.1.0.** Built on the v5 rewrite around one
+> **Current baseline: Storage Agent v12.0.0.** Built on the v5 rewrite around one
 > idea — *the estate is the object, Agent Tasks are how work is done, and one item
 > stream is the truth*. v7 made a task one conversation; v8 was subtraction and
 > correctness; v9 kept state consistent; v10 made a small local model finish the
-> work; v11 made the work legible. v11.1 is the visual and interaction release:
-> design system v6 keeps one flat document, one docked Composer and one side pane,
-> with no content cards, one blue accent and a compact Settings dialog. The run
-> trace, rendered deterministic results and turn-level Evidence are unchanged.
-> See `docs/releases/11.1.0.md`.
+> work; v11 made the work legible. v12 is an editorial subtraction: a turn is one
+> assistant article (receipt, answer, deterministic result, findings, one next
+> step), state and identity are said once, Evidence is one pane with one level,
+> and the Composer's file and estate context share one `+` menu. No runtime,
+> schema or tool change. See `docs/releases/12.0.0.md`.
 
 ## Source-of-truth order
 
@@ -16,7 +16,7 @@
    `frontend/src/surfaces.test.tsx`, `frontend/src/tool/ResultView.test.tsx`,
    `frontend/src/estate/estate.test.tsx`,
    `sidecar/tests/test_v500_*.py`, `sidecar/tests/test_v600_kernel.py`,
-   `sidecar/tests/test_v1100_agent_native.py`, the Playwright suite in `frontend/e2e/`.
+   `sidecar/tests/test_v1100_agent_native.py`, `sidecar/tests/test_v1200_*.py`, the Playwright suite in `frontend/e2e/`.
 2. `CLAUDE.md` — the implementation contract.
 3. The canonical documents below.
 4. Release notes and the CHANGELOG — history, not specification.
@@ -31,7 +31,7 @@ When they disagree, the higher one wins; fix the lower one in the same PR.
 | **Direction** | What the user asked — the heading of a Turn, in their words. Editing it sends a new version (a fork). |
 | **Turn** | One Direction and the work it caused; queued, running, completed, failed, cancelled or interrupted. |
 | **Item** | One entry of the append-only stream (message, tool call/progress/output, conclusion, steer, compaction, notice, error). Everything shown is projected from items. |
-| **Conversation** | A task's page: every Turn on the branch, oldest first — the request, the live run trace or its receipt, the rendered result, the answer with its findings and evidence. |
+| **Conversation** | A task's page: every Turn on the branch, oldest first — the request, the live run trace or its quiet receipt, then one assistant article: answer, rendered result, findings and one next step. |
 | **Estate** | What the work established about the user's storage: accounts, known buckets, their posture and how it changed, Issues, notes. |
 | **Issue** | A deterministic observation about a bucket, with a lifecycle (open → fix proposed → resolved; recurred; accepted). |
 | **Fix pack** | An Issue's fix as text the user applies — AWS CLI, Terraform, the API document — with an impact preview drawn from evidence (or an honest *cannot tell*). |

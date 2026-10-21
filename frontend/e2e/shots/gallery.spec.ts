@@ -6,7 +6,7 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
 import { startFakeS3 } from "../fake-s3";
 
 /**
- * Human visual-review contact sheet (v5). No pixel baselines — CI, local
+ * Human visual-review contact sheet (v12). No pixel baselines — CI, local
  * Chromium and font stacks are not raster-identical. Every capture first
  * reaches a real, asserted state against the real Sidecar, then writes a PNG.
  *
@@ -28,7 +28,7 @@ async function shot(page: Page, name: string) {
 
 async function open(page: Page, theme: "dark" | "light", lang: "en" | "zh") {
   await api("/settings", { method: "PATCH", body: JSON.stringify({ language: lang, theme }) });
-  await page.addInitScript(([t, l]) => { localStorage.setItem("saw.theme", t); localStorage.setItem("saw.lang", l); }, [theme, lang]);
+  await page.addInitScript(([t, l]) => { localStorage.setItem("saw.theme", t); localStorage.setItem("saw.lang", l); localStorage.removeItem("sa.pane.w"); }, [theme, lang]);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await expect(page.getByTestId("composer-input")).toBeVisible({ timeout: 30_000 });
@@ -45,7 +45,7 @@ const conclusion = {
   next_steps: ["Show me the fix for acme-www", "Watch this account daily", "Review acme-data lifecycle"],
 };
 
-test("the v11 contact sheet", async ({ page }) => {
+test("the v12 contact sheet", async ({ page }) => {
   test.setTimeout(240_000);
   fs.rmSync(OUT, { recursive: true, force: true });
   await reset();
@@ -56,7 +56,7 @@ test("the v11 contact sheet", async ({ page }) => {
     toolTurn("survey_account", { provider_id: storage }),
     toolTurn("review_bucket_config", { provider_id: storage, bucket: "acme-www" }),
     toolTurn("record_conclusion", conclusion),
-    textTurn("I surveyed **acme-prod** and reviewed `acme-www`.\n\n| Bucket | Public access block | Default encryption |\n|---|---|---|\n| acme-www | missing | none |\n| acme-logs | missing | SSE-S3 |\n| acme-data | missing | none |"),
+    textTurn("I surveyed **acme-prod** and reviewed `acme-www`. Public access is blocked on none of the three buckets, and two have no default encryption."),
     textTurn("Default encryption applies to new objects only; existing ones keep their encryption until rewritten."),
     textTurn("It covers objects written after you enable it."),
   ], { title: "Account survey · acme-prod", deltaDelayMs: 25 });
@@ -75,9 +75,10 @@ test("the v11 contact sheet", async ({ page }) => {
     await expect(page.getByTestId("turn").last()).toContainText("new objects only", { timeout: 30_000 });
     await settled(page);
     await shot(page, "follow-up-dark-en");
-    await page.getByTestId("turn").first().getByTestId("run-trace").click();
     await page.getByTestId("titlebar-sidepane").click();
     await shot(page, "details-dark-en");
+    await page.getByTestId("inspector").getByTestId("evidence-call").first().click();
+    await shot(page, "evidence-open-dark-en");
     await page.keyboard.press("Escape");
 
     const second = page.getByTestId("message").filter({ hasText: "existing objects" });
@@ -107,7 +108,9 @@ test("the v11 contact sheet", async ({ page }) => {
     if (await page.getByRole("button", { name: "Show sidebar" }).count()) {
       await page.getByRole("button", { name: "Show sidebar" }).click();
     }
-    await page.getByTestId("composer").getByRole("button", { name: "Add estate context" }).click();
+    await page.getByTestId("composer-plus").click();
+    await shot(page, "composer-menu-dark-en");
+    await page.getByTestId("composer-menu").getByRole("menuitem", { name: "Add estate context" }).click();
     await expect(page.getByTestId("context-picker")).toBeVisible();
     await shot(page, "context-picker-dark-en");
     await page.keyboard.press("Escape");

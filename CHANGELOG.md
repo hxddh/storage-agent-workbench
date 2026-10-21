@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [12.0.0] - 2026-10-21
+
+_One turn, one article._ See `docs/releases/12.0.0.md`.
+
+### Changed
+
+- A Turn is one assistant article: request, live trace or quiet settled receipt, answer, deterministic result, findings, one next step. The receipt no longer expands, the findings no longer carry a separate Evidence line, and up to three suggestion rows become at most one text line.
+- The title bar no longer repeats state or a progress hairline; the task name appears only while the sidebar is collapsed.
+- Evidence is one level: calls expand in place to their result and raw data, with no second page or Back control; usage is folded at the foot.
+- Composer attach and estate context share one `+` menu, leaving `+`, the model chip and Send at rest.
+- First-run prompt links disappear after the first task; Home content is centred above the dock. Bucket configuration groups missing protections into one row; Settings safety is one folded summary.
+
+### Fixed
+
+- A complete tool result is no longer marked truncated when only the model's enveloped copy is longer than the 24 000-character UI copy; deterministic tables render from the tool result again.
+- Render list cells separate values with ` · ` instead of concatenating them.
+- Sub-second durations read `<1s` / `<1 秒`.
+
 ## [11.1.0] - 2026-10-21
 
 _The window, made quiet._ See `docs/releases/11.1.0.md`.

@@ -124,8 +124,10 @@ describe("v9: the task page", () => {
 
   it("durations read in the reader's language", () => {
     expect(formatDuration(1000)).toBe("1s");
+    expect(formatDuration(250)).toBe("<1s");
     expect(formatDuration(65_000)).toBe("1m 05s");
     expect(formatDuration(1000, "zh")).toBe("1 秒");
+    expect(formatDuration(250, "zh")).toBe("<1 秒");
     expect(formatDuration(65_000, "zh")).toBe("1 分 05 秒");
   });
 });

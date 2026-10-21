@@ -19,6 +19,7 @@ export function formatDuration(ms: number, lang = "en"): string {
   const zh = lang.startsWith("zh");
   const [sec, min, hr] = zh ? [" 秒", " 分 ", " 小时 "] : ["s", "m ", "h "];
   const s = Math.round(ms / 1000);
+  if (ms < 1000) return zh ? "<1 秒" : "<1s";
   if (s < 60) return `${s}${sec}`;
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}${min}${String(s % 60).padStart(2, "0")}${sec}`;

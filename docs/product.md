@@ -18,12 +18,12 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 
 - The **sidebar** is New task, an in-place search, the task list grouped by day, and Settings — nothing else. In a narrow window it overlays the page. A row shows state as a mark: working (pulsing), queued, needs attention; a task the watch opened carries a shield.
 - **⌘K** focuses the sidebar search.
-- The **title bar** names the task and shows its real state; a hairline runs under it while work is live; its right-hand button opens **Evidence**.
-- The **Composer** is the only way to give the Agent work, and it sits in the same dock on Home and on every task: *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. `@` attaches an account, bucket or open Issue as context; a context chip or a file always makes a new request, never a steer. Files attach by button or drop (access logs, inventories). The model chip shows which model the next turn uses; with none set up, Send waits and the chip says where to add one. Stopping keeps what was written so far as the answer. Context is focus, not authorization: the account's bucket/prefix scope is still enforced server-side.
+- The **title bar** is chrome: the task name appears there only when the sidebar is collapsed (the sidebar already names the selected task), and its right-hand button opens **Evidence**. Work state lives in the sidebar row, the live trace and Stop — it is never repeated as a second pill, and there is no progress hairline.
+- The **Composer** is the only way to give the Agent work, and it sits in the same dock on Home and on every task: *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. The `+` menu holds **Attach a file** and **Add estate context** (`@`); a context chip or a file always makes a new request, never a steer. Files attach by menu or drop (access logs, inventories). The model chip shows which model the next turn uses; with none set up, Send waits and the chip says where to add one. Stopping keeps what was written so far as the answer. Context is focus, not authorization: the account's bucket/prefix scope is still enforced server-side.
 
 ### Home — an empty Task
 
-Home is the same window as a Task with no Turns yet: one heading, the docked Composer, three quiet prompt links (*Diagnose an access error*, *Survey my storage account*, *Analyze an access log*) that only fill the Composer, then:
+Home is the same window as a Task with no Turns yet: one heading, the docked Composer, and — only until the first task has been opened on this device — three quiet prompt links (*Diagnose an access error*, *Survey my storage account*, *Analyze an access log*) that only fill the Composer. Then:
 
 - **Getting started** — one sentence when a model or a storage account is missing, each part a link to the right Settings pane.
 - **Needs attention** — one row per kind of open Issue, most severe first, naming every bucket it was found on (three, then *+N*); a bucket opens in the side pane. Below, one quiet line per account: its buckets, when it was last checked, whether it is watched — storage never checked reads *name · not checked yet · Survey* (Survey fills the Composer), with no bucket count.
@@ -38,15 +38,15 @@ An Issue shows **Show fix** and **Verify** (a read-only re-check that can resolv
 
 **Notes** are what you and the Agent want remembered — an owner, an intent, why a setting is deliberate. You add them on a bucket (Enter saves), on an account or for all storage in Settings; the Agent keeps them with its `note` tool; accepting a risk with a reason keeps the reason. Every task starts with the most recent notes as context.
 
-### A task — one conversation, oldest first
+### A task — one conversation, one assistant article
 
-Every request reads top to bottom in the order it was made: the user's message (with any context chips), the **run trace**, the rendered deterministic result, then the answer. While work is live the trace is open and shows every real call — verb, target, progress and result — with commentary and steers inline; when the turn settles it becomes one receipt (*2 checks · 1 finding · 12s*) that expands to the same calls. The result of a survey, listing, configuration review or fix preview is rendered from `tool_output.detail`; the model interprets it rather than retyping it. The findings are a flat list with a severity dot; the turn's successful calls are said once after the list as **Evidence · 2 checks**, or *No direct check* when there were none. This is a turn-level evidence chain, never a claim that each call proves each finding, and it is not repeated on every row. A queued request shows *Queued* with *Withdraw*; a request that needs attention offers *Continue* or *Open Settings*. After the latest answer, up to three recorded next steps appear as suggestions that fill the Composer. A turn without a recorded conclusion shows its answer; nothing is guessed.
+Every request reads top to bottom in the order it was made: the user's message (with any context chips), then **one assistant article**. While work is live the article opens with the **run trace** — every real call, verb, target, progress and result, with commentary and steers inline. When the turn settles the trace becomes one quiet receipt (*2 checks · 1s*) that does not expand; the answer follows, then the rendered deterministic result of a survey, listing, configuration review or fix preview from `tool_output.detail`, then the findings as a flat list with a severity dot, then at most one recorded next step that fills the Composer. There is no second suggestion block and no evidence line repeated under the findings: the title bar's **Evidence** is the one entry to the calls. A queued request shows *Queued* with *Withdraw*; a request that needs attention offers *Continue* or *Open Settings*. A turn without a recorded conclusion shows its answer; nothing is guessed.
 
 A message can be **edited**: that sends a new version of it — a fork of the task at that point — and *1 / 2* switches between versions. Reloading, reconnecting or following up never reorders, drops or duplicates anything: the page is the item stream, merged by sequence.
 
 ### Evidence
 
-The one side pane for a task: *Save report* (the task report in the reader's language, as Markdown), what this turn checked (one row per call, opening to its rendered result, arguments and raw JSON behind a *Raw* fold), attached files, and usage at the foot. It reads as evidence, not a developer inspector; raw payloads are never the default.
+The one side pane for a task, in one scroll: one row per call in the turn. A row opens in place to its rendered result, its arguments and its raw data; there is no second page and no Back control. *Save report* (the task report in the reader's language, as Markdown), attached files and folded usage stay below. It reads as evidence, not a developer inspector; raw payloads are never the default.
 
 ### Quick Ask
 
@@ -54,13 +54,13 @@ A small always-on-top window (⌘⇧Space, the tray, View › Quick Ask) for one
 
 ### Settings
 
-General (theme, language, the safety floor in three points; *Advanced*: skills, the standing-instructions file, the MCP server) · Models (presets for OpenAI, Anthropic, DeepSeek, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint; masked keys; a local model's context window prefilled with 16 384, a hosted one's under *Advanced*; a live test) · Storage accounts (presets for the common services; each account's **Watch** first: Off · 6 h · Daily · Weekly, Check now; the session token and bucket/prefix scope under *Advanced*). Save stays on what was saved and shows its test result.
+General (theme, language, and one folded Safety line — read-only storage, keys stay on this computer, stop any time; *Advanced*: skills, the standing-instructions file, the MCP server) · Models (presets for OpenAI, Anthropic, DeepSeek, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint; masked keys; a local model's context window prefilled with 16 384, a hosted one's under *Advanced*; a live test) · Storage accounts (presets for the common services; each account's **Watch** first: Off · 6 h · Daily · Weekly, Check now; the session token and bucket/prefix scope under *Advanced*). Save stays on what was saved and shows its test result.
 
 ## Principles
 
 - **The estate outlives the task.** Every task starts knowing the accounts, the known buckets, the open Issues and the notes.
 - **Nothing is invented.** Findings, Issues, progress and figures come from tool results and deterministic engines; a gap stays a gap.
 - **Read-only, bounded, stoppable.** No approval prompts, no plan mode, no modes: the one data-moving tool runs inside hard server-side bounds, and Stop ends any work — a stopped or timed-out tool ends at its next check.
-- **The run is legible.** The window shows the calls that actually happened while they happen; deterministic results are rendered, not narrated; a finding carries the checks from its turn or says it has none.
-- **One of everything**: one Agent, one submit path, one stream, one Composer, one side pane, one conversation.
+- **The run is legible.** The window shows the calls that actually happened while they happen; deterministic results are rendered, not narrated; the calls live in one Evidence pane rather than being repeated under the answer.
+- **One of everything**: one Agent, one submit path, one stream, one Composer, one side pane, one conversation, one assistant article.
 - **Native and quiet**: the platform's own chrome, one accent colour, English and Chinese throughout.
