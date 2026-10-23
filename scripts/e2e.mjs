@@ -4,13 +4,16 @@
  *
  *   node scripts/e2e.mjs
  */
-import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron } from 'playwright-core'
 
 const root = new URL('..', import.meta.url).pathname
+if (!existsSync(join(root, 'out/main/index.js'))) {
+  execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' })
+}
 const dataDir = mkdtempSync(join(tmpdir(), 'sa-e2e-'))
 const s3Port = 9110
 const modelPort = 9210

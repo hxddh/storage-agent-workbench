@@ -1,5 +1,11 @@
 # Changelog
 
+## 15.0.1
+
+The first published build. 15.0.0 was tagged but never released: the Linux
+package and the end-to-end job failed on packaging and build order, both fixed
+here.
+
 ## 15.0.0
 
 A complete rebuild. The Python FastAPI sidecar, the Tauri shell and the previous
