@@ -1,5 +1,9 @@
 # Changelog
 
+## 15.0.2
+
+Intel Mac builds alongside Apple silicon. No functional change.
+
 ## 15.0.1
 
 The first published build. 15.0.0 was tagged but never released: the Linux

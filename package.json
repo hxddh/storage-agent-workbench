@@ -1,7 +1,7 @@
 {
   "name": "storage-agent",
   "productName": "Storage Agent",
-  "version": "15.0.1",
+  "version": "15.0.2",
   "description": "A local agent for object storage",
   "license": "Apache-2.0",
   "private": true,
@@ -71,8 +71,20 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ]
     },
     "win": {

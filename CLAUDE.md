@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for Storage Agent 15.0.1. Read
+> Implementation contract for Storage Agent 15.0.2. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes are history.
