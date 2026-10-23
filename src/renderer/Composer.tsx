@@ -106,12 +106,8 @@ export function Composer({
           >
             <Paperclip size={15} strokeWidth={1.7} />
           </button>
-          <button
-            className={`model-chip ${hasModel ? '' : 'warn'}`}
-            type="button"
-            onClick={onOpenSettings}
-          >
-            <span>{hasModel ? (modelLabel ?? 'Model') : t.setModel}</span>
+          <button className="model-chip" type="button" onClick={onOpenSettings}>
+            <span>{hasModel ? (modelLabel ?? 'Model') : 'Model'}</span>
           </button>
           <span className="spacer" />
           {live ? (

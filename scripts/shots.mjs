@@ -52,8 +52,11 @@ async function configure() {
 await page.waitForTimeout(350)
   await page.screenshot({ path: join(out, '01-home-light.png') })
 await configure()
+await page.locator('.sheet-body').evaluate((element) => {
+  element.scrollTop = 0
+})
 await page.waitForTimeout(350)
-  await page.screenshot({ path: join(out, '02-settings-light.png') })
+await page.screenshot({ path: join(out, '02-settings-light.png') })
 await page.getByRole('button', { name: 'Close' }).click()
 await page.locator('.composer textarea').fill('Which buckets are public?')
 await page.keyboard.press('Enter')
