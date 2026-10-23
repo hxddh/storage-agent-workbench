@@ -1,6 +1,6 @@
 # Install
 
-> **Current release baseline: Storage Agent v12.1.0.**
+> **Current release baseline: Storage Agent v13.0.0.**
 >
 > This guide covers the local-first desktop application. Product behavior is documented in [`product.md`](product.md); packaging internals are in [`packaging.md`](packaging.md).
 
@@ -58,10 +58,10 @@ The Tauri desktop shell starts a bundled local Python Sidecar. A short connectin
 
 The product then presents the current Agent Task experience:
 
-- **Delegate** work through the one Agent input;
-- configure model/cloud providers through Settings when needed;
+- ask through the one Agent input;
+- configure models and storage connections through Settings when needed;
 - read-only deterministic/offline storage-error triage remains available for supported errors even without a model provider;
-- active work becomes a durable Agent Task with real Execution, Work Results, Decisions when required, and contextual Review.
+- each request becomes a durable Agent Task: its objective, real read-only calls, deterministic result, interpretation, findings and Evidence.
 
 If the Sidecar cannot start, treat that as a runtime/packaging fault rather than repeatedly creating new Tasks.
 

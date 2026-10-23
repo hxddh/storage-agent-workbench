@@ -38,6 +38,7 @@ test("a message becomes a conversation: the work while live, the answer, Evidenc
   await settled(page);
 
   await expect(page.getByTestId("message")).toHaveText(/What evidence do I have attached\?/);
+  await expect(page.getByTestId("task-page").getByRole("heading", { level: 1 })).toHaveText("What evidence do I have attached?");
   await expect(page.getByTestId("run-trace")).toContainText("1 check");
   const answer = page.getByTestId("answer");
   await expect(answer.locator("table")).toBeVisible();

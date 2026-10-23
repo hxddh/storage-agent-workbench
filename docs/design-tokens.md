@@ -1,22 +1,22 @@
 # Design tokens
 
-> **Storage Agent v12 — design system v6, one article.**
+> **Storage Agent v13 — design system v7, one workspace.**
 >
 > Presentation contract for the native Agent Task window. Tokens never invent
 > runtime state, progress, or capabilities.
 
-v6 is a subtraction pass after the v11 release review. The window had drifted
-into boxes: a glowing Composer, a bordered row per finding, a full-width card
-per suggestion, boxed notes, boxed issue rows, an inspector of uppercase labels,
-and a warm-paper palette that fought the blue live state. v6 keeps one surface —
-the document — and lets typography and hairlines carry hierarchy.
+v7 is the Agent-first subtraction. The window no longer presents storage as a
+product object: there is no Storage page, bucket index, bucket sheet, estate
+picker or open-Issue counter. A Task is a workspace — objective, deterministic
+artifact, interpretation, findings and a quiet work receipt — and the Agent
+resolves accounts and buckets from the request. The estate remains its memory.
 
 The information hierarchy follows the current agent products rather than their
-chrome: Codex's one document and bottom Composer, Cursor's inline context and
-compact tool rows, Qoder's single conversation plus one task monitor. What we
-take is restraint: one fixed rail, one reading column, one input, work shown as
-a trace and results shown as a document. We do not take an IDE file tree, task
-cards, a plan canvas, or a second navigation tree.
+chrome: Codex's one task and one input, Cursor's compact tool rows and
+click-to-inspect evidence, Qoder's single task monitor when needed. What we take
+is restraint: one fixed rail, one workspace, one input, work shown as a trace
+and results shown as a document. We do not take an IDE file tree, a resource
+browser, task cards, a plan canvas, or a second navigation tree.
 
 ## Source of truth
 
@@ -26,7 +26,7 @@ cards, a plan canvas, or a second navigation tree.
 | Tailwind mapping | `frontend/tailwind.config.js` |
 | Component library (Button, IconButton, Kbd, Badge, StatusDot, Segmented, Field / TextInput / Select) | `frontend/src/components/ui.tsx` |
 | Component styles (`ui-*`), menus, scrim, keyframes | `frontend/src/styles/components.css` |
-| Window, sidebar, title bar, Composer, home, Task page, side pane, Settings, Quick Ask | `frontend/src/styles/app.css` |
+| Window, sidebar, title bar, Composer, home, Task workspace, Evidence, Settings, Quick Ask | `frontend/src/styles/app.css` |
 | Prose, tables, figures, toasts | `frontend/src/styles/document.css` |
 | Rendered Markdown | `frontend/src/styles/markdown.css` |
 | Figures (`ChartFrame`, marks, legend, tooltip) | `frontend/src/viz/marks.tsx` |
@@ -141,23 +141,24 @@ is resizable from 352 to 880 px and starts at 480 px. `--header-h: 2.75rem`
 
 Home is a start, not a dashboard: one 24 px heading, the Composer centred
 directly beneath it, and nothing else in the document. There are no prompt
-links, readiness paragraphs, cards, account lines or issue tables on Home; the
-estate lives in the Storage sheet opened from the sidebar. The heading and
-Composer share one measured column and stay centred in the viewport.
+links, readiness paragraphs, cards, account lines, issue tables or connection
+rows on Home. The heading and Composer share one measured column and stay
+centred in the viewport.
 
-The Task page is request → **one assistant article**: receipt → answer →
-rendered result → findings. The trace is open while live (real calls and real
-progress below it) and becomes one quiet receipt when settled; the receipt does
-not expand. Deterministic results render from `tool_output.detail` as part of the
-document: a table has a header rule and row rules, not a card. Findings are a
-flat list with a severity dot and no evidence line: the title bar's Evidence is
-the one entry to the calls. No next-step prompt is painted.
+The Task page is an **Agent workspace**, oldest first. Each Turn is the
+objective, then the deterministic result (if any), the short interpretation,
+findings, and one quiet work receipt at the end. The trace is open while live
+(real calls and real progress) and becomes the receipt when settled; the receipt
+does not expand. Deterministic results render from `tool_output.detail` as part
+of the document: a table has a header rule and row rules, not a card. There is no
+user/assistant bubble and no next-step prompt.
 
 Evidence is the one side pane, one level: a human heading, one row per call
-(verb, target, time, summary), which expands in place to the rendered result and
-raw data; Save report, attached files and usage folded at the foot. Opening a
-call from the live trace opens that call, not the top of a long list. There is no
-second page and no Back control. It is not an inspector of uppercase labels.
+(verb, target, time, summary), which expands in place to its arguments and raw
+data; Save report, attached files and usage folded at the foot. Opening a call
+from the live trace opens that call, not the top of a long list. There is no
+second page and no Back control. It is the raw record, not a second rendered
+result.
 
 ## Components
 
@@ -174,13 +175,11 @@ lives in `styles/components.css`.
 - `Field` + `TextInput` / `Select`: 32 px, one hairline, focus is one blue ring.
 
 The Composer is the only Agent input: centred on Home, docked at the foot of a
-task. Its border is neutral at rest and on focus; there is no glow. The
-send control is a small accent circle only when ready. Three controls at rest:
-the `+` menu (Attach a file · Add estate context), the model chip and Send; a
-context picker opened from the menu draws its focus ring on the popover, not as
-a second box around the search field. The model chip is a text control, not a
-pill. Selected context reads as a 24 px text token on `--hover`, not a bordered
-card.
+task. Its border is neutral at rest and on focus; there is no glow. The send
+control is a small accent circle only when ready. Three controls at rest: the
+paperclip (attach a file), the model chip and Send. There is no estate picker;
+the Agent resolves account and bucket names from the request. The model chip is
+a text control, not a pill.
 
 ## Motion
 
@@ -212,7 +211,7 @@ and ⌘. stops live work.
 ## Non-goals
 
 Tokens must not imply a second Agent, a synthetic plan or stepper, an approval
-pause, a status bar, a permanent inspector column, a card per content block, or
-a second presentation lifecycle. The accent never signals status; status colours
-never mark series or decoration. The side pane is the one place a Task's durable
-outputs open.
+pause, a status bar, a permanent inspector column, a card per content block, a
+storage resource browser or a second presentation lifecycle. The accent never
+signals status; status colours never mark series or decoration. The side pane is
+the one place a Task's raw Evidence opens.

@@ -54,6 +54,5 @@ cargo tauri build    # or: cargo tauri dev
   hardened runtime, not notarized) — see [../docs/signing.md](../docs/signing.md).
 - The shell's custom commands are `get_sidecar_url`, `get_sidecar_token`,
   `hide_quick`, `save_report`, `open_external`, `notify`, `set_window_title`,
-  `open_app_folder`, `open_task_in_main` and `set_tray_status`; there is no user
-  shell access.
+  `open_app_folder` and `open_task_in_main`; there is no user shell access.
 - No auto-update yet.

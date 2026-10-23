@@ -22,9 +22,9 @@ If the release changes the product model or ownership boundaries, describe the n
 
 Do **not** describe aspirational multi-agent workers, plans, terminal/browser control, storage mutation, or other capability the runtime does not actually implement.
 
-For releases that preserve the v0.93 model, a concise statement is enough:
+For releases that preserve the current model, a concise statement is enough:
 
-> Storage Agent remains organized around durable Agent Tasks: Direction → real Execution → Decision when required → Work Result → reviewable Artifacts, with one Delegate/Steer/Stop control path.
+> Storage Agent remains organized around durable Agent Tasks: Direction → real read-only tool calls → deterministic result → interpretation → findings → reviewable Evidence, with one Send/Add to the request/Stop control path.
 
 ## Download
 
@@ -57,7 +57,7 @@ Summarize only security behavior changed by the release. The baseline remains:
 - no secret values in model prompts or durable execution/evidence records;
 - typed, bounded, read-only storage capabilities;
 - no generic shell/arbitrary subprocess/destructive storage tool;
-- explicit Decision before confirmation-gated cloud data movement;
+- no approval/Decision step: the bounded evidence import runs directly and Stop ends it;
 - bounded/sanitized model and Tool context;
 - no chain-of-thought persistence/exposure.
 

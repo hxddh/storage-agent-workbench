@@ -27,6 +27,10 @@ from ..security.redaction import scrub_text, scrub_value
 from . import safety
 
 _UI_DETAIL_CHARS = 24_000
+# A later Turn does not need the full deterministic table to reason about the
+# conversation: the Task keeps it for the reader, and query_estate/inspect_*
+# can retrieve any row again. This is the model-facing replay budget only.
+_MODEL_HISTORY_CHARS = 4_000
 _PROGRESS_MIN_INTERVAL_S = 1.0
 _PROGRESS_MAX_PER_CALL = 120
 _EVIDENCE_EXCLUDE = {"record_conclusion", "read_skill", "note"}
@@ -41,6 +45,72 @@ def on_tool_output(hook: ToolOutputHook) -> ToolOutputHook:
     {task_id, turn_id, tool, args, ok, result}. Hooks must never raise."""
     _hooks.append(hook)
     return hook
+
+
+def _history_digest(name: str, result: Any, summary: str) -> str | None:
+    """A compact, replay-only tool result for large deterministic outputs.
+
+    The current Turn still reads the complete result; this is what later Turns
+    see instead of a full survey table. It names the facts needed to continue
+    the conversation and points back to the tool for detail. The envelope is
+    preserved because the digest is still third-party data.
+    """
+    if not isinstance(result, dict):
+        return None
+    doc: dict[str, Any]
+    if name == "survey_account" and isinstance(result.get("buckets"), dict):
+        table = result["buckets"]
+        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
+        doc = {
+            "success": result.get("success"),
+            "issues": (result.get("issues") or [])[:12],
+            "coverage": result.get("coverage") or {},
+            "estate_changes": result.get("estate_changes"),
+            "buckets": {
+                "count": len(rows) + int(table.get("rows_omitted") or 0),
+                "columns": table.get("columns") or [],
+                "rows_omitted": int(table.get("rows_omitted") or 0),
+            },
+            "note": "Full bucket rows stay in the Task. Use query_estate or a narrower tool for a row.",
+        }
+    elif name == "query_estate":
+        buckets = result.get("buckets") if isinstance(result.get("buckets"), list) else []
+        issues = result.get("issues") if isinstance(result.get("issues"), list) else []
+        doc = {
+            "success": result.get("success"),
+            "bucket_count": result.get("bucket_count", len(buckets)),
+            "buckets": [str(b.get("bucket") or b.get("name") or "") for b in buckets[:80] if isinstance(b, dict)],
+            "issues": issues[:40],
+            "notes": result.get("notes") or [],
+            "issue_events": result.get("issue_events") or [],
+            "note": "Bucket names and issue rows are summarized for later turns; query again for full detail.",
+        }
+    elif name == "list_buckets":
+        buckets = result.get("buckets") if isinstance(result.get("buckets"), list) else []
+        doc = {"success": result.get("success"), "buckets": [
+            str(b.get("bucket") or b.get("name") or "") for b in buckets[:120] if isinstance(b, dict)]}
+    elif name == "review_bucket_config":
+        sections = result.get("sections")
+        doc = {
+            "success": result.get("success"), "bucket": result.get("bucket"),
+            "findings": result.get("findings") or [],
+            "sections": list(sections) if isinstance(sections, dict) else [],
+            "note": "Configuration values are in the Task; inspect the bucket again for a full value.",
+        }
+    else:
+        # Unknown large payloads: retain the summary and an honest pointer,
+        # never a silently partial JSON object.
+        doc = {"summary": summary, "note": "The complete result stays in the Task; call the tool again for detail."}
+    raw = _json(doc)
+    # Keep the replay a valid JSON document: trim the lists, never cut inside
+    # the JSON text. The Task still has every row.
+    for key in ("issues", "buckets", "notes", "issue_events"):
+        while len(safety.envelope(raw)) > _MODEL_HISTORY_CHARS and isinstance(doc.get(key), list) and doc[key]:
+            doc[key] = doc[key][: max(0, len(doc[key]) // 2)]
+            raw = _json(doc)
+    if len(safety.envelope(raw)) > _MODEL_HISTORY_CHARS:
+        raw = _json({"summary": summary, "note": "The complete result stays in the Task; call the tool again."})
+    return safety.envelope(raw)
 
 
 class Finding(BaseModel):
@@ -224,6 +294,11 @@ class Recorder:
             text = clean if isinstance(clean, str) else _json(clean)
             if model_output is None:
                 model_output = text[:60_000]
+            # Keep the full deterministic result for the window, but let later
+            # Turns replay a digest. This is the main token-cost reduction for
+            # follow-ups: the current Turn still sees what it actually read.
+            if model_output and len(model_output) > _MODEL_HISTORY_CHARS:
+                model_output = _history_digest(name, clean, clean_summary) or model_output
             detail = text[:_UI_DETAIL_CHARS]
         # `detail_truncated` is about the UI copy, not about how long the model's
         # enveloped output was: a complete JSON result must still render as a

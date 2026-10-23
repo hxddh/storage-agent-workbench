@@ -46,7 +46,7 @@ describe("the task page", () => {
   it("reads as one assistant article: receipt, answer, findings, no follow-up", async () => {
     await act(async () => { render(wrap(<TaskPage model={modelOf()} setSnapshot={() => {}} />)); });
     expect(screen.getByTestId("message")).toHaveTextContent("Survey my account");
-    expect(screen.getByTestId("assistant")).toBeInTheDocument();
+    expect(screen.getByTestId("turn-body")).toBeInTheDocument();
     expect(screen.getByTestId("run-trace")).toHaveTextContent("1 check");
     const answer = screen.getByTestId("answer");
     expect(answer).toHaveTextContent("full");
@@ -163,16 +163,12 @@ describe("the task page", () => {
 });
 
 describe("the Composer", () => {
-  it("puts attach and estate context behind one add menu", async () => {
+  it("has one attach control, not an estate picker", async () => {
     render(wrap(<Composer taskId="task-1" busy={false} />));
     await act(async () => {});
+    expect(screen.getByTestId("composer-attach")).toBeInTheDocument();
     expect(screen.queryByTestId("composer-menu")).toBeNull();
-    fireEvent.click(screen.getByTestId("composer-plus"));
-    const menu = screen.getByTestId("composer-menu");
-    expect(menu).toHaveTextContent("Attach a file");
-    expect(menu).toHaveTextContent("Add estate context");
-    fireEvent.pointerDown(document.body);
-    expect(screen.queryByTestId("composer-menu")).toBeNull();
+    expect(screen.queryByTestId("context-picker")).toBeNull();
   });
 
   it("sends at rest; adds to the running request with Stop beside it while work is live", async () => {
@@ -185,52 +181,17 @@ describe("the Composer", () => {
     expect(screen.getByTestId("composer-stop")).toBeInTheDocument();
   });
 
-  it("attaches an estate bucket as context and sends the ref, never a sentence", async () => {
-    const calls: Array<{ url: string; init?: RequestInit }> = [];
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
-      calls.push({ url, init });
-      let body: unknown = {};
-      if (url.includes("/providers/models")) body = model;
-      else if (url.includes("/providers/clouds")) body = [{ id: "p1", name: "acme-prod", provider_type: "s3-compatible",
-        endpoint_url: null, region: null, addressing_style: null, signature_version: null, allowed_buckets: [],
-        allowed_prefixes: [], has_access_key: true, has_secret_key: true, has_session_token: false }];
-      else if (url.includes("/estate/providers/p1/buckets")) body = { buckets: [{ bucket: "acme-www", region: "us-east-1",
-        last_checked_at: null, open_issues: { high: 0, medium: 0, low: 0 } }], notes: [] };
-      else if (url.includes("/estate")) body = { providers: [], bucket_count: 0, issues: [], open_issue_count: 0, last_watch_at: null };
-      else if (url.endsWith("/tasks")) body = { task: { id: "task-new" } };
-      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
-    }));
-    render(wrap(<Composer taskId={null} busy={false} />));
-    await act(async () => {});
-    const input = screen.getByTestId("composer-input");
-    fireEvent.change(input, { target: { value: "@" } });
-    await act(async () => {});
-    const option = await screen.findByRole("option", { name: /acme-www/ });
-    fireEvent.click(option);
-    expect(screen.getByText("acme-www")).toBeInTheDocument();
-    fireEvent.change(input, { target: { value: "Review this bucket" } });
-    fireEvent.click(screen.getByTestId("composer-send"));
-    await act(async () => {});
-    const submit = calls.find((c) => c.url.endsWith("/tasks") && c.init?.method === "POST");
-    expect(submit).toBeTruthy();
-    const body = JSON.parse(String(submit?.init?.body));
-    expect(body.context).toEqual([{ kind: "bucket", provider_id: "p1", bucket: "acme-www" }]);
-    expect(body.direction).toBe("Review this bucket");
-  });
-
-  it("keeps the estate context and attachments when a message is edited", async () => {
+  it("keeps attachments when a message is edited", async () => {
     function Harness() {
       const app = useApp();
       useEffect(() => {
         app.setEditing({ turnId: "t1", parentTurnId: null, text: "Why is acme-www public?",
-          context: [{ kind: "bucket", provider_id: "p1", bucket: "acme-www", account: "acme-prod" }],
           attachments: [{ dataset_id: "d1", filename: "access.log", type: "access_log" }] });
       }, []); // eslint-disable-line react-hooks/exhaustive-deps
       return <Composer taskId="task-1" busy={false} />;
     }
     render(wrap(<Harness />));
     await act(async () => {});
-    expect(screen.getByText("acme-www")).toBeInTheDocument();
     expect(screen.getByTestId("kept-attachment")).toHaveTextContent("access.log");
   });
 

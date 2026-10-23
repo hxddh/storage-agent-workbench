@@ -1,6 +1,6 @@
 # Release
 
-> **Current process baseline: Storage Agent v12.1.0.**
+> **Current process baseline: Storage Agent v13.0.0.**
 >
 > A release is a build of one exact verified source SHA. Release notes become historical records after publication; they do not override the current architecture contracts in `docs/README.md`, `product.md`, `architecture.md`, or `CLAUDE.md`.
 
@@ -45,11 +45,11 @@ For every release candidate, `release-smoke-test.md` is the product acceptance c
 
 - Agent Task as the primary application object;
 - one Send / Add to the request / Stop control path;
-- real Execution rather than synthetic Agent chrome;
-- durable answers that survive reload, in one conversation, oldest first;
+- real read-only tool calls rather than synthetic Agent chrome;
+- durable answers that survive reload, in one workspace, oldest first;
 - no approval pause and no plan card: the one data-moving tool (`import_evidence`) runs inside its server-side bounds and Stop ends it;
 - automatic continuation of interrupted work after a restart (manual Resume only when no model is usable);
-- exact follow-ups (nothing reordered, dropped or duplicated) and one Evidence pane (report, checks, results, files, usage);
+- exact follow-ups (nothing reordered, dropped or duplicated) and one Evidence pane (raw calls, report, files, usage);
 - real per-task in-flight state across task switching;
 - current safety/secret boundaries.
 

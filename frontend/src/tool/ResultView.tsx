@@ -80,12 +80,22 @@ function humanize(value: unknown): string {
   return String(value).replace(/_/g, " ").replace(/\s*,\s*/g, " · ");
 }
 
-function Table({ columns, common, rows, omitted }: { columns: string[]; common: Json; rows: unknown[][]; omitted: number }) {
+function Table({ columns, common, rows, omitted, issues }: {
+  columns: string[]; common: Json; rows: unknown[][]; omitted: number; issues: SurveyIssue[];
+}) {
   const { t } = useI18n();
   const { copied, copy } = useCopy();
   const head = columns.slice(0, 9);
   const cut = columns.length - head.length;
-  const tsv = [head.join("\t"), ...rows.map((r) => head.map((_, i) => String(r[i] ?? "")).join("\t"))].join("\n");
+  const titles = new Map(issues.flatMap((i) => (i.code && i.title ? [[i.code, i.title] as const] : [])));
+  // A survey row carries issue codes; the reader gets the estate's own titles.
+  const cell = (value: unknown, column: string) => {
+    if (column === "issues" && Array.isArray(value)) {
+      return value.map((v) => titles.get(String(v)) ?? humanize(v)).join(" · ");
+    }
+    return humanize(value);
+  };
+  const tsv = [head.join("\t"), ...rows.map((r) => head.map((c, i) => cell(r[i], c)).join("\t"))].join("\n");
   return (
     <div className="result-table-wrap">
       <div className="result-table-head">
@@ -98,7 +108,7 @@ function Table({ columns, common, rows, omitted }: { columns: string[]; common: 
         <thead><tr>{head.map((c) => <th key={c}>{label(c, t)}</th>)}</tr></thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>{head.map((_, j) => <td key={j} data-label={label(head[j], t)} data-num={typeof r[j] === "number" ? "true" : undefined}>{humanize(r[j])}</td>)}</tr>
+            <tr key={i}>{head.map((c, j) => <td key={j} data-label={label(c, t)} data-num={typeof r[j] === "number" ? "true" : undefined}>{cell(r[j], c)}</td>)}</tr>
           ))}
         </tbody>
       </table>
@@ -154,7 +164,7 @@ export function ResultView({ row }: { row: { name: string; detail: string | null
   if (view.kind === "survey") {
     return (
       <div className="tool-result" data-kind="survey" data-testid="tool-result">
-        <Table columns={view.columns} common={view.common} rows={view.rows} omitted={view.omitted} />
+        <Table columns={view.columns} common={view.common} rows={view.rows} omitted={view.omitted} issues={view.issues} />
         <Coverage coverage={view.coverage} />
       </div>
     );
@@ -190,9 +200,6 @@ export function ResultView({ row }: { row: { name: string; detail: string | null
     return (
       <div className="tool-result" data-kind="config" data-testid="tool-result">
         <Issues issues={view.findings.map((f) => ({ title: String(f.title ?? ""), severity: String(f.severity ?? "") }))} />
-        <div className="result-chips">
-          {Object.keys(view.sections).map((s) => <span key={s} className="result-chip">{s.replace(/_/g, " ")}</span>)}
-        </div>
       </div>
     );
   }

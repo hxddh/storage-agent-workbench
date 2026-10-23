@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import type { CloudProvider, ModelProvider, Settings as SettingsData, Watch } from "../api/types";
-import { Notes } from "../estate/Notes";
 import { Icon } from "../components/icons";
 import { Badge, Button, Field, IconButton, Segmented, Select, StatusDot, TextInput } from "../components/ui";
 import { useToast } from "../components/Toast";
@@ -13,10 +12,10 @@ import { useApp } from "../shell/context";
 import { useTheme, type Theme } from "../theme";
 import { CLOUD_PRESETS, MODEL_PRESETS, cloudEndpoint, isLocalProvider, parseList } from "./presets";
 
-const SECTIONS = ["general", "models", "storage"] as const;
+const SECTIONS = ["general", "models", "connections"] as const;
 type SectionId = (typeof SECTIONS)[number];
 const LABEL: Record<SectionId, string> = {
-  general: "settings.general", models: "settings.models", storage: "settings.storage",
+  general: "settings.general", models: "settings.models", connections: "settings.connections",
 };
 
 /** Settings: one centred dialog of compact preference panes. Secrets go in, never come out. */
@@ -54,7 +53,7 @@ export function Settings() {
         <div className="settings-pane-body" ref={body}>
           {section === "general" ? <General /> : null}
           {section === "models" ? <Models /> : null}
-          {section === "storage" ? <Storage /> : null}
+          {section === "connections" ? <Connections /> : null}
         </div>
       </div>
     </dialog>
@@ -281,9 +280,9 @@ function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
   );
 }
 
-// --- storage accounts -----------------------------------------------------------------
+// --- connections ----------------------------------------------------------------------
 
-function Storage() {
+function Connections() {
   const { t } = useI18n();
   const app = useApp();
   const { editing, probe, open, saved } = useEditing(app.clouds);
@@ -299,19 +298,13 @@ function Storage() {
             <small>{CLOUD_PRESETS.find((p) => p.providerType === c.provider_type)?.label ?? c.provider_type}</small>
           </button>
         ))}
-        <Button size="sm" icon="plus" onClick={() => open("new")} data-testid="add-storage">{t("settings.add")}</Button>
-        {list.length === 0 && !editing ? <p className="quiet-note">{t("settings.empty.storage")}</p> : null}
-        {list.length ? (
-          <details className="fold">
-            <summary>{t("notes.general")}</summary>
-            <Notes scope={{}} />
-          </details>
-        ) : null}
+        <Button size="sm" icon="plus" onClick={() => open("new")} data-testid="add-connection">{t("settings.add")}</Button>
+        {list.length === 0 && !editing ? <p className="quiet-note">{t("settings.empty.connections")}</p> : null}
       </div>
       {editing ? <CloudEditor key={editing === "new" ? "new" : editing.id} cloud={editing === "new" ? null : editing}
         initialProbe={probe}
-        onSaved={(from, c, p) => { saved(from, c, p); void app.reloadProviders(); app.estateChanged(); }}
-        onDeleted={() => { open(null); void app.reloadProviders(); app.estateChanged(); }} /> : null}
+        onSaved={(from, c, p) => { saved(from, c, p); void app.reloadProviders(); }}
+        onDeleted={() => { open(null); void app.reloadProviders(); }} /> : null}
     </div>
   );
 }
@@ -413,12 +406,6 @@ function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
           }}>{t("settings.delete")}</Button> : null}
         </div>
       </form>
-      {cloud ? (
-        <div className="pref-group">
-          <h4 className="pref-group-title">{t("notes.account")}</h4>
-          <Notes scope={{ providerId: cloud.id }} accountOnly />
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -432,7 +419,6 @@ const WATCH_OPTIONS = [
 
 function WatchControl({ providerId }: { providerId: string }) {
   const { t } = useI18n();
-  const app = useApp();
   const toast = useToast();
   const [watch, setWatch] = useState<Watch | null>(null);
   useEffect(() => { api.watch(providerId).then(setWatch).catch(() => setWatch(null)); }, [providerId]);
@@ -450,7 +436,7 @@ function WatchControl({ providerId }: { providerId: string }) {
         onChange={(v) => {
           const o = WATCH_OPTIONS.find((x) => x.value === v)!;
           void api.setWatch(providerId, o.hours > 0, o.hours || watch.interval_hours)
-            .then((w) => { setWatch(w); app.estateChanged(); }, (e) => toast.error(e instanceof Error ? e.message : String(e)));
+            .then(setWatch, (e) => toast.error(e instanceof Error ? e.message : String(e)));
         }}
         options={WATCH_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))} />
       <p className="quiet-note">{t("watch.note")}</p>

@@ -5,7 +5,7 @@ test.beforeEach(reset);
 
 test("a fresh install is one canvas and one Composer, and starts nothing on its own", async ({ page }) => {
   await boot(page);
-  await expect(page.getByTestId("home").getByRole("heading", { level: 1 })).toHaveText("Ask about your storage.");
+  await expect(page.getByTestId("home").getByRole("heading", { level: 1 })).toHaveText("What should I look into?");
   await expect(page.getByTestId("composer")).toBeVisible();
   await expect(page.getByTestId("readiness")).toHaveCount(0);
   await expect(page.getByTestId("needs-care")).toHaveCount(0);

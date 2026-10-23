@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [13.0.0] - 2026-10-23
+
+_Storage is a capability, not a page._ See `docs/releases/13.0.0.md`.
+
+### Changed
+
+- Removed the Storage page, bucket page, estate picker, context chips and open-Issue counter from the window. The sidebar is New task, search, the task list and Settings; the estate is reached through the Agent.
+- A Task is a result-first workspace: objective, deterministic result, interpretation, findings, quiet receipt. No user/assistant bubbles, no next-step prompt and no second result in Evidence.
+- Evidence is the raw record: one row per call expands to its arguments and output; Save report, files and usage follow.
+- The Composer is one behaviour: paperclip, model chip and Send (Add to the request and Stop while live). There is no `@` picker; a file always creates a queued Direction.
+- Settings gains **Connections** (storage services) and drops the Notes surface. On a narrow window Settings fills the screen.
+- Later Turns replay a compact, enveloped digest of large deterministic tool results while the full result stays in the item stream. The current Turn still reads the complete result.
+- Home no longer repeats the greeting as the Composer placeholder; the sidebar mark is the Agent spark.
+
+### Fixed
+
+- Dead storage-sheet, bucket, issue, note and context styles no longer ship.
+
 ## [12.1.0] - 2026-10-21
 
 _A quiet start._ See `docs/releases/12.1.0.md`.

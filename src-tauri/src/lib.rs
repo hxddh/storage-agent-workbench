@@ -362,16 +362,6 @@ fn open_task_in_main(app: tauri::AppHandle, task_id: String) -> Result<(), Strin
     Ok(())
 }
 
-/// The tray item's tooltip carries the estate at a glance ("3 issues need care").
-#[tauri::command]
-fn set_tray_status(app: tauri::AppHandle, text: String) -> Result<(), String> {
-    let text: String = text.chars().take(120).collect();
-    if let Some(tray) = app.tray_by_id("main-tray") {
-        tray.set_tooltip(Some(text)).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
 fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "tray-open", "Open Storage Agent", true, None::<&str>)?;
     let quick = MenuItem::with_id(app, "tray-quick", "Quick Ask", true, Some(QUICK_SHORTCUT))?;
@@ -761,7 +751,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![get_sidecar_url, get_sidecar_token,
                                                  hide_quick, save_report, open_external, notify,
                                                  set_window_title, open_app_folder,
-                                                 open_task_in_main, set_tray_status])
+                                                 open_task_in_main])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {

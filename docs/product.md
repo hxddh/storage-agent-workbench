@@ -1,6 +1,6 @@
 # Product
 
-Storage Agent is a local-first desktop Agent that looks after object storage — AWS S3 and every S3-compatible service (R2, MinIO, OSS, COS, BOS, TOS, B2, GCS interop, custom endpoints). The user delegates work in plain language; the Agent investigates with read-only, bounded tools, answers with evidence, and remembers what it learned about the storage *estate* between tasks.
+Storage Agent is a local-first desktop Agent for object storage — AWS S3 and every S3-compatible service (R2, MinIO, OSS, COS, BOS, TOS, B2, GCS interop, custom endpoints). The user delegates work in plain language; the Agent investigates with read-only, bounded tools, answers with evidence, and remembers what it learned about the storage estate between tasks.
 
 It is not a chatbot, a storage console, a ticket system or a coding agent. It never writes to storage: fixes are text the user applies with their own credentials.
 
@@ -10,16 +10,19 @@ It is not a chatbot, a storage console, a ticket system or a coding agent. It ne
 - **Review**: one bucket's configuration, or a survey of every bucket in an account — exposure, encryption, public access block, lifecycle, versioning, logging.
 - **Analyze**: an access log or inventory the user attaches, or evidence the Agent imports from a source the survey discovered (bounded).
 - **Estimate**: storage-class mix (bytes per class) over time under candidate lifecycle rules. It never quotes a price.
-- **Look after**: the estate keeps known accounts, buckets, how their posture changed, Issues and notes; each Issue has a fix to apply (CLI, Terraform or the document) with a preview of what it would change, a read-only Verify that closes it, and it reopens when the problem comes back. A watch can sweep an account on a schedule and open a task only when something new turns up.
+- **Look after**: the Agent's estate memory keeps known accounts, buckets, posture changes, Issues and notes. A watch can sweep an account on a schedule and open a task only when something new turns up. Ask the Agent for a fix, a re-check or what changed; those are work, not a separate admin console.
 
 ## The window
 
-**Sidebar · title bar · one conversation · one Composer**, plus one closable side pane.
+**Sidebar · title bar · one Agent workspace · one Composer**, plus one closable **Evidence** pane.
 
-- The **sidebar** is New task, an in-place search, the task list grouped by day, **Storage** and Settings — nothing else. Storage carries the estate's open-Issue count. In a narrow window it overlays the page. A row shows state as a mark: working (pulsing), queued, needs attention; a task the watch opened carries a shield.
+> The Task is the window's object. The estate is the Agent's memory. Storage is a capability, not a page.
+
+- The **sidebar** is New task, an in-place search, the task list grouped by day, and Settings — nothing else. There is no Storage or Bucket entry. In a narrow window it overlays the page. A row shows state as a mark: working (pulsing), queued, needs attention; a task the watch opened carries a shield.
 - **⌘K** focuses the sidebar search.
-- The **title bar** is chrome: the task name appears there only when the sidebar is collapsed (the sidebar already names the selected task), and its right-hand button opens **Evidence**. Work state lives in the sidebar row, the live trace and Stop — it is never repeated as a second pill, and there is no progress hairline.
-- The **Composer** is the only way to give the Agent work. It is centred on Home and docked at the foot of a task; it is one component with one behaviour. *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. The `+` menu holds **Attach a file** and **Add estate context** (`@`); a context chip or a file always makes a new request, never a steer. Files attach by menu or drop (access logs, inventories). The model chip shows which model the next turn uses; with none set up, Send waits and the chip says where to add one. Stopping keeps what was written so far as the answer. Context is focus, not authorization: the account's bucket/prefix scope is still enforced server-side.
+- The **title bar** is chrome: the task name appears there only when the sidebar is collapsed, and its right-hand button opens **Evidence**. Work state lives in the sidebar row, the live workspace and Stop — never as a second pill or progress hairline.
+- The **Composer** is the only way to give the Agent work. It is centred on Home and docked at the foot of a task; one component, one behaviour. *Send* at rest; while it works, *Add to the request* (a steer) and *Stop*. It has a paperclip for files, the model chip and Send. There is no `@` estate picker and no account/bucket tree: the user names what they mean, and the Agent resolves it from the estate; if the request is ambiguous it asks.
+- The model chip shows which model the next turn uses; with none set up, Send waits and the chip says where to add one. Stopping keeps what was written so far as the answer.
 
 ### Home — a start, not a dashboard
 
@@ -27,31 +30,28 @@ Home is one sentence, one Composer, and nothing to scan first:
 
 - the greeting is the page's one `<h1>`;
 - the Composer sits directly beneath it, in the reading column;
-- there are no starter cards, prompt links, readiness paragraphs, account lines or issue tables on Home.
+- there are no starter cards, prompt links, readiness paragraphs, account lines, issue tables, connection rows or bucket indexes.
 
-Everything about the estate lives one click away under **Storage** in the sidebar. A reader can ask immediately, or open Storage to see accounts and what needs attention. Nothing on Home submits work on its own.
+The Agent resolves the estate from the request. Nothing on Home submits work on its own.
 
-### Storage
+### A task — one workspace
 
-The **Storage sheet** (the side pane) is the estate surface: one row per account with its buckets, last check and watch mark, then **Needs attention** — one row per kind of open Issue, most severe first, naming every bucket it was found on (three, then *+N*). The bucket count opens a folded bucket index; a bucket name opens its sheet, including a healthy bucket with no Issue. When no account has been checked, the sheet says so; an unchecked account offers *Survey*, which closes the sheet and fills the Composer. The sheet is read-only and never submits work.
+A Turn is the objective, then one workspace section:
 
-### A bucket
+1. **Result** — the deterministic artifact the tool returned (survey table, listing, configuration view, fix preview), when there is one.
+2. **Interpretation** — the model's answer, kept to the decision and what it means; it does not retype the artifact.
+3. **Findings** — a flat list of severity dots, when the Agent recorded them.
+4. **Work** — one quiet receipt (`2 checks · 1s`) at the end. While work is live, the real calls, progress, commentary and steers are shown here.
 
-The **bucket sheet** (the side pane) is where the storage itself is the subject: what needs attention (the resolved Issues folded below), its configuration as last checked (only what deviates: exposure that is on, a read that failed, a missing protection), the notes kept about it, and its history (posture changes and Issue events, folded). *Ask about this bucket* closes the sheet and fills the Composer with a bucket context chip; it never submits.
+There is no user bubble, no assistant bubble, no next-step prompt and no second suggestions block. A queued request shows *Queued* with *Withdraw*; a request that needs attention offers *Continue* or *Open Settings*. A turn without a recorded conclusion shows its answer; nothing is guessed.
 
-An Issue shows **Show fix** and **Verify** (a read-only re-check that can resolve it); its *More* menu holds *Open task* and *Accept risk* (with an optional reason, kept as a note). The **fix** is the AWS CLI command, a Terraform resource or the API document — copy whichever you apply changes with — with an **impact preview**: one verdict sentence on what applying it would change, from the evidence the estate holds, with its reasons folded under it. For a public access block it counts the anonymous requests in the bucket's attached S3 server access logs; for lifecycle rules it says whether existing rules would be replaced. When the evidence cannot tell, it says so and what would answer it.
-
-**Notes** are what you and the Agent want remembered — an owner, an intent, why a setting is deliberate. You add them on a bucket (Enter saves), on an account or for all storage in Settings; the Agent keeps them with its `note` tool; accepting a risk with a reason keeps the reason. Every task starts with the most recent notes as context.
-
-### A task — one conversation, one assistant article
-
-Every request reads top to bottom in the order it was made: the user's message (with any context chips), then **one assistant article**. While work is live the article opens with the **run trace** — every real call, verb, target, progress and result, with commentary and steers inline. When the turn settles the trace becomes one quiet receipt (*2 checks · 1s*) that does not expand; the answer follows, then the rendered deterministic result of a survey, listing, configuration review or fix preview from `tool_output.detail`, then the findings as a flat list with a severity dot. There is no next-step prompt, no second suggestion block and no evidence line repeated under the findings: the title bar's **Evidence** is the one entry to the calls. A queued request shows *Queued* with *Withdraw*; a request that needs attention offers *Continue* or *Open Settings*. A turn without a recorded conclusion shows its answer; nothing is guessed.
-
-A message can be **edited**: that sends a new version of it — a fork of the task at that point — and *1 / 2* switches between versions. The fork keeps the message's estate context and attached files. Reloading, reconnecting or following up never reorders, drops or duplicates anything: the page is the item stream, merged by sequence.
+A message can be **edited**: that sends a new version of it — a fork of the task at that point — and *1 / 2* switches between versions. The fork keeps its attached files. Reloading, reconnecting or following up never reorders, drops or duplicates anything: the page is the item stream, merged by sequence.
 
 ### Evidence
 
-The one side pane for a task, in one scroll: one row per call in the turn. A row opens in place to its rendered result, its arguments and its raw data; there is no second page and no Back control. *Save report* (the task report in the reader's language, as Markdown), attached files and folded usage stay below. It reads as evidence, not a developer inspector; raw payloads are never the default.
+The one side pane for a task, in one scroll: one row per call. A row opens in place to its arguments and raw data; there is no second page and no Back control. *Save report* (the task report in the reader's language, as Markdown), attached files and folded usage stay below.
+
+Evidence is the raw record, not a second rendered result. The deterministic artifact appears in the task once.
 
 ### Quick Ask
 
@@ -59,13 +59,13 @@ A small always-on-top window (⌘⇧Space, the tray, View › Quick Ask) for one
 
 ### Settings
 
-General (theme, language, and one folded Safety line — read-only storage, keys stay on this computer, stop any time; *Advanced*: skills, the standing-instructions file, the MCP server) · Models (presets for OpenAI, Anthropic, DeepSeek, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint; masked keys; a local model's context window prefilled with 16 384, a hosted one's under *Advanced*; a live test) · Storage accounts (presets for the common services; each account's **Watch** first: Off · 6 h · Daily · Weekly, Check now; the session token and bucket/prefix scope under *Advanced*). Save stays on what was saved and shows its test result.
+General (theme, language, and one folded Safety line — read-only storage, keys stay on this computer, stop any time; *Advanced*: skills, the standing-instructions file, the MCP server) · Models (presets for OpenAI, Anthropic, DeepSeek, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint; masked keys; a local model's context window prefilled with 16 384, a hosted one's under *Advanced*; a live test) · **Connections** (the configured storage services; each account's **Watch** first: Off · 6 h · Daily · Weekly, Check now; the session token and bucket/prefix scope under *Advanced*). Save stays on what was saved and shows its test result. Connections is configuration, not a second navigation surface. On a narrow window Settings takes the whole screen, with one row of section tabs above one scrolling body.
 
 ## Principles
 
-- **The estate outlives the task.** Every task starts knowing the accounts, the known buckets, the open Issues and the notes.
+- **The Task is the window's object; the estate is the Agent's memory.** Accounts, buckets, posture, Issues and notes are what the Agent knows, not a tree the reader has to browse.
 - **Nothing is invented.** Findings, Issues, progress and figures come from tool results and deterministic engines; a gap stays a gap.
 - **Read-only, bounded, stoppable.** No approval prompts, no plan mode, no modes: the one data-moving tool runs inside hard server-side bounds, and Stop ends any work — a stopped or timed-out tool ends at its next check.
-- **The run is legible.** The window shows the calls that actually happened while they happen; deterministic results are rendered, not narrated; the calls live in one Evidence pane rather than being repeated under the answer.
-- **One of everything**: one Agent, one submit path, one stream, one Composer, one side pane, one conversation, one assistant article.
+- **The run is legible.** Real calls and progress while they happen; deterministic results rendered once; Evidence is the raw record, not a duplicate.
+- **One of everything**: one Agent, one submit path, one stream, one Composer, one workspace, one Evidence pane.
 - **Native and quiet**: the platform's own chrome, one accent colour, English and Chinese throughout.

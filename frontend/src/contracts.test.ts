@@ -39,9 +39,9 @@ describe("one submit path", () => {
 });
 
 describe("the window", () => {
-  it("is sidebar · title bar · one document · one Composer, plus one side pane", () => {
+  it("is sidebar · title bar · one workspace · one Composer, plus one Evidence pane", () => {
     const shell = read(path.join(SRC, "shell/Shell.tsx"));
-    for (const part of ["<Sidebar", 'className="titlebar"', 'className="document"', "<Composer", "<Details", "<StorageSheet", "<BucketSheet"]) {
+    for (const part of ["<Sidebar", 'className="titlebar"', 'className="document"', "<Composer", "<Details"]) {
       expect(shell).toContain(part);
     }
     // One visible Composer: Home carries it before a task exists; the task dock
@@ -49,16 +49,17 @@ describe("the window", () => {
     expect(shell.match(/<Composer\b/g)).toHaveLength(1);
     expect(read(path.join(SRC, "home/Home.tsx")).match(/<Composer\b/g)).toHaveLength(1);
     expect(shell).toContain("taskId={taskId} busy={busy}");
-    // The sidebar is New task, search, the list, Storage and Settings.
+    // The sidebar is New task, search, the task list and Settings. There is no
+    // storage navigation or estate picker in the window.
     const sidebar = read(path.join(SRC, "shell/Sidebar.tsx"));
-    for (const gone of ["nav-home", "nav-estate", "openEstate"]) expect(sidebar).not.toContain(gone);
-    expect(sidebar).toContain('data-testid="open-storage"');
+    for (const gone of ["nav-home", "nav-estate", "openEstate", "open-storage", "nav.storage"]) expect(sidebar).not.toContain(gone);
   });
 
-  it("a turn is one assistant article: one receipt, no follow-up suggestion", () => {
+  it("a turn is one workspace: artifact first, findings, quiet receipt, no follow-up", () => {
     const turn = read(path.join(SRC, "task/Turn.tsx"));
-    expect(turn.match(/<article\b/g)).toHaveLength(1);
-    expect(turn).toContain('className="assistant"');
+    expect(turn).toContain('className="turn-body"');
+    expect(turn).toContain('data-testid="run-result"');
+    expect(turn).not.toContain('className="assistant"');
     expect(turn).not.toContain('data-testid="next-step"');
     expect(turn).not.toContain("next_steps");
     expect(turn).not.toContain("suggestions");
@@ -81,39 +82,22 @@ describe("the window", () => {
     expect(inspector).not.toContain("callId?");
   });
 
-  it("the Composer has one add menu, one model chip and one send/stop action", () => {
+  it("the Composer has one attach control, one model chip and one send/stop action", () => {
     const composer = read(path.join(SRC, "composer/Composer.tsx"));
-    expect(composer).toContain('data-testid="composer-plus"');
-    expect(composer).toContain('data-testid="composer-menu"');
-    expect(composer).not.toContain("context-trigger");
+    expect(composer).toContain('data-testid="composer-attach"');
+    expect(composer).not.toContain("composer-menu");
+    expect(composer).not.toContain("context-picker");
   });
 
-  it("keeps Home to one sentence and one Composer; Storage lives in the sheet", () => {
+  it("keeps Home to one sentence and one Composer; storage is not a window object", () => {
     const home = read(path.join(SRC, "home/Home.tsx"));
     expect(home).toContain("<Composer");
     expect(home).not.toContain("Attention");
     expect(home).not.toContain("readiness");
     expect(home).not.toMatch(/\bapi\./);
-    expect(fs.existsSync(path.join(SRC, "estate/StorageSheet.tsx"))).toBe(true);
-    expect(read(path.join(SRC, "shell/Sidebar.tsx"))).toContain('data-testid="open-storage"');
-  });
-
-  it("groups repeated missing protections into one row", () => {
-    expect(read(path.join(SRC, "estate/BucketSheet.tsx"))).toContain("bucket.missingProtections");
-  });
-
-  it("Survey and Ask about this bucket only fill the Composer — they never submit", () => {
-    const files = ["estate/BucketSheet.tsx", "estate/StorageSheet.tsx"].map((f) => read(path.join(SRC, f)));
-    for (const text of files) {
-      expect(text).toMatch(/app\.prefill\(/);
-      expect(text).not.toMatch(/api\.(submit|createTask|steer)\(/);
-    }
-  });
-
-  it("the estate never submits work and never writes to storage", () => {
-    const estate = source.filter((p) => rel(p).startsWith("estate/"));
-    expect(estate.map(rel).sort()).toEqual(["estate/BucketSheet.tsx", "estate/IssueCard.tsx", "estate/Notes.tsx", "estate/StorageSheet.tsx"]);
-    for (const p of estate) expect(read(p)).not.toMatch(/api\.(submit|createTask|steer|resume)\(/);
+    expect(fs.existsSync(path.join(SRC, "estate/StorageSheet.tsx"))).toBe(false);
+    expect(fs.existsSync(path.join(SRC, "estate"))).toBe(false);
+    expect(read(path.join(SRC, "shell/Sidebar.tsx"))).not.toContain("open-storage");
   });
 
   it("paints no approval, plan or chat-era chrome", () => {

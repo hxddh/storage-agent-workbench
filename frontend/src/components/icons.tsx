@@ -45,6 +45,7 @@ const PATHS: Record<string, string> = {
   external: "M14 4h6v6|M20 4l-9 9|M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
   lock: "M6 11h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z|M8 11V8a4 4 0 0 1 8 0v3",
   download: "M12 4v11|M7.5 10.5 12 15l4.5-4.5|M5 19h14",
+  agent: "M12 3.25 14.1 9.9 20.75 12 14.1 14.1 12 20.75 9.9 14.1 3.25 12 9.9 9.9z",
 };
 
 export type IconName = keyof typeof PATHS;

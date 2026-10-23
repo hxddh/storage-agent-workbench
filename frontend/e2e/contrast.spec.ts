@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { addStorage, boot as bootApp, delegate, reset, settled } from "./app";
-import { startFakeS3 } from "./fake-s3";
+import { boot as bootApp, delegate, reset, settled } from "./app";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
 
 /**
@@ -155,38 +154,6 @@ for (const theme of ["dark", "light"] as const) {
       await boot(page, theme, true);
       const v = await audit(page);
       expect(v, report(`conversation (${theme})`, v)).toEqual([]);
-    });
-
-    test("a bucket sheet with its fix pack", async ({ page }) => {
-      test.setTimeout(90_000);
-      await boot(page, theme, false);
-      const s3 = await startFakeS3({ "acme-www": ["index.html"] }, { config: { "acme-www": {} } });
-      const storage = await addStorage(s3.endpointUrl);
-      const model = await startFakeModel([toolTurn("survey_account", { provider_id: storage }), textTurn("Surveyed.")]);
-      const id = await useFakeModel(model.baseUrl);
-      try {
-        await delegate(page, `estate ${theme}`);
-        await expect(page.getByTestId("answer")).toContainText("Surveyed.", { timeout: 30_000 });
-        await settled(page);
-        await page.getByTestId("new-task").click();
-        await page.getByTestId("open-storage").click();
-        await page.getByTestId("needs-care").getByTestId("issue-bucket").first().click();
-        await expect(page.getByTestId("bucket-page")).toBeVisible();
-        await page.getByTestId("note-input").fill("Owned by the growth team.");
-        await page.getByTestId("note-input").press("Enter");
-        const issue = page.getByTestId("bucket-page").getByTestId("issue").first();
-        await issue.locator(".issue-head").click();
-        const show = issue.getByRole("button", { name: "Show the fix" });
-        if (await show.count()) await show.click();
-        await expect(issue.getByTestId("impact")).toHaveAttribute("data-verdict", /./);
-        await page.waitForTimeout(400);
-        const v = await audit(page);
-        expect(v, report(`bucket sheet (${theme})`, v)).toEqual([]);
-      } finally {
-        await dropModelProvider(id);
-        await model.close();
-        await s3.close();
-      }
     });
 
     test("Settings", async ({ page }) => {

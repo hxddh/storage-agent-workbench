@@ -4,7 +4,7 @@ import { startFakeS3 } from "./fake-s3";
 
 test.beforeEach(reset);
 
-test("a model and a storage account are added in Settings; keys never come back", async ({ page }) => {
+test("a model and a connection are added in Settings; keys never come back", async ({ page }) => {
   const s3 = await startFakeS3({ "acme-logs": ["a.log"] });
   try {
     await boot(page);
@@ -22,7 +22,7 @@ test("a model and a storage account are added in Settings; keys never come back"
     await expect(page.locator(".provider-item[aria-current='true']")).toContainText("llama3.1");
     await expect(page.getByTestId("model-chip")).toContainText("llama3.1");
 
-    await page.getByTestId("settings-storage").click();
+    await page.getByTestId("settings-connections").click();
     const cloud = page.getByTestId("cloud-editor");
     await cloud.getByLabel("Service").selectOption({ label: "MinIO" });
     await cloud.getByLabel("Name").fill("lab");
@@ -50,7 +50,7 @@ test("a model and a storage account are added in Settings; keys never come back"
 
 test("the window reads Chinese end to end", async ({ page }) => {
   await boot(page, { lang: "zh" });
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("问问你的存储。");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("想让我查什么？");
   await expect(page.getByTestId("new-task")).toContainText("新任务");
   await api("/settings", { method: "PATCH", body: JSON.stringify({ language: "en" }) });
 });

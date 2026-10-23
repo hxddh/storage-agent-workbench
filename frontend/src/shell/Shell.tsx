@@ -3,8 +3,6 @@ import { api } from "../api";
 import { Composer } from "../composer/Composer";
 import { hasNativeTrafficLights, openExternal } from "../config";
 import { IconButton } from "../components/ui";
-import { BucketSheet } from "../estate/BucketSheet";
-import { StorageSheet } from "../estate/StorageSheet";
 import { Home } from "../home/Home";
 import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
@@ -43,8 +41,8 @@ export function Shell() {
     void setNativeWindowTitle(model.snapshot && taskId ? `${model.snapshot.task.title} — Storage Agent` : "Storage Agent");
   }, [model.snapshot, taskId]);
 
-  // Details belong to a task: leaving it closes them (a bucket sheet stays open).
-  useEffect(() => { if (!taskId && app.pane?.tab === "details") app.setPane(null); }, [taskId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Evidence belongs to a task: leaving it closes the pane.
+  useEffect(() => { if (!taskId && app.pane) app.setPane(null); }, [taskId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const command = useCallback((c: MenuCommand) => {
     switch (c) {
@@ -121,8 +119,8 @@ export function Shell() {
           </div>
           <div className="titlebar-end">
             {taskId ? (
-              <IconButton icon="panelRight" label={app.pane?.tab === "details" ? t("pane.close") : t("pane.open")} data-testid="titlebar-sidepane"
-                aria-pressed={app.pane?.tab === "details"} onClick={() => command("review")} />
+              <IconButton icon="panelRight" label={app.pane ? t("pane.close") : t("pane.open")} data-testid="titlebar-sidepane"
+                aria-pressed={!!app.pane} onClick={() => command("review")} />
             ) : null}
           </div>
         </header>
@@ -137,10 +135,7 @@ export function Shell() {
           </div>
         ) : null}
       </main>
-      {taskId && app.pane?.tab === "details" ? <Details model={model} /> : null}
-      {app.pane?.tab === "storage" ? <StorageSheet /> : null}
-      {app.pane?.tab === "bucket" ? <BucketSheet key={`${app.pane.providerId}/${app.pane.bucket}`}
-        providerId={app.pane.providerId} bucket={app.pane.bucket} /> : null}
+      {taskId && app.pane ? <Details model={model} /> : null}
       {app.settings ? <Settings /> : null}
       {/* State is painted once (sidebar), and announced once for screen readers. */}
       <span className="sr-only" aria-live="polite">{taskId ? t(`state.${model.state}`) : ""}</span>

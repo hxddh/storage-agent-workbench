@@ -8,10 +8,10 @@ import { Turn } from "./Turn";
 const MemoTurn = memo(Turn);
 
 /**
- * One Task as a conversation, oldest first: every turn is the user's message,
- * one line for the work, and the answer. The newest turn sits just above the
- * Composer and the page follows it while it streams — unless the reader has
- * scrolled up to read something earlier.
+ * One Task as a workspace, oldest first: every turn is an objective, its
+ * deterministic artifact, the Agent's short interpretation, findings and a
+ * quiet work receipt. The newest turn sits just above the Composer and the
+ * page follows it while it streams — unless the reader scrolled up.
  */
 export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot: (s: TaskSnapshot) => void }) {
   const { t } = useI18n();
@@ -39,11 +39,28 @@ export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot
   useLayoutEffect(() => {
     const scroller = end.current?.closest(".document") as HTMLElement | null;
     if (!scroller || !model.snapshot) return;
-    if (first.current || pinned.current) {
-      scroller.scrollTop = scroller.scrollHeight;
+    if (first.current) {
+      // A settled task opens on its latest Turn's heading, not halfway through
+      // its table. A live task follows the work at the bottom.
+      if (model.state === "working" || model.state === "queued") {
+        scroller.scrollTop = scroller.scrollHeight;
+      } else {
+        const last = end.current?.previousElementSibling as HTMLElement | null;
+        if (last) {
+          const top = last.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+          scroller.scrollTop = Math.max(0, top - 24);
+        } else {
+          scroller.scrollTop = 0;
+        }
+      }
       first.current = false;
+      requestAnimationFrame(() => {
+        pinned.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
+      });
+    } else if (pinned.current) {
+      scroller.scrollTop = scroller.scrollHeight;
     }
-  }, [tail, model.snapshot]);
+  }, [tail, model.snapshot, model.state]);
 
   // A new message from the reader always brings the page down to it.
   const lastId = lastTurn?.id;
@@ -52,11 +69,12 @@ export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot
   if (!model.snapshot) {
     return <div className="task-page" aria-busy="true"><p className="quiet-note">{model.error ?? t("task.loading")}</p></div>;
   }
+  const firstTurn = all.find((s) => s.turn.kind !== "resume")?.turn.id;
   return (
     <div className="task-page" data-testid="task-page">
       {all.length ? all.map((s) => (
         <MemoTurn key={s.turn.id} section={s} taskId={model.id} forks={forks} setSnapshot={setSnapshot}
-          running={s.turn.status === "running"}
+          running={s.turn.status === "running"} first={s.turn.id === firstTurn}
           live={model.live?.turn_id === s.turn.id ? model.live : null} />
       )) : <p className="quiet-note">{t("task.empty")}</p>}
       <div ref={end} className="task-end" aria-hidden />

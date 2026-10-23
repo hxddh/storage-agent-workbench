@@ -6,13 +6,13 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
 import { startFakeS3 } from "../fake-s3";
 
 /**
- * Human visual-review contact sheet (v12). No pixel baselines — CI, local
+ * Human visual-review contact sheet (v13). No pixel baselines — CI, local
  * Chromium and font stacks are not raster-identical. Every capture first
  * reaches a real, asserted state against the real Sidecar, then writes a PNG.
  *
- * The states are the product: the home and the estate, live work, the Result,
- * the Work log with a forked Direction, the side pane, Settings —
- * in both themes and both languages.
+ * The states are the agent workspace: Home, live work, the result, the
+ * Evidence record, a follow-up, an edited version, Settings and mobile.
+ * There is no storage/bucket page to photograph.
  */
 
 const OUT = path.resolve("shots");
@@ -28,24 +28,25 @@ async function shot(page: Page, name: string) {
 
 async function open(page: Page, theme: "dark" | "light", lang: "en" | "zh") {
   await api("/settings", { method: "PATCH", body: JSON.stringify({ language: lang, theme }) });
-  await page.addInitScript(([t, l]) => { localStorage.setItem("saw.theme", t); localStorage.setItem("saw.lang", l); localStorage.removeItem("sa.pane.w"); }, [theme, lang]);
+  await page.addInitScript(([t, l]) => {
+    localStorage.setItem("saw.theme", t);
+    localStorage.setItem("saw.lang", l);
+    localStorage.removeItem("sa.pane.w");
+  }, [theme, lang]);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await expect(page.getByTestId("composer-input")).toBeVisible({ timeout: 30_000 });
 }
 
 const conclusion = {
-  answer: "Two of three buckets have no default encryption; acme-www also has no public access block.",
   findings: [
-    { title: "acme-www has no public access block", severity: "high", detail: "Nothing stops a future policy from making it public." },
-    { title: "acme-www and acme-data have no default encryption", severity: "medium", detail: "New objects are stored unencrypted." },
-    { title: "No lifecycle rules", severity: "low", detail: "Incomplete multipart uploads are never cleaned up." },
-    { title: "acme-logs is encrypted by default", severity: "info", detail: "" },
+    { title: "Public access is not blocked", severity: "high", detail: "Nothing stops a future policy from making it public." },
+    { title: "Two buckets have no default encryption", severity: "medium", detail: "New objects are stored unencrypted." },
+    { title: "Incomplete multipart uploads are never cleaned up", severity: "low", detail: "" },
   ],
-  next_steps: ["Show me the fix for acme-www", "Watch this account daily", "Review acme-data lifecycle"],
 };
 
-test("the v12 contact sheet", async ({ page }) => {
+test("the v13 contact sheet", async ({ page }) => {
   test.setTimeout(240_000);
   fs.rmSync(OUT, { recursive: true, force: true });
   await reset();
@@ -56,10 +57,10 @@ test("the v12 contact sheet", async ({ page }) => {
     toolTurn("survey_account", { provider_id: storage }),
     toolTurn("review_bucket_config", { provider_id: storage, bucket: "acme-www" }),
     toolTurn("record_conclusion", conclusion),
-    textTurn("I surveyed **acme-prod** and reviewed `acme-www`. Public access is blocked on none of the three buckets, and two have no default encryption."),
-    textTurn("Default encryption applies to new objects only; existing ones keep their encryption until rewritten."),
+    textTurn("Public exposure is the main issue. Two buckets also lack default encryption."),
+    textTurn("Default encryption applies to new objects only; existing objects keep their encryption."),
     textTurn("It covers objects written after you enable it."),
-  ], { title: "Account survey · acme-prod", deltaDelayMs: 25 });
+  ], { title: "Estate review", deltaDelayMs: 25 });
   const modelId = await useFakeModel(model.baseUrl);
   try {
     await open(page, "dark", "en");
@@ -83,7 +84,7 @@ test("the v12 contact sheet", async ({ page }) => {
     await settled(page);
     await shot(page, "follow-up-dark-en");
     await page.getByTestId("titlebar-sidepane").click();
-    await shot(page, "details-dark-en");
+    await shot(page, "evidence-dark-en");
     await page.getByTestId("inspector").getByTestId("evidence-call").first().click();
     await shot(page, "evidence-open-dark-en");
     await page.keyboard.press("Escape");
@@ -99,69 +100,35 @@ test("the v12 contact sheet", async ({ page }) => {
 
     await page.getByTestId("new-task").click();
     await shot(page, "home-dark-en");
-    await page.getByTestId("open-storage").click();
-    await expect(page.getByTestId("storage-sheet")).toBeVisible();
-    await shot(page, "storage-sheet-dark-en");
     await page.setViewportSize({ width: 390, height: 844 });
-    await shot(page, "storage-sheet-mobile-dark-en");
-    await page.getByTestId("storage-sheet").getByRole("button", { name: "Close" }).click();
     await shot(page, "home-mobile-dark-en");
     await page.getByRole("button", { name: "Show sidebar" }).click();
     await page.getByTestId("open-settings").click();
     await shot(page, "settings-mobile-dark-en");
     await page.getByRole("button", { name: "Close" }).click();
-    await page.getByTestId("task-list").getByText("Account survey · acme-prod").click();
+    await page.getByTestId("task-list").getByText("Estate review").click();
     await expect(page.getByTestId("answer").first()).toBeVisible();
     await shot(page, "conversation-mobile-dark-en");
-    await page.getByRole("button", { name: "Show sidebar" }).click();
-    await page.getByTestId("new-task").click();
     await page.setViewportSize({ width: 1440, height: 900 });
-    if (await page.getByRole("button", { name: "Show sidebar" }).count()) {
-      await page.getByRole("button", { name: "Show sidebar" }).click();
-    }
-    await page.getByTestId("composer-plus").click();
-    await shot(page, "composer-menu-dark-en");
-    await page.getByTestId("composer-menu").getByRole("menuitem", { name: "Add estate context" }).click();
-    await expect(page.getByTestId("context-picker")).toBeVisible();
-    await shot(page, "context-picker-dark-en");
-    await page.keyboard.press("Escape");
-    await page.getByTestId("open-storage").click();
-    await page.getByTestId("needs-care").getByTestId("issue-bucket").filter({ hasText: "acme-www" }).first().click();
-    await expect(page.getByTestId("bucket-page")).toBeVisible();
-    await page.getByTestId("note-input").fill("Serves the marketing site; owned by the growth team.");
-    await page.getByTestId("note-input").press("Enter");
-    await shot(page, "bucket-sheet-dark-en");
-    const bucketIssue = page.getByTestId("bucket-sheet").getByTestId("issue").first();
-    await bucketIssue.locator(".issue-head").click();
-    const showFix = bucketIssue.getByRole("button", { name: "Show the fix" });
-    if (await showFix.count()) await showFix.click();
-    await expect(bucketIssue.getByTestId("impact")).toHaveAttribute("data-verdict", /./);
-    await shot(page, "fix-pack-dark-en");
-    await page.keyboard.press("Escape");
+    // Choosing a task in the overlay closed the sidebar; a desktop shot needs it back.
+    if (await page.getByTestId("show-sidebar").isVisible()) await page.getByTestId("show-sidebar").click();
+    await page.getByTestId("new-task").click();
     await page.getByTestId("open-settings").click();
-    await shot(page, "settings-general-dark-en");
-    await page.getByTestId("settings-storage").click();
-    await page.locator(".provider-item").first().click();
-    await shot(page, "settings-storage-dark-en");
+    await page.getByTestId("settings-connections").click();
+    await shot(page, "settings-connections-dark-en");
+    await page.getByRole("button", { name: "Close" }).click();
 
     await open(page, "light", "en");
     await shot(page, "home-light-en");
-    await page.getByTestId("task-list").getByText("Account survey · acme-prod").click();
+    await page.getByTestId("task-list").getByText("Estate review").click();
     await expect(page.getByTestId("answer").first()).toBeVisible();
     await shot(page, "conversation-light-en");
 
     await open(page, "dark", "zh");
     await shot(page, "home-dark-zh");
-    await page.getByTestId("task-list").getByText("Account survey · acme-prod").click();
+    await page.getByTestId("task-list").getByText("Estate review").click();
     await expect(page.getByTestId("answer").first()).toBeVisible();
     await shot(page, "conversation-dark-zh");
-    await page.getByTestId("new-task").click();
-    await page.getByTestId("open-storage").click();
-    await expect(page.getByTestId("storage-sheet")).toBeVisible();
-    await shot(page, "storage-sheet-dark-zh");
-    await page.getByTestId("needs-care").getByTestId("issue-bucket").first().click();
-    await expect(page.getByTestId("bucket-page")).toBeVisible();
-    await shot(page, "bucket-sheet-dark-zh");
   } finally {
     await api("/settings", { method: "PATCH", body: JSON.stringify({ language: "en", theme: "dark" }) });
     await dropModelProvider(modelId);

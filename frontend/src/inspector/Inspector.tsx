@@ -12,7 +12,7 @@ import { toolLabel } from "../lib/toolLabels";
 import { useApp } from "../shell/context";
 import { allTools, sections, type ToolRow } from "../store/derive";
 import type { TaskModel } from "../store/task";
-import { ResultView, viewFor } from "../tool/ResultView";
+
 
 const MIN_W = 352;
 const MAX_W = 880;
@@ -147,7 +147,6 @@ function CallLine({ row, focus }: { row: ToolRow; focus: boolean }) {
   const { t, lang } = useI18n();
   const app = useApp();
   const [open, setOpen] = useState(false);
-  const view = viewFor(row);
   useEffect(() => { if (focus) setOpen(true); }, [focus]);
   return (
     <li data-call-id={row.callId}>
@@ -162,21 +161,17 @@ function CallLine({ row, focus }: { row: ToolRow; focus: boolean }) {
           <Icon name="chevron" size={13} className="call-caret" />
         </summary>
         <div className="call-evidence-body" data-testid="call-detail">
-          {view ? <ResultView row={row} /> : (
-            <p className="quiet-note result-gap">{row.detailTruncated ? t("result.truncatedGap") : t("tool.noView")}</p>
-          )}
-          <details className="raw-fold" open={!view}>
-            <summary>{t("tool.raw")}</summary>
-            <h4 className="pane-label">{t("tool.args")}</h4>
-            <Markdown text={"```json\n" + JSON.stringify(readableArgs(row.args, app.clouds), null, 2) + "\n```"} />
-            {row.detail ? (
-              <>
-                <h4 className="pane-label">{t("tool.output")}</h4>
-                <Markdown text={"```json\n" + pretty(row.detail) + "\n```"} />
-                {row.detailTruncated ? <p className="quiet-note">{t("tool.truncated")}</p> : null}
-              </>
-            ) : null}
-          </details>
+          {/* Evidence is the raw record. The rendered artifact belongs to the
+              Task, once; the row opens straight to the arguments and output. */}
+          <h4 className="pane-label">{t("tool.args")}</h4>
+          <Markdown text={"```json\n" + JSON.stringify(readableArgs(row.args, app.clouds), null, 2) + "\n```"} />
+          {row.detail ? (
+            <>
+              <h4 className="pane-label">{t("tool.output")}</h4>
+              <Markdown text={"```json\n" + pretty(row.detail) + "\n```"} />
+              {row.detailTruncated ? <p className="quiet-note">{t("tool.truncated")}</p> : null}
+            </>
+          ) : null}
         </div>
       </details>
     </li>

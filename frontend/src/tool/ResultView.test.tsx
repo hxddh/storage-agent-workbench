@@ -28,6 +28,18 @@ describe("deterministic result views", () => {
     expect(screen.getByText(/2 buckets checked/)).toBeInTheDocument();
   });
 
+  it("uses the estate's issue titles in a survey row, not its internal codes", () => {
+    const detail = JSON.stringify({
+      success: true,
+      issues: [{ code: "public_exposure", title: "Public access block not fully enabled", severity: "high", buckets: 1 }],
+      coverage: { surveyed: 1, whole_account: true },
+      buckets: { columns: ["bucket", "issues"], rows: [["acme-www", ["public_exposure"]]] },
+    });
+    render(<I18nProvider><ResultView row={{ name: "survey_account", detail, detailTruncated: false }} /></I18nProvider>);
+    expect(screen.getByTestId("tool-table")).toHaveTextContent("Public access block not fully enabled");
+    expect(screen.getByTestId("tool-table")).not.toHaveTextContent("public_exposure");
+  });
+
   it("leaves a truncated detail a gap instead of drawing a partial table", () => {
     const row = { name: "survey_account", detail: survey, detailTruncated: true };
     expect(viewFor(row)).toBeNull();

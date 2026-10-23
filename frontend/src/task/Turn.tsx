@@ -15,13 +15,13 @@ import { ResultView, viewFor } from "../tool/ResultView";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
 
 /**
- * One turn: the request, then one assistant article. The article carries a
- * single receipt (or the live trace), the answer, the deterministic result and
- * the findings. Nothing repeats the receipt, and no follow-up is suggested.
+ * One Turn is a workspace section: the objective, the deterministic result,
+ * the model's short interpretation, findings and a quiet work receipt. There
+ * is no user/assistant chat bubble; the task itself is the object.
  */
-export function Turn({ section, taskId, forks, setSnapshot, running, live = null }: {
+export function Turn({ section, taskId, forks, setSnapshot, running, live = null, first = false }: {
   section: Section; taskId: string; forks: Record<string, string[]>;
-  setSnapshot: (s: TaskSnapshot) => void; running: boolean; live?: LiveSegment | null;
+  setSnapshot: (s: TaskSnapshot) => void; running: boolean; live?: LiveSegment | null; first?: boolean;
 }) {
   const { t } = useI18n();
   const s = section;
@@ -34,25 +34,33 @@ export function Turn({ section, taskId, forks, setSnapshot, running, live = null
     <section className="turn" data-status={s.turn.status} data-testid="turn">
       {s.turn.kind === "resume"
         ? <p className="turn-note">{t("turn.continued")}</p>
-        : <Message section={s} taskId={taskId} forks={forks} setSnapshot={setSnapshot} />}
+        : <Objective section={s} taskId={taskId} forks={forks} setSnapshot={setSnapshot} first={first} />}
       {queued ? <Queued taskId={taskId} turnId={s.turn.id} /> : (
-        <article className="assistant" data-testid="assistant">
-          <RunTrace section={s} running={running} live={live} />
-          {s.compacted && !s.blocks.some((b) => b.kind === "context")
-            ? <p className="turn-note">{t("work.compacted")}</p> : null}
-          <Answer section={s} running={running} live={live} />
-          {result ? <SettledResult result={result} /> : null}
-          {fig ? <AnalysisFigures provenance={fig} /> : null}
-          {found.length ? <Findings findings={found} /> : null}
+        <div className="turn-body" data-testid="turn-body">
+          {running ? (
+            <>
+              <RunTrace section={s} running live={live} />
+              <Answer section={s} running live={live} />
+            </>
+          ) : (
+            <>
+              {result ? <SettledResult result={result} /> : null}
+              {fig ? <AnalysisFigures provenance={fig} /> : null}
+              <Answer section={s} running={false} live={null} />
+              {found.length ? <Findings findings={found} /> : null}
+              <RunTrace section={s} running={false} live={null} />
+            </>
+          )}
           <Outcome section={s} taskId={taskId} running={running} />
-        </article>
+        </div>
       )}
     </section>
   );
 }
 
-function Message({ section, taskId, forks, setSnapshot }: {
-  section: Section; taskId: string; forks: Record<string, string[]>; setSnapshot: (s: TaskSnapshot) => void;
+/** The objective, with the version/edit/copy controls that belong to it. */
+function Objective({ section, taskId, forks, setSnapshot, first }: {
+  section: Section; taskId: string; forks: Record<string, string[]>; setSnapshot: (s: TaskSnapshot) => void; first: boolean;
 }) {
   const { t } = useI18n();
   const app = useApp();
@@ -69,45 +77,37 @@ function Message({ section, taskId, forks, setSnapshot }: {
     }
   };
   const settled = turn.status !== "queued" && turn.status !== "running";
+  const Heading = first ? "h1" : "h2";
   return (
-    <div className="message" data-testid="message">
-      <div className="message-bubble">
-        <p className="message-text">{section.direction}</p>
-        {section.context?.length ? (
-          <ul className="message-context" data-testid="message-context">
-            {section.context.map((c, i) => (
-              <li key={`${c.kind}-${i}`} className="context-pill" data-kind={c.kind}>
-                <span>{c.kind === "account" ? c.account : c.kind === "issue" ? (c.title ?? c.bucket) : c.bucket}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {section.attachments?.length ? (
-          <ul className="message-files">
-            {section.attachments.map((a) => (
-              <li key={a.dataset_id}><Icon name="paperclip" size={14} /><span>{a.filename}</span></li>
-            ))}
-          </ul>
-        ) : null}
+    <div className="objective" data-testid="message">
+      <div className="objective-head">
+        <Heading className="objective-text">{section.direction}</Heading>
+        <div className="objective-tools">
+          {v ? (
+            <span className="versions" role="group" aria-label={t("turn.version", { i: v.index + 1, n: v.ids.length })}>
+              <IconButton icon="chevron" size="sm" className="flip" label={t("turn.prevVersion")} disabled={v.index === 0}
+                onClick={() => void go(v.index - 1)} />
+              <span>{v.index + 1} / {v.ids.length}</span>
+              <IconButton icon="chevron" size="sm" label={t("turn.nextVersion")} disabled={v.index === v.ids.length - 1}
+                onClick={() => void go(v.index + 1)} />
+            </span>
+          ) : null}
+          {settled ? (
+            <IconButton icon="compose" size="sm" label={t("turn.edit")} data-testid="edit-message"
+              onClick={() => app.setEditing({ turnId: turn.id, parentTurnId: turn.parent_turn_id, text: section.direction,
+                attachments: section.attachments })} />
+          ) : null}
+          <IconButton icon={copied ? "check" : "copy"} size="sm" label={copied ? t("common.copied") : t("common.copy")}
+            onClick={() => copy(section.direction)} />
+        </div>
       </div>
-      <div className="message-tools">
-        {v ? (
-          <span className="versions" role="group" aria-label={t("turn.version", { i: v.index + 1, n: v.ids.length })}>
-            <IconButton icon="chevron" size="sm" className="flip" label={t("turn.prevVersion")} disabled={v.index === 0}
-              onClick={() => void go(v.index - 1)} />
-            <span>{v.index + 1} / {v.ids.length}</span>
-            <IconButton icon="chevron" size="sm" label={t("turn.nextVersion")} disabled={v.index === v.ids.length - 1}
-              onClick={() => void go(v.index + 1)} />
-          </span>
-        ) : null}
-        {settled ? (
-          <IconButton icon="compose" size="sm" label={t("turn.edit")} data-testid="edit-message"
-            onClick={() => app.setEditing({ turnId: turn.id, parentTurnId: turn.parent_turn_id, text: section.direction,
-              context: section.context, attachments: section.attachments })} />
-        ) : null}
-        <IconButton icon={copied ? "check" : "copy"} size="sm" label={copied ? t("common.copied") : t("common.copy")}
-          onClick={() => copy(section.direction)} />
-      </div>
+      {section.attachments?.length ? (
+        <ul className="objective-files">
+          {section.attachments.map((a) => (
+            <li key={a.dataset_id}><Icon name="paperclip" size={14} /><span>{a.filename}</span></li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -189,7 +189,7 @@ function RunTrace({ section, running, live }: { section: Section; running: boole
   );
 }
 
-/** The latest deterministic result with a known shape, rendered as part of the answer. */
+/** The latest deterministic result with a known shape, rendered as the artifact. */
 function SettledResult({ result }: { result: Row }) {
   return <div className="run-result" data-testid="run-result"><ResultView row={result} /></div>;
 }
@@ -241,7 +241,7 @@ function CallRow({ row }: { row: Row }) {
   );
 }
 
-/** The answer text: streamed while live, the model's final message once done. */
+/** The interpretation: streamed while live, the model's final message once done. */
 function Answer({ section, running, live }: { section: Section; running: boolean; live: LiveSegment | null }) {
   const c = section.conclusion;
   if (running) {

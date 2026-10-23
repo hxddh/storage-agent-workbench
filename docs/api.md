@@ -8,6 +8,13 @@ Sources of truth: `sidecar/app/main.py` and `sidecar/app/api/`
 (`tasks.py`, `estate.py`, `providers.py`, `settings.py`, `health.py`,
 `mcp.py`).
 
+> **v13 window boundary.** The `/estate`, `/issues`, `/notes` and watch routes
+> remain available to the Agent, the MCP bridge, reports and external local
+> clients. They are not navigation surfaces in the desktop window: the v13
+> window has no Storage page, bucket page, estate picker or open-Issue counter.
+> The Agent reads the estate through its tools; the window reads tasks and raw
+> Evidence.
+
 ## Conventions
 
 ### Authentication
@@ -67,7 +74,7 @@ goes through the runtime (`RUNTIME.submit`). There is no other submit path.
 | --- | --- | --- |
 | `TaskIn` | `direction` | `str \| null`, max 16 000 chars |
 | | `origin` | `"user"` (default) or `"quick_ask"` |
-| | `context` | `list[ContextIn]`, max 8, default `[]`; validated only when a Direction is present |
+| | `context` | `list[ContextIn]`, max 8, default `[]`; legacy API focus (the v13 window does not send it), validated only when a Direction is present |
 | `TaskPatch` | `title` | `str`, 1–120 chars |
 | `TurnIn` | `direction` | `str`, 1–16 000 chars (required) |
 | | `parent_turn_id` | `str \| null`. Omitted or `null`: continue from the head. A turn ID: fork after that turn. `""`: a new first Direction (a fork at the root). |

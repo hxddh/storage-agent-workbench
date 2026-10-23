@@ -1,27 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api";
-import type { Attachment, CloudProvider, ContextItem, ContextRef, ModelProvider } from "../api/types";
+import type { Attachment, CloudProvider, ModelProvider } from "../api/types";
 
 /**
  * Window state that more than one surface reads: where the reader is (the
- * home or one task), the side pane, the sidebar, and the configured model and
- * storage accounts. Work itself lives in the task store, never here.
+ * home or one task), the one Evidence pane, the sidebar, and the configured
+ * model and connection list. Work itself lives in the task store, never here.
  */
 
 export type Route = { kind: "home" } | { kind: "task"; id: string };
-/** The one side pane: a task's Evidence, the Storage estate, or one bucket. */
-export type Pane =
-  | { tab: "details"; callId?: string }
-  | { tab: "storage" }
-  | { tab: "bucket"; providerId: string; bucket: string }
-  | null;
-export type Editing = { turnId: string; parentTurnId: string | null; text: string; context?: ContextItem[]; attachments?: Attachment[] } | null;
+/** The one side pane is a task's Evidence. Storage is not a navigation surface. */
+export type Pane = { tab: "details"; callId?: string } | null;
+export type Editing = { turnId: string; parentTurnId: string | null; text: string; attachments?: Attachment[] } | null;
 
 type Ctx = {
   route: Route;
   openTask: (id: string) => void;
   goHome: () => void;
-  openBucket: (providerId: string, bucket: string) => void;
   pane: Pane;
   setPane: (p: Pane) => void;
   sidebar: boolean;
@@ -31,16 +26,11 @@ type Ctx = {
   closeSettings: () => void;
   editing: Editing;
   setEditing: (e: Editing) => void;
-  draft: { text: string; nonce: number; context?: ContextRef[] };
-  prefill: (text: string, context?: ContextRef[]) => void;
   models: ModelProvider[] | null;
   clouds: CloudProvider[] | null;
   reloadProviders: () => Promise<void>;
   online: boolean;
   setOnline: (online: boolean) => void;
-  /** Bumped when something changes an Issue (Verify, Accept): the home re-reads. */
-  estateRev: number;
-  estateChanged: () => void;
 };
 
 const AppContext = createContext<Ctx | null>(null);
@@ -71,11 +61,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sidebar, setSidebarState] = useState(storedSidebar);
   const [settings, setSettings] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
-  const [draft, setDraft] = useState<{ text: string; nonce: number; context?: ContextRef[] }>({ text: "", nonce: 0 });
   const [models, setModels] = useState<ModelProvider[] | null>(null);
   const [clouds, setClouds] = useState<CloudProvider[] | null>(null);
   const [online, setOnline] = useState(true);
-  const [estateRev, setEstateRev] = useState(0);
 
   // Crossing into a narrow window closes the overlay instead of covering the page with it.
   useEffect(() => {
@@ -101,7 +89,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Evidence state must not reappear when the next task opens.
       if (isNarrow() || next.kind === "home") setPane(null);
       setEditing(null);
-      setDraft({ text: "", nonce: 0 }); // a draft belongs to the page it was written on
     };
     const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -128,10 +115,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     route,
     openTask: (id) => navigate(`#/task/${id}`, { kind: "task", id }),
     goHome: () => navigate("#/", { kind: "home" }),
-    openBucket: (providerId, bucket) => {
-      if (isNarrow()) setSidebarState(false); // one overlay at a time in a narrow window
-      setPane({ tab: "bucket", providerId, bucket });
-    },
     pane,
     setPane: (p) => {
       if (p && isNarrow()) setSidebarState(false);
@@ -148,16 +131,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     closeSettings: () => { setSettings(null); void reloadProviders(); },
     editing,
     setEditing,
-    draft,
-    prefill: (text, context) => setDraft((d) => ({ text, nonce: d.nonce + 1, ...(context?.length ? { context } : {}) })),
     models,
     clouds,
     reloadProviders,
     online,
     setOnline,
-    estateRev,
-    estateChanged: () => setEstateRev((n) => n + 1),
-  }), [route, navigate, pane, sidebar, settings, editing, draft, models, clouds, reloadProviders, online, estateRev]);
+  }), [route, navigate, pane, sidebar, settings, editing, models, clouds, reloadProviders, online]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

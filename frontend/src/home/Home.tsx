@@ -3,8 +3,8 @@ import { useI18n } from "../i18n";
 
 /**
  * Home is the start of a task, not a dashboard. One sentence and the one
- * Composer: the estate lives in the Storage sheet and the sidebar, so there is
- * nothing here to scan or configure before asking.
+ * Composer: the Agent resolves the estate from the request, so there is no
+ * account/bucket tree to learn before asking.
  */
 export function Home({ onCreated }: { onCreated: (taskId: string) => void }) {
   const { t } = useI18n();
