@@ -1,28 +1,25 @@
 #!/usr/bin/env bash
-# Fast wake check for Storage Agent Workbench. Never installs anything: it only
-# verifies the snapshot's toolchain and points at .agents/setup when it is stale.
+# Fast wake check for Storage Agent. Never installs anything: it verifies the
+# snapshot's toolchain and points at .agents/setup when it is stale.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 missing=()
 
-[ -x .venv/bin/python ] || missing+=(".venv (run .agents/setup)")
-if [ -x .venv/bin/python ]; then
-  .venv/bin/python -c 'import sys, app.main; raise SystemExit(sys.version_info[:2] != (3, 14))' >/dev/null 2>&1 \
-    || missing+=(".venv is not a working Python 3.14 sidecar env (run .agents/setup)")
-fi
-[ -d frontend/node_modules ] || missing+=("frontend/node_modules (run .agents/setup)")
-if ! compgen -G "$HOME/.cache/ms-playwright/chromium-*" >/dev/null; then
-  missing+=("Playwright Chromium (run .agents/setup)")
-fi
-if ! command -v cargo >/dev/null 2>&1 && [ ! -x "$HOME/.cargo/bin/cargo" ]; then
-  missing+=("Rust cargo (run .agents/setup)")
+if ! command -v node >/dev/null 2>&1; then
+  missing+=("Node 24+ (run .agents/setup)")
+else
+  node -e 'const major = Number(process.versions.node.split(".")[0]); process.exit(major >= 24 ? 0 : 1)' \
+    || missing+=("Node 24+ (run .agents/setup)")
 fi
 
+[ -d node_modules ] || missing+=("node_modules (run .agents/setup)")
+[ -x node_modules/.bin/electron ] || missing+=("Electron binary (run .agents/setup)")
+
 if [ "${#missing[@]}" -gt 0 ]; then
-  printf 'Storage Agent Workbench is not ready:\n' >&2
+  printf 'Storage Agent is not ready:\n' >&2
   printf '  - %s\n' "${missing[@]}" >&2
   exit 1
 fi
 
-printf 'Storage Agent Workbench ready: Python 3.14 sidecar, frontend deps, Chromium, Rust.\n'
+printf 'Storage Agent ready: Node %s, Electron, dependencies.\n' "$(node -v)"

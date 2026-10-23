@@ -1,38 +1,51 @@
 # Security
 
-Storage Agent is a local-first desktop Agent. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities; there is no approval step, because nothing the Agent can do writes to storage and the one data-moving tool runs inside hard server-side bounds. Stop ends any work.
+## The floor
 
-```text
-User ── Tauri + React ── localhost HTTP/SSE + per-launch token ── Python Sidecar
-                                                                   ├── encrypted vault
-                                                                   ├── SQLite items · DuckDB datasets
-                                                                   ├── one Agent runtime
-                                                                   └── typed read-only S3 capabilities
-                                                                         ├── the model endpoint
-                                                                         └── the storage endpoint
-```
+1. **Read-only.** No tool calls a mutating S3 API. There is no generic shell, no
+   raw HTTP proxy for storage, no filesystem access beyond the conversation's
+   uploads and datasets directories.
+2. **Scope.** A provider may name a bucket allow-list. `assertInScope()` runs
+   before every bucket-scoped read and refuses anything outside it. An empty list
+   means every bucket the credentials can see.
+3. **Secrets.** Cloud keys live in the OS keychain through Electron
+   `safeStorage`; without a keyring they are sealed with AES-256-GCM under a
+   locally generated 0600 key. SQLite stores only the sealed reference. The
+   window receives a masked key id and a `hasSessionToken` boolean.
+4. **Redaction.** `security/redact.ts` removes access-key shapes, `X-Amz-*`
+   signatures and credentials, authorization headers, bearer tokens, secret JSON
+   fields, account ids inside ARNs and signature query parameters. It runs before
+   a value is stored, shown or sent to the model.
+5. **Envelope.** Every tool result the model sees is wrapped in
+   `<untrusted-data source="storage">…</untrusted-data>` and bounded. Bucket
+   names, object keys and log lines can contain hostile text; the envelope tells
+   the model it is data.
+6. **No model-facing raw rows.** Logs and inventories are parsed into a local
+   SQLite file; the model receives only aggregates and bounded samples.
+7. **Audit.** Every tool call writes `audit(tool, target, outcome, conversation)`.
+   A refused scope call is recorded as `refused`.
 
-## The floor, and where it is enforced
+## Threat notes
 
-| Rule | Enforcement |
-| --- | --- |
-| Secrets never reach the model, items, logs, reports or the UI | Stored only through `security/keyring_store` (AES-256-GCM vault; SQLite holds `keyring://` refs). Provider APIs return `has_*` flags, never values. 422 bodies are re-built without `input` and redacted. Every tool result, item payload, audit row, report line and span attribute passes `security/redaction`; a tool call's recorded arguments and result (inside a turn, over MCP and in direct runs) also pass `SecretScrubber`, which masks the **exact secret values the vault holds** (built once per call from the in-memory vault, never logged), so a gateway error that echoes a secret of no known shape is still masked. Streamed text passes the `StreamSanitizer` (tail hold-back, eager masking of secret-shaped strings). The assembled instructions (`prompt.instructions_for`) have the exact vault values masked and are then checked by `safety.assert_no_secrets_in_context`; if the check trips, the prompt goes out redacted rather than failing the Turn. |
-| Storage is read-only | No tool calls a mutating S3 API (`tests/test_s3_safety.py` scans the source). Issue fixes are generated text; the bucket name, endpoint and region are shell-quoted in the CLI command and HCL-escaped in Terraform, so a hostile listing cannot inject a second command into text the user copies; a name outside `[A-Za-z0-9._-]` gets no generated fix (cmd.exe ignores POSIX quoting), and a fix is regenerated on every read, so text stored by older versions is never served. |
-| No generic capability | No shell, subprocess, raw boto3 client, unrestricted filesystem, SQL, browser or computer control is registered; `safety.is_forbidden_tool` rejects such names at registration. |
-| Scope | Each storage tool declares its `Scope`; an SDK input guardrail checks the provider's allowed buckets/prefixes before the call runs and records a refusal the model reads. Verify and the MCP bridge use the same check. A non-string bucket, key, prefix or provider id is refused ("must be a string"); a key or prefix with a `..` segment is refused on every account, and on a prefix-scoped account a `.` or empty (`//`) segment too, so a path-normalizing gateway cannot resolve it outside the prefix. `list_buckets` is filtered to `allowed_buckets` (in a turn and over MCP): a bucket outside the scope is never named. A tool that lists only in some modes (the review's `performance` aspect) gets listing scope in those modes. |
-| Bounded data movement | `import_evidence`: a survey-discovered source only; ≤ 500 files and ≤ 256 MiB per call (clamped server-side); refused with nothing downloaded without 1 GiB free disk after the download; the decompressed output (gzip members, the combined log/CSV, the combined Parquet) is budgeted against the free space left after the download minus the same 1 GiB and re-checked every 64 MiB written, inside the existing 1000:1 per-member and 16 GiB per-combine caps — running out stops the import and keeps nothing; audited `approved_by=agent`; stops between files. Uploads are ≤ 2 GiB and stay local. `survey_account` ≤ 500 buckets and reports coverage. Per-turn budgets bound probes (e.g. latency ×8, range reads ×12, previews 16 objects / 24 MiB). |
-| Bounded, sanitized context | Tool output to the model ≤ 60 000 chars (UI detail ≤ 24 000) inside `<<external_untrusted_data>>…<<end_external_untrusted_data>>`; the instructions say it is data, never instructions. The estate digest (open issues grouped by kind — counts, a total, three bucket names per kind) is inside the same envelope, since bucket names come from listings. Structured tool arguments are typed (no JSON inside a string; a string where a list belongs is coerced). The SDK's `ToolOutputTrimmer` shortens older outputs; compaction folds old Turns into a bounded summary. Standing instructions (`AGENTS.md`) ≤ 8 000 chars, redacted, below the safety rules. |
-| Raw rows stay local | Access logs and inventories are loaded into DuckDB and analyzed deterministically; the model sees bounded metrics, findings and whitelisted aggregates (no SQL passes through). A fix's impact preview reads the same tables for counts, a time range and ≤ 3 key prefixes — never a requester, IP or raw line. |
-| No chain-of-thought | Messages and conclusions pass `safety.strip_chain_of_thought`; reasoning items are never persisted (the Responses backend runs `store=False` and carries encrypted reasoning only within a Turn). |
-| Honest gaps | Provider capability gaps are `provider_unsupported`; a review blind spot resolves no Issue; the storage-class simulation produces no dollar figures and is a gap without inventory. |
-| Local process isolation | The Sidecar binds 127.0.0.1; with `STORAGE_AGENT_AUTH_TOKEN` (the packaged app) every route but `/health` needs the token (constant-time compare); the launcher verifies a per-launch nonce before handing the token to the webview; CORS allows only the app's origins. |
-| Notes | Notes reach every prompt, so their text is redacted with eager masking of secret-shaped tokens, bounded (1 000 chars, 500 notes, 12 in the digest at 280 chars) and placed inside the untrusted-data envelope (`estate_notes`) as remembered context, never instructions — a note the model was talked into keeping stays data. The Agent's notes are trimmed before the user's. The `note` tool is never exposed over MCP. |
-| Stop | Each tool call's `StopSignal` is set by the Turn's Stop or the call's own timeout; bodies stop at their next check, so a timed-out survey or import does not keep reading in the background. |
-| Audit | Every tool call (agent, user, watch, mcp), settings change, note change, upload, import and deletion writes a sanitized `audit` row. |
+- **A hostile S3-compatible endpoint** can return huge XML, hostile bucket names
+  or error text. Responses are read through the AWS SDK's typed shapes, posture
+  is projected onto enums and booleans, and generated fix text only accepts a
+  bucket name matching `[A-Za-z0-9][A-Za-z0-9._-]{0,254}` — anything else has no
+  generated fix because no single quoting rule is safe across POSIX shells,
+  PowerShell and cmd.exe.
+- **A hostile attached file** can be enormous or malformed. Imports stream, cap
+  rows at 2,000,000, cap each string, and treat a giant line as data rather than
+  loading it whole.
+- **The renderer is sandboxed**: `contextIsolation`, no `nodeIntegration`, a CJS
+  preload, and a CSP that forbids remote script. It never receives a credential,
+  a raw provider message or a filesystem handle.
+- **The model is untrusted**: it can propose a fix, never apply one; it cannot
+  open or resolve Issues, and its prose is never parsed as product state.
 
-## Extensions on the same floor
+## Not claimed
 
-- **Watch** — opt-in per account, off by default, read-only, bounded (≤ 500 buckets surveyed, ≤ 25 re-checked), stops between phases when turned off, opens a task only through the one runtime path. The Direction it submits carries the findings (bucket names included) as JSON inside the untrusted-data envelope, never as free lines of text.
-- **MCP server** — only with `STORAGE_AGENT_ENABLE_MCP=1`; the registry's stateless read-only subset plus `list_providers` (never credentials); same scope check, bounds and redaction (exact vault values included); audited `actor=mcp`; behind the Sidecar token. Results reach the client as text inside the untrusted-data envelope; the per-turn budgets (previews, ranged reads, latency runs, skill loads) hold across MCP calls for a rolling 10-minute window instead of resetting on every call; refusals name the bridge's own `list_providers`. `note`, `record_conclusion` and every task-bound tool are never exposed.
-- **Local models, user skills, standing instructions** — skills and instructions are guidance text, never executed.
-- **The shell** — deep links carry only a task id (validated on both sides); a second launch focuses the one window; the tray tooltip is plain text ≤ 120 chars.
+- Fixes are text. Storage Agent does not verify that a fix was applied; a later
+  survey observes the result.
+- Vault security depends on the OS keychain when available. The AES fallback
+  protects a database copied off the machine only if the key file is not copied
+  with it; Settings does not claim otherwise.

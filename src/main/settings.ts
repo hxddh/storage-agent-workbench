@@ -1,0 +1,74 @@
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { AppSettings, Lang, Theme } from '@shared/contract'
+
+export type ModelProvider = 'openai' | 'anthropic' | 'compatible'
+
+export interface StoredModel {
+  provider: ModelProvider
+  modelId: string
+  baseUrl: string
+  contextWindow: number
+  keyRef: string
+}
+
+export interface StoredSettings {
+  language: Lang
+  theme: Theme
+  model: StoredModel | null
+}
+
+const DEFAULTS: StoredSettings = {
+  language: 'en',
+  theme: 'system',
+  model: null,
+}
+
+export class Settings {
+  private value: StoredSettings
+  private readonly path: string
+
+  constructor(dir: string) {
+    this.path = join(dir, 'settings.json')
+    this.value = this.load()
+  }
+
+  get(): StoredSettings {
+    return this.value
+  }
+
+  public(): AppSettings {
+    return { language: this.value.language, theme: this.value.theme }
+  }
+
+  patch(patch: Partial<AppSettings>): void {
+    if (patch.language) this.value.language = patch.language
+    if (patch.theme) this.value.theme = patch.theme
+    this.save()
+  }
+
+  setModel(model: StoredModel | null): void {
+    this.value.model = model
+    this.save()
+  }
+
+  private load(): StoredSettings {
+    try {
+      if (!existsSync(this.path)) return { ...DEFAULTS }
+      const raw = JSON.parse(readFileSync(this.path, 'utf8')) as Partial<StoredSettings>
+      return {
+        language: raw.language === 'zh' ? 'zh' : 'en',
+        theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
+        model: raw.model ?? null,
+      }
+    } catch {
+      return { ...DEFAULTS }
+    }
+  }
+
+  private save(): void {
+    const tmp = `${this.path}.tmp`
+    writeFileSync(tmp, JSON.stringify(this.value, null, 2), { mode: 0o600 })
+    renameSync(tmp, this.path)
+  }
+}

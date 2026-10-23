@@ -1,59 +1,14 @@
 # Documentation
 
-> **Release in this checkout: Storage Agent v14.0.0; these canonical documents describe
-> the current `main`.** Built on the v5 rewrite around one idea — *the Task is
-> the window's object, the estate is the Agent's memory, and one item stream is
-> the truth*. v14 is one window and one Composer: Quick Ask and the separate Home
-> layout are gone, a Turn is answer-first with deterministic data folded beneath
-> it, long tasks load bounded history, the shell supervises its Sidecar, and the
-> dependency floor is current. There is one small migration (head **3**) that
-> retires the `quick_ask` origin; one read-only history route was added and the
-> 15-tool set is unchanged. See
-> `docs/releases/14.0.0.md`; release notes are history, these documents are the
-> current specification.
+| File | What it is |
+|---|---|
+| [product.md](product.md) | The product: surfaces, task lifecycle, answer contract |
+| [architecture.md](architecture.md) | Processes, modules, data flow, pi-durable usage |
+| [data-model.md](data-model.md) | Host tables, pi tables, datasets |
+| [tools.md](tools.md) | The ten tools and their views |
+| [security.md](security.md) | Secrets, scope, redaction, audit |
+| [design.md](design.md) | Tokens, type, layout, motion |
+| [development.md](development.md) | Commands, tests, packaging, release |
 
-## Source-of-truth order
-
-1. The code, and its executable contracts: `frontend/src/contracts.test.ts`,
-   `frontend/src/surfaces.test.tsx`, `frontend/src/tool/ResultView.test.tsx`,
-   `sidecar/tests/test_v500_*.py`, `sidecar/tests/test_v600_kernel.py`,
-   `sidecar/tests/test_v1100_agent_native.py`, `sidecar/tests/test_v1200_*.py`,
-   `sidecar/tests/test_v1300_agent_workspace.py`, `sidecar/tests/test_v1400_workbench.py`,
-   the Playwright suite in `frontend/e2e/`.
-2. `CLAUDE.md` — the implementation contract.
-3. The canonical documents below.
-4. Release notes and the CHANGELOG — history, not specification.
-
-When they disagree, the higher one wins; fix the lower one in the same PR.
-
-## Vocabulary
-
-| Concept | Meaning |
-| --- | --- |
-| **Task** | The unit of delegated work: a tree of Turns, read one branch at a time. |
-| **Direction** | What the user asked — the heading of a Turn, in their words. Editing it sends a new version (a fork). |
-| **Turn** | One Direction and the work it caused; queued, running, completed, failed, cancelled or interrupted. |
-| **Item** | One entry of the append-only stream (message, tool call/progress/output, conclusion, steer, compaction, notice, error). Everything shown is projected from items. |
-| **Workspace** | A task's page: every Turn on the branch, oldest first — the objective, work receipt, answer, findings and folded data. Home is the same workspace before its first Direction. |
-| **Estate** | The Agent's memory of the user's storage: accounts, known buckets, posture, Issues and notes. It is data the Agent reads, not a window tree. |
-| **Issue** | A deterministic observation about a bucket, with a lifecycle (open → fix proposed → resolved; recurred; accepted). |
-| **Fix pack** | An Issue's fix as text the user applies — AWS CLI, Terraform, the API document — with an impact preview drawn from evidence (or an honest *cannot tell*). |
-| **Note** | Something the Agent keeps in the estate's memory about an account or a bucket; every task starts with the most recent. The Agent writes it with the `note` tool; it is not a window navigation surface. |
-| **Watch** | An opt-in, read-only sweep of one account on the Sidecar's clock that opens one task when something new turns up. |
-| **Send / Add to the request / Stop** | The one control path: submit a Direction, steer the running Turn, end it. |
-
-## Documents
-
-| Document | What it specifies |
-| --- | --- |
-| `product.md` | What the product is for, the one window, Home, the Task workspace, Evidence, the Composer and Connections. |
-| `architecture.md` | The runtime: items, turns and forks, the agent loop, tools, models, streaming, the estate, the shell. |
-| `security.md` | The safety floor and how each rule is enforced. |
-| `api.md` | Every Sidecar route and stream. |
-| `data-model.md` | The SQLite schema, item payloads, datasets on disk, the v4 importer. |
-| `tools.md` | Every Agent tool, its bounds and scope. |
-| `design-tokens.md` | The design system's tokens. |
-| `evals.md` | How behaviour is pinned in tests. |
-| `install.md`, `packaging.md`, `release.md`, `release-smoke-test.md`, `signing.md` | Building, packaging, releasing. |
-
-`history/` keeps earlier baselines (v4 under `history/v4/`) for reference only.
+Precedence: `CLAUDE.md`, then this directory, then the code and its tests.
+Release notes and the changelog are history and may describe retired behavior.

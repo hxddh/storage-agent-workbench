@@ -1,59 +1,31 @@
-# ---- Node / frontend ----
+# ---- Node ----
 node_modules/
-frontend/dist/
-frontend/node_modules/
-*.local
-.vite/
-
-# ---- Python / sidecar ----
-__pycache__/
-*.py[cod]
-.venv*/
-venv/
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-build/
+out/
+release/
 dist/
+.vite/
+*.local
 
-# ---- Rust / Tauri ----
-src-tauri/target/
-src-tauri/gen/
-src-tauri/binaries/
-src-tauri/sidecar-dist/
-
-# ---- Packaging output (PyInstaller) ----
-sidecar/dist/
-sidecar/build/
-
-# ---- Local app data (runtime, never commit) ----
+# ---- Local app data ----
 data/
-*.duckdb
 *.sqlite
 *.sqlite3
+*.duckdb
 
-# ---- Secrets (never commit; secrets live in an AES-256-GCM encrypted vault:
-#      secrets.enc + secrets.key in the app data dir, NOT the OS keychain) ----
+# ---- Secrets ----
 .env
 .env.*
 *.pem
 *.key
+
+# ---- Review and test artifacts ----
+.amp/in/
+.amp/portals/
+playwright-report/
+test-results/
 
 # ---- OS / editor ----
 .DS_Store
 .idea/
 .vscode/
 *.swp
-
-# ---- Local tooling (not part of the project) ----
-.claude/
-.amp/portals/
-
-# Playwright E2E artifacts (frontend/e2e is source; these are run output).
-frontend/playwright-report/
-frontend/test-results/
-# …and the same output if playwright is ever run from the repo root.
-playwright-report/
-test-results/
-# Visual contact sheet (npm run shots): review evidence, never a baseline.
-frontend/shots/
