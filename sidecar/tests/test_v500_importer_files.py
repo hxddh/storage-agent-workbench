@@ -75,7 +75,7 @@ def test_the_v4_database_is_imported_once_and_never_modified(conn):
     task = store.get_task(conn, "s1")
     assert task["title"] == "Why 403" and task["title_source"] == "agent"
     types = [i["type"] for i in store.items_for_turns(conn, [t["id"] for t in store.branch(conn, "s1")])]
-    assert types == ["user_message", "notice", "conclusion", "agent_message"]
+    assert types == ["user_message", "notice", "agent_message"]
     issue = conn.execute("SELECT status, source_task_id FROM issues WHERE id = 'i1'").fetchone()
     assert tuple(issue) == ("open", "s1")
     # v8: the price table is no longer imported (dollar estimates were removed).

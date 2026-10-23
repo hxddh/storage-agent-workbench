@@ -9,7 +9,7 @@ export type TaskRow = {
   id: string;
   title: string;
   title_source: "seed" | "agent" | "user";
-  origin: "user" | "watch" | "quick_ask";
+  origin: "user" | "watch";
   state: TaskState;
   created_at: string;
   updated_at: string;
@@ -43,16 +43,6 @@ export type Severity = "high" | "medium" | "low" | "info";
 export type Finding = { title: string; severity: Severity; detail?: string };
 export type Attachment = { dataset_id: string; filename: string; type: string };
 
-/** One estate ref the reader pointed at in the Composer. Context is focus,
- * never authorization: provider bucket/prefix scope remains the boundary. */
-export type ContextRef = {
-  kind: "account" | "bucket" | "issue";
-  provider_id: string;
-  bucket?: string;
-  issue_id?: string;
-};
-/** The resolved form stored in a user_message: names come from the estate. */
-export type ContextItem = ContextRef & { account: string; title?: string };
 export type Evidence = { call_id: string; name: string; target: string; summary: string };
 
 type Base<T extends string, P> = {
@@ -70,7 +60,7 @@ export type NoticeEvent =
   | "finalized" | "compacted" | "titled" | "imported" | "carried" | "reprompted";
 
 export type Item =
-  | Base<"user_message", { text: string; attachments?: Attachment[]; context?: ContextItem[] }>
+  | Base<"user_message", { text: string; attachments?: Attachment[] }>
   | Base<"agent_message", { text: string }>
   | Base<"tool_call", { call_id: string; name: string; args: Record<string, unknown>; target: string }>
   | Base<"tool_progress", { call_id: string; name: string; done: number; total: number; unit: string }>
@@ -78,8 +68,7 @@ export type Item =
       call_id: string; name: string; ok: boolean; refused?: boolean; summary: string;
       duration_ms?: number; detail?: string | null; detail_truncated?: boolean;
     }>
-  | Base<"conclusion", { call_id: string; answer?: string; findings?: Finding[]; next_steps?: string[];
-      evidence?: Evidence[] }>
+  | Base<"conclusion", { call_id: string; findings?: Finding[]; evidence?: Evidence[] }>
   | Base<"steer", { text: string }>
   | Base<"compaction", { summary: string; turns_folded: number; folded?: string[] }>
   | Base<"notice", { event: NoticeEvent; error?: string; reason?: string; title?: string; note?: string;
@@ -117,7 +106,16 @@ export type TaskSnapshot = {
   files: FileRow[];
   artifacts: ArtifactRow[];
   last_seq: number;
+  has_older?: boolean;
+  oldest_turn_id?: string | null;
   head_turn_id?: string | null;
+};
+
+export type TaskHistory = {
+  turns: Turn[];
+  items: Item[];
+  has_older: boolean;
+  oldest_turn_id: string | null;
 };
 
 export type StateEvent = {
@@ -127,40 +125,12 @@ export type TaskFeedEvent = { task_id: string; state?: TaskState; title?: string
 
 // --- estate -------------------------------------------------------------------------
 
-export type IssueStatus = "open" | "fix_proposed" | "resolved" | "recurred" | "accepted";
-
 export type FixFormat = { format: "cli" | "terraform" | "json"; label: string; text: string };
-
-export type Fix = {
-  kind: string; command: string; document?: Record<string, unknown>; notes?: string[]; formats?: FixFormat[];
-};
 
 export type Impact = {
   verdict: "low" | "caution" | "unknown";
   points: Array<{ text: string; evidence: "posture" | "access_log" | "rule"; count?: number; total?: number }>;
   gaps: string[];
-};
-
-export type Issue = {
-  id: string;
-  provider_id: string;
-  provider_name: string;
-  bucket: string;
-  code: string;
-  title: string;
-  severity: Severity;
-  status: IssueStatus;
-  detail: string | null;
-  first_seen_at: string;
-  last_seen_at: string;
-  resolved_at: string | null;
-  resolved_by: string | null;
-  source_task_id: string | null;
-  fix: Fix | null;
-  fixable: boolean;
-  last_verified_at: string | null;
-  last_verify_result: string | null;
-  events?: Array<{ kind: string; source: string | null; created_at: string }>;
 };
 
 export type Watch = {
@@ -173,61 +143,6 @@ export type Watch = {
   last_summary: string | null;
   last_task_id: string | null;
   running?: boolean;
-};
-
-export type EstateProvider = {
-  provider_id: string;
-  name: string;
-  provider_type: string;
-  bucket_count: number;
-  last_checked_at: string | null;
-  open_issues: { high: number; medium: number; low: number };
-  watch: Watch;
-};
-
-export type Estate = {
-  providers: EstateProvider[];
-  bucket_count: number;
-  issues: Issue[];
-  open_issue_count: number;
-  last_watch_at: string | null;
-};
-
-export type Note = {
-  id: string;
-  provider_id: string | null;
-  bucket: string | null;
-  text: string;
-  source: "user" | "agent" | "accept";
-  task_id: string | null;
-  issue_id: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type BucketRow = {
-  bucket: string;
-  region: string | null;
-  last_checked_at: string | null;
-  open_issues: { high: number; medium: number; low: number };
-};
-
-export type TimelineEntry =
-  | { kind: "posture"; at: string; source: string; task_id: string | null; first: boolean; changed: string[];
-      posture: Record<string, unknown> }
-  | { kind: "issue"; at: string; source: string | null; event: string; issue_id: string; code: string; title: string;
-      severity: Severity };
-
-export type BucketPage = {
-  provider_id: string;
-  bucket: string;
-  region: string | null;
-  posture: Record<string, unknown>;
-  last_checked_at: string | null;
-  source_task_id: string | null;
-  issues: Issue[];
-  timeline: TimelineEntry[];
-  notes: Note[];
 };
 
 // --- providers & settings ----------------------------------------------------------

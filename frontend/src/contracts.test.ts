@@ -44,10 +44,9 @@ describe("the window", () => {
     for (const part of ["<Sidebar", 'className="titlebar"', 'className="document"', "<Composer", "<Details"]) {
       expect(shell).toContain(part);
     }
-    // One visible Composer: Home carries it before a task exists; the task dock
-    // carries it afterwards. They are never mounted together.
+    // One Composer, mounted once, in the same dock whether or not a task exists.
     expect(shell.match(/<Composer\b/g)).toHaveLength(1);
-    expect(read(path.join(SRC, "home/Home.tsx")).match(/<Composer\b/g)).toHaveLength(1);
+    expect(fs.existsSync(path.join(SRC, "home"))).toBe(false);
     expect(shell).toContain("taskId={taskId} busy={busy}");
     // The sidebar is New task, search, the task list and Settings. There is no
     // storage navigation or estate picker in the window.
@@ -55,9 +54,10 @@ describe("the window", () => {
     for (const gone of ["nav-home", "nav-estate", "openEstate", "open-storage", "nav.storage"]) expect(sidebar).not.toContain(gone);
   });
 
-  it("a turn is one workspace: artifact first, findings, quiet receipt, no follow-up", () => {
+  it("a turn is answer-first: receipt, answer, findings, folded data, no follow-up", () => {
     const turn = read(path.join(SRC, "task/Turn.tsx"));
     expect(turn).toContain('className="turn-body"');
+    expect(turn).toContain('className="turn-data"');
     expect(turn).toContain('data-testid="run-result"');
     expect(turn).not.toContain('className="assistant"');
     expect(turn).not.toContain('data-testid="next-step"');
@@ -89,12 +89,11 @@ describe("the window", () => {
     expect(composer).not.toContain("context-picker");
   });
 
-  it("keeps Home to one sentence and one Composer; storage is not a window object", () => {
-    const home = read(path.join(SRC, "home/Home.tsx"));
-    expect(home).toContain("<Composer");
-    expect(home).not.toContain("Attention");
-    expect(home).not.toContain("readiness");
-    expect(home).not.toMatch(/\bapi\./);
+  it("keeps the empty Task to one sentence and one Composer; storage is not a window object", () => {
+    const shell = read(path.join(SRC, "shell/Shell.tsx"));
+    expect(shell).toContain('"home-dock"');
+    expect(shell).toContain('t("home.greeting")');
+    expect(shell).not.toContain("readiness");
     expect(fs.existsSync(path.join(SRC, "estate/StorageSheet.tsx"))).toBe(false);
     expect(fs.existsSync(path.join(SRC, "estate"))).toBe(false);
     expect(read(path.join(SRC, "shell/Sidebar.tsx"))).not.toContain("open-storage");
@@ -169,13 +168,10 @@ describe("the native shell", () => {
     for (const id of ids) expect(native).toContain(`"${id}"`);
   });
 
-  it("Quick Ask is a second window of the same app, on the same submit path", () => {
+  it("has one window and one view", () => {
     const conf = JSON.parse(fs.readFileSync(path.join(ROOT, "src-tauri/tauri.conf.json"), "utf8"));
-    const quick = conf.app.windows.find((w: { label?: string }) => w.label === "quick");
-    expect(quick.url).toBe("index.html?view=quick");
-    expect(quick.visible).toBe(false);
-    // A summoned window is never restored as a startup popup.
-    expect(fs.readFileSync(path.join(ROOT, "src-tauri/src/lib.rs"), "utf8")).toContain('with_denylist(&["quick"])');
-    expect(read(path.join(SRC, "quick/QuickAsk.tsx"))).toContain('api.createTask(q, "quick_ask")');
+    expect(conf.app.windows.map((w: { label: string }) => w.label)).toEqual(["main"]);
+    expect(read(path.join(SRC, "App.tsx"))).not.toContain("view=quick");
+    expect(fs.existsSync(path.join(SRC, "quick"))).toBe(false);
   });
 });

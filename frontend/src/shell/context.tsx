@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import type { Attachment, CloudProvider, ModelProvider } from "../api/types";
 
@@ -26,6 +26,12 @@ type Ctx = {
   closeSettings: () => void;
   editing: Editing;
   setEditing: (e: Editing) => void;
+  /** Unsent text, in memory only: navigation keeps it, reload does not persist it. */
+  drafts: {
+    get: (key: string) => string;
+    set: (key: string, text: string) => void;
+    clear: (key: string) => void;
+  };
   models: ModelProvider[] | null;
   clouds: CloudProvider[] | null;
   reloadProviders: () => Promise<void>;
@@ -61,6 +67,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sidebar, setSidebarState] = useState(storedSidebar);
   const [settings, setSettings] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
+  const drafts = useRef<Record<string, string>>({});
   const [models, setModels] = useState<ModelProvider[] | null>(null);
   const [clouds, setClouds] = useState<CloudProvider[] | null>(null);
   const [online, setOnline] = useState(true);
@@ -131,6 +138,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     closeSettings: () => { setSettings(null); void reloadProviders(); },
     editing,
     setEditing,
+    drafts: {
+      get: (key) => drafts.current[key] ?? "",
+      set: (key, text) => {
+        if (text) drafts.current[key] = text;
+        else delete drafts.current[key];
+      },
+      clear: (key) => { delete drafts.current[key]; },
+    },
     models,
     clouds,
     reloadProviders,

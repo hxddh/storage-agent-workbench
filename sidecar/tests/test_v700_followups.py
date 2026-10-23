@@ -20,7 +20,7 @@ def _strict(fake: FakeModel) -> None:
 
 
 def test_three_directions_replay_exactly_and_strictly(client):
-    concl = {"findings": [{"title": "Nothing", "severity": "info"}], "next_steps": []}
+    concl = {"findings": [{"title": "Nothing", "severity": "info"}]}
     with FakeModel([
         commentary_tool_turn("Let me look.", "query_estate", {}),
         tool_turn("record_conclusion", concl),
@@ -68,7 +68,7 @@ def test_a_follow_up_queued_while_a_turn_runs_comes_after_that_turn(client):
 
 
 def test_a_parallel_batch_with_a_conclusion_replays_calls_then_outputs(client):
-    concl = {"next_steps": ["Look again"]}
+    concl = {"findings": [{"title": "Look again", "severity": "info"}]}
     with FakeModel([
         parallel_turn([("query_estate", {}), ("record_conclusion", concl), ("query_estate", {})],
                       text="Looking at both."),

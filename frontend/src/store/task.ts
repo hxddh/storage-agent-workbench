@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { api, streamUrl } from "../api";
-import type { Item, LiveSegment, StateEvent, TaskSnapshot, TaskState, Turn, TurnStatus } from "../api/types";
+import type { Item, LiveSegment, StateEvent, TaskHistory, TaskSnapshot, TaskState, Turn, TurnStatus } from "../api/types";
 
 /**
  * One Task, as the window reads it. The snapshot seeds it; after that every
@@ -27,6 +27,9 @@ export type TaskModel = {
   lastSeq: number;
   connected: boolean;
   error: string | null;
+  hasOlder: boolean;
+  oldestTurnId: string | null;
+  loadingOlder: boolean;
 };
 
 export type Action =
@@ -38,11 +41,15 @@ export type Action =
   | { type: "live"; live: LiveSegment | null }
   | { type: "state"; state: StateEvent }
   | { type: "connected"; connected: boolean }
+  | { type: "history"; history: TaskHistory }
+  | { type: "older-start" }
+  | { type: "older-error" }
   | { type: "error"; error: string | null };
 
 export function initial(id: string): TaskModel {
   return { id, snapshot: null, allTurns: {}, head: null, turns: [], items: [], live: null, state: "ready",
-    runningTurnId: null, queuedTurnIds: [], lastSeq: 0, connected: false, error: null };
+    runningTurnId: null, queuedTurnIds: [], lastSeq: 0, connected: false, error: null,
+    hasOlder: false, oldestTurnId: null, loadingOlder: false };
 }
 
 const NOTICE_STATUS: Partial<Record<string, TurnStatus>> = {
@@ -124,6 +131,7 @@ export function reduce(m: TaskModel, a: Action): TaskModel {
         ...(newer.length ? stateOf(turns, s.head_turn_id ?? s.task.head_turn_id)
           : { state: s.state, runningTurnId: s.running_turn_id, queuedTurnIds: s.queued.map((q) => q.turn_id) }),
         lastSeq: Math.max(m.lastSeq, s.last_seq), error: null,
+        hasOlder: s.has_older ?? false, oldestTurnId: s.oldest_turn_id ?? null, loadingOlder: false,
       });
     }
     case "turn": {
@@ -165,6 +173,18 @@ export function reduce(m: TaskModel, a: Action): TaskModel {
       return withBranch({ ...m, state: st.state, runningTurnId: st.running_turn_id, queuedTurnIds: st.queued_turn_ids,
         head, live: st.running_turn_id ? m.live : null });
     }
+    case "history": {
+      const allTurns = { ...m.allTurns };
+      for (const t of a.history.turns) allTurns[t.id] = t;
+      let items = m.items;
+      for (const it of a.history.items) items = insert(items, it);
+      return withBranch({ ...m, allTurns, items, hasOlder: a.history.has_older,
+        oldestTurnId: a.history.oldest_turn_id, loadingOlder: false });
+    }
+    case "older-start":
+      return { ...m, loadingOlder: true };
+    case "older-error":
+      return { ...m, loadingOlder: false };
     case "connected":
       return { ...m, connected: a.connected };
     case "error":
@@ -272,17 +292,31 @@ export function useTask(id: string | null) {
       });
     };
 
-    // Follow from exactly where the snapshot ends.
-    void reload().then((s) => {
+    // Follow from exactly where the snapshot ends. A failed snapshot is
+    // retried with backoff instead of opening a stream at seq 0 — that stream
+    // carries no history, so it would leave the page permanently empty.
+    let snapAttempt = 0;
+    let snapTimer: ReturnType<typeof setTimeout> | undefined;
+    const load = async () => {
+      const s = await reload();
+      if (closed) return;
       if (s) {
+        snapAttempt = 0;
         known.current = Object.fromEntries(s.turns.map((t) => [t.id, t]));
         open(s.last_seq);
-      } else open(0);
-    });
+        return;
+      }
+      // Five tries, then leave the recorded error and the explicit Try again
+      // control. The reconnect poll also reloads, so recovery is not lost.
+      if (snapAttempt >= RETRY_MS.length) return;
+      snapTimer = setTimeout(() => void load(), RETRY_MS[snapAttempt++]);
+    };
+    void load();
     return () => {
       closed = true;
       clearTimeout(timer);
       clearTimeout(pendingReload);
+      clearTimeout(snapTimer);
       source?.close();
     };
   }, [id, reload]);
@@ -299,5 +333,15 @@ export function useTask(id: string | null) {
   const blank = useMemo(() => initial(id ?? ""), [id]);
   const current = model.id === (id ?? "") ? model : blank;
   const setSnapshot = useCallback((s: TaskSnapshot) => dispatch({ type: "snapshot", snapshot: s }), []);
-  return { model: current, reload, setSnapshot };
+  const loadOlder = useCallback(async () => {
+    if (!id || !current.hasOlder || !current.oldestTurnId || current.loadingOlder) return;
+    dispatch({ type: "older-start" });
+    try {
+      dispatch({ type: "history", history: await api.history(id, current.oldestTurnId) });
+    } catch (err) {
+      dispatch({ type: "older-error" });
+      dispatch({ type: "error", error: err instanceof Error ? err.message : String(err) });
+    }
+  }, [id, current.hasOlder, current.oldestTurnId, current.loadingOlder]);
+  return { model: current, reload, setSnapshot, loadOlder };
 }

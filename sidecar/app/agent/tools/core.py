@@ -184,13 +184,11 @@ def note(text: str, provider_id: str = "", bucket: str = "") -> dict[str, Any]:
 
 
 @tool(group="core", core=True, untrusted=False, special="conclusion", timeout=10)
-def record_conclusion(findings: Annotated[list[Finding], Field(max_length=8)] | None = None,
-                      next_steps: Annotated[list[str], Field(max_length=4)] | None = None) -> str:
+def record_conclusion(findings: Annotated[list[Finding], Field(max_length=8)] | None = None) -> str:
     """Record the turn's findings (most severe first), once, right before your final answer. Shown under
     the answer.
 
     Args:
         findings: Only what your tools showed.
-        next_steps: Legacy; leave it blank. The window does not offer follow-up prompts.
     """
     return "recorded"  # handled by the registry (special="conclusion")

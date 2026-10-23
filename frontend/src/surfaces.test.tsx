@@ -35,7 +35,7 @@ function modelOf(turns = [turn("t1")], items = [
   item("t1", "agent_message", { text: "Looking." }),
   item("t1", "tool_call", { call_id: "a", name: "survey_account", args: {}, target: "prod" }),
   item("t1", "tool_output", { call_id: "a", name: "survey_account", ok: true, summary: "4 buckets" }),
-  item("t1", "conclusion", { call_id: "c", answer: "One bucket is public.", next_steps: ["Show the fix"],
+  item("t1", "conclusion", { call_id: "c",
     findings: [{ title: "acme-www is public", severity: "high" }] }),
   item("t1", "agent_message", { text: "The **full** answer." }),
 ]): TaskModel {
@@ -69,7 +69,7 @@ describe("the task page", () => {
       item("t1", "conclusion", { call_id: "c", findings: [
         { title: "Public bucket", severity: "high" },
         { title: "No encryption", severity: "medium" },
-      ], evidence, next_steps: ["Show the fix", "Check again"] }),
+      ], evidence }),
       item("t1", "agent_message", { text: "Two things need care." }),
     ]);
     await act(async () => { render(wrap(<TaskPage model={m} setSnapshot={() => {}} />)); });
@@ -88,10 +88,22 @@ describe("the task page", () => {
       item("t1", "tool_progress", { call_id: "b", name: "list_buckets", done: 2, total: 4, unit: "buckets" }),
     ]);
     await act(async () => { render(wrap(<TaskPage model={m} setSnapshot={() => {}} />)); });
-    expect(screen.getByTestId("run-trace")).toHaveTextContent("2 checks");
+    expect(screen.getByTestId("run-trace")).toHaveTextContent(/Listing buckets/);
+    expect(screen.getByTestId("run-trace")).not.toHaveTextContent("2 checks");
     expect(screen.getByTestId("run-body")).toBeVisible();
-    expect(screen.getAllByText("Listing buckets").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Listing buckets/).length).toBeGreaterThan(0);
     expect(screen.getByText("2 of 4 buckets")).toBeInTheDocument();
+  });
+
+  it("offers earlier turns only when the snapshot says there are older pages", async () => {
+    const t1 = turn("t1");
+    const s = snapshot([t1], [item("t1", "user_message", { text: "Old" }), item("t1", "agent_message", { text: "Old answer" })],
+      { has_older: true, oldest_turn_id: "t1" });
+    const m = reduce(initial("task-1"), { type: "snapshot", snapshot: s });
+    const load = vi.fn(async () => {});
+    await act(async () => { render(wrap(<TaskPage model={m} setSnapshot={() => {}} onLoadOlder={load} />)); });
+    fireEvent.click(screen.getByRole("button", { name: "Load earlier turns" }));
+    expect(load).toHaveBeenCalledOnce();
   });
 
   it("renders a survey result from the call detail, not from the answer prose", async () => {

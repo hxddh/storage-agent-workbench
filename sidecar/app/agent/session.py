@@ -99,25 +99,6 @@ def to_input(items: list[dict[str, Any]], *, skip_steers_of: str | None = None) 
         if t == "user_message":
             flush()
             text = p.get("text", "")
-            if p.get("context"):
-                # The reader's focus, replayed as data: account / bucket / issue
-                # names the estate resolved when the Direction was submitted.
-                # It is context, not authorization; the scope guardrail remains
-                # the only boundary.
-                refs = []
-                for c in p["context"][:8]:
-                    if not isinstance(c, dict):
-                        continue
-                    bits = [str(c.get("kind") or "")]
-                    if c.get("account"):
-                        bits.append(str(c["account"]))
-                    if c.get("bucket"):
-                        bits.append(f"bucket {c['bucket']}")
-                    if c.get("title"):
-                        bits.append(f"issue {c['title']}")
-                    refs.append(" · ".join(b for b in bits if b))
-                if refs:
-                    text += "\n[Context: " + "; ".join(refs) + "]"
             if p.get("attachments"):
                 # One line per file, with the id analyze_uploaded_file takes (no lookup step for a small model).
                 for a in p["attachments"]:
@@ -149,11 +130,13 @@ def to_input(items: list[dict[str, Any]], *, skip_steers_of: str | None = None) 
                 outputs[p["call_id"]] = {"type": "function_call_output", "call_id": p["call_id"],
                                          "output": p.get("model_output") or p.get("summary") or ""}
         elif t == "conclusion":
+            # A conclusion without findings has nothing to replay (a retired
+            # next-steps-only item, or an imported one); its answer is the
+            # Turn's final message, which replays on its own.
+            if not p.get("findings"):
+                continue
             add_call({"type": "function_call", "call_id": p["call_id"], "name": "record_conclusion",
-                      # The call as the v9 tool takes it; a pre-v9 item's `answer`
-                      # is its Turn's final message, which replays on its own.
-                      "arguments": json.dumps({k: p[k] for k in ("findings", "next_steps") if p.get(k)},
-                                              separators=(",", ":"))})
+                      "arguments": json.dumps({"findings": p["findings"]}, separators=(",", ":"))})
             outputs[p["call_id"]] = {"type": "function_call_output", "call_id": p["call_id"],
                                      "output": "Conclusion recorded."}
         elif t == "notice" and p.get("event") == "resumed":

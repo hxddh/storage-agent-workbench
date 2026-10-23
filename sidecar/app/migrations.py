@@ -66,7 +66,7 @@ CREATE TABLE tasks (
     title         TEXT NOT NULL,
     title_source  TEXT NOT NULL DEFAULT 'seed',   -- seed | agent | user
     head_turn_id  TEXT,                            -- the turn the task currently continues from
-    origin        TEXT NOT NULL DEFAULT 'user',   -- user | watch | quick_ask
+    origin        TEXT NOT NULL DEFAULT 'user',   -- user | watch
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL
 );
@@ -258,9 +258,14 @@ INSERT INTO posture_history (provider_id, bucket, posture, source, task_id, obse
 CREATE INDEX idx_issues_bucket ON issues (provider_id, bucket);
 """
 
+# v14: Quick Ask is gone. A task it opened is an ordinary task; keep the rows,
+# drop the retired origin so nothing in the schema still names a deleted surface.
+_V3 = "UPDATE tasks SET origin = 'user' WHERE origin = 'quick_ask';"
+
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "v5_items_estate", _V1),
     (2, "v6_notes_posture_history", _V2),
+    (3, "v14_retire_quick_ask_origin", _V3),
 ]
 
 HEAD = MIGRATIONS[-1][0]

@@ -28,7 +28,10 @@ from typing import Any
 from . import budget
 
 TEMPERATURE = 0.2
-MODEL_CALL_TIMEOUT_S = 600.0
+# One model step may not hold a Turn for ten minutes: a hung provider got the
+# Stop button but no automatic end. Three minutes is generous for reasoning
+# models and short enough that a dead endpoint becomes a recorded failure.
+MODEL_CALL_TIMEOUT_S = 180.0
 
 # Endpoint capability refusals remembered for the process (keyed base_url|model):
 # a strict endpoint that rejects an optional parameter is asked without it.

@@ -17,6 +17,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -30,9 +31,8 @@ use tauri_plugin_opener::OpenerExt;
 
 /// The deep-link scheme registered in tauri.conf.json (`plugins.deep-link`).
 const DEEP_LINK_SCHEME: &str = "storage-agent";
-/// Global shortcuts: summon the window and focus the Composer; toggle Quick Ask.
+/// Global shortcut: summon the one window and focus the Composer.
 const SUMMON_SHORTCUT: &str = "CmdOrCtrl+Shift+S";
-const QUICK_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
 /// Menu commands the native menu bar dispatches to the webview as the
 /// `menu-command` event `{ id }`. The frontend (`hooks/useNativeAgent.ts`,
 /// `MENU_COMMANDS`) routes each id through the SAME handler the keyboard and
@@ -50,15 +50,27 @@ const MENU_COMMANDS: &[(&str, &str, Option<&str>)] = &[
     ("search", "Search Tasks", Some("CmdOrCtrl+K")),
     ("focus-composer", "Focus Composer", Some("CmdOrCtrl+L")),
     ("theme", "Toggle Theme", None),
-    ("quick-ask", "Quick Ask", None),
     ("release-notes", "Release Notes", None),
 ];
 
-/// Holds the resolved sidecar URL, auth token, and the child process handle.
+/// What is needed to start the sidecar again after it dies.
+#[derive(Clone)]
+struct SidecarSpec {
+    bin: PathBuf,
+    data_dir: String,
+    port: u16,
+    token: String,
+    nonce: String,
+}
+
+/// Holds the resolved sidecar URL, auth token, the child process handle and the
+/// launch recipe a supervisor needs to bring the sidecar back.
 struct SidecarState {
     url: String,
     token: String,
     child: Mutex<Option<Child>>,
+    spec: SidecarSpec,
+    stopping: AtomicBool,
 }
 
 /// Pick a free localhost TCP port by binding to port 0 and reading it back.
@@ -178,14 +190,6 @@ fn get_sidecar_url(state: State<SidecarState>) -> String {
 #[tauri::command]
 fn get_sidecar_token(state: State<SidecarState>) -> String {
     state.token.clone()
-}
-
-/// Hide the summoned Quick Ask window (Esc / its close control).
-#[tauri::command]
-fn hide_quick(app: AppHandle) {
-    if let Some(win) = app.get_webview_window("quick") {
-        let _ = win.hide();
-    }
 }
 
 /// Save app-generated text (a markdown report) into the user's Downloads
@@ -333,47 +337,16 @@ fn focus_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Show or hide the small Quick Ask window (label `quick`, tauri.conf.json).
-fn toggle_quick<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(win) = app.get_webview_window("quick") {
-        if win.is_visible().unwrap_or(false) {
-            let _ = win.hide();
-        } else {
-            let _ = win.center();
-            let _ = win.show();
-            let _ = win.set_focus();
-        }
-    }
-}
-
-/// Quick Ask hands its task to the main window through the same deep-link
-/// event every other entry point uses, and steps aside.
-#[tauri::command]
-fn open_task_in_main(app: tauri::AppHandle, task_id: String) -> Result<(), String> {
-    let valid = task_id.len() >= 8
-        && task_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    if !valid {
-        return Err("invalid task id".into());
-    }
-    if let Some(quick) = app.get_webview_window("quick") {
-        let _ = quick.hide();
-    }
-    emit_deep_links(&app, vec![format!("{DEEP_LINK_SCHEME}://task/{task_id}")]);
-    Ok(())
-}
-
 fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "tray-open", "Open Storage Agent", true, None::<&str>)?;
-    let quick = MenuItem::with_id(app, "tray-quick", "Quick Ask", true, Some(QUICK_SHORTCUT))?;
     let quit = MenuItem::with_id(app, "tray-quit", "Quit Storage Agent", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &quick, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &PredefinedMenuItem::separator(app)?, &quit])?;
     let mut builder = TrayIconBuilder::with_id("main-tray")
         .tooltip("Storage Agent")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "tray-open" => focus_main_window(app),
-            "tray-quick" => toggle_quick(app),
             "tray-quit" => app.exit(0),
             _ => {}
         });
@@ -449,7 +422,6 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &item("toggle-sidebar")?,
             &item("search")?,
-            &item("quick-ask")?,
             &item("theme")?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::fullscreen(app, None)?,
@@ -540,6 +512,67 @@ fn sidecar_exe_name() -> &'static str {
 /// The `bundle.resources` map stages the one-dir folder under the app's resource
 /// dir. Layout can vary slightly by platform/bundler, so probe the known
 /// candidates and return the first that exists.
+fn spawn_sidecar(spec: &SidecarSpec) -> Result<Child, String> {
+    Command::new(&spec.bin)
+        .args(["--host", "127.0.0.1", "--port", &spec.port.to_string()])
+        .env("STORAGE_AGENT_DATA_DIR", &spec.data_dir)
+        .env("STORAGE_AGENT_AUTH_TOKEN", &spec.token)
+        .env("STORAGE_AGENT_LAUNCH_NONCE", &spec.nonce)
+        .env("STORAGE_AGENT_PARENT_PID", std::process::id().to_string())
+        .spawn()
+        .map_err(|e| format!("failed to spawn sidecar at {}: {e}", spec.bin.display()))
+}
+
+/// Keep the one sidecar alive. A crashed Python process used to leave the
+/// window offline until the user quit and relaunched the app; now the shell
+/// restarts it on the same port and token, and the frontend's health poll
+/// reconnects and reloads the task. The thread exits with the app.
+fn supervise_sidecar(app: AppHandle) {
+    loop {
+        std::thread::sleep(Duration::from_secs(2));
+        let Some(state) = app.try_state::<SidecarState>() else { return; };
+        if state.stopping.load(Ordering::SeqCst) { return; }
+        let dead = {
+            let mut guard = match state.child.lock() {
+                Ok(g) => g,
+                Err(_) => return,
+            };
+            match guard.as_mut() {
+                Some(child) => matches!(child.try_wait(), Ok(Some(_))),
+                None => true,
+            }
+        };
+        if !dead { continue; }
+        // Reap the old process, then start a new one outside the lock so
+        // shutdown never waits on a 60-second readiness probe.
+        if let Ok(mut guard) = state.child.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.wait();
+            }
+        }
+        let spec = state.spec.clone();
+        match spawn_sidecar(&spec) {
+            Ok(mut child) => {
+                if await_sidecar_ready(spec.port, &spec.nonce, &mut child, Duration::from_secs(60)).is_ok() {
+                    if state.stopping.load(Ordering::SeqCst) {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return;
+                    }
+                    if let Ok(mut guard) = state.child.lock() {
+                        *guard = Some(child);
+                    }
+                    let _ = app.emit("sidecar-restarted", serde_json::json!({ "url": state.url }));
+                } else {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+            Err(e) => eprintln!("sidecar restart failed: {e}"),
+        }
+    }
+}
+
 fn resolve_sidecar(resource_dir: &PathBuf) -> Option<PathBuf> {
     let exe = sidecar_exe_name();
     let candidates = [
@@ -573,13 +606,7 @@ pub fn run() {
         // Size / position / maximised state come back on the next launch.
         // The plugin saves on close and restores on window creation by itself;
         // the frontend never touches it.
-        //
-        // Quick Ask is summoned, never restored: it is `visible: false` in the
-        // config, but the plugin's default flags include VISIBLE, so quitting
-        // while it was open used to bring back a small always-on-top window on
-        // the next launch. Tracking only the main window keeps that popup out
-        // of startup while still remembering the window the user actually uses.
-        .plugin(tauri_plugin_window_state::Builder::new().with_denylist(&["quick"]).build())
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -589,28 +616,11 @@ pub fn run() {
         .menu(|app| build_menu(app))
         .on_menu_event(|app, event| {
             let id = event.id().as_ref().to_string();
-            if id == "quick-ask" {
-                toggle_quick(app);
-            } else if MENU_COMMANDS.iter().any(|(cid, _, _)| *cid == id) {
+            if MENU_COMMANDS.iter().any(|(cid, _, _)| *cid == id) {
                 let _ = app.emit("menu-command", serde_json::json!({ "id": id }));
             }
         })
         .setup(|app| {
-            // Quick Ask is a summoned utility, not a startup surface. It is
-            // hidden by config and excluded from window-state, and this guard
-            // makes the invariant explicit on platforms whose window managers
-            // show a webview before its configured visibility is applied.
-            if let Some(quick) = app.get_webview_window("quick") {
-                // Linux/Windows draw the app menu inside each window; a 560 px
-                // utility should not inherit the main window's menu bar. An
-                // empty window menu is the portable way to take it off this
-                // window without touching the main window's menu.
-                if let Ok(empty) = Menu::new(app) {
-                    let _ = quick.set_menu(empty);
-                }
-                let _ = quick.hide_menu();
-                let _ = quick.hide();
-            }
             // Deep links: the OS open-url event (macOS, and Linux/Windows once
             // the scheme is registered) → one `deep-link-request` event. On
             // Linux/Windows dev builds the scheme is registered at runtime so
@@ -650,15 +660,6 @@ pub fn run() {
                     }
                 });
 
-            // Quick Ask: a small always-on-top window for one question.
-            let quick = app.handle().clone();
-            let _ = app
-                .global_shortcut()
-                .on_shortcut(QUICK_SHORTCUT, move |_app, _shortcut, event| {
-                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        toggle_quick(&quick);
-                    }
-                });
             // The tray item is best-effort: some Linux desktops have no tray.
             if let Err(e) = build_tray(app.handle()) {
                 eprintln!("tray unavailable: {e}");
@@ -713,45 +714,39 @@ pub fn run() {
                 )
             })?;
 
-            let mut child = Command::new(&sidecar_bin)
-                .args(["--host", "127.0.0.1", "--port", &port.to_string()])
-                .env("STORAGE_AGENT_DATA_DIR", data_dir)
-                // Auth token the sidecar requires on every request (header or
-                // ?token= for SSE). Only enforced because it's set here.
-                .env("STORAGE_AGENT_AUTH_TOKEN", &token)
-                // Non-secret identity value echoed on /health (see below).
-                .env("STORAGE_AGENT_LAUNCH_NONCE", &nonce)
-                // The sidecar exits if this PID disappears, so the child is never
-                // orphaned on app exit/crash.
-                .env("STORAGE_AGENT_PARENT_PID", std::process::id().to_string())
-                .spawn()
-                .map_err(|e| {
-                    eprintln!("fatal: failed to spawn sidecar at {}: {e}", sidecar_bin.display());
-                    format!("failed to spawn sidecar at {}: {e}", sidecar_bin.display())
-                })?;
+            // Auth token the sidecar requires on every request (header or
+            // ?token= for SSE). Only enforced because it's set here.
+            let spec = SidecarSpec { bin: sidecar_bin, data_dir, port, token, nonce };
+            let mut child = spawn_sidecar(&spec).map_err(|e| {
+                eprintln!("fatal: {e}");
+                e
+            })?;
 
             // Don't publish the URL/token until OUR sidecar has answered on that
             // port. Without this the app could hand the token to a foreign
             // listener, or hang on a "starting…" spinner forever after a sidecar
             // that died at startup. Kill the child on failure so a half-started
             // process is never left behind.
-            if let Err(e) = await_sidecar_ready(port, &nonce, &mut child, Duration::from_secs(60)) {
+            if let Err(e) = await_sidecar_ready(spec.port, &spec.nonce, &mut child, Duration::from_secs(60)) {
                 let _ = child.kill();
                 eprintln!("fatal: {e}");
                 return Err(e.into());
             }
 
+            let supervisor = app.handle().clone();
             app.manage(SidecarState {
                 url,
-                token,
+                token: spec.token.clone(),
                 child: Mutex::new(Some(child)),
+                spec,
+                stopping: AtomicBool::new(false),
             });
+            std::thread::spawn(move || supervise_sidecar(supervisor));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![get_sidecar_url, get_sidecar_token,
-                                                 hide_quick, save_report, open_external, notify,
-                                                 set_window_title, open_app_folder,
-                                                 open_task_in_main])
+                                                 save_report, open_external, notify,
+                                                 set_window_title, open_app_folder])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
@@ -767,6 +762,7 @@ pub fn run() {
             // the sidecar anyway.
             if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
                 if let Some(state) = app_handle.try_state::<SidecarState>() {
+                    state.stopping.store(true, Ordering::SeqCst);
                     if let Ok(mut guard) = state.child.lock() {
                         if let Some(mut child) = guard.take() {
                             let _ = child.kill();

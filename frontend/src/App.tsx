@@ -1,16 +1,13 @@
 import { useEffect } from "react";
 import { api } from "./api";
-import { QuickAsk } from "./quick/QuickAsk";
 import { AppProvider } from "./shell/context";
 import { Shell } from "./shell/Shell";
 import { useI18n } from "./i18n";
 import { useTheme } from "./theme";
 
-/** The Agent window, or — in the second, small window — Quick Ask. */
+/** One window, one workspace: every request starts from the same Composer. */
 export default function App() {
-  const quick = new URLSearchParams(window.location.search).get("view") === "quick";
   useSyncedPreferences();
-  if (quick) return <QuickAsk />;
   return (
     <AppProvider>
       <Shell />
@@ -18,7 +15,7 @@ export default function App() {
   );
 }
 
-/** Language and theme live in the Sidecar's settings too, so every window (and the report) agrees. */
+/** Language and theme live in the Sidecar's settings too, so the report and the window agree. */
 function useSyncedPreferences() {
   const { lang, setLang } = useI18n();
   const { setTheme } = useTheme();

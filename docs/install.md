@@ -1,6 +1,6 @@
 # Install
 
-> **Current release baseline: Storage Agent v13.0.0.**
+> **Current release baseline: Storage Agent v14.0.0.**
 >
 > This guide covers the local-first desktop application. Product behavior is documented in [`product.md`](product.md); packaging internals are in [`packaging.md`](packaging.md).
 

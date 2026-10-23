@@ -1,4 +1,4 @@
-/* Storage Agent — design system v6.
+/* Storage Agent — design system v8.
    Cool graphite and a clean white paper; one blue accent for what is
    actionable, selected, focused or live, and a separate status palette.
    The document is flat; elevation exists only on floating surfaces.
@@ -47,14 +47,13 @@
   /* v6 — cool graphite, one clear blue. Depth lives in a narrow neutral ladder;
      surfaces are separated by a step and a hairline, not by cards or shadows.
      The accent marks action, selection, focus and live work only. */
-  --canvas: #090a0c;
-  --sidebar: #12141a;
-  --panel: #171a20;
-  --elevated: #1e2128;
-  --bubble: #1b1e24;
-  --hover: #292d35;
-  --edge: #23262d;
-  --edge-strong: #343841;
+  --canvas: #0b0c0f;
+  --sidebar: #121419;
+  --panel: #17191f;
+  --elevated: #1d2027;
+  --hover: #282c34;
+  --edge: #22262e;
+  --edge-strong: #343a44;
   --accent: #2f5fe3;
   --accent-soft: #2a55cc;
   --accent-dim: rgba(147, 180, 255, 0.14);
@@ -70,11 +69,11 @@
   --viz-6: #3987e5;
   /* Text ladder: 100 primary · 200 strong secondary · 300 secondary ·
      400 tertiary · 500 meta (AA on every surface up to --hover). */
-  --gray-100: #f4f5f7;
-  --gray-200: #d7d9df;
-  --gray-300: #b0b4bd;
-  --gray-400: #9ca1ab;
-  --gray-500: #9297a3;
+  --gray-100: #f5f6f8;
+  --gray-200: #dee1e7;
+  --gray-300: #b8bdc7;
+  --gray-400: #9ca3af;
+  --gray-500: #9197a3;
   --scrollbar-thumb: #2b2f37;
   --scrollbar-thumb-hover: #3a3f49;
   --selection: rgba(147, 180, 255, 0.24);
@@ -117,21 +116,21 @@
   --leading-prose: 1.65;
   --text-xl: 1.25rem;
   --leading-xl: 1.75rem;
-  --text-2xl: 1.5rem;
-  --leading-2xl: 2rem;
+  --text-2xl: 1.75rem;
+  --leading-2xl: 2.25rem;
   /* Radii: three. 6 controls · 8 menus · 12 the Composer and side pane. */
   --radius-sm: 0.375rem;
   --radius: 0.375rem;
   --radius-md: 0.5rem;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.75rem;
-  --radius-2xl: 0.75rem;
-  --radius-3xl: 0.75rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 0.875rem;
+  --radius-3xl: 0.875rem;
   --control-h: 2rem;
-  --header-h: 2.75rem;
-  --sidebar-w: 15rem;
-  --sidepane-w: 24rem;
-  --doc-measure: 44rem;
+  --header-h: 2.5rem;
+  --sidebar-w: 15.5rem;
+  --sidepane-w: 25rem;
+  --doc-measure: 43rem;
   --doc-track: 60rem;
   /* 4px grid. */
   --space-1: 0.25rem;
@@ -153,13 +152,12 @@
   color-scheme: light;
   /* A clean white reading surface; the rail and side pane are one quiet step
      darker. Ink is cool graphite, not sepia; the accent stays the same blue. */
-  --canvas: #ffffff;
-  --sidebar: #f5f6f8;
-  --panel: #f4f5f8;
+  --canvas: #fcfcfb;
+  --sidebar: #f3f4f5;
+  --panel: #f3f4f5;
   --elevated: #ffffff;
-  --bubble: #f1f3f6;
-  --hover: #e9ebef;
-  --edge: #e4e6eb;
+  --hover: #e9eaec;
+  --edge: #e3e4e8;
   --edge-strong: #d2d6de;
   --accent: #2557d6;
   --accent-soft: #1f4ab8;
@@ -174,11 +172,11 @@
   --viz-4: #ad7d00;
   --viz-5: #d24e86;
   --viz-6: #2a78d6;
-  --gray-100: #181a1f;
-  --gray-200: #30343c;
-  --gray-300: #4b505a;
-  --gray-400: #5f6571;
-  --gray-500: #626976;
+  --gray-100: #17191e;
+  --gray-200: #2f333a;
+  --gray-300: #4a505a;
+  --gray-400: #5d636e;
+  --gray-500: #5f6672;
   --scrollbar-thumb: #d8dbe1;
   --scrollbar-thumb-hover: #c3c8d1;
   --selection: rgba(37, 87, 214, 0.14);

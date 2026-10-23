@@ -1,22 +1,25 @@
 # Design tokens
 
-> **Storage Agent v13 — design system v7, one workspace.**
+> **Storage Agent v14 — design system v8, one quiet workspace.**
 >
 > Presentation contract for the native Agent Task window. Tokens never invent
 > runtime state, progress, or capabilities.
 
-v7 is the Agent-first subtraction. The window no longer presents storage as a
+v8 is the quiet-workspace refinement. The window no longer presents storage as a
 product object: there is no Storage page, bucket index, bucket sheet, estate
-picker or open-Issue counter. A Task is a workspace — objective, deterministic
-artifact, interpretation, findings and a quiet work receipt — and the Agent
-resolves accounts and buckets from the request. The estate remains its memory.
+picker or open-Issue counter. Home is the same workspace before its first
+Direction — one mark, one sentence, one Composer. A Task reads as one
+conversation: objective, receipt, answer, findings, then deterministic data in
+a fold. The Agent resolves accounts and buckets from the request; the estate
+remains its memory.
 
 The information hierarchy follows the current agent products rather than their
 chrome: Codex's one task and one input, Cursor's compact tool rows and
 click-to-inspect evidence, Qoder's single task monitor when needed. What we take
-is restraint: one fixed rail, one workspace, one input, work shown as a trace
-and results shown as a document. We do not take an IDE file tree, a resource
-browser, task cards, a plan canvas, or a second navigation tree.
+is restraint: one fixed rail, one workspace, one input, work shown as a trace,
+the answer as a document, and data as a quiet fold. We do not take an IDE file
+tree, a resource browser, task cards, a plan canvas, or a second navigation
+tree.
 
 ## Source of truth
 
@@ -26,7 +29,7 @@ browser, task cards, a plan canvas, or a second navigation tree.
 | Tailwind mapping | `frontend/tailwind.config.js` |
 | Component library (Button, IconButton, Kbd, Badge, StatusDot, Segmented, Field / TextInput / Select) | `frontend/src/components/ui.tsx` |
 | Component styles (`ui-*`), menus, scrim, keyframes | `frontend/src/styles/components.css` |
-| Window, sidebar, title bar, Composer, home, Task workspace, Evidence, Settings, Quick Ask | `frontend/src/styles/app.css` |
+| Window, sidebar, title bar, Composer, Home, Task workspace, Evidence, Settings | `frontend/src/styles/app.css` |
 | Prose, tables, figures, toasts | `frontend/src/styles/document.css` |
 | Rendered Markdown | `frontend/src/styles/markdown.css` |
 | Figures (`ChartFrame`, marks, legend, tooltip) | `frontend/src/viz/marks.tsx` |
@@ -43,7 +46,7 @@ The document is the product. A content section does not get a border, a radius,
 a background, or a shadow. Hierarchy comes from:
 
 1. **one accent** for action, selection, focus and live work;
-2. **type** — 11 meta, 13 interface, 15 reading, 20 focal, 24 page title;
+2. **type** — 11 meta, 13 interface, 15 reading, 20 focal, 28 page title;
 3. **space** — a 4 px grid with 16–32 px between content groups;
 4. **hairlines** — one rule where two groups genuinely meet.
 
@@ -55,18 +58,18 @@ pane, the Settings dialog, and code blocks. That is the whole elevation vocabula
 ### Cool neutral ladder
 
 Dark, darkest first:
-`--canvas #090a0c` < `--sidebar #12141a` < `--panel #171a20` <
-`--elevated #1e2128` < `--hover #292d35`;
-edges `--edge #23262d` / `--edge-strong #343841`.
+`--canvas #0b0c0f` < `--sidebar #121419` < `--panel #17191f` <
+`--elevated #1d2027` < `--hover #282c34`;
+edges `--edge #22262e` / `--edge-strong #343a44`.
 
-Light, clean white:
-`--canvas #ffffff`, `--sidebar #f5f6f8`, `--panel #f4f5f8`,
-`--elevated #ffffff`, `--hover #e9ebef`;
-edges `#e4e6eb` / `#d2d6de`. The user's message has its own `--bubble`
-(`#1b1e24` dark, `#f1f3f6` light).
+Light, warm paper:
+`--canvas #fcfcfb`, `--sidebar #f3f4f5`, `--panel #f3f4f5`,
+`--elevated #ffffff`, `--hover #e9eaec`;
+edges `#e3e4e8` / `#d2d6de`.
 
 Ink: `--gray-100` primary · `--gray-200` strong secondary · `--gray-300`
-secondary · `--gray-400` tertiary · `--gray-500` meta. There is no 600/700
+secondary · `--gray-400` tertiary · `--gray-500` meta (`#9197a3` dark /
+`#5f6672` light). There is no 600/700
 text step; quiet text stays readable.
 
 The ladder is one cool hue axis in both themes. It is deliberately narrow: the
@@ -107,8 +110,8 @@ Five sizes, each with one job:
 | `--text-2xs` | 11px / 16px | labels, meta, key caps, badges |
 | `--text-sm` | 13px / 20px | interface, sidebar, controls, secondary text |
 | `--text-prose` | 15px / 1.65 | reading, answers, reports |
-| `--text-xl` | 20px / 28px | a conclusion's focal answer |
-| `--text-2xl` | 24px / 32px | the page's one `<h1>` (Home) |
+| `--text-xl` | 20px / 28px | a Turn's objective, the focal answer |
+| `--text-2xl` | 28px / 36px | the page's one `<h1>` (Home) |
 
 Faces: the platform UI face first (SF Pro on macOS, Segoe UI Variable on
 Windows), vendored **Inter Variable** where the platform face is not a UI face,
@@ -122,43 +125,43 @@ labels in the window.
 Spacing is a 4 px grid: `--space-1` (4) · `-2` (8) · `-3` (12) · `-4` (16) ·
 `-5` (20) · `-6` (24) · `-8` (32) · `-10` (40) · `-12` (48).
 
-Radii are three: **6 px** controls · **8 px** menus · **12 px** the Composer,
-side pane and Settings. The aliases `--radius-sm` … `--radius-3xl` keep every
-surface on the same scale.
+Radii are three: **6 px** controls · **8–10 px** menus and popovers · **14 px**
+the Composer, side pane and Settings. The aliases `--radius-sm` … `--radius-3xl`
+keep every surface on the same scale.
 
 Shadows are two: `--shadow-elev` for menus and popovers, `--shadow-pop` for the
-Settings dialog and the overlaid side pane. The Composer has no shadow. The
+Settings dialog and the overlaid side pane. The Composer carries one hairline and a soft focus ring, never a drop shadow. The
 canvas is flat.
 
 Icons are 16 px (14 px in dense rows) at a 1.5 stroke with rounded joins.
 
 ## Measure and layout
 
-`--doc-measure: 44rem` (704 px) is the reading column; `--doc-track: 60rem` is
-the track for tables and figures. `--sidebar-w: 15rem` (240 px); the side pane
-is resizable from 352 to 880 px and starts at 480 px. `--header-h: 2.75rem`
-(44 px); `--control-h: 2rem` (32 px).
+`--doc-measure: 43rem` (688 px) is the reading column; `--doc-track: 60rem` is
+the track for tables and figures. `--sidebar-w: 15.5rem` (248 px); the side pane
+is resizable from 352 to 880 px and starts at 480 px. `--header-h: 2.5rem`
+(40 px); `--control-h: 2rem` (32 px).
 
-Home is a start, not a dashboard: one 24 px heading, the Composer centred
-directly beneath it, and nothing else in the document. There are no prompt
+Home is an empty Task: one small Agent mark, one 28 px heading, the Composer
+directly beneath it, and nothing else, centred as one block. There are no prompt
 links, readiness paragraphs, cards, account lines, issue tables or connection
-rows on Home. The heading and Composer share one measured column and stay
-centred in the viewport.
+rows on Home.
 
-The Task page is an **Agent workspace**, oldest first. Each Turn is the
-objective, then the deterministic result (if any), the short interpretation,
-findings, and one quiet work receipt at the end. The trace is open while live
-(real calls and real progress) and becomes the receipt when settled; the receipt
-does not expand. Deterministic results render from `tool_output.detail` as part
-of the document: a table has a header rule and row rules, not a card. There is no
-user/assistant bubble and no next-step prompt.
+The Task page is one conversation, oldest first. Each Turn is the objective,
+one clickable receipt (`2 checks · 1s`), the answer, findings, then the
+deterministic result in a **Data** fold beneath. The trace is open while live
+(real calls and real progress; the running call is the head line, returned calls
+follow) and becomes the receipt when settled. A fix's Data fold opens by default;
+everything else waits. Deterministic results render from `tool_output.detail` as
+part of the document: a table has a header rule and row rules, not a card. There
+is no user/assistant bubble and no next-step prompt.
 
-Evidence is the one side pane, one level: a human heading, one row per call
-(verb, target, time, summary), which expands in place to its arguments and raw
-data; Save report, attached files and usage folded at the foot. Opening a call
-from the live trace opens that call, not the top of a long list. There is no
-second page and no Back control. It is the raw record, not a second rendered
-result.
+Evidence is the one side pane, one level: a meta line, one row per call (verb,
+target, time, summary), which expands in place to a compact human result and its
+arguments/output behind **Raw**; Save report, attached files and usage folded at
+the foot. Opening a call from the live trace opens that call, not the top of a
+long list. There is no second page and no Back control. The full table stays in
+the task's Data fold.
 
 ## Components
 

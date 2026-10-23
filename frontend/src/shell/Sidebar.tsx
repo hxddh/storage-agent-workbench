@@ -3,6 +3,8 @@ import { api } from "../api";
 import type { TaskRow } from "../api/types";
 import { Icon } from "../components/icons";
 import { IconButton, Kbd, StatusDot } from "../components/ui";
+import { useToast } from "../components/Toast";
+import { describeError } from "../lib/errors";
 import { notifyNative } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
 import { useDismiss } from "../lib/useDismiss";
@@ -18,6 +20,7 @@ import { useApp } from "./context";
 export const Sidebar = memo(function Sidebar() {
   const { t } = useI18n();
   const app = useApp();
+  const toast = useToast();
   const [query, setQuery] = useState("");
   const { tasks, online } = useTaskList(query.trim());
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -59,8 +62,12 @@ export const Sidebar = memo(function Sidebar() {
   const remove = async (task: TaskRow) => {
     setMenu(null);
     if (!window.confirm(t("nav.deleteConfirm", { title: task.title }))) return;
-    await api.deleteTask(task.id);
-    if (activeId === task.id) app.goHome();
+    try {
+      await api.deleteTask(task.id);
+      if (activeId === task.id) app.goHome();
+    } catch (err) {
+      toast.error(describeError(err, t));
+    }
   };
 
   return (

@@ -184,11 +184,10 @@ def _import_tasks(old: sqlite3.Connection, new: sqlite3.Connection, counts: dict
             elif m["role"] == "assistant" and turn_id is not None:
                 if has_conclusion and m["conclusion"]:
                     c = _json(m["conclusion"])
-                    if isinstance(c, dict) and c.get("answer"):
+                    if isinstance(c, dict) and c.get("findings"):
                         store.append_item(new, tid, turn_id, "conclusion",
-                                          {"call_id": f"imported-{m['id']}", "answer": c.get("answer"),
-                                           "findings": c.get("findings") or [],
-                                           "next_steps": c.get("next_steps") or []}, commit=False)
+                                          {"call_id": f"imported-{m['id']}",
+                                           "findings": c.get("findings")}, commit=False)
                 store.append_item(new, tid, turn_id, "agent_message", {"text": m["content"] or ""}, commit=False)
         if parent is not None:
             new.execute("UPDATE tasks SET head_turn_id = ? WHERE id = ?", (parent, tid))

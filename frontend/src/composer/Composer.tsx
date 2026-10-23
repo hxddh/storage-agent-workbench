@@ -4,6 +4,7 @@ import type { Attachment } from "../api/types";
 import { Icon } from "../components/icons";
 import { IconButton } from "../components/ui";
 import { useToast } from "../components/Toast";
+import { describeError } from "../lib/errors";
 import { useI18n } from "../i18n";
 import { fmtBytes } from "../lib/format";
 import { useApp } from "../shell/context";
@@ -28,13 +29,20 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
   const { t } = useI18n();
   const app = useApp();
   const toast = useToast();
-  const [text, setText] = useState("");
+  const draftKey = taskId ?? "home";
+  const [text, setText] = useState(() => app.drafts.get(draftKey));
   const [files, setFiles] = useState<File[]>([]);
   const [kept, setKept] = useState<Attachment[]>([]);
   const [sending, setSending] = useState(false);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
+  const uploadAbort = useRef<AbortController | null>(null);
+  const cancelled = useRef(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const filePicker = useRef<HTMLInputElement>(null);
+  const lastKey = useRef(draftKey);
+  const textRef = useRef(text);
+  textRef.current = text;
   const editing = app.editing;
 
   useEffect(() => {
@@ -55,9 +63,15 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
   }, [editing]);
 
   useEffect(() => {
+    if (lastKey.current === draftKey) return;
+    app.drafts.set(lastKey.current, textRef.current);
+    lastKey.current = draftKey;
+    setText(app.drafts.get(draftKey));
     setFiles([]);
     setKept([]);
-  }, [taskId]);
+  }, [draftKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => app.drafts.set(lastKey.current, textRef.current), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const el = area.current;
@@ -79,6 +93,9 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
     e?.preventDefault();
     if (!canSend) return;
     setSending(true);
+    setUploadPct(null);
+    cancelled.current = false;
+    let created: string | null = null;
     try {
       if (steering && taskId) {
         await api.steer(taskId, trimmed);
@@ -88,26 +105,42 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
           if (files.length === 0) {
             const snap = await api.createTask(trimmed);
             setText("");
+            app.drafts.clear(draftKey);
             onCreated?.(snap.task.id);
             return;
           }
+          // A file needs a task to belong to. If anything below fails, the
+          // empty task is removed again instead of becoming an orphan row.
           id = (await api.createTask()).task.id;
+          created = id;
         }
         const attachments: string[] = kept.map((a) => a.dataset_id);
-        for (const file of files) attachments.push((await api.upload(id, file)).id);
+        if (files.length) {
+          const controller = new AbortController();
+          uploadAbort.current = controller;
+          setUploadPct(0);
+          for (const file of files) {
+            attachments.push((await api.upload(id, file, { signal: controller.signal, onProgress: setUploadPct })).id);
+          }
+        }
         await api.submit(id, trimmed, {
           attachments,
           parentTurnId: editing ? (editing.parentTurnId ?? "") : undefined,
         });
         app.setEditing(null);
+        created = null; // it has a Direction now; a later error is not an orphan
         if (!taskId) onCreated?.(id);
       }
       setText("");
+      app.drafts.clear(draftKey);
       setFiles([]);
       setKept([]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      if (created) await api.deleteTask(created).catch(() => {});
+      if (!cancelled.current) toast.error(describeError(err, t));
     } finally {
+      uploadAbort.current = null;
+      setUploadPct(null);
       setSending(false);
     }
   };
@@ -117,7 +150,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
     try {
       await api.stop(taskId);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(describeError(err, t));
     }
   };
 
@@ -151,7 +184,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
         <div className="composer-editing">
           <Icon name="compose" size={14} />
           <span>{t("composer.editing")}</span>
-          <button type="button" onClick={() => { app.setEditing(null); setText(""); setKept([]); setFiles([]); }}>{t("common.cancel")}</button>
+          <button type="button" onClick={() => { app.setEditing(null); setText(""); app.drafts.clear(draftKey); setKept([]); setFiles([]); }}>{t("common.cancel")}</button>
         </div>
       ) : null}
       {files.length || kept.length ? (
@@ -190,6 +223,7 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
           if (e.key === "Escape" && editing) {
             app.setEditing(null);
             setText("");
+            app.drafts.clear(draftKey);
             setKept([]);
             setFiles([]);
           }
@@ -197,6 +231,9 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
         data-testid="composer-input"
         data-focus-ring="container"
       />
+      {uploadPct !== null ? (
+        <p className="composer-progress" role="status">{t("composer.uploadProgress", { pct: Math.round(uploadPct * 100) })}</p>
+      ) : null}
       {text.length > MAX_DIRECTION * 0.75 ? (
         <p className="composer-count" data-over={tooLong ? "true" : undefined}>
           {tooLong ? t("composer.tooLong", { n: MAX_DIRECTION.toLocaleString() }) : `${text.length.toLocaleString()} / ${MAX_DIRECTION.toLocaleString()}`}
@@ -209,6 +246,10 @@ export const Composer = memo(function Composer({ taskId, busy, onCreated, autoFo
           onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} data-testid="composer-file" />
         <ModelChip />
         <span className="composer-spacer" />
+        {sending && files.length ? (
+          <IconButton icon="x" label={t("common.cancel")} onClick={() => { cancelled.current = true; uploadAbort.current?.abort(); }}
+            data-testid="composer-cancel-upload" />
+        ) : null}
         {busy ? (
           <IconButton icon="stop" label={t("composer.stop")} className="composer-stop" onClick={() => void stop()}
             data-testid="composer-stop" />

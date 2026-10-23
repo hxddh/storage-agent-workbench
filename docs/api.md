@@ -8,12 +8,12 @@ Sources of truth: `sidecar/app/main.py` and `sidecar/app/api/`
 (`tasks.py`, `estate.py`, `providers.py`, `settings.py`, `health.py`,
 `mcp.py`).
 
-> **v13 window boundary.** The `/estate`, `/issues`, `/notes` and watch routes
+> **v14 window boundary.** The `/estate`, `/issues`, `/notes` and watch routes
 > remain available to the Agent, the MCP bridge, reports and external local
-> clients. They are not navigation surfaces in the desktop window: the v13
-> window has no Storage page, bucket page, estate picker or open-Issue counter.
-> The Agent reads the estate through its tools; the window reads tasks and raw
-> Evidence.
+> clients. They are not navigation surfaces in the desktop window: there is no
+> Storage page, bucket page, estate picker or open-Issue counter. The Agent
+> reads the estate through its tools; the window reads tasks, evidence and
+> connection configuration.
 
 ## Conventions
 
@@ -72,25 +72,13 @@ goes through the runtime (`RUNTIME.submit`). There is no other submit path.
 
 | Model | Field | Type and limits |
 | --- | --- | --- |
-| `TaskIn` | `direction` | `str \| null`, max 16 000 chars |
-| | `origin` | `"user"` (default) or `"quick_ask"` |
-| | `context` | `list[ContextIn]`, max 8, default `[]`; legacy API focus (the v13 window does not send it), validated only when a Direction is present |
-| `TaskPatch` | `title` | `str`, 1–120 chars |
+| `TaskIn` | `direction` | `str \| null`, max 16 000 chars. Unknown fields are refused. |
+| `TaskPatch` | `title` | `str`, 1–120 chars. Unknown fields are refused. |
 | `TurnIn` | `direction` | `str`, 1–16 000 chars (required) |
 | | `parent_turn_id` | `str \| null`. Omitted or `null`: continue from the head. A turn ID: fork after that turn. `""`: a new first Direction (a fork at the root). |
 | | `attachments` | `list[str]` of dataset IDs, max 20 items, default `[]` |
-| | `context` | `list[ContextIn]`, max 8, default `[]` |
-| `ContextIn` | `kind` | `"account" \| "bucket" \| "issue"` |
-| | `provider_id` | `str \| null`; required for account/bucket, derived for an issue |
-| | `bucket` | `str \| null`; required for bucket |
-| | `issue_id` | `str \| null`; required for issue |
-| `SteerIn` | `text` | `str`, 1–16 000 chars |
-| `HeadIn` | `turn_id` | `str` |
-
-`ContextIn` refs are resolved against the estate before the task/turn is
-created: an unknown account, bucket or issue is a `422`; the stored labels are
-redacted. Context is focus, never authorization — the provider's bucket/prefix
-scope still governs every tool call.
+| `SteerIn` | `text` | `str`, 1–16 000 chars. Unknown fields are refused. |
+| `HeadIn` | `turn_id` | `str`. Unknown fields are refused. |
 
 ### The task snapshot
 
@@ -104,7 +92,9 @@ snapshot of the task's current branch:
   "running_turn_id": "…" | null,
   "queued": [ { "turn_id", "direction", "created_at" } ],
   "turns": [ { "id", "parent_turn_id", "kind", "direction", "status", "error",
-               "created_at", "started_at", "finished_at", "resumed_from", "usage" } ],   // the branch, root first
+               "created_at", "started_at", "finished_at", "resumed_from", "usage" } ],   // newest 60 Turns, root first
+  "has_older": false,                                            // older Turns exist beyond this page
+  "oldest_turn_id": "…" | null,                                  // pass to /history?before=
   "items": [ /* public items of those turns, by seq */ ],
   "forks": { "<parent turn id or ''>": ["<child turn id>", …] },   // only parents with more than one child
   "live": { "turn_id", "segment_id", "text" } | null,              // the text segment being streamed now
@@ -125,22 +115,21 @@ snapshot of the task's current branch:
 - An item is `{seq, id, task_id, turn_id, type, payload, created_at}`.
   `payload.model_output` is removed from every item served over HTTP or SSE.
   Item payloads are specified in [data-model.md](data-model.md#items). A
-  `conclusion` item's payload is `{call_id, findings, next_steps, evidence?}` (v11);
-  `evidence` is the runner's turn-level successful-call list, not model input.
-  `next_steps` is legacy: the window and the report no longer read it.
-  one recorded before v9 may also carry `answer` — read it as optional.
-  That field holds the text the model read; the UI reads `detail` instead.
+  `conclusion` item's payload is `{call_id, findings, evidence?}`. `evidence`
+  is the runner's turn-level successful-call list, not model input. That field
+  holds the text the model read; the UI reads `detail` instead.
 
 ### Routes
 
 | Method | Path | Body | Success | Errors |
 | --- | --- | --- | --- | --- |
 | `GET` | `/tasks?q=` | — | `200 {"tasks": [{id, title, title_source, origin, state, created_at, updated_at}]}`. Newest `updated_at` first, at most 500. `q` (max 200 chars) filters titles with `LIKE %q%`. | `422` |
-| `POST` | `/tasks` | `TaskIn` | `201` snapshot. Title: the first 60 chars of the Direction (whitespace collapsed, `…` appended when cut), or `"New task"`. With a non-empty `direction`, the first turn is submitted at once; optional `context` is resolved first. Publishes a global `task` event `{task_id, state: "ready", title, created: true}`. | `422` (including unknown context) |
-| `GET` | `/tasks/{id}` | — | `200` snapshot | `404 task not found` |
+| `POST` | `/tasks` | `TaskIn` | `201` snapshot. Title: the first 60 chars of the Direction (whitespace collapsed, `…` appended when cut), or `"New task"`. With a non-empty `direction`, the first turn is submitted at once. Publishes a global `task` event `{task_id, state: "ready", title, created: true}`. | `422` |
+| `GET` | `/tasks/{id}?turns=60` | — | `200` snapshot. `turns` (1–500) bounds the branch page and defaults to 60. | `404 task not found` |
+| `GET` | `/tasks/{id}/history?before=<turn>&limit=40` | — | `200 {turns, items, has_older, oldest_turn_id}`: the newest `limit` Turns older than `before` with their items, oldest first. `limit` is 1–200. | `404 task not found`; `422` |
 | `PATCH` | `/tasks/{id}` | `TaskPatch` | `200` task row. Sets `title_source = 'user'`, writes the audit row `task.rename` and publishes `task {task_id, title}`. | `404`, `422` |
 | `DELETE` | `/tasks/{id}` | — | `204`. Stops any running turn, waits (bounded) for its worker to settle, deletes the task (turns, items, artifacts and datasets cascade), removes `<data>/tasks/<id>/`, writes the audit row `task.delete` and publishes `task {task_id, deleted: true}`. | `404` |
-| `POST` | `/tasks/{id}/turns` | `TurnIn` | `202 {"turn_id", "status"}`. The Direction is recorded as a `user_message` item at once; optional `context` is resolved to estate labels. The turn waits in the queue behind any running turn. | `404`; `422 unknown parent turn` (the parent is not in this task); `422 unknown attachment for this task`; `422` unknown context |
+| `POST` | `/tasks/{id}/turns` | `TurnIn` | `202 {"turn_id", "status"}`. The Direction is recorded as a `user_message` item at once. The turn waits in the queue behind any running turn. | `404`; `422 unknown parent turn` (the parent is not in this task); `422 unknown attachment for this task` |
 | `POST` | `/tasks/{id}/steer` | `SteerIn` | `200 {"steered": bool, "turn_id"}`. With a turn running, the text is recorded as a `steer` item and injected into the running model loop before its next model call (`steered: true`). With nothing running, it becomes a new Direction (`steered: false`, `turn_id` is the new turn). A steer that arrives after the model's last call of the running turn becomes the next Direction when that turn completes (a `notice {event: "carried", steers}` on the turn); it is never dropped. Blank text is a `422`. | `404`, `422` |
 | `POST` | `/tasks/{id}/stop` | — | `200 {"stopping": bool}`. `false` when nothing is running. Stop sets the turn's cancel flag and cancels the streamed run. The turn ends `cancelled` and keeps what it recorded. | `404` |
 | `DELETE` | `/tasks/{id}/turns/{turn_id}` | — | `200 {"cancelled": true}`. Withdraws a queued Direction: status becomes `cancelled`, a `notice {event: "cancelled", queued: true}` is recorded, and the head moves back to the turn's parent when the turn was the head. Queued Directions that followed it are re-parented onto its parent, so the branch stays one line. | `404`; `409 only a queued Direction can be withdrawn` |

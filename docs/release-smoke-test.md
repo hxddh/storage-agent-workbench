@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current release: Storage Agent v13.0.0.** This checklist describes the
+> **Current release: Storage Agent v14.0.0.** This checklist describes the
 > current `main` and gates the next candidate desktop build.
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
@@ -24,38 +24,39 @@ A user must be able to recognize and use the product without reading source code
 
 ### Home and navigation
 
-- [ ] A fresh install shows one heading, **What should I look into?**, and the Composer directly beneath it — no wizard, landing hero, prompt links, readiness paragraph, account lines, connection rows or Issue table.
+- [ ] A fresh install shows one small Agent mark, one heading, **What should I look into?**, and the Composer directly beneath it, centred as one block — no wizard, landing hero, prompt links, readiness paragraph, account lines, connection rows or Issue table.
 - [ ] The sidebar is New task, search, the task list grouped by day, and Settings — **no Storage entry, no bucket count, no estate picker**.
-- [ ] The window opens on the main window even if Quick Ask was open at last quit; Quick Ask appears only from its shortcut, the tray or the menu.
-- [ ] Quick Ask is 560×340, has no app menu bar inside its window on Linux/Windows, and Esc or its top-right close hides it without touching the main window.
+- [ ] There is exactly one window. No second window, popup or Quick Ask appears at launch, from a shortcut, from the tray or from the menu.
 - [ ] The UI follows the system language on first run (Chinese on a Chinese system) until the user picks one.
 - [ ] ⌘K focuses the sidebar search; ⌘I shows Evidence and closes it when Evidence is already open; Esc closes the pane; its edge drags (352–880 px). Dark and light themes are both first-class.
 - [ ] On a narrow window, choosing a task from the sidebar closes the sidebar so the chosen task is visible.
 
 ### One control path
 
-- [ ] There is exactly one Composer: centred on Home and docked at the foot of a task. At rest it has the paperclip, the model chip and Send. While work is live it offers **Add to the request** (a steer) and **Stop**.
+- [ ] There is exactly one Composer component: centred on Home and docked at the foot of a task. At rest it has the paperclip, the model chip and Send. While work is live it offers **Add to the request** (a steer) and **Stop**.
 - [ ] The Composer has no `@` estate picker and no account/bucket chip. A request may name a bucket or account; the Agent resolves it, or asks if ambiguous.
-- [ ] A file always makes a new, queued request (never a steer); a file dropped or chosen by paperclip appears in the Composer.
+- [ ] A file always makes a new, queued request (never a steer); a file dropped or chosen by paperclip appears in the Composer with a percentage while it uploads and a cancel control. A failed first upload leaves no empty task in the sidebar.
 - [ ] The model chip is backed by the real provider list; with the Sidecar unreachable it reads **Runtime offline**.
 
 ### A task is one workspace
 
-- [ ] Requests read top to bottom, oldest first. A Turn shows the objective, then the deterministic result (if any), the short interpretation, findings as severity dots, and one quiet work receipt at the end.
-- [ ] There is no user bubble, no assistant bubble, no next-step prompt, no suggestions block and no second rendered result in Evidence.
-- [ ] While work is live, the workspace shows the real calls, progress, commentary and steers; when settled, only the receipt remains.
+- [ ] Requests read top to bottom, oldest first. A Turn shows the objective, one quiet receipt (`2 checks · 1s`), the answer, findings as severity dots, and the deterministic result in a **Data** fold beneath.
+- [ ] There is no next-step prompt, no suggestions block and no second rendered result in Evidence.
+- [ ] While work is live, the running call appears once in the head line, the calls that already returned follow beneath it, and progress, commentary and steers stay in order; when settled, only the receipt remains.
 - [ ] The title bar shows no state pill and no progress hairline; state is in the sidebar row, the live workspace and Stop. It names the task only while the sidebar is collapsed.
 - [ ] Send four follow-ups in a row, some while the previous one works: each answer lands under its own objective; nothing is reordered, duplicated or left showing *Working*. Reload mid-run and after: the page is identical.
 - [ ] A request queued behind running work shows *Queued* with **Withdraw**; withdrawing removes it and later requests still run.
 - [ ] Editing a message sends a new version; *1 / 2* switches between versions without a reload. The fork keeps attached files.
 - [ ] A running `survey_account` / `import_evidence` row shows real counts; clicking a tool row opens Evidence at that call, expanded.
-- [ ] **Evidence** is one scroll and one level: one row per call; a row expands in place to its arguments and raw data, with no second page, Back control or rendered table. Save report, attached files and folded usage follow. The saved report contains no next-step section.
+- [ ] **Evidence** is one scroll and one level: a meta line, one row per call; a row expands in place to a compact human summary and its arguments/output behind **Raw**, with no second page or Back control. Save report, attached files and folded usage follow. The saved report contains no conclusion or next-step section.
+- [ ] A task longer than 60 Turns opens at its newest Turns and offers **Load earlier turns**; loading them does not move the head or reorder the conversation.
 
 ### Steering, stopping and recovery
 
 - [ ] Adding to a running request reaches the model once, in the running turn (after any tool still running returns); sent during the final answer it becomes the next request; with nothing running it becomes a new request.
 - [ ] **Stop** ends the turn promptly and keeps the partial work (one *Stopped* note).
-- [ ] Kill the Sidecar during a running turn and relaunch: the work continues once on its own as a `resume` turn, before any queued follow-up; if that is interrupted too, the task shows *Needs attention* with **Continue** / **Open Settings** — no crash loop.
+- [ ] Kill the Sidecar while the app is running: the shell starts it again on the same port, the window leaves **Runtime offline**, and the task reloads without relaunching the app.
+- [ ] Kill the Sidecar during a running turn: after the restart the work continues once on its own as a `resume` turn, before any queued follow-up; if that is interrupted too, the task shows *Needs attention* with **Continue** / **Open Settings** — no crash loop.
 
 ### Connections and Settings
 

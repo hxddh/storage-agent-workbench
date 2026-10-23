@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import { api } from "../api";
 import { Composer } from "../composer/Composer";
 import { hasNativeTrafficLights, openExternal } from "../config";
+import { Icon } from "../components/icons";
 import { IconButton } from "../components/ui";
-import { Home } from "../home/Home";
 import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
 import { Details } from "../inspector/Inspector";
@@ -15,13 +15,13 @@ import { useApp } from "./context";
 import { Sidebar } from "./Sidebar";
 
 /**
- * The window: sidebar · title bar · one document (the home or one Task) ·
- * one Composer, plus the closable side pane for the Task's outputs.
+ * The one window: sidebar · title bar · one document · one Composer (home or
+ * Task), plus the closable Evidence pane for a Task.
  */
 export function Shell() {
   const app = useApp();
   const taskId = app.route.kind === "task" ? app.route.id : null;
-  const { model, setSnapshot, reload } = useTask(taskId);
+  const { model, setSnapshot, reload, loadOlder } = useTask(taskId);
   const busy = model.state === "working" || model.state === "queued";
   const { t } = useI18n();
   const theme = useTheme();
@@ -43,6 +43,30 @@ export function Shell() {
 
   // Evidence belongs to a task: leaving it closes the pane.
   useEffect(() => { if (!taskId && app.pane) app.setPane(null); }, [taskId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Liveness is not inferred from whichever call happened last: a sidecar that
+  // restarted under the window comes back without a reload. A slow poll keeps
+  // the offline mark honest and reloads the task when it returns.
+  const wasOnline = useRef(app.online);
+  useEffect(() => { if (!app.online) wasOnline.current = false; }, [app.online]);
+  useEffect(() => {
+    let stop = false;
+    const tick = async () => {
+      try {
+        await api.health();
+        if (stop) return;
+        app.setOnline(true);
+        if (!wasOnline.current) { await app.reloadProviders(); void reload(); }
+        wasOnline.current = true;
+      } catch {
+        if (stop) return;
+        app.setOnline(false);
+        wasOnline.current = false;
+      }
+    };
+    const timer = window.setInterval(() => void tick(), 8_000);
+    return () => { stop = true; window.clearInterval(timer); };
+  }, [app, reload]);
 
   const command = useCallback((c: MenuCommand) => {
     switch (c) {
@@ -104,7 +128,7 @@ export function Shell() {
       <Sidebar />
       {/* Narrow window only (CSS): tapping outside the overlaid sidebar closes it. */}
       {app.sidebar ? <div className="scrim" aria-hidden onClick={() => app.setSidebar(false)} /> : null}
-      <main className="main" aria-busy={busy} data-home={taskId ? undefined : "true"}>
+      <main className="main" aria-busy={busy} data-home={!taskId ? "true" : undefined}>
         <header className="titlebar" data-tauri-drag-region>
           <div className="titlebar-start">
             {!app.sidebar ? (
@@ -119,21 +143,29 @@ export function Shell() {
           </div>
           <div className="titlebar-end">
             {taskId ? (
-              <IconButton icon="panelRight" label={app.pane ? t("pane.close") : t("pane.open")} data-testid="titlebar-sidepane"
-                aria-pressed={!!app.pane} onClick={() => command("review")} />
+              <button type="button" className="titlebar-action" data-testid="titlebar-sidepane"
+                aria-pressed={!!app.pane} onClick={() => command("review")}>
+                <Icon name="panelRight" size={15} />
+                <span>{app.pane ? t("pane.close") : t("pane.open")}</span>
+              </button>
             ) : null}
           </div>
         </header>
         {/* A scrolling page is not a Tab stop of its own (the keys still scroll it once focus is inside). */}
         <div className="document" data-testid="document" tabIndex={-1}>
-          {taskId ? <TaskPage key={taskId} model={model} setSnapshot={setSnapshot} />
-            : <Home onCreated={app.openTask} />}
+          {taskId ? <TaskPage key={taskId} model={model} setSnapshot={setSnapshot} onRetry={reload} onLoadOlder={loadOlder} /> : null}
         </div>
-        {taskId ? (
-          <div className="dock">
-            <Composer key={taskId} taskId={taskId} busy={busy} onCreated={app.openTask} />
-          </div>
-        ) : null}
+        {/* One Composer, one mount. Home is the same component in the centre of
+            an empty conversation; a task docks it at the foot. */}
+        <div className={taskId ? "dock" : "home-dock"} data-testid={taskId ? undefined : "home"}>
+          {!taskId ? (
+            <div className="home-head">
+              <span className="empty-mark" aria-hidden><Icon name="agent" size={19} /></span>
+              <h1 className="empty-greeting">{t("home.greeting")}</h1>
+            </div>
+          ) : null}
+          <Composer taskId={taskId} busy={busy} onCreated={app.openTask} autoFocus={!taskId} />
+        </div>
       </main>
       {taskId && app.pane ? <Details model={model} /> : null}
       {app.settings ? <Settings /> : null}

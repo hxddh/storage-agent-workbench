@@ -10,11 +10,11 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
-from typing import Annotated, Any, AsyncIterator, Literal
+from typing import Annotated, Any, AsyncIterator
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from sse_starlette.sse import EventSourceResponse
 
 from .. import config
@@ -23,16 +23,16 @@ from ..agent.runtime import RUNTIME
 from ..core import hub, store
 from ..db import connect, get_conn
 from ..engines import datasets
-from ..estate import store as estate
-from ..providers import clouds
 from ..reports import report
-from ..security.redaction import redact_text
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 events_router = APIRouter(tags=["events"])
 
 MAX_DIRECTION_CHARS = 16_000
 _RESYNC_SECONDS = 10.0
+# One snapshot carries the newest turns; a long task loads the rest on demand.
+SNAPSHOT_TURNS = 60
+HISTORY_TURNS = 40
 _HIDDEN_FIELDS = ("model_output",)  # what the model read; the UI reads `detail`
 
 
@@ -47,38 +47,32 @@ def public_item(item: dict[str, Any]) -> dict[str, Any]:
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_DIRECTION_CHARS)]
 
 
-class ContextIn(BaseModel):
-    """The estate the reader pointed at in the Composer — focus, never scope."""
-    kind: Literal["account", "bucket", "issue"]
-    provider_id: str | None = Field(default=None, max_length=80)
-    bucket: str | None = Field(default=None, max_length=255)
-    issue_id: str | None = Field(default=None, max_length=80)
-
-
 class TaskIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     direction: str | None = Field(default=None, max_length=MAX_DIRECTION_CHARS)
-    origin: str = Field(default="user", pattern="^(user|quick_ask)$")
-    context: list[ContextIn] = Field(default_factory=list, max_length=8)
 
 
 class TaskPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=120)
 
 
 class TurnIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     direction: Text
     # Omitted: continue from the head. A turn id: a new version after that turn
     # (a fork). "" : a new first Direction (a fork at the root).
     parent_turn_id: str | None = None
     attachments: list[str] = Field(default_factory=list, max_length=20)
-    context: list[ContextIn] = Field(default_factory=list, max_length=8)
 
 
 class SteerIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     text: Text
 
 
 class HeadIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     turn_id: str
 
 
@@ -104,51 +98,7 @@ def _attachments(conn: Any, task_id: str, ids: list[str]) -> list[dict[str, Any]
     return out
 
 
-def _context(conn: Any, refs: list[ContextIn]) -> list[dict[str, Any]] | None:
-    """Resolve the Composer's context refs to estate-known labels.
-
-    Context is focus, never authorization: this only checks that the reader
-    pointed at something the estate knows. Provider bucket/prefix scope stays
-    the security boundary.
-    """
-    out: list[dict[str, Any]] = []
-    seen: set[tuple[Any, ...]] = set()
-    for c in refs[:8]:
-        provider_id = (c.provider_id or "").strip()
-        if c.kind == "issue":
-            issue = estate.get_issue(conn, c.issue_id or "")
-            if issue is None:
-                raise HTTPException(status_code=422, detail="unknown issue in context")
-            provider_id = issue["provider_id"]
-        if not provider_id:
-            raise HTTPException(status_code=422, detail=f"{c.kind} context needs a provider_id")
-        cloud = clouds.get(conn, provider_id)
-        if cloud is None:
-            raise HTTPException(status_code=422, detail="unknown storage account in context")
-        ref: dict[str, Any] = {"kind": c.kind, "provider_id": provider_id,
-                               "account": redact_text(cloud.name)}
-        key: tuple[Any, ...] = (c.kind, provider_id)
-        if c.kind == "bucket":
-            bucket = (c.bucket or "").strip()
-            if not bucket:
-                raise HTTPException(status_code=422, detail="bucket context needs a bucket")
-            known = conn.execute("SELECT 1 FROM estate_buckets WHERE provider_id = ? AND bucket = ?",
-                                 (provider_id, bucket)).fetchone()
-            if known is None:
-                raise HTTPException(status_code=422, detail="unknown bucket in context")
-            ref["bucket"] = bucket
-            key += (bucket,)
-        elif c.kind == "issue":
-            ref.update({"issue_id": issue["id"], "bucket": issue["bucket"],
-                        "title": redact_text(issue["title"])})
-            key += (issue["id"],)
-        if key not in seen:
-            seen.add(key)
-            out.append(ref)
-    return out or None
-
-
-def snapshot(conn: Any, task_id: str) -> dict[str, Any]:
+def snapshot(conn: Any, task_id: str, turns_limit: int = SNAPSHOT_TURNS) -> dict[str, Any]:
     # One read transaction for the whole snapshot. A turn can settle between
     # two SELECTs on separate autocommit reads: `branch` would still show it
     # running while `active_turns` already sees it completed, and the window
@@ -157,7 +107,8 @@ def snapshot(conn: Any, task_id: str) -> dict[str, Any]:
     with conn:
         conn.execute("BEGIN")
         task = _task_or_404(conn, task_id)
-        chain = store.branch(conn, task_id)
+        full = store.branch(conn, task_id)
+        chain = full[-max(1, turns_limit):]
         items = [public_item(i) for i in store.items_for_turns(conn, [t["id"] for t in chain])]
         forks = {parent: kids for parent, kids in store.siblings(conn, task_id).items() if len(kids) > 1}
         active = store.active_turns(conn, task_id)
@@ -170,6 +121,8 @@ def snapshot(conn: Any, task_id: str) -> dict[str, Any]:
             "running_turn_id": running,
             "queued": [{"turn_id": t["id"], "direction": t["direction"], "created_at": t["created_at"]} for t in queued],
             "turns": [store.turn_public(t) for t in chain],
+            "has_older": len(full) > len(chain),
+            "oldest_turn_id": chain[0]["id"] if chain else None,
             "head_turn_id": task["head_turn_id"],
             "items": items,
             "forks": forks,
@@ -199,17 +152,32 @@ def list_tasks(q: str | None = Query(default=None, max_length=200), conn: Any = 
 def create_task(body: TaskIn, conn: Any = Depends(get_conn)) -> dict[str, Any]:
     """A new task; with a Direction it starts working at once."""
     direction = (body.direction or "").strip()
-    context = _context(conn, body.context) if direction else None
-    task = store.create_task(conn, _seed_title(direction), origin=body.origin)
+    task = store.create_task(conn, _seed_title(direction))
     hub.publish_global("task", {"task_id": task["id"], "state": "ready", "title": task["title"], "created": True})
     if direction:
-        RUNTIME.submit(conn, task["id"], direction, context=context)
+        RUNTIME.submit(conn, task["id"], direction)
     return snapshot(conn, task["id"])
 
 
 @router.get("/{task_id}")
-def get_task(task_id: str, conn: Any = Depends(get_conn)) -> dict[str, Any]:
-    return snapshot(conn, task_id)
+def get_task(task_id: str, turns: int = Query(default=SNAPSHOT_TURNS, ge=1, le=500),
+             conn: Any = Depends(get_conn)) -> dict[str, Any]:
+    return snapshot(conn, task_id, turns_limit=turns)
+
+
+@router.get("/{task_id}/history")
+def get_history(task_id: str, before: str = Query(min_length=1, max_length=64),
+                limit: int = Query(default=HISTORY_TURNS, ge=1, le=200),
+                conn: Any = Depends(get_conn)) -> dict[str, Any]:
+    """Turns older than ``before``, with their items — one page, oldest first."""
+    _task_or_404(conn, task_id)
+    chain = store.branch_before(conn, task_id, before, limit=limit)
+    if not chain:
+        return {"turns": [], "items": [], "has_older": False, "oldest_turn_id": None}
+    older = store.branch_before(conn, task_id, chain[0]["id"], limit=1)
+    items = [public_item(i) for i in store.items_for_turns(conn, [t["id"] for t in chain])]
+    return {"turns": [store.turn_public(t) for t in chain], "items": items,
+            "has_older": bool(older), "oldest_turn_id": chain[0]["id"]}
 
 
 @router.patch("/{task_id}")
@@ -247,7 +215,7 @@ def submit(task_id: str, body: TurnIn, conn: Any = Depends(get_conn)) -> dict[st
             raise HTTPException(status_code=422, detail="unknown parent turn")
     attachments = _attachments(conn, task_id, body.attachments)
     turn = RUNTIME.submit(conn, task_id, body.direction.strip(), parent_turn_id=body.parent_turn_id,
-                          attachments=attachments or None, context=_context(conn, body.context))
+                          attachments=attachments or None)
     return {"turn_id": turn["id"], "status": turn["status"]}
 
 

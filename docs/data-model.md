@@ -23,12 +23,13 @@ Sources of truth: `sidecar/app/migrations.py`, `sidecar/app/config.py`,
 ## Migrations
 
 `sidecar/app/migrations.py` holds an ordered list of `(version, name, sql)`
-entries. The head is **2**:
+entries. The head is **3**:
 
 | Version | Name |
 | --- | --- |
 | 1 | `v5_items_estate` |
 | 2 | `v6_notes_posture_history` — `notes`, `posture_history`, `idx_issues_bucket` |
+| 3 | `v14_retire_quick_ask_origin` — `UPDATE tasks SET origin = 'user' WHERE origin = 'quick_ask'` |
 
 `apply_migrations` creates `schema_migrations (version INTEGER PRIMARY KEY,
 name TEXT NOT NULL, applied_at TEXT NOT NULL)` if it is missing. It then runs
@@ -53,7 +54,7 @@ are all projections of items and their side tables.
 | `title` | TEXT NOT NULL | at most 120 chars |
 | `title_source` | TEXT NOT NULL, default `'seed'` | `seed` (from the first Direction), `agent` (the title step after the first answer) or `user` (a rename; a user rename is never overwritten) |
 | `head_turn_id` | TEXT | the turn the task currently continues from, which is the tip of the branch being read |
-| `origin` | TEXT NOT NULL, default `'user'` | `user`, `watch` (opened by a watch sweep) or `quick_ask` |
+| `origin` | TEXT NOT NULL, default `'user'` | `user`, or `watch` (opened by a watch sweep). Migration 3 normalizes the retired `quick_ask` value. |
 | `created_at`, `updated_at` | TEXT NOT NULL | |
 
 A task's **state** is not stored. It is derived from the task's turns
@@ -148,14 +149,14 @@ turn's `Recorder`, which also publishes each item to open streams.
 
 | Type | Payload | Written when |
 | --- | --- | --- |
-| `user_message` | `{text, attachments?: [{dataset_id, filename, type}], context?: [{kind, provider_id, account, bucket?, issue_id?, title?}]}` | A Direction is submitted. The text is redacted. `context` is a legacy API field: the v13 window has no estate picker, so new user messages do not carry it. An older/imported item still replays its resolved labels as a `[Context: …]` line; context is focus, never authorization. |
+| `user_message` | `{text, attachments?: [{dataset_id, filename, type}]}` | A Direction is submitted. The text is redacted. |
 | `agent_message` | `{text}` | A model text segment closes: at a tool call, at a new message, or at the end of the turn. Commentary and the final answer are both agent messages. Also written by the finalize step. The text passes through the chain-of-thought and secret filters. |
 | `tool_call` | `{call_id, name, args, target}` | A tool starts. `args` are clamped and redacted. `target` is `bucket/key`, `bucket`, `name`, `dataset_id` or `provider_id`. |
 | `tool_progress` | `{call_id, name, done, total, unit}` | An engine reports counts (survey buckets, import files). Throttled to at most one per second and 120 per call. The final count (`done >= total`) is always written. `unit` is at most 24 chars. |
 | `tool_output` | `{call_id, name, ok, summary, duration_ms, detail, detail_truncated, model_output}` | A tool finishes. `summary` is at most 240 chars. `detail` is the redacted result as JSON, at most 24 000 chars, and is what the UI reads. `model_output` is what a later Turn replays, removed from every HTTP/SSE response; for a large deterministic result it is a compact, enveloped replay digest (the full `detail` remains the reader's artifact), so a survey table does not tax every follow-up. A call stopped before it ran, or cancelled or timed out, has `ok: false`, a `summary` saying so, and `detail` and `model_output` set to `null`. |
 | `tool_output` (refused) | `{call_id, name, ok: false, refused: true, summary, model_output}` | The scope guardrail rejected the call. A `tool_call` item precedes it. `summary` is the tidy tool-row note (≤ 60 chars); `model_output` carries the whole reason. |
 | `tool_output` (not run) | `{call_id, name, ok, summary, duration_ms: 0, detail: null, model_output}` | v10: the runtime answered the call without running it — a repeat of a call this Turn already made (`ok: true`, `summary: "repeated call, not run"`) or arguments that were not a JSON object (`ok: false`, `summary: "arguments were not valid JSON"`). A `tool_call` item precedes it; it is audited with `detail.skipped`. |
-| `conclusion` | `{call_id, findings: [{title, severity, detail?}], next_steps, evidence?: [{call_id, name, target, summary}]}` | The model called `record_conclusion` with valid arguments: ≤ 8 findings (title ≤ 240, severity `high`/`medium`/`low`/`info`, detail ≤ 600) and ≤ 4 next steps, each cut to 200 chars; either may be empty, not both. Redacted. `next_steps` is legacy: accepted and stored for older turns, but neither the window nor the report reads it. `evidence` is attached by the recorder — the Turn's successful non-conclusion, non-skill, non-note calls, most recent eight — never by the model; the UI calls them checks in this turn. No `tool_call` or `tool_output` item is written for it. v9 dropped `answer` (the answer is the Turn's final `agent_message`): an item recorded earlier — or imported from v4 — may still carry `answer` (≤ 400 chars); readers treat it as optional and history replay leaves it out. |
+| `conclusion` | `{call_id, findings: [{title, severity, detail?}], evidence?: [{call_id, name, target, summary}]}` | The model called `record_conclusion` with valid arguments: 1–8 findings (title ≤ 240, severity `high`/`medium`/`low`/`info`, detail ≤ 600). Redacted. `evidence` is attached by the recorder — the Turn's successful non-conclusion, non-skill, non-note calls, most recent eight — never by the model; the UI calls them checks in this turn. No `tool_call` or `tool_output` item is written for it. The answer is the Turn's final `agent_message`. |
 | `steer` | `{text}` | The user steered a running turn. The text is redacted, and the open segment is closed first. |
 | `compaction` | `{summary, turns_folded, folded: [turn_id]}` | The fixed prefix plus the branch history reached 80 % of the input budget (window − `max_tokens`, estimated at 3.2 chars per token). It is recorded on the oldest kept turn — up to the two latest earlier turns stay unfolded, fewer (down to none: then it is recorded on the current turn) when they alone would not fit. `summary` is at most 8 000 chars. When the model's history is built, only the latest compaction counts: it stands in for the turns it folded. |
 | `notice` | `{event, …}` | A runtime note. The events are listed below. |
@@ -489,7 +490,7 @@ What it copies:
 | `model_providers` | `model_providers`. `provider_type` is normalized to a v5 `kind` (aliases such as `llama.cpp` → `llamacpp` and `custom` → `openai-compatible`; unknown values → `openai-compatible`). `api_style` is derived from the kind and base URL. The first row (oldest) is made active. The `keyring://` references carry over; the secrets stay in the vault. |
 | `cloud_providers` | `cloud_providers`, column for column, with the vault references |
 | `sessions`: the 500 most recently updated | `tasks` (`origin = 'user'`). `title_source` is kept when it is `seed`, `agent` or `user`. |
-| `session_messages`: at most 400 per session, in order | Each user message becomes a `completed` `direction` turn chained after the previous one, with a `user_message` item (text cut to 16 000 chars for the turn's `direction`). The first turn also gets `notice {event: "imported", from: "v4"}`. Each assistant message becomes a `conclusion` item (when v4 has a `conclusion` column holding JSON with an `answer`; `call_id = "imported-<message id>"`) followed by an `agent_message` item. The task's head is its last turn. Tool calls and runs are not imported. |
+| `session_messages`: at most 400 per session, in order | Each user message becomes a `completed` `direction` turn chained after the previous one, with a `user_message` item (text cut to 16 000 chars for the turn's `direction`). The first turn also gets `notice {event: "imported", from: "v4"}`. Each assistant message becomes an `agent_message` item; a v4 `conclusion` JSON with findings also becomes a `conclusion` item (`call_id = "imported-<message id>"`). The task's head is its last turn. Tool calls and runs are not imported. |
 | `estate_buckets` | `estate_buckets` (`posture_json_sanitized` → `posture`) |
 | `issues` | `issues` (`detail_sanitized` → `detail`, `fix_json_sanitized` → `fix`) |
 | `issue_events` | `issue_events` (`detail_json_sanitized` → `detail`), only for issues that exist |

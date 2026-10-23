@@ -25,7 +25,6 @@ _MAX_TURNS = 40
 
 _COPY = {
     "goal": ("Goal", "目标"),
-    "conclusion": ("Conclusion", "结论"),
     "findings": ("Findings", "发现"),
     "record": ("What was done", "工作记录"),
     "coverage": ("Coverage and gaps", "覆盖范围与缺口"),
@@ -99,8 +98,6 @@ def render(conn: Any, task_id: str, *, lang: str = "en") -> str:
 
     calls = [i for i in items if i["type"] == "tool_call"]
     outputs = [i for i in items if i["type"] == "tool_output"]
-    conclusions = [i for i in items if i["type"] == "conclusion"]
-    latest = conclusions[-1]["payload"] if conclusions else None
 
     lines: list[str] = [f"# {redact_text(task['title'])}", ""]
     lines.append(f"_{_t('created', lang)} {task['created_at']} · {len(chain)} {_t('directions', lang)} · "
@@ -112,10 +109,6 @@ def render(conn: Any, task_id: str, *, lang: str = "en") -> str:
 
     first = next((i["payload"]["text"] for i in items if i["type"] == "user_message"), "")
     section("goal", [_clip(first)] if first else [])
-    # Only a pre-v9 conclusion carries an answer of its own (read, never written);
-    # a v9 one is findings and next steps, and an empty answer is no section.
-    old_answer = _clip((latest or {}).get("answer"), 400)
-    section("conclusion", [old_answer] if old_answer else [])
     section("findings", [
         f"- **{f.get('severity', 'info').upper()}** — {_oneline(f.get('title'), 240)}"
         + (f"  \n  {_oneline(f.get('detail'), 600)}" if f.get("detail") else "")

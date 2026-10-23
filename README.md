@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v13.0.0**
+**Release in this checkout: v14.0.0**
 
 Storage Agent is a local-first desktop Agent for object storage — AWS S3 and every S3-compatible service. Give it a goal or a problem; it investigates with real, read-only, bounded tools, shows the work while it runs, stays steerable and stoppable, and answers with evidence. What it learns about your storage — accounts, buckets, their posture and the Issues found there — outlives the task that learned it.
 
@@ -10,12 +10,11 @@ It is not a chatbot wrapped around a storage console, and it never writes to you
 
 ## How it works
 
-- **One workspace, result first.** A task reads top to bottom: the objective, the deterministic result the tool returned (survey table, listing, configuration, fix), the Agent's short interpretation, its findings, and one quiet receipt. While work is live, every real call and its progress is visible. Nothing is reordered, repeated or turned into a card, across reloads too.
-- **Send, add to the request, stop.** One Composer, centred on Home and docked on every task: send at rest; add to it while the Agent works; stop it and keep what it found. A request sent while the Agent works is queued. The bar has a paperclip, the model and Send/Stop — no mode switch.
+- **One workspace, answer first.** A task reads as one conversation: what you asked, the work it caused, the Agent's answer, its findings, and the deterministic data folded beneath when you want it. While work is live, every real call and its progress is visible. Nothing is reordered, repeated or turned into a card, across reloads too.
+- **Send, add to the request, stop.** One Composer, centred on Home and docked on every task: send at rest; add to it while the Agent works; stop it and keep what it found. A request sent while the Agent works is queued. The bar has a paperclip, the model and Send/Stop — no mode switch. A file uploads with real progress and can be cancelled.
 - **Edit a request.** The Agent answers the new version on its own branch; switch between versions. The fork keeps its attached files. **Evidence** holds the report, usage, every check and attached files; a check opens in place to its arguments and raw data, with no second page.
 - **The estate is memory.** Accounts, buckets, posture, Issues and notes are what the Agent knows, not a page you browse. Ask in plain language; the Agent resolves the account or bucket, or asks when the request is ambiguous. An opt-in watch re-checks an account on a schedule and opens one task when something new turns up.
 - **Fix packs.** Each Issue's fix comes as an AWS CLI command, a Terraform resource or the API document, with a preview of what applying it would change drawn from evidence (anonymous requests in the bucket's access logs, existing lifecycle rules) — or a plain *cannot tell*. The Agent can re-check it read-only; if the problem comes back, it reopens.
-- **Quick Ask.** ⌘⇧Space opens a small window for one question; the task it creates continues in the main window.
 - **Your models.** OpenAI (Responses API, with hosted tool search and server-side compaction), Anthropic, DeepSeek, OpenRouter, or local models (Ollama, LM Studio, vLLM, llama.cpp, any OpenAI-compatible endpoint).
 
 ## What it can do
@@ -35,7 +34,7 @@ Secrets live only in an encrypted local vault and never reach the model, the log
 ## Architecture
 
 ```text
-Tauri v2 shell ── React window · Quick Ask · tray
+Tauri v2 shell ── React window · tray
         │ localhost HTTP / SSE + per-launch token
 Python Sidecar ── one Agent (OpenAI Agents SDK) ── your model endpoint
         │                                       └─ your S3-compatible storage

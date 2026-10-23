@@ -154,8 +154,7 @@ def test_the_report_has_no_empty_conclusion_section(conn):
     turn = store.create_turn(conn, task["id"], "Check", status="completed")
     store.append_item(conn, task["id"], turn["id"], "user_message", {"text": "Check"})
     store.append_item(conn, task["id"], turn["id"], "conclusion", {
-        "call_id": "c", "answer": "   ", "findings": [{"title": "No default encryption", "severity": "medium"}],
-        "next_steps": []})
+        "call_id": "c", "findings": [{"title": "No default encryption", "severity": "medium"}]})
     store.append_item(conn, task["id"], turn["id"], "agent_message", {"text": "Encryption is off."})
     md = report.render(conn, task["id"])
     assert "## Conclusion" not in md and "**MEDIUM** — No default encryption" in md

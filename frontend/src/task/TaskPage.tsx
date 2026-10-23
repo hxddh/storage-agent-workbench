@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { TaskSnapshot } from "../api/types";
+import { Button } from "../components/ui";
 import { useI18n } from "../i18n";
 import { sections } from "../store/derive";
 import { forksOf, type TaskModel } from "../store/task";
@@ -13,7 +14,10 @@ const MemoTurn = memo(Turn);
  * quiet work receipt. The newest turn sits just above the Composer and the
  * page follows it while it streams — unless the reader scrolled up.
  */
-export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot: (s: TaskSnapshot) => void }) {
+export function TaskPage({ model, setSnapshot, onRetry = async () => null, onLoadOlder = async () => {} }: {
+  model: TaskModel; setSnapshot: (s: TaskSnapshot) => void;
+  onRetry?: () => Promise<TaskSnapshot | null>; onLoadOlder?: () => Promise<void>;
+}) {
   const { t } = useI18n();
   // Live text is passed only to the Turn that owns it. Rebuilding every
   // section on every streamed token made long conversations quadratic.
@@ -67,11 +71,23 @@ export function TaskPage({ model, setSnapshot }: { model: TaskModel; setSnapshot
   useLayoutEffect(() => { pinned.current = true; }, [lastId]);
 
   if (!model.snapshot) {
-    return <div className="task-page" aria-busy="true"><p className="quiet-note">{model.error ?? t("task.loading")}</p></div>;
+    return (
+      <div className="task-page" aria-busy={!model.error} data-testid="task-loading">
+        <p className="quiet-note">{model.error ?? t("task.loading")}</p>
+        {model.error ? <Button size="sm" onClick={() => void onRetry()}>{t("common.retry")}</Button> : null}
+      </div>
+    );
   }
   const firstTurn = all.find((s) => s.turn.kind !== "resume")?.turn.id;
   return (
     <div className="task-page" data-testid="task-page">
+      {model.hasOlder ? (
+        <div className="task-older">
+          <Button size="sm" variant="ghost" disabled={model.loadingOlder} onClick={() => void onLoadOlder()}>
+            {model.loadingOlder ? t("task.loadingOlder") : t("task.loadEarlier")}
+          </Button>
+        </div>
+      ) : null}
       {all.length ? all.map((s) => (
         <MemoTurn key={s.turn.id} section={s} taskId={model.id} forks={forks} setSnapshot={setSnapshot}
           running={s.turn.status === "running"} first={s.turn.id === firstTurn}

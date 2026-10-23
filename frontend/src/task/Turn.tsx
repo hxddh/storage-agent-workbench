@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { api } from "../api";
 import type { LiveSegment, TaskSnapshot } from "../api/types";
 import { Icon } from "../components/icons";
@@ -6,6 +7,7 @@ import { Button, IconButton, StatusDot } from "../components/ui";
 import { useToast } from "../components/Toast";
 import { useCopy } from "../hooks/useCopy";
 import { useElapsed } from "../hooks/useElapsed";
+import { describeError } from "../lib/errors";
 import { useI18n } from "../i18n";
 import { SEVERITY_TONE } from "../lib/severity";
 import { toolLabel, toolRunLabel } from "../lib/toolLabels";
@@ -15,9 +17,9 @@ import { ResultView, viewFor } from "../tool/ResultView";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
 
 /**
- * One Turn is a workspace section: the objective, the deterministic result,
- * the model's short interpretation, findings and a quiet work receipt. There
- * is no user/assistant chat bubble; the task itself is the object.
+ * One Turn is one exchange: what was asked, the work it caused, the Agent's
+ * answer and the findings. The answer leads; deterministic data is a fold
+ * beneath it, never a wall the reader has to cross to reach the prose.
  */
 export function Turn({ section, taskId, forks, setSnapshot, running, live = null, first = false }: {
   section: Section; taskId: string; forks: Record<string, string[]>;
@@ -44,11 +46,13 @@ export function Turn({ section, taskId, forks, setSnapshot, running, live = null
             </>
           ) : (
             <>
-              {result ? <SettledResult result={result} /> : null}
-              {fig ? <AnalysisFigures provenance={fig} /> : null}
+              <RunTrace section={s} running={false} live={null} />
               <Answer section={s} running={false} live={null} />
               {found.length ? <Findings findings={found} /> : null}
-              <RunTrace section={s} running={false} live={null} />
+              {fig ? <AnalysisFigures provenance={fig} /> : null}
+              {result ? <TurnData result={result} open={!s.answer} /> : null}
+              {!result && rows.some((r) => r.status === "ok" && r.detailTruncated)
+                ? <p className="quiet-note result-gap">{t("result.truncatedGap")}</p> : null}
             </>
           )}
           <Outcome section={s} taskId={taskId} running={running} />
@@ -73,7 +77,7 @@ function Objective({ section, taskId, forks, setSnapshot, first }: {
     try {
       setSnapshot(await api.switchBranch(taskId, v.ids[to]));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(describeError(err, t));
     }
   };
   const settled = turn.status !== "queued" && turn.status !== "running";
@@ -81,7 +85,10 @@ function Objective({ section, taskId, forks, setSnapshot, first }: {
   return (
     <div className="objective" data-testid="message">
       <div className="objective-head">
-        <Heading className="objective-text">{section.direction}</Heading>
+        <div className="objective-main">
+          {!first ? <span className="objective-kicker">{t("turn.you")}</span> : null}
+          <Heading className="objective-text">{section.direction}</Heading>
+        </div>
         <div className="objective-tools">
           {v ? (
             <span className="versions" role="group" aria-label={t("turn.version", { i: v.index + 1, n: v.ids.length })}>
@@ -118,7 +125,7 @@ function Queued({ taskId, turnId }: { taskId: string; turnId: string }) {
   return (
     <p className="turn-note" data-testid="queued">
       <StatusDot tone="neutral" /> {t("turn.queued")}
-      <button type="button" className="link" onClick={() => void api.withdraw(taskId, turnId).catch((e) => toast.error(String(e)))}>
+      <button type="button" className="link" onClick={() => void api.withdraw(taskId, turnId).catch((e) => toast.error(describeError(e, t)))}>
         {t("turn.withdraw")}
       </button>
     </p>
@@ -148,13 +155,13 @@ function primaryResult(rows: Row[]): Row | null {
 /** The run: every real call while it is live; one quiet receipt once it has settled. */
 function RunTrace({ section, running, live }: { section: Section; running: boolean; live: LiveSegment | null }) {
   const { t, lang } = useI18n();
+  const app = useApp();
   const rows = tools(section);
   const start = section.turn.started_at ?? section.turn.created_at;
   const elapsed = useElapsed(start, running ? null : section.turn.finished_at, running, lang);
   const commentary = section.blocks.filter((b) => b.kind === "commentary" || b.kind === "steer"
-    || b.kind === "context" || b.kind === "carried");
+    || b.kind === "compaction" || b.kind === "carried");
   const failed = rows.filter((r) => r.status === "failed" || r.status === "refused").length;
-  const result = running ? primaryResult(rows) : null;
 
   if (running) {
     const now = [...rows].reverse().find((r) => r.status === "running");
@@ -170,31 +177,55 @@ function RunTrace({ section, running, live }: { section: Section; running: boole
             <span className="run-progress">{t("tool.progress", { done: progress.done.toLocaleString(),
               total: progress.total.toLocaleString(), unit: progress.unit })}</span>
           ) : null}
-          <span className="run-meta">· {t(rows.length === 1 ? "work.check" : "work.checks", { n: rows.length })}</span>
           <span className="run-meta">· {elapsed}</span>
         </div>
-        <RunBody section={section} result={result} />
+        <RunBody section={section} running headId={now?.callId} />
       </div>
     );
   }
 
   if (!rows.length && !commentary.length) return null;
-  return (
-    <div className="run-receipt" data-testid="run-trace" data-live="false">
+  const body = (
+    <>
       <span className="run-glyph" aria-hidden><Icon name="activity" size={14} /></span>
       <span>{rows.length ? t(rows.length === 1 ? "work.check" : "work.checks", { n: rows.length }) : t("work.notes")}</span>
       {failed ? <span className="run-meta run-failed">· {t("work.failed", { n: failed })}</span> : null}
       <span className="run-meta">· {elapsed}</span>
-    </div>
+    </>
+  );
+  if (!rows.length) return <div className="run-receipt" data-testid="run-trace" data-live="false">{body}</div>;
+  return (
+    <button type="button" className="run-receipt" data-testid="run-trace" data-live="false"
+      onClick={() => app.setPane({ tab: "details" })}>
+      {body}
+    </button>
   );
 }
 
-/** The latest deterministic result with a known shape, rendered as the artifact. */
-function SettledResult({ result }: { result: Row }) {
-  return <div className="run-result" data-testid="run-result"><ResultView row={result} /></div>;
+/** The deterministic evidence for the answer, folded unless it is the deliverable. */
+function TurnData({ result, open: initiallyOpen }: { result: Row; open: boolean }) {
+  const { t } = useI18n();
+  const view = viewFor(result);
+  const fix = view?.kind === "fix";
+  const [open, setOpen] = useState(Boolean(fix || initiallyOpen));
+  if (!view) return null;
+  const label = view.kind === "survey"
+    ? t("result.dataSurvey", { n: view.rows.length + view.omitted })
+    : t(`result.data.${view.kind}`);
+  return (
+    <details className="turn-data" data-kind={view.kind} open={open} data-testid="run-result"
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary>
+        <Icon name={fix ? "tool" : "table"} size={14} />
+        <span>{label}</span>
+        <Icon name="chevron" size={13} className="turn-data-caret" />
+      </summary>
+      <div className="turn-data-body"><ResultView row={result} /></div>
+    </details>
+  );
 }
 
-function RunBody({ section, result }: { section: Section; result: Row | null }) {
+function RunBody({ section, running = false, headId }: { section: Section; running?: boolean; headId?: string }) {
   const { t } = useI18n();
   return (
     <div className="run-body" data-testid="run-body">
@@ -202,7 +233,7 @@ function RunBody({ section, result }: { section: Section; result: Row | null }) 
         if (b.kind === "commentary") return <div key={b.id} className="run-note"><Markdown text={b.text} /></div>;
         if (b.kind === "steer") return <p key={b.id} className="run-steer"><span>{t("work.steered")}</span> {b.text}</p>;
         if (b.kind === "carried") return <p key={b.id} className="run-carried">{t("work.carried", { n: b.count })}</p>;
-        if (b.kind === "context") {
+        if (b.kind === "compaction") {
           return (
             <details key={b.id} className="run-context">
               <summary>{t("work.compacted")}{b.turns ? ` · ${t("work.turns", { n: b.turns })}` : ""}</summary>
@@ -210,13 +241,16 @@ function RunBody({ section, result }: { section: Section; result: Row | null }) 
             </details>
           );
         }
+        // The call in the head line is not repeated; other calls (including
+        // parallel ones still running) stay visible in the body.
+        const visible = running ? b.tools.filter((r) => r.callId !== headId) : b.tools;
+        if (!visible.length) return null;
         return (
           <ul key={b.id} className="call-list">
-            {b.tools.map((r) => <CallRow key={r.callId} row={r} />)}
+            {visible.map((r) => <CallRow key={r.callId} row={r} />)}
           </ul>
         );
       })}
-      {result ? <div className="run-result" data-testid="run-result"><ResultView row={result} /></div> : null}
     </div>
   );
 }
@@ -235,7 +269,12 @@ function CallRow({ row }: { row: Row }) {
         </span>
         <span className="call-verb">{row.status === "running" ? toolRunLabel(row.name, lang) : toolLabel(row.name, lang)}</span>
         {row.target ? <span className="call-target">{row.target}</span> : null}
-        {row.summary ? <span className="call-note">{row.status === "refused" ? `${t("tool.refused")} — ` : ""}{row.summary}</span> : null}
+        {row.progress && row.progress.total > 0 ? (
+          <span className="call-note">{t("tool.progress", { done: row.progress.done.toLocaleString(),
+            total: row.progress.total.toLocaleString(), unit: row.progress.unit })}</span>
+        ) : row.summary ? (
+          <span className="call-note">{row.status === "refused" ? `${t("tool.refused")} — ` : ""}{row.summary}</span>
+        ) : null}
       </button>
     </li>
   );
@@ -243,7 +282,6 @@ function CallRow({ row }: { row: Row }) {
 
 /** The interpretation: streamed while live, the model's final message once done. */
 function Answer({ section, running, live }: { section: Section; running: boolean; live: LiveSegment | null }) {
-  const c = section.conclusion;
   if (running) {
     return live ? (
       <div className="answer live-text" data-testid="live-answer" aria-live="polite">
@@ -251,8 +289,7 @@ function Answer({ section, running, live }: { section: Section; running: boolean
       </div>
     ) : null;
   }
-  // A conclusion recorded before v9 carries its own answer; newer ones do not.
-  const text = section.answer ?? c?.answer ?? null;
+  const text = section.answer;
   if (!text) return null;
   return <div className="answer" data-testid="answer"><Markdown text={text} /></div>;
 }
@@ -288,7 +325,7 @@ function Outcome({ section, taskId, running }: { section: Section; taskId: strin
         <StatusDot tone={st === "failed" ? "danger" : "warn"} />
         <span className="turn-outcome-text">{section.error?.message ?? section.turn.error
           ?? (st === "interrupted" ? t("turn.interrupted") : t("turn.failed"))}</span>
-        <Button size="sm" onClick={() => void api.resume(taskId, section.turn.id).catch((e) => toast.error(String(e)))}>{t("turn.resume")}</Button>
+        <Button size="sm" onClick={() => void api.resume(taskId, section.turn.id).catch((e) => toast.error(describeError(e, t)))}>{t("turn.resume")}</Button>
         {st === "failed" ? <Button size="sm" variant="ghost" onClick={() => app.openSettings("models")}>{t("turn.openSettings")}</Button> : null}
       </div>
     );

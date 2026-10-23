@@ -5,12 +5,14 @@ import { Markdown } from "../components/Markdown";
 import { useToast } from "../components/Toast";
 import { Button, IconButton } from "../components/ui";
 import { saveTextFile } from "../config";
+import { describeError } from "../lib/errors";
 import { useI18n } from "../i18n";
 import { fmtBytes } from "../lib/format";
 import { revealInScroller } from "../lib/scroll";
 import { toolLabel } from "../lib/toolLabels";
 import { useApp } from "../shell/context";
 import { allTools, sections, type ToolRow } from "../store/derive";
+import { ResultView, viewFor } from "../tool/ResultView";
 import type { TaskModel } from "../store/task";
 
 
@@ -116,6 +118,14 @@ export function Details({ model }: { model: TaskModel }) {
   return (
     <Pane title={t("pane.details")} testId="inspector">
       <div className="details" data-testid="details">
+        <p className="pane-meta" data-testid="pane-meta">
+          {t(tools.length === 1 ? "pane.check" : "pane.checks", { n: tools.length })}
+          <span>·</span>
+          {(() => {
+            const req = model.turns.reduce((n, x) => n + (x.usage?.requests ?? 0), 0);
+            return t(req === 1 ? "pane.usageLine1" : "pane.usageLine", { req });
+          })()}
+        </p>
         {tools.length ? (
           <ul className="details-calls">
             {tools.map((r) => <CallLine key={r.callId} row={r} focus={r.callId === focusCall} />)}
@@ -161,17 +171,19 @@ function CallLine({ row, focus }: { row: ToolRow; focus: boolean }) {
           <Icon name="chevron" size={13} className="call-caret" />
         </summary>
         <div className="call-evidence-body" data-testid="call-detail">
-          {/* Evidence is the raw record. The rendered artifact belongs to the
-              Task, once; the row opens straight to the arguments and output. */}
-          <h4 className="pane-label">{t("tool.args")}</h4>
-          <Markdown text={"```json\n" + JSON.stringify(readableArgs(row.args, app.clouds), null, 2) + "\n```"} />
-          {row.detail ? (
-            <>
-              <h4 className="pane-label">{t("tool.output")}</h4>
-              <Markdown text={"```json\n" + pretty(row.detail) + "\n```"} />
-              {row.detailTruncated ? <p className="quiet-note">{t("tool.truncated")}</p> : null}
-            </>
-          ) : null}
+          {viewFor(row) ? <ResultView row={row} compact /> : null}
+          <details className="call-raw">
+            <summary>{t("tool.raw")}</summary>
+            <h4 className="pane-label">{t("tool.args")}</h4>
+            <Markdown text={"```json\n" + JSON.stringify(readableArgs(row.args, app.clouds), null, 2) + "\n```"} />
+            {row.detail ? (
+              <>
+                <h4 className="pane-label">{t("tool.output")}</h4>
+                <Markdown text={"```json\n" + pretty(row.detail) + "\n```"} />
+                {row.detailTruncated ? <p className="quiet-note">{t("tool.truncated")}</p> : null}
+              </>
+            ) : null}
+          </details>
         </div>
       </details>
     </li>
@@ -214,7 +226,7 @@ function SaveReport({ taskId, title }: { taskId: string; title: string }) {
         setTimeout(() => URL.revokeObjectURL(a.href), 0);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(describeError(err, t));
     }
   };
   return (

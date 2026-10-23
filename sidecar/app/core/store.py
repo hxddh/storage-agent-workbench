@@ -225,8 +225,13 @@ def set_turn_status(conn: sqlite3.Connection, turn_id: str, status: str, *,
     conn.commit()
 
 
-def branch(conn: sqlite3.Connection, task_id: str, head_turn_id: str | None = None) -> list[dict[str, Any]]:
-    """The turns of one branch, oldest first: the chain from the head to the root."""
+def branch(conn: sqlite3.Connection, task_id: str, head_turn_id: str | None = None,
+           *, limit: int | None = None) -> list[dict[str, Any]]:
+    """The turns of one branch, oldest first: the chain from the head to the root.
+
+    ``limit`` keeps the newest turns of that chain. The window uses it to bound
+    a long task's first snapshot; ``branch_before`` loads the rest on demand.
+    """
     rows = {r["id"]: dict(r) for r in conn.execute(
         "SELECT * FROM turns WHERE task_id = ?", (task_id,)).fetchall()}
     if head_turn_id is None:
@@ -240,7 +245,16 @@ def branch(conn: sqlite3.Connection, task_id: str, head_turn_id: str | None = No
         chain.append(rows[cur])
         cur = rows[cur]["parent_turn_id"]
     chain.reverse()
-    return chain
+    return chain[-limit:] if limit and limit > 0 else chain
+
+
+def branch_before(conn: sqlite3.Connection, task_id: str, before_turn_id: str,
+                  *, limit: int = 40) -> list[dict[str, Any]]:
+    """The newest ``limit`` turns older than ``before_turn_id``, oldest first."""
+    turn = get_turn(conn, before_turn_id)
+    if turn is None or turn["task_id"] != task_id or not turn["parent_turn_id"]:
+        return []
+    return branch(conn, task_id, turn["parent_turn_id"], limit=limit)
 
 
 def siblings(conn: sqlite3.Connection, task_id: str) -> dict[str, list[str]]:

@@ -33,6 +33,15 @@ def test_migrations_are_idempotent():
         conn.close()
 
 
+def test_quick_ask_origin_is_retired(conn):
+    from app.core import store
+    task = store.create_task(conn, "old quick ask", origin="quick_ask")
+    conn.execute("DELETE FROM schema_migrations WHERE version = 3")
+    conn.commit()
+    assert apply_migrations(conn) == 1
+    assert conn.execute("SELECT origin FROM tasks WHERE id = ?", (task["id"],)).fetchone()[0] == "user"
+
+
 def test_items_seq_is_global_and_monotonic(conn):
     from app.core import store
     a = store.create_task(conn, "a")

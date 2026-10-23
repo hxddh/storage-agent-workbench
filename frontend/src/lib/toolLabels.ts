@@ -22,23 +22,6 @@ const LABELS: Record<string, { en: string; zh: string }> = {
   analyze_uploaded_file: { en: "Analyzed attached file", zh: "分析附件" },
   triage_error: { en: "Triaged error", zh: "分诊错误" },
   simulate_storage_cost: { en: "Simulated storage cost", zh: "模拟存储成本" },
-  // Retired in v10: older tasks still show calls under these names.
-  head_bucket: { en: "Checked bucket", zh: "检查桶" },
-  get_bucket_location: { en: "Read bucket region", zh: "读取桶区域" },
-  test_object_read: { en: "Tested object read", zh: "测试对象读取" },
-  preview_object: { en: "Previewed object", zh: "预览对象" },
-  list_object_versions: { en: "Listed versions", zh: "列出版本" },
-  list_multipart_uploads: { en: "Listed multipart uploads", zh: "列出分段上传" },
-  list_upload_parts: { en: "Listed upload parts", zh: "列出分段" },
-  test_addressing_style: { en: "Tested addressing style", zh: "测试寻址方式" },
-  inspect_endpoint_tls: { en: "Inspected TLS", zh: "检查 TLS" },
-  measure_request_latency: { en: "Measured latency", zh: "测量延迟" },
-  diagnose_presigned_url: { en: "Diagnosed presigned URL", zh: "诊断预签名 URL" },
-  get_bucket_config_detail: { en: "Read configuration detail", zh: "读取配置详情" },
-  review_bucket_performance_profile: { en: "Reviewed performance", zh: "审查性能" },
-  compare_to_last_survey: { en: "Compared with last survey", zh: "与上次盘点对比" },
-  list_uploaded_files: { en: "Listed attached files", zh: "列出附件" },
-  aggregate_uploaded_file: { en: "Aggregated attached file", zh: "汇总附件" },
 };
 
 export function toolLabel(tool: string, lang: Lang): string {

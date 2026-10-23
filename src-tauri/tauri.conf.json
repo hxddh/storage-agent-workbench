@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Storage Agent",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "identifier": "com.storageagent.workbench",
   "build": {
     "frontendDist": "../frontend/dist",
@@ -19,26 +19,6 @@
         "height": 800,
         "minWidth": 960,
         "minHeight": 640,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true,
-        "trafficLightPosition": {
-          "x": 12,
-          "y": 12
-        }
-      },
-      {
-        "label": "quick",
-        "title": "Quick Ask",
-        "url": "index.html?view=quick",
-        "width": 560,
-        "height": 340,
-        "minWidth": 420,
-        "minHeight": 160,
-        "visible": false,
-        "resizable": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "center": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "trafficLightPosition": {

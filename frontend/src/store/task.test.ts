@@ -47,6 +47,17 @@ describe("the task reducer", () => {
     expect(m.snapshot?.task.title).toBe("Account survey");
   });
 
+  it("prepends an older history page without losing the branch being read", () => {
+    const t1 = turn("t1");
+    const t2 = turn("t2", { parent_turn_id: "t1" });
+    const old = item("t1", "user_message", { text: "First" });
+    let m = reduce(initial("task-1"), { type: "snapshot", snapshot: snapshot([t2], [item("t2", "user_message", { text: "Second" })]) });
+    m = reduce(m, { type: "history", history: { turns: [t1], items: [old], has_older: false, oldest_turn_id: "t1" } });
+    expect(m.turns.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(m.items[0]).toEqual(old);
+    expect(m.hasOlder).toBe(false);
+  });
+
   it("never lets a late snapshot of another task replace the one being read", () => {
     const m = reduce(initial("task-2"), { type: "snapshot", snapshot: snapshot([turn("t1")], []) });
     expect(m.snapshot).toBeNull();

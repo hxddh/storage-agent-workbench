@@ -1,10 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability set: core + the native-agent OS shell (menu bar, notifications, deep links, global summon and Quick Ask shortcuts, tray, opener, updater, remembered window state). Sidecar is launched directly via std::process.",
+  "description": "Default capability set: core + the native-agent OS shell (menu bar, notifications, deep links, the global summon shortcut, tray, opener, updater, remembered window state). Sidecar is launched directly via std::process.",
   "windows": [
-    "main",
-    "quick"
+    "main"
   ],
   "permissions": [
     "core:default",

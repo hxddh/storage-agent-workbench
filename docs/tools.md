@@ -273,7 +273,7 @@ chars of schema per request; v10 has 15 tools costing about 10 300.
 | `query_estate` | `provider_id = "", bucket = "", status: IssueStatus = "active", survey_filter: SurveyFilter \| None = None, since_last_survey = False` | none | yes | 15 s |
 | `fix_preview` | `issue_id: str` | none | yes | 15 s |
 | `note` | `text: str, provider_id = "", bucket = ""` | none | no | 10 s |
-| `record_conclusion` | `findings: list[Finding] (≤ 8) \| None = None, next_steps: list[str] (≤ 4) \| None = None` | none | no | 10 s |
+| `record_conclusion` | `findings: list[Finding] (≤ 8) \| None = None` | none | no | 10 s |
 
 - **`list_buckets`**: read-only `ListBuckets` for the account. It is also the
   credential check: success means the keys work; `InvalidAccessKeyId` /
@@ -284,11 +284,9 @@ chars of schema per request; v10 has 15 tools costing about 10 300.
     scope** (inside a turn and over MCP alike) and says so (`scope`); a
     bucket outside the scope is never named.
   - Routing headers, host ids and success request ids are dropped (`quiet`).
-- **`read_skill`**: returns one method card, bundled or user-supplied, as
-  named in the skills catalog (bundled cards show without their
-  `storageops-` prefix; both spellings load). The names of the skills folded
-  into a card in v10 still load that card (`aliases` in
-  `skill-registry.yaml`), so a replayed call keeps working.
+- **`read_skill`**: returns one method card, bundled or user-supplied, by its
+  exact name (bundled cards are named `storageops-…`; the catalog hides that
+  prefix). There are no aliases.
   - Budget: 20 loads per turn.
   - Unknown name → `error`.
   - Skills are local guidance, so the result is not enveloped.
@@ -341,17 +339,13 @@ chars of schema per request; v10 has 15 tools costing about 10 300.
 - **`record_conclusion`**: records the turn's findings (see
   [Execution](#execution-invoketd-tool_ctx-raw_args), step 2), once, right
   before the final answer; the window shows them under the answer. The
-  schema carries `maxItems` 8 / 4. The arguments are validated by the
+  schema carries `maxItems` 8. The arguments are validated by the
   recorder's `Conclusion` model:
-  - `findings`: optional, at most 8, each `Finding {title: 1–240 chars, severity: high|medium|low|info, detail?: ≤ 600 chars}`;
-  - `next_steps`: legacy and kept for older turns; no longer painted or
-    reported, and the tool tells the model to leave it empty;
-  - at least one finding or next step (v9: there is no `answer` field — the
-    answer is the Turn's final message).
+  - `findings`: at least 1, at most 8, each `Finding {title: 1–240 chars, severity: high|medium|low|info, detail?: ≤ 600 chars}`.
 
   The conclusion is redacted. When the model calls it more than once, each
-  call appends a new `conclusion` item. A conclusion recorded before v9 may
-  still carry `answer`; it is read (the report) but never written.
+  call appends a new `conclusion` item. The answer is the Turn's final
+  message, never a conclusion field.
 
 ## `probes`
 

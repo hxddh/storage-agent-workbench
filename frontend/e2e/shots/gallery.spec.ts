@@ -6,7 +6,7 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
 import { startFakeS3 } from "../fake-s3";
 
 /**
- * Human visual-review contact sheet (v13). No pixel baselines — CI, local
+ * Human visual-review contact sheet (v14). No pixel baselines — CI, local
  * Chromium and font stacks are not raster-identical. Every capture first
  * reaches a real, asserted state against the real Sidecar, then writes a PNG.
  *
@@ -46,7 +46,7 @@ const conclusion = {
   ],
 };
 
-test("the v13 contact sheet", async ({ page }) => {
+test("the v14 contact sheet", async ({ page }) => {
   test.setTimeout(240_000);
   fs.rmSync(OUT, { recursive: true, force: true });
   await reset();
@@ -65,12 +65,6 @@ test("the v13 contact sheet", async ({ page }) => {
   try {
     await open(page, "dark", "en");
     await shot(page, "home-empty-dark-en");
-    await page.setViewportSize({ width: 560, height: 340 });
-    await page.goto("/?view=quick");
-    await expect(page.getByTestId("quick-ask")).toBeVisible();
-    await shot(page, "quick-ask-dark-en");
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto("/");
     await expect(page.getByTestId("composer-input")).toBeVisible({ timeout: 30_000 });
     await delegate(page, "Survey my storage account and tell me what needs care, most severe first.");
     await expect(page.getByTestId("run-trace")).toBeVisible({ timeout: 30_000 });
@@ -78,6 +72,8 @@ test("the v13 contact sheet", async ({ page }) => {
     await expect(page.getByTestId("answer")).toBeVisible({ timeout: 60_000 });
     await settled(page, 60_000);
     await shot(page, "conversation-dark-en");
+    await page.getByTestId("run-result").first().locator("summary").click();
+    await shot(page, "data-dark-en");
 
     await delegate(page, "Does default encryption fix the existing objects too?");
     await expect(page.getByTestId("turn").last()).toContainText("new objects only", { timeout: 30_000 });
@@ -116,6 +112,10 @@ test("the v13 contact sheet", async ({ page }) => {
     await page.getByTestId("open-settings").click();
     await page.getByTestId("settings-connections").click();
     await shot(page, "settings-connections-dark-en");
+    await page.getByTestId("settings-general").click();
+    await shot(page, "settings-general-dark-en");
+    await page.getByTestId("settings-models").click();
+    await shot(page, "settings-models-dark-en");
     await page.getByRole("button", { name: "Close" }).click();
 
     await open(page, "light", "en");

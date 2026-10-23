@@ -4,6 +4,7 @@ import type { CloudProvider, ModelProvider, Settings as SettingsData, Watch } fr
 import { Icon } from "../components/icons";
 import { Badge, Button, Field, IconButton, Segmented, Select, StatusDot, TextInput } from "../components/ui";
 import { useToast } from "../components/Toast";
+import { describeError } from "../lib/errors";
 import { copyTextToClipboard } from "../hooks/useCopy";
 import { openNativeFolder } from "../hooks/useNativeAgent";
 import { LANGS, useI18n, type Lang } from "../i18n";
@@ -125,7 +126,9 @@ function useEditing<T extends { id: string }>(list: T[] | null) {
   useEffect(() => {
     if (list === null) return;
     if (list.length === 0) { setEditing("new"); return; }
-    setEditing((e) => (e && e !== "new" ? list.find((x) => x.id === e.id) ?? null : e));
+    // Open the first item when nothing is chosen: a section with one connection
+    // must not look like an empty pane with a stray row.
+    setEditing((e) => (e === "new" ? e : e ? list.find((x) => x.id === e.id) ?? list[0] : list[0]));
   }, [list]);
   const current = useRef<string | null>(null);
   current.current = editing === "new" ? "new" : editing?.id ?? null;
@@ -183,7 +186,7 @@ function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
   const [probe, setProbe] = useState<Probe | null>(initialProbe);
   const [busy, setBusy] = useState(false);
   const local = isLocalProvider(p.providerType);
-  const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
+  const fail = (err: unknown) => toast.error(describeError(err, t));
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -202,7 +205,7 @@ function ModelEditor({ model, initialProbe, onSaved, onChanged, onDeleted }: {
         const r = await api.testModel(saved.id);
         out = { ok: r.ok, detail: r.detail };
       } catch (err) {
-        out = { ok: false, detail: err instanceof Error ? err.message : String(err) };
+        out = { ok: false, detail: describeError(err, t) };
       }
       setProbe(out);
       onSaved(model?.id ?? "new", saved, out);
@@ -346,12 +349,12 @@ function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
         const r = await api.testCloud(saved.id);
         out = { ok: Boolean(r.success), detail: r.success ? t("settings.probeOk") : (r.error_message_sanitized ?? r.error_code ?? t("settings.probeFailed")) };
       } catch (err) {
-        out = { ok: false, detail: err instanceof Error ? err.message : String(err) };
+        out = { ok: false, detail: describeError(err, t) };
       }
       setProbe(out);
       onSaved(cloud?.id ?? "new", saved, out);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(describeError(err, t));
     } finally {
       setBusy(false);
     }
@@ -402,7 +405,7 @@ function CloudEditor({ cloud, initialProbe, onSaved, onDeleted }: {
           <span className="editor-spacer" />
           {cloud ? <Button variant="danger" onClick={() => {
             if (!window.confirm(t("nav.deleteConfirm", { title: cloud.name }))) return;
-            void api.deleteCloud(cloud.id).then(onDeleted, (e) => toast.error(e instanceof Error ? e.message : String(e)));
+            void api.deleteCloud(cloud.id).then(onDeleted, (e) => toast.error(describeError(e, t)));
           }}>{t("settings.delete")}</Button> : null}
         </div>
       </form>
@@ -436,13 +439,13 @@ function WatchControl({ providerId }: { providerId: string }) {
         onChange={(v) => {
           const o = WATCH_OPTIONS.find((x) => x.value === v)!;
           void api.setWatch(providerId, o.hours > 0, o.hours || watch.interval_hours)
-            .then(setWatch, (e) => toast.error(e instanceof Error ? e.message : String(e)));
+            .then(setWatch, (e) => toast.error(describeError(e, t)));
         }}
         options={WATCH_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))} />
       <p className="quiet-note">{t("watch.note")}</p>
       <div className="editor-actions">
         <Button size="sm" disabled={watch.running}
-          onClick={() => void api.runWatch(providerId).then(() => setWatch({ ...watch, running: true }), (e) => toast.error(e instanceof Error ? e.message : String(e)))}>
+          onClick={() => void api.runWatch(providerId).then(() => setWatch({ ...watch, running: true }), (e) => toast.error(describeError(e, t)))}>
           {watch.running ? t("watch.running") : t("watch.checkNow")}
         </Button>
         {watch.last_run_at ? (

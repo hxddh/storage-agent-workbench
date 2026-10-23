@@ -120,22 +120,20 @@ class Finding(BaseModel):
 
 
 class Conclusion(BaseModel):
-    """v9: findings and/or next steps. The answer is the Turn's final message;
-    items recorded before v9 may still carry an ``answer`` (read, never written)."""
+    """The Turn's findings. The answer is the Turn's final message."""
     findings: list[Finding] = Field(default_factory=list, max_length=8)
-    next_steps: list[str] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="before")
     @classmethod
     def _nulls_are_empty(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            data = {**data, **{k: [] for k in ("findings", "next_steps") if data.get(k) is None}}
+        if isinstance(data, dict) and data.get("findings") is None:
+            data = {**data, "findings": []}
         return data
 
     @model_validator(mode="after")
     def _not_empty(self) -> Conclusion:
-        if not self.findings and not self.next_steps:
-            raise ValueError("a conclusion needs at least one finding or next step")
+        if not self.findings:
+            raise ValueError("a conclusion needs at least one finding")
         return self
 
 
@@ -206,8 +204,7 @@ class Recorder:
     def notice(self, event: str, **fields: Any) -> dict[str, Any]:
         return self._append("notice", {"event": event, **fields})
 
-    def user_message(self, text: str, attachments: list[dict[str, Any]] | None = None,
-                     context: list[dict[str, Any]] | None = None) -> None:
+    def user_message(self, text: str, attachments: list[dict[str, Any]] | None = None) -> None:
         # A Direction is replayed to the model, saved in SQLite and quoted in the
         # report. Pattern redaction alone is not enough for a configured secret
         # with a provider-specific shape, so the exact vault values are masked
@@ -215,8 +212,6 @@ class Recorder:
         payload: dict[str, Any] = {"text": scrub_text(text)}
         if attachments:
             payload["attachments"] = scrub_value(attachments)
-        if context:
-            payload["context"] = scrub_value(context)
         self._append("user_message", payload)
 
     def steer(self, text: str) -> None:
@@ -344,7 +339,6 @@ class Recorder:
         data = scrub_value({
             "findings": [{"title": f.title, "severity": f.severity,
                           **({"detail": f.detail} if f.detail else {})} for f in c.findings],
-            "next_steps": [s[:200] for s in c.next_steps],
         })
         # Turn-level evidence: the successful calls this Turn actually made,
         # most recent eight. The surface calls them "checks in this turn", never

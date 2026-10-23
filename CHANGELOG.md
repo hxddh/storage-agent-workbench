@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [14.0.0] - 2026-10-23
+
+_One window. One Composer. The answer first._ See `docs/releases/14.0.0.md`.
+
+### Changed
+
+- Removed the Quick Ask window, its shortcut, tray and menu entries, deep-link hand-off and CSS. `⌘⇧S` summons the one window and focuses the Composer.
+- Home is an empty Task: one Agent mark, one heading, one centred Composer. The separate Home component is deleted.
+- A Turn is answer-first: receipt, answer, findings, then deterministic data in a **Data** fold. The running call is one live head line; returned calls follow it.
+- Evidence shows a compact human result and keeps arguments/output behind **Raw**; the full table stays in the task's Data fold.
+- Long tasks open on the newest 60 Turns and page older Turns through `GET /tasks/{id}/history`; the reader keeps its head.
+- The Tauri shell supervises the Sidecar, restarts it on the same port/token, and an 8-second health poll reconnects the window. A failed snapshot retries instead of opening an empty stream.
+- File uploads show real progress and can be cancelled; a failed first upload removes the empty task it created.
+- A model call times out at 180 s (was 600 s). Transport errors are localized in English and Chinese.
+- Visual system: 28 px page title, 14 px Composer/pane radius, warmer graphite/paper ladder, wider table rows, quieter live trace.
+- Dependencies: FastAPI 0.161.1, DuckDB 2.0, pandas 3.1, openai 3.37, httpx2 2.16, boto3/botocore 1.43.118, Vite 8.3.5, Tauri 2.12.5.
+
+### Removed
+
+- `TaskIn.origin`, `TaskIn.context`, `TurnIn.context`, `user_message.context` and the `[Context: …]` replay.
+- `conclusion.answer` and `conclusion.next_steps` from writers, readers, the report and the schema.
+- Retired tool labels, skill aliases, and unused estate client methods/types.
+
+### Added
+
+- Migration 3 (`v14_retire_quick_ask_origin`) normalizes the retired origin to `user`.
+- `GET /tasks/{id}/history` and bounded `GET /tasks/{id}?turns=`.
+- Sidecar supervisor and reconnect health poll.
+- `tests/test_v1400_workbench.py` for bounded history and refused retired inputs.
+
 ## [13.0.0] - 2026-10-23
 
 _Storage is a capability, not a page._ See `docs/releases/13.0.0.md`.

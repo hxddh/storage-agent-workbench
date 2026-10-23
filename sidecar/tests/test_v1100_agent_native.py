@@ -17,7 +17,7 @@ from app.agent.tools import registry
 from app.core import store
 from app.estate import notes
 from app.estate import store as estate
-from tests.fake_model import FakeModel, text_turn
+from tests.fake_model import FakeModel
 
 
 def _provider(client, name: str = "prod", allowed: list[str] | None = None) -> str:
@@ -43,37 +43,6 @@ def _settle(client, task_id: str, timeout: float = 15.0) -> dict:
             return snap
         time.sleep(0.03)
     raise AssertionError(f"task still {snap.get('state')}")
-
-
-def test_direction_context_is_resolved_replayed_and_bounded(client, conn):
-    pid = _provider(client)
-    estate.upsert_bucket(conn, pid, "b")
-    conn.commit()
-    with FakeModel([text_turn("ok")]) as fake:
-        _use(client, fake)
-        task_id = client.post("/tasks", json={
-            "direction": "Review this bucket",
-            "context": [{"kind": "bucket", "provider_id": pid, "bucket": "b"}],
-        }).json()["task"]["id"]
-        snap = _settle(client, task_id)
-        request = str(fake.requests[0])
-
-    user = next(i for i in snap["items"] if i["type"] == "user_message")
-    assert user["payload"]["context"] == [
-        {"kind": "bucket", "provider_id": pid, "account": "prod", "bucket": "b"},
-    ]
-    assert "[Context: bucket · prod · bucket b]" in request
-    assert "secret-value-for-tests" not in json.dumps(user)
-    assert "model_output" not in user["payload"]
-
-    # Context is focus, not authorization. A bucket the estate does not know is
-    # refused before a task is created; the provider scope still decides access.
-    before = len(client.get("/tasks").json()["tasks"])
-    refused = client.post("/tasks", json={
-        "direction": "Review it", "context": [{"kind": "bucket", "provider_id": pid, "bucket": "unknown"}],
-    })
-    assert refused.status_code == 422
-    assert len(client.get("/tasks").json()["tasks"]) == before
 
 
 def test_a_conclusion_carries_the_turns_successful_checks_only(conn):

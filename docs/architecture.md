@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-Tauri v2 shell (Rust) ── main window · Quick Ask window · tray · menu · deep links · shortcuts
+Tauri v2 shell (Rust) ── one window · tray · menu · deep links · shortcuts
         │  spawns the Sidecar on a free loopback port with a per-launch token
 React window (frontend/)  ── HTTP + SSE (X-Sidecar-Token / ?token=)
         │
@@ -21,7 +21,7 @@ Python Sidecar (sidecar/app/)
 A **Task** is a tree of **Turns**; `turns.parent_turn_id` links a branch and `tasks.head_turn_id` marks the branch being read. `core/store.py`:
 
 - `create_turn(task, direction, parent_turn_id=None)` — continues from the head; `parent_turn_id="<turn>"` forks after that Turn; `""` forks at the root. The new Turn becomes the head.
-- `branch(task, head)` — the chain from a Turn to the root, oldest first.
+- `branch(task, head, limit=…)` — the chain from a Turn to the root, oldest first; the window snapshot keeps the newest 60 Turns and `branch_before` serves the rest in pages.
 - `siblings(task)` — each parent's children in creation order (a parent with two or more is a fork point; `resume` Turns are not versions).
 - `leaf_of(task, turn)` — switching to a version opens its newest descendant.
 
@@ -49,7 +49,7 @@ Every event of a Turn is an **item** appended to `items` with a global, monotoni
 
 ## Tools
 
-`agent/tools/registry.py` — see `docs/tools.md`. `build_sdk_tools(responses)` turns each registered function into an SDK `FunctionTool` with its JSON schema from the signature (not strict: optional arguments stay optional; slimmed — no titles, real enums, one-line descriptions), a scope **input guardrail**, and a timeout. On the Responses backend every core tool (including `survey_account`) is loaded and the rest of each group becomes a deferred `tool_namespace` behind the hosted `ToolSearchTool`; on Chat Completions every tool is sent. With one storage account an omitted `provider_id` is that account. `invoke()` clamps arguments, records `tool_call`/`tool_output` items and an audit row through the Turn's `Recorder`, redacts the result, and returns it bounded inside the untrusted-data envelope. `record_conclusion` is special: it validates and records a `conclusion` item (findings; `next_steps` is legacy and no longer painted or reported; the answer is the Turn's final message). Each call's `CallContext` carries a `StopSignal` that the Turn's Stop or the call's own timeout sets; tool bodies check `ctx.cancelled` between units of work, because a worker thread cannot be killed.
+`agent/tools/registry.py` — see `docs/tools.md`. `build_sdk_tools(responses)` turns each registered function into an SDK `FunctionTool` with its JSON schema from the signature (not strict: optional arguments stay optional; slimmed — no titles, real enums, one-line descriptions), a scope **input guardrail**, and a timeout. On the Responses backend every core tool (including `survey_account`) is loaded and the rest of each group becomes a deferred `tool_namespace` behind the hosted `ToolSearchTool`; on Chat Completions every tool is sent. With one storage account an omitted `provider_id` is that account. `invoke()` clamps arguments, records `tool_call`/`tool_output` items and an audit row through the Turn's `Recorder`, redacts the result, and returns it bounded inside the untrusted-data envelope. `record_conclusion` is special: it validates and records a `conclusion` item (findings only; the answer is the Turn's final message). Each call's `CallContext` carries a `StopSignal` that the Turn's Stop or the call's own timeout sets; tool bodies check `ctx.cancelled` between units of work, because a worker thread cannot be killed.
 
 ## Models
 
@@ -62,13 +62,13 @@ Every event of a Turn is an **item** appended to `items` with a global, monotoni
 | Storage | `store=False`; encrypted reasoning carried within a Turn only | — |
 | Usage | reported | requested (`include_usage`) unless refused |
 | Local | — | Ollama is asked for the planned window (`extra_body={"options": {"num_ctx": N}}`) |
-| Always | temperature 0.2 (none for reasoning models, which reject it), `max_tokens` from `budget.plan`, 600 s timeout, SDK retry ×2, reasoning effort for known-reasoning models, parallel tool calls unless refused |
+| Always | temperature 0.2 (none for reasoning models, which reject it), `max_tokens` from `budget.plan`, 180 s timeout, SDK retry ×2, reasoning effort for known-reasoning models, parallel tool calls unless refused |
 
 ## Streaming
 
 `core/hub.py` is an in-process fan-out: each follower (an SSE response) owns a bounded asyncio queue fed with `call_soon_threadsafe` from the agent thread. It carries durable items, live deltas of the segment being written, task state (`working` / `queued` / `needs_attention` / `ready`, the running Turn, the queue, the head), Turn rows as they change and a global feed of task changes. `GET /tasks/{id}/events?after=<seq>` subscribes first, replays items after `seq` from SQLite, sends the live snapshot and the current state, then follows; items are de-duplicated by `seq` and a follower that fell behind re-reads the table. Losing the hub loses nothing durable.
 
-The frontend's `store/task.ts` is one reducer over the snapshot (`GET /tasks/{id}`) and those events. The reducer keeps every turn it has seen (`turn` events) and the head, inserts items by `seq`, and merges a reloaded snapshot rather than replacing it; the stream opens `after` the snapshot's `last_seq`. `store/derive.ts` projects sections (one per Turn on the branch, oldest first — the workspace), tool rows, findings, figures and versions. `store/tasks.ts` follows `GET /events` for the sidebar. There is no storage resource store or bucket page.
+The frontend's `store/task.ts` is one reducer over the bounded snapshot (`GET /tasks/{id}`, newest 60 Turns; `GET /tasks/{id}/history?before=…` pages older ones) and those events. The reducer keeps every turn it has seen (`turn` events) and the head, inserts items by `seq`, and merges a reloaded snapshot rather than replacing it; the stream opens `after` the snapshot's `last_seq`. `store/derive.ts` projects sections (one per Turn on the branch, oldest first — the workspace), tool rows, findings, figures and versions. `store/tasks.ts` follows `GET /events` for the sidebar. There is no storage resource store or bucket page.
 
 ## The estate
 
@@ -82,12 +82,12 @@ The frontend's `store/task.ts` is one reducer over the snapshot (`GET /tasks/{id
 
 ## The report
 
-`reports/report.py` renders Markdown from the branch's items: title and one meta line, Goal, Conclusion (only a pre-v9 conclusion's `answer`), one Findings list, the record of each Direction, Coverage and gaps (failed or refused calls), tools used, outputs, attached evidence, usage and an always-present Safety section — only the module's own words localized (en/zh). Recorded `next_steps` are deliberately not reported: the window offers no follow-up prompts.
+`reports/report.py` renders Markdown from the branch's items: title and one meta line, Goal, one Findings list, the record of each Direction, Coverage and gaps (failed or refused calls), tools used, outputs, attached evidence, usage and an always-present Safety section — only the module's own words localized (en/zh). There is no conclusion section of its own and no follow-up prompt.
 
 ## The shell
 
-`src-tauri/src/lib.rs` spawns the Sidecar (PyInstaller one-dir resource) on a free loopback port with `STORAGE_AGENT_AUTH_TOKEN`, a launch nonce it verifies on `/health`, the app data directory and its own PID (the Sidecar exits with its parent). It builds the menu bar (commands mirrored in `hooks/useNativeAgent.ts`), the tray (Open · Quick Ask · Quit), the Quick Ask window (`index.html?view=quick`), global shortcuts, deep links (`storage-agent://task/<id>`, also used by `open_task_in_main`) and notifications. Quick Ask is summoned, never restored: it is hidden at setup and excluded from window-state persistence, so quitting with it open never brings back a popup on launch; its window has no app menu (Linux/Windows), and a top-right close or Esc hides it through `hide_quick`. Single-instance: a second launch focuses the first.
+`src-tauri/src/lib.rs` spawns the Sidecar (PyInstaller one-dir resource) on a free loopback port with `STORAGE_AGENT_AUTH_TOKEN`, a launch nonce it verifies on `/health`, the app data directory and its own PID (the Sidecar exits with its parent). A supervisor thread watches that child and starts it again on the same port/token if it exits; the frontend health poll reconnects and reloads the task. It builds the menu bar (commands mirrored in `hooks/useNativeAgent.ts`), the tray (Open · Quit), the global summon shortcut, deep links (`storage-agent://task/<id>`) and notifications. Single-instance: a second launch focuses the first.
 
 ## Dependencies
 
-Verified versions are pinned in `sidecar/requirements.lock` (openai-agents 0.24.0, openai 3.35.1, fastapi 0.156.4, starlette 1.9.0, sse-starlette 3.5, mcp 2.3, duckdb 1.5.6, pyarrow 26, pandas 3.0) and `frontend/package-lock.json` (React 19.3.1, Vite 8.3.4, Vitest 5.0.5, TypeScript 7, Tailwind 4.3, Playwright 1.64.1). The build baseline is Python 3.14; `requires-python` remains `>=3.12` and CI tests both.
+Verified versions are pinned in `sidecar/requirements.lock` (openai-agents 0.24.0, openai 3.37.0, fastapi 0.161.1, starlette 1.9.0, sse-starlette 3.5, mcp 2.3, duckdb 2.0, pyarrow 26, pandas 3.1, httpx2 2.16, boto3/botocore 1.43.118) and `frontend/package-lock.json` (React 19.3.1, Vite 8.3.5, Vitest 5.0.5, TypeScript 7, Tailwind 4.3, Playwright 1.64.1). The build baseline is Python 3.14; `requires-python` remains `>=3.12` and CI tests both.

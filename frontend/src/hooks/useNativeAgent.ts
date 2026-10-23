@@ -25,7 +25,6 @@ export const MENU_COMMANDS = [
   "search",
   "focus-composer",
   "theme",
-  "quick-ask",
   "release-notes",
 ] as const;
 export type MenuCommand = (typeof MENU_COMMANDS)[number];

@@ -3,8 +3,6 @@
 # The agent sees each card's name (without the storageops- prefix) and the
 # first sentence of its description as a CATALOG, and loads the card on demand
 # with the read-only read_skill tool. `description` is the only routing signal.
-# `aliases` are the names of the v9 skills folded into a card: read_skill still
-# loads them (old tasks replay calls by those names), the catalog never shows them.
 
 version: "2.0"
 
@@ -14,7 +12,6 @@ skills:
     description: >
       Account-wide overview or audit with no specific error, and observability
       (logging, notifications, inventory).
-    aliases: [storageops-observability-audit, storageops-event-notification]
     domains: [account, posture, observability]
 
   - name: storageops-security-iam
@@ -22,7 +19,6 @@ skills:
     description: >
       403/AccessDenied with valid credentials, or "is anything public?" — walk
       the authorization chain.
-    aliases: [storageops-security-iam-policy]
     domains: [security]
 
   - name: storageops-protocol-compat
@@ -30,8 +26,6 @@ skills:
     description: >
       SignatureDoesNotMatch, region/301, addressing, presigned URLs, TLS/DNS/timeouts,
       CLI/SDK quirks, stale reads, NotImplemented on S3-compatible providers.
-    aliases: [storageops-s3-protocol-compatibility, storageops-network-endpoint-access,
-              storageops-cli-sdk-diagnosis, storageops-data-consistency]
     domains: [protocol, network, compatibility]
 
   - name: storageops-access-logs
@@ -39,7 +33,6 @@ skills:
     description: >
       Access logs or inventories — who is accessing, error spikes, throttling
       (429/503), hot prefixes, capacity and object shape.
-    aliases: [storageops-access-log-analysis, storageops-inventory-analysis, storageops-performance-diagnosis]
     domains: [access-log, inventory, performance]
 
   - name: storageops-lifecycle-cost
@@ -47,5 +40,4 @@ skills:
     description: >
       Storage cost and tiering, lifecycle rules, noncurrent versions, stuck
       multipart uploads, replication and object lock.
-    aliases: [storageops-replication-versioning]
     domains: [lifecycle, cost, replication]

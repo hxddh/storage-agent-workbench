@@ -3,9 +3,10 @@
 Pins: slim, non-strict tool schemas with real enums; the first request's size;
 the model-window table (longest match) and the local 16k default; compaction
 that counts the fixed prefix; one tool output bounded by a small window; the
-single storage account as the default ``provider_id``; a conclusion without an
-answer (and old conclusions that still carry one); ``survey_account`` loaded on
-the Responses backend; estate Issue names in tool results; tool-row notes.
+single storage account as the default ``provider_id``; a conclusion that is
+findings only (retired answer/next_steps fields on an old item are ignored);
+``survey_account`` loaded on the Responses backend; estate Issue names in tool
+results; tool-row notes.
 """
 
 from __future__ import annotations
@@ -262,10 +263,11 @@ def test_the_prompt_names_accounts_not_ids(client, conn):
     assert "Where to start:" in prompt.INSTRUCTIONS and "triage_error" in prompt.INSTRUCTIONS
 
 
-def test_a_skill_loads_by_its_short_catalog_name():
+def test_a_skill_loads_only_by_its_card_name():
     from app.skills import context as skills
 
-    assert skills.read_skill_text("security-iam-policy") == skills.read_skill_text("storageops-security-iam-policy")
+    assert skills.read_skill_text("storageops-security-iam")
+    assert skills.read_skill_text("security-iam-policy") is None
     assert "storageops-triage" not in skills.skill_names()
     assert "storageops-workbench-investigation" not in skills.skill_names()
 
@@ -273,20 +275,22 @@ def test_a_skill_loads_by_its_short_catalog_name():
 # --- the conclusion -----------------------------------------------------------------------
 
 
-def test_a_conclusion_is_findings_and_or_next_steps(client):
-    with FakeModel([tool_turn("record_conclusion", {"next_steps": ["Review bucket www"]}),
+def test_a_conclusion_is_findings_only(client):
+    with FakeModel([tool_turn("record_conclusion", {"findings": [
+                        {"title": "Review bucket www", "severity": "medium"}]}),
                     tool_turn("record_conclusion", {}),
                     text_turn("Done.")]) as fake:
         _use(client, fake)
         tid = client.post("/tasks", json={"direction": "Check"}).json()["task"]["id"]
         snap = _settle(client, tid)
     concl = [i["payload"] for i in snap["items"] if i["type"] == "conclusion"]
-    assert concl == [{"call_id": concl[0]["call_id"], "findings": [], "next_steps": ["Review bucket www"]}]
+    assert concl == [{"call_id": concl[0]["call_id"], "findings": [
+        {"title": "Review bucket www", "severity": "medium"}]}]
     outputs = [m for m in fake.requests[2]["messages"] if m.get("role") == "tool"]
     assert outputs[0]["content"] == "Conclusion recorded." and outputs[1]["content"].startswith("Not recorded")
 
 
-def test_an_old_conclusion_with_an_answer_still_replays_and_reports(conn):
+def test_an_old_conclusion_replays_and_reports_its_findings(conn):
     from app.core import store
     from app.reports import report
 
@@ -301,9 +305,10 @@ def test_an_old_conclusion_with_an_answer_still_replays_and_reports(conn):
     call = next(i for i in to_input(items) if i.get("type") == "function_call")
     assert call["name"] == "record_conclusion"
     assert json.loads(call["arguments"]) == {"findings": [{"title": "Bucket is publicly accessible",
-                                                           "severity": "high"}], "next_steps": ["Fix it"]}
+                                                           "severity": "high"}]}
     md = report.render(conn, task["id"])
-    assert "## Conclusion" in md and "Yes: www is public." in md and "**HIGH** — Bucket is publicly accessible" in md
+    assert "## Conclusion" not in md and "Yes: www is public." not in md
+    assert "## Findings" in md and "**HIGH** — Bucket is publicly accessible" in md
     assert "Next steps" not in md and "Fix it" not in md
 
 

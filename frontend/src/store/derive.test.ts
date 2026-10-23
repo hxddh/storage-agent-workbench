@@ -5,7 +5,7 @@ import { findings, latestResult, sections, versions } from "./derive";
 beforeEach(resetSeq);
 
 const conclusion = {
-  call_id: "c", answer: "Two buckets need care.", next_steps: ["Show the fix"],
+  call_id: "c",
   findings: [{ title: "No encryption", severity: "medium" as const }, { title: "Public bucket", severity: "high" as const }],
 };
 
@@ -29,7 +29,6 @@ describe("sections", () => {
     const work = s.blocks[1];
     expect(work.kind === "work" && work.tools.map((r) => r.status)).toEqual(["ok", "refused"]);
     expect(s.toolCount).toBe(2);
-    expect(s.conclusion?.answer).toBe("Two buckets need care.");
   });
 
   it("gives a live turn no answer yet, and marks unfinished calls failed once it settles", () => {
@@ -84,9 +83,9 @@ describe("sections", () => {
       item("t1", "compaction", { summary: "Earlier work", turns_folded: 2 } as never),
       item("t2", "notice", { event: "compacted", turns_folded: 2 }),
     ], null);
-    const contexts = all.flatMap((s) => s.blocks.filter((b) => b.kind === "context"));
+    const contexts = all.flatMap((s) => s.blocks.filter((b) => b.kind === "compaction"));
     expect(contexts).toHaveLength(1);
-    expect(contexts[0].kind === "context" && contexts[0].summary).toBe("Earlier work");
+    expect(contexts[0].kind === "compaction" && contexts[0].summary).toBe("Earlier work");
     expect(all[1].compacted).toBe(true);
   });
 

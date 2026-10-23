@@ -4,6 +4,7 @@ import type { ModelProvider } from "../api/types";
 import { Icon } from "../components/icons";
 import { useToast } from "../components/Toast";
 import { StatusDot } from "../components/ui";
+import { describeError } from "../lib/errors";
 import { useI18n } from "../i18n";
 import { useDismiss } from "../lib/useDismiss";
 import { useApp } from "../shell/context";
@@ -46,7 +47,7 @@ export function ModelChip() {
       await api.activateModel(m.id);
       await app.reloadProviders();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(describeError(err, t));
     } finally {
       setBusy(false);
       setOpen(false);
@@ -58,7 +59,7 @@ export function ModelChip() {
       await api.updateModel(active.id, { reasoning_effort: effort });
       await app.reloadProviders();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(describeError(err, t));
     } finally {
       setBusy(false);
     }

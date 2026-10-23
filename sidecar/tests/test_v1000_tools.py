@@ -5,7 +5,7 @@ a list belongs, no JSON-in-string); scope refusals for path tricks and
 non-string names; list_buckets inside the bucket scope; the watch Direction's
 bucket names as enveloped data; the decompressed-output disk budget; exact
 vault values scrubbed from tool output and the instructions; the routing table
-and the grouped, enveloped estate digest; the five cards and their aliases;
+and the grouped, enveloped estate digest; the five cards and their exact names;
 presigned URLs through triage_error; one metric vocabulary for logs and
 inventories.
 """
@@ -61,7 +61,7 @@ def test_fifteen_tools_and_what_their_schemas_cost():
     # v9: 30 tools, 16 006 chars as sent on Chat Completions. v10 target ≈ 10k.
     assert registry.schema_chars(responses=False) <= 10_600
     concl = registry.tool_schema(registry.REGISTRY["record_conclusion"])[1]["properties"]
-    assert concl["findings"]["maxItems"] == 8 and concl["next_steps"]["maxItems"] == 4
+    assert concl["findings"]["maxItems"] == 8 and "next_steps" not in concl
     for name, td in registry.REGISTRY.items():
         params = registry.tool_schema(td)[1]
         for prop, sub in params.get("properties", {}).items():
@@ -279,12 +279,7 @@ def test_the_estate_digest_is_grouped_and_enveloped(client, conn):
 # --- skills ------------------------------------------------------------------------------------------
 
 
-OLD = ("security-iam-policy", "performance-diagnosis", "s3-protocol-compatibility", "network-endpoint-access",
-       "cli-sdk-diagnosis", "data-consistency", "event-notification", "inventory-analysis", "access-log-analysis",
-       "lifecycle-cost", "replication-versioning", "observability-audit", "account-posture")
-
-
-def test_five_short_cards_and_every_old_name_still_loads():
+def test_five_short_cards_load_by_exact_name():
     from app.skills import context as skills
     from app.skills import loader
     names = [n for n in skills.skill_names() if n.startswith("storageops-")]
@@ -298,13 +293,9 @@ def test_five_short_cards_and_every_old_name_still_loads():
         for word in ("head_bucket", "list_uploaded_files", "aggregate_uploaded_file", "test_object_read",
                      "get_bucket_config_detail", "compare_to_last_survey", "diagnose_presigned_url"):
             assert word not in body, (n, word)
-    for old in OLD:
-        assert skills.read_skill_text(old), old
-        assert skills.read_skill_text("storageops-" + old), old
-    assert skills.read_skill_text("inventory-analysis") == skills.read_skill_text("access-logs")
+    assert skills.read_skill_text("security-iam-policy") is None
+    assert loader.get_meta("storageops-performance-diagnosis") is None
     assert "replication" not in skills.catalog_text().split("lifecycle-cost:")[0].split("\n")[-1]
-    assert all(old not in skills.catalog_text() for old in ("security-iam-policy", "inventory-analysis"))
-    assert loader.get_meta("storageops-performance-diagnosis").name == "storageops-access-logs"
 
 
 def test_triage_suggests_real_cards_and_reads_presigned_urls():

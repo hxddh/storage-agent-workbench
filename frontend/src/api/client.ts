@@ -16,12 +16,16 @@ export const UPLOAD_TIMEOUT_MS = 300_000;
 
 /** HTTP error carrying the response status so callers can branch on it (e.g.
  * 409 "no active execution to steer"). */
+export type ErrorCode = "offline" | "timeout";
+
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, detail: string) {
+  code?: ErrorCode;
+  constructor(status: number, detail: string, code?: ErrorCode) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -66,6 +70,10 @@ export async function request<T>(path: string, init?: RequestInit, timeoutMs = R
       headers: { "Content-Type": "application/json", ...authHeaders(), ...(init?.headers ?? {}) },
       signal: controller.signal,
     });
+  } catch (err) {
+    const aborted = err instanceof Error && err.name === "AbortError";
+    throw new ApiError(0, aborted ? "The request timed out." : "The local service is not reachable.",
+      aborted ? "timeout" : "offline");
   } finally {
     clear();
   }

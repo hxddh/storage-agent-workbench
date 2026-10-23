@@ -99,7 +99,6 @@ function Table({ columns, common, rows, omitted, issues }: {
   return (
     <div className="result-table-wrap">
       <div className="result-table-head">
-        <span className="result-table-label">{t("result.table")}</span>
         <button type="button" className="link result-copy" onClick={() => copy(tsv)}>
           <Icon name={copied ? "check" : "copy"} size={13} />{copied ? t("common.copied") : t("common.copy")}
         </button>
@@ -155,13 +154,23 @@ function Issues({ issues }: { issues: SurveyIssue[] }) {
   );
 }
 
-export function ResultView({ row }: { row: { name: string; detail: string | null; detailTruncated: boolean } }) {
+export function ResultView({ row, compact = false }: { row: { name: string; detail: string | null; detailTruncated: boolean }; compact?: boolean }) {
   const { t } = useI18n();
   const [format, setFormat] = useState(0);
   if (row.detailTruncated) return <p className="quiet-note result-gap">{t("result.truncatedGap")}</p>;
   const view = viewFor(row);
   if (!view) return null;
   if (view.kind === "survey") {
+    // Evidence is a narrow pane: name the issues and coverage, leave the full
+    // table to the task and the raw JSON to the fold.
+    if (compact) {
+      return (
+        <div className="tool-result" data-kind="survey" data-testid="tool-result">
+          <Issues issues={view.issues} />
+          <Coverage coverage={view.coverage} />
+        </div>
+      );
+    }
     return (
       <div className="tool-result" data-kind="survey" data-testid="tool-result">
         <Table columns={view.columns} common={view.common} rows={view.rows} omitted={view.omitted} issues={view.issues} />

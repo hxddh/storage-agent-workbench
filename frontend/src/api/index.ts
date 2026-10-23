@@ -1,7 +1,7 @@
 import { sidecarBaseUrl, sidecarToken } from "../config";
-import { ApiError, UPLOAD_TIMEOUT_MS, authHeaders, boundedController, errorDetail, request } from "./client";
-import type { BucketPage, BucketRow, CloudProvider, ContextRef, Estate, FileRow, Impact, Issue, ModelProvider, Note, ProbeResult, Settings, TaskRow,
-  TaskSnapshot, Watch,
+import { ApiError, UPLOAD_TIMEOUT_MS, authHeaders, errorDetail, request } from "./client";
+import type { CloudProvider, FileRow, ModelProvider, ProbeResult, Settings, TaskHistory,
+  TaskRow, TaskSnapshot, Watch,
 } from "./types";
 
 export { ApiError };
@@ -14,15 +14,16 @@ export const api = {
   // tasks — the one submit path
   tasks: (q?: string) => request<{ tasks: TaskRow[] }>(`/tasks${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   task: (id: string) => request<TaskSnapshot>(`/tasks/${id}`),
-  createTask: (direction?: string, origin: "user" | "quick_ask" = "user", context: ContextRef[] = []) =>
-    request<TaskSnapshot>("/tasks", { method: "POST", ...json({ direction: direction || null, origin, context }) }),
+  history: (id: string, before: string) =>
+    request<TaskHistory>(`/tasks/${id}/history?before=${encodeURIComponent(before)}`),
+  createTask: (direction?: string) =>
+    request<TaskSnapshot>("/tasks", { method: "POST", ...json({ direction: direction || null }) }),
   renameTask: (id: string, title: string) => request<TaskRow>(`/tasks/${id}`, { method: "PATCH", ...json({ title }) }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: "DELETE" }),
-  submit: (id: string, direction: string, opts: { parentTurnId?: string | null; attachments?: string[]; context?: ContextRef[] } = {}) =>
+  submit: (id: string, direction: string, opts: { parentTurnId?: string | null; attachments?: string[] } = {}) =>
     request<{ turn_id: string; status: string }>(`/tasks/${id}/turns`, {
       method: "POST",
-      ...json({ direction, parent_turn_id: opts.parentTurnId ?? null, attachments: opts.attachments ?? [],
-        context: opts.context ?? [] }),
+      ...json({ direction, parent_turn_id: opts.parentTurnId ?? null, attachments: opts.attachments ?? [] }),
     }),
   steer: (id: string, text: string) =>
     request<{ steered: boolean; turn_id: string }>(`/tasks/${id}/steer`, { method: "POST", ...json({ text }) }),
@@ -37,39 +38,43 @@ export const api = {
     if (!res.ok) throw new ApiError(res.status, await errorDetail(res));
     return res.text();
   },
-  upload: async (id: string, file: File): Promise<FileRow> => {
-    const body = new FormData();
-    body.append("file", file);
-    body.append("dataset_type", "auto");
-    const { controller, clear } = boundedController(UPLOAD_TIMEOUT_MS);
-    try {
-      const res = await fetch(`${sidecarBaseUrl()}/tasks/${id}/files`, {
-        method: "POST", body, headers: authHeaders(), signal: controller.signal,
-      });
-      if (!res.ok) throw new ApiError(res.status, await errorDetail(res));
-      return (await res.json()) as FileRow;
-    } finally {
-      clear();
-    }
-  },
+  upload: (id: string, file: File, opts: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {}): Promise<FileRow> =>
+    new Promise((resolve, reject) => {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("dataset_type", "auto");
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${sidecarBaseUrl()}/tasks/${id}/files`);
+      const token = authHeaders()["X-Sidecar-Token"];
+      if (token) xhr.setRequestHeader("X-Sidecar-Token", token);
+      xhr.timeout = UPLOAD_TIMEOUT_MS;
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable && e.total) opts.onProgress?.(e.loaded / e.total); };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText) as FileRow); }
+          catch { reject(new ApiError(xhr.status, "The upload response was not valid.")); }
+        } else {
+          let detail = `HTTP ${xhr.status}`;
+          try {
+            const parsed = JSON.parse(xhr.responseText) as { detail?: unknown };
+            if (typeof parsed.detail === "string") detail = parsed.detail;
+            else if (parsed.detail) detail = JSON.stringify(parsed.detail);
+          } catch { /* keep the status line */ }
+          reject(new ApiError(xhr.status, detail));
+        }
+      };
+      xhr.onerror = () => reject(new ApiError(0, "The local service is not reachable.", "offline"));
+      xhr.ontimeout = () => reject(new ApiError(0, "The request timed out.", "timeout"));
+      xhr.onabort = () => reject(new DOMException("Upload cancelled", "AbortError"));
+      if (opts.signal) {
+        if (opts.signal.aborted) { xhr.abort(); return; }
+        opts.signal.addEventListener("abort", () => xhr.abort(), { once: true });
+      }
+      xhr.send(body);
+    }),
 
-  // the estate
-  estate: (lang: string) => request<Estate>(`/estate?lang=${lang}`),
-  proposeFix: (id: string, lang: string) => request<Issue>(`/issues/${id}/fix?lang=${lang}`, { method: "POST" }),
-  impact: (id: string, lang: string) => request<Impact>(`/issues/${id}/impact?lang=${lang}`, undefined, 30_000),
-  verifyIssue: (id: string, lang: string) =>
-    request<{ result: string; issue: Issue }>(`/issues/${id}/verify?lang=${lang}`, { method: "POST" }),
-  acceptIssue: (id: string, accepted: boolean, lang: string, reason?: string) =>
-    request<Issue>(`/issues/${id}/accept?lang=${lang}`, { method: "POST", ...json({ accepted, reason: reason || null }) }),
-  buckets: (providerId: string) =>
-    request<{ buckets: BucketRow[]; notes: Note[] }>(`/estate/providers/${encodeURIComponent(providerId)}/buckets`),
-  bucket: (providerId: string, bucket: string, lang: string) =>
-    request<BucketPage>(`/estate/providers/${encodeURIComponent(providerId)}/buckets/${encodeURIComponent(bucket)}?lang=${lang}`),
-  notes: (query: string) => request<Note[]>(`/notes${query ? `?${query}` : ""}`),
-  addNote: (text: string, providerId?: string | null, bucket?: string | null) =>
-    request<Note>("/notes", { method: "POST", ...json({ text, provider_id: providerId ?? null, bucket: bucket ?? null }) }),
-  editNote: (id: string, text: string) => request<Note>(`/notes/${id}`, { method: "PATCH", ...json({ text }) }),
-  deleteNote: (id: string) => request<void>(`/notes/${id}`, { method: "DELETE" }),
+  // the estate the Agent reads through its tools; Settings still configures the
+  // per-connection watch, so only that one route is a client concern.
   watch: (providerId: string) => request<Watch>(`/estate/watch/${providerId}`),
   setWatch: (providerId: string, enabled: boolean, intervalHours: number) =>
     request<Watch>(`/estate/watch/${providerId}`, { method: "PUT", ...json({ enabled, interval_hours: intervalHours }) }),
@@ -93,6 +98,7 @@ export const api = {
       `/providers/clouds/${id}/test`, { method: "POST" }, 30_000),
 
   // settings
+  health: () => request<{ status: string; version: string }>("/health", undefined, 5_000),
   settings: () => request<Settings>("/settings"),
   updateSettings: (body: Partial<Pick<Settings, "language" | "theme">>) =>
     request<Settings>("/settings", { method: "PATCH", ...json(body) }),
