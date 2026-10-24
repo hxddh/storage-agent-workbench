@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 
-export const HOST_SCHEMA_VERSION = 1
+export const HOST_SCHEMA_VERSION = 2
 
 export interface ProviderRow {
   id: string
@@ -153,6 +153,17 @@ CREATE INDEX IF NOT EXISTS issues_open ON issues (provider_id, status, severity)
 CREATE INDEX IF NOT EXISTS issue_events_issue ON issue_events (issue_id, at);
 CREATE INDEX IF NOT EXISTS notes_scope ON notes (scope, ref, created_at);
 CREATE INDEX IF NOT EXISTS datasets_conversation ON datasets (conversation_id);
+
+CREATE TABLE IF NOT EXISTS search_docs (
+  conversation_id TEXT NOT NULL,
+  entry_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (conversation_id, entry_id)
+);
+
+CREATE INDEX IF NOT EXISTS search_docs_conversation ON search_docs (conversation_id);
 `
 
 export class AppDb {
@@ -581,6 +592,58 @@ export class AppDb {
 
   async deleteTaskMeta(conversationId: string): Promise<void> {
     await this.raw.run('DELETE FROM task_meta WHERE conversation_id = ?', conversationId)
+  }
+
+  // -- search ---------------------------------------------------------------
+
+  async replaceSearchDocs(
+    conversationId: string,
+    docs: { entryId: string; kind: string; text: string; at: string }[],
+  ): Promise<void> {
+    await this.raw.transaction(async (tx) => {
+      await tx.run('DELETE FROM search_docs WHERE conversation_id = ?', conversationId)
+      for (const doc of docs) {
+        await tx.run(
+          'INSERT INTO search_docs (conversation_id, entry_id, kind, text, at) VALUES (?, ?, ?, ?, ?)',
+          conversationId,
+          doc.entryId,
+          doc.kind,
+          doc.text.slice(0, 20_000),
+          doc.at,
+        )
+      }
+    })
+  }
+
+  async searchDocs(
+    query: string,
+    limit = 200,
+  ): Promise<
+    { conversation_id: string; entry_id: string; kind: string; text: string; at: string }[]
+  > {
+    const escaped = query.replace(/[%_\\]/g, (match) => `\\${match}`)
+    const pattern = `%${escaped}%`
+    return this.raw.all(
+      `SELECT conversation_id, entry_id, kind, text, at FROM search_docs
+       WHERE lower(text) LIKE lower(?) ESCAPE '\\'
+       ORDER BY at DESC LIMIT ?`,
+      pattern,
+      Math.max(1, Math.min(limit, 500)),
+    )
+  }
+
+  async deleteSearchDocs(conversationId: string): Promise<void> {
+    await this.raw.run('DELETE FROM search_docs WHERE conversation_id = ?', conversationId)
+  }
+
+  async conversationsWithoutSearch(): Promise<string[]> {
+    const rows = await this.raw.all<{ conversation_id: string }>(
+      `SELECT m.conversation_id FROM task_meta m
+       LEFT JOIN search_docs d ON d.conversation_id = m.conversation_id
+       GROUP BY m.conversation_id HAVING count(d.entry_id) = 0
+       ORDER BY m.updated_at DESC LIMIT 100`,
+    )
+    return rows.map((row) => row.conversation_id)
   }
 
   // -- datasets -------------------------------------------------------------

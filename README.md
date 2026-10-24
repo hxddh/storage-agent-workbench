@@ -22,6 +22,10 @@ data in front of you. It never writes, deletes or changes anything in storage.
 - Analyzes an attached access log or object inventory (CSV, TSV, JSONL, Parquet)
   and answers whitelisted aggregates. Raw rows never reach the model.
 - Watches an account on a schedule and opens a task when something changed.
+- Shows each tool call where it happens, with real progress; every table can be
+  copied as CSV or saved, every answer as Markdown.
+- Searches task titles, questions and answers with ⌘K; failed or stopped runs
+  offer Retry or Continue.
 
 ## Shape
 

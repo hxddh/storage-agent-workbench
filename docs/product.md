@@ -20,13 +20,15 @@ Home. Home is an empty task: one heading, one hint when setup is missing.
 ## A task
 
 - The user writes a Direction. It is recorded immediately; the run is durable.
-- While it runs, the window shows the real tool calls: survey, config review,
-  object reads, analysis. A partial answer streams as it is written.
+- A tool call appears as a row the moment it starts, shows its real progress
+  (`3 of 12 buckets`) and settles in place. Nothing waits for the end to appear.
+- A partial answer streams as it is written; the call that produced it stays
+  above it.
 - When it settles, the calls remain as rows and the answer is the last block.
   There are no suggestions, next steps or follow-up chips.
 - **Add to the request** (Enter while running) steers the run. **Stop** keeps
-  what was written.
-- A failure becomes one notice in the stream: no dialog.
+  what was written and offers **Continue**.
+- A failure becomes one notice with **Retry**; no dialog.
 - Long tasks survive a restart; pi resumes the interrupted work once.
 
 ## The answer contract
@@ -39,6 +41,18 @@ with an impact verdict, analysis tables and bar charts.
 
 If a read was denied or unsupported, the answer says the question is open. It
 never turns silence into "no problems found".
+
+Tables and findings are flat sections in the document, separated by hairlines —
+not cards inside cards. Every table has **Copy CSV** and **Save as…**; every
+answer has **Copy** and **Save as…**.
+
+## Search
+
+⌘K focuses the sidebar search. It covers task titles, requests and answers.
+Results show the matching fragment; opening one shows that task at the matching
+message. A derived `search_docs` table is rebuilt when a task settles and
+backfilled at startup; the search itself is `LIKE`, which handles Chinese
+substrings (FTS trigram needs three characters).
 
 ## Issues
 

@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 const api: AgentApi = {
   bootstrap: () => ipcRenderer.invoke('agent:bootstrap'),
-  openTask: (id) => ipcRenderer.invoke('agent:openTask', id),
+  openTask: (id, focus) => ipcRenderer.invoke('agent:openTask', id, focus),
   older: (taskId, before) => ipcRenderer.invoke('agent:older', taskId, before),
   createTask: (text, attachments) => ipcRenderer.invoke('agent:createTask', text, attachments),
   send: (taskId, text, attachments) => ipcRenderer.invoke('agent:send', taskId, text, attachments),
@@ -11,6 +11,10 @@ const api: AgentApi = {
   stop: (taskId) => ipcRenderer.invoke('agent:stop', taskId),
   renameTask: (taskId, title) => ipcRenderer.invoke('agent:renameTask', taskId, title),
   deleteTask: (taskId) => ipcRenderer.invoke('agent:deleteTask', taskId),
+  retryTask: (taskId) => ipcRenderer.invoke('agent:retryTask', taskId),
+  continueTask: (taskId) => ipcRenderer.invoke('agent:continueTask', taskId),
+  search: (query) => ipcRenderer.invoke('agent:search', query),
+  saveText: (input) => ipcRenderer.invoke('agent:saveText', input),
   pickFiles: () => ipcRenderer.invoke('agent:pickFiles'),
   saveAccount: (input) => ipcRenderer.invoke('agent:saveAccount', input),
   deleteAccount: (id) => ipcRenderer.invoke('agent:deleteAccount', id),

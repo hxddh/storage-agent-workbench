@@ -23,6 +23,7 @@ export interface ToolRun {
   signal: AbortSignal
   conversationId: string
   progress: (text: string) => void
+  setTarget: (target: string) => Promise<void>
   provider: (id?: string) => Promise<{ config: ProviderConfig; client: S3Client }>
 }
 
@@ -80,6 +81,9 @@ export function agentTool<T extends TSchema>(
           signal,
           conversationId: String(api.conversationId),
           progress,
+          setTarget: async (value: string) => {
+            await api.details({ target: value, note: null, view: null }, context)
+          },
           provider: async (id?: string) => {
             const config = await deps.providers.resolve(id)
             return { config, client: deps.providers.client(config) }

@@ -24,10 +24,13 @@ npm run dist         # installers for the current OS
 
 - **Vitest** covers the domain logic that must not drift: the seven rules and
   their tri-state evaluation, generated fixes and impact, log normalization and
-  IP masking, CSV/Parquet import, and the aggregate whitelist.
+  IP masking, CSV/Parquet import, the aggregate whitelist, the search index and
+  its escaping, and the entry → UI projection.
 - **Playwright + Electron** (`scripts/e2e.mjs`) drives the real window against
-  `scripts/fake-s3.mjs` and `scripts/fake-model.mjs`: configure a model, add an
-  account, ask a question, expand the survey, then ask for a fix.
+  `scripts/fake-s3.mjs` (delayed, so a running call is observable) and
+  `scripts/fake-model.mjs`: configure a model, add an account, ask a question,
+  see the running row, expand the survey, ask for a fix, stop a run, continue it,
+  then search and open a hit.
 - **`scripts/shots.mjs`** captures the states that matter under
   `.amp/in/artifacts`.
 
@@ -59,7 +62,9 @@ Outputs: `release/linux-unpacked`, `.AppImage`, `.deb`, `.dmg`, `.zip`, `.exe`.
 - Deleting a task removes its `task_meta` row; pi's entries stay in the database
   (no cross-store cascade yet).
 - Attachments are exercised at the import/aggregate level and through the
-  composer; there is no automated test of the native file dialog.
+  composer; there is no automated test of the native file dialog or the save
+  dialog.
 - Watch scheduling is verified manually through **Check now**; CI does not wait
   for an interval.
+- Search indexes text only: requests and answers, not tool output or attachments.
 - No import of data from the previous major version; the database starts empty.

@@ -2,7 +2,8 @@
 
 ## Application tables (`storage-agent.db`)
 
-`user_version` is the schema version; migrations are append-only in `main/db.ts`.
+`user_version` is the schema version (head **2**); migrations are append-only in
+`main/db.ts`.
 
 | Table | Columns (essential) |
 |---|---|
@@ -16,6 +17,10 @@
 | `task_meta` | `conversation_id`, `title`, `origin`, `created_at`, `updated_at` |
 | `capability` | `provider_id`, `name`, `verdict`, `checked_at` |
 | `datasets` | `id`, `conversation_id`, `kind`, `path`, `rows`, `bytes`, `created_at` |
+| `search_docs` | `conversation_id`, `entry_id`, `kind`, `text`, `at` — derived index |
+
+`search_docs` is rebuilt per conversation when it settles and backfilled at
+startup. Deleting a task deletes its rows. Nothing else reads it.
 
 `secret_ref` and `session_ref` are vault references (ciphertext), never plaintext.
 `posture_json` stores status enums and booleans only — no policy document, no

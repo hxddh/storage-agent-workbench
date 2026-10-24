@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for Storage Agent 15.0.2. Read
+> Implementation contract for Storage Agent 16.0.0. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes are history.
@@ -52,11 +52,14 @@ second queue, no SSE, no HTTP server. `viewState()`/`watch()` are the stream.
 ## Data
 
 Host tables in `storage-agent.db`: `providers`, `buckets`, `issues`,
-`issue_events`, `notes`, `audit`, `watch`, `task_meta`, `capability`, `datasets`.
-pi's tables are prefixed `pi_` in the same file. Datasets live under
-`<userData>/tasks/<conversation>/datasets/<id>.sqlite`.
+`issue_events`, `notes`, `audit`, `watch`, `task_meta`, `datasets`,
+`search_docs`. pi's tables are prefixed `pi_` in the same file. Datasets live
+under `<userData>/tasks/<conversation>/datasets/<id>.sqlite`.
 
-Schema changes are append-only migrations in `db.ts`, gated by `user_version`.
+`search_docs` is a derived index (title search reads `task_meta` directly). It is
+rebuilt for a conversation when that conversation settles, and backfilled at
+startup for tasks without rows. Schema changes are append-only migrations in
+`db.ts`, gated by `user_version` (head **2**).
 
 ## Agent
 
@@ -74,7 +77,15 @@ answer. Compaction is pi's, configured by model context window.
 ## Window
 
 `Sidebar · document · Composer`, plus a full-screen Settings sheet. No side
-pane, no command palette, no second window. Tool rows expand in place.
+pane, no command palette, no second window.
+
+A tool call appears as a row the moment it starts, shows its real progress and
+settles in place; the bottom "live" line does not exist. Results are flat
+sections separated by hairlines, never cards inside the document. The task title
+lives once, in the sidebar. Every table can be copied as CSV or saved; every
+answer can be copied as Markdown or saved. Failed and stopped runs offer Retry
+or Continue. The sidebar search (⌘K) covers titles, requests and answers.
+
 Design tokens live in `src/renderer/styles.css`; never use a raw colour in a
 component.
 

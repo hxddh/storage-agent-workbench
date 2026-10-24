@@ -20,7 +20,9 @@ function error(res, status, code) {
   res.end(xml(`<Error><Code>${code}</Code><Message>${code}</Message></Error>`))
 }
 
-const server = createServer((req, res) => {
+const SLOW_MS = Number(process.env.SLOW_MS ?? 0)
+
+function handle(req, res) {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`)
   const parts = url.pathname.split('/').filter(Boolean)
   const bucket = parts[0]
@@ -168,6 +170,11 @@ const server = createServer((req, res) => {
 
   res.writeHead(501, { 'content-type': 'application/xml' })
   res.end(xml('<Error><Code>NotImplemented</Code><Message>NotImplemented</Message></Error>'))
+}
+
+const server = createServer((req, res) => {
+  if (SLOW_MS > 0) setTimeout(() => handle(req, res), SLOW_MS)
+  else handle(req, res)
 })
 
 function escapeXml(value) {

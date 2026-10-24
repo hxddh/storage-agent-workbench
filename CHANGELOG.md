@@ -1,5 +1,31 @@
 # Changelog
 
+## 16.0.0
+
+The interaction release. No new tools, no new storage capability.
+
+### Added
+
+- **Running tool rows.** A call appears when it starts, shows its real progress
+  (`3 of 12 buckets`) and settles in place. The bottom live line is gone.
+- **Search.** ⌘K searches task titles, requests and answers; results show the
+  matching fragment, and opening one jumps to that message.
+- **Deliverables.** Any table copies as CSV or saves to a file; any answer copies
+  as Markdown or saves.
+- **Retry / Continue.** A failed run offers Retry; a stopped run offers Continue.
+- Window size and position are remembered. Settings traps focus and gives it
+  back on close.
+
+### Changed
+
+- Results are flat sections separated by hairlines instead of cards nested in
+  the document.
+- The task title is no longer repeated above the document; the sidebar is the
+  one place it appears.
+- The home heading sits above the composer at 20px instead of a centred hero.
+- The composer no longer repeats the live tool state.
+- Delete and remove use an inline confirmation instead of a native dialog.
+
 ## 15.0.2
 
 Intel Mac builds alongside Apple silicon. No functional change.

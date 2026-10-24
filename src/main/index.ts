@@ -4,6 +4,7 @@ import type { AppEvent } from '@shared/contract'
 import { app, BrowserWindow, Menu, nativeTheme, shell } from 'electron'
 import { App } from './app'
 import { registerIpc } from './ipc'
+import { loadWindowBounds, saveWindowBounds } from './window-state'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const service = new App()
@@ -101,9 +102,12 @@ function buildMenu(): void {
 }
 
 async function createWindow(): Promise<void> {
+  const userData = app.getPath('userData')
+  const bounds = loadWindowBounds(userData)
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 800,
+    width: bounds.width,
+    height: bounds.height,
+    ...(bounds.x !== undefined && bounds.y !== undefined ? { x: bounds.x, y: bounds.y } : {}),
     minWidth: 760,
     minHeight: 520,
     show: false,
@@ -118,7 +122,17 @@ async function createWindow(): Promise<void> {
     },
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('ready-to-show', () => {
+    if (bounds.maximized) mainWindow?.maximize()
+    mainWindow?.show()
+  })
+  mainWindow.on('close', () => {
+    if (!mainWindow) return
+    saveWindowBounds(userData, {
+      ...mainWindow.getNormalBounds(),
+      maximized: mainWindow.isMaximized(),
+    })
+  })
   if (process.env.STORAGE_AGENT_SMOKE) {
     mainWindow.webContents.on('console-message', (_event, _level, message) => {
       console.log('[renderer]', message)

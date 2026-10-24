@@ -40,9 +40,10 @@ export function surveyTool(deps: ToolDeps) {
       limit: limitParam(HARD_MAX_BUCKETS),
     }),
     timeoutMs: 240_000,
-    target: () => 'account',
+    target: () => '',
     run: async (args, run) => {
       const { config, client } = await run.provider(args.provider_id)
+      await run.setTarget(config.name)
       const response = await client.send(new ListBucketsCommand({}), { abortSignal: run.signal })
       const visible = (response.Buckets ?? [])
         .map((bucket) => bucket.Name)

@@ -16,6 +16,8 @@ import type {
   AppEvent,
   AttachmentRef,
   Live,
+  LiveTool,
+  SearchHit,
   TaskSummary,
   TaskView,
   ToolName,
@@ -69,6 +71,7 @@ export class AgentHarness {
   private graphWatch: WatchHandle<TaskGraph> | null = null
   private graphTasks: Record<string, { conversationId?: string; status?: string }> = {}
   private liveStarted = new Map<string, string>()
+  private toolStarted = new Map<string, string>()
 
   private constructor(
     private readonly deps: HarnessDeps,
@@ -112,6 +115,7 @@ export class AgentHarness {
     instance.models = models
     await refreshDigest(toolDeps, instance.state)
     instance.watchGraph()
+    void instance.rebuildSearch()
     return instance
   }
 
@@ -205,6 +209,79 @@ export class AgentHarness {
     const conversation = await this.conversation(taskId)
     if (!conversation) return
     await conversation.abort(CONTEXT)
+    await conversation
+      .submit(
+        {
+          type: 'write',
+          entry: {
+            kind: 'sa.notice',
+            data: { text: 'Stopped.', tone: 'info', action: 'continue' },
+          },
+        },
+        CONTEXT,
+      )
+      .catch(() => undefined)
+  }
+
+  async retry(taskId: string): Promise<void> {
+    const text = await this.lastUserText(taskId)
+    if (!text) throw new Error('There is nothing to retry.')
+    const conversation = await this.conversation(taskId)
+    if (!conversation) throw new Error('Task not found.')
+    this.state.rounds.delete(taskId)
+    await this.submitTo(conversation, text, [])
+  }
+
+  async continueTask(taskId: string): Promise<void> {
+    const conversation = await this.conversation(taskId)
+    if (!conversation) throw new Error('Task not found.')
+    this.state.rounds.delete(taskId)
+    await this.submitTo(conversation, 'Continue from where you stopped.', [])
+  }
+
+  async search(query: string): Promise<SearchHit[]> {
+    const q = query.trim()
+    if (!q) return []
+    const needle = q.toLowerCase()
+    const tasks = await this.deps.db.listTaskMeta()
+    const byId = new Map(tasks.map((task) => [task.conversation_id, task]))
+    const hits = new Map<string, SearchHit>()
+    for (const task of tasks) {
+      const at = task.title.toLowerCase().indexOf(needle)
+      if (at < 0) continue
+      hits.set(task.conversation_id, {
+        taskId: task.conversation_id,
+        title: task.title,
+        kind: 'title',
+        snippet: task.title,
+        matchStart: at,
+        matchLength: q.length,
+        entryId: null,
+      })
+    }
+    for (const doc of await this.deps.db.searchDocs(q, 300)) {
+      if (hits.has(doc.conversation_id)) continue
+      const task = byId.get(doc.conversation_id)
+      if (!task) continue
+      const index = doc.text.toLowerCase().indexOf(needle)
+      if (index < 0) continue
+      const start = Math.max(0, index - 60)
+      const end = Math.min(doc.text.length, index + q.length + 90)
+      const lead = start > 0 ? 1 : 0
+      hits.set(doc.conversation_id, {
+        taskId: doc.conversation_id,
+        title: task.title,
+        kind: doc.kind === 'user' ? 'user' : 'answer',
+        snippet: `${start > 0 ? '…' : ''}${doc.text
+          .slice(start, end)
+          .replace(/\s+/g, ' ')
+          .trim()}${end < doc.text.length ? '…' : ''}`,
+        matchStart: index - start + lead,
+        matchLength: q.length,
+        entryId: doc.entry_id,
+      })
+    }
+    return [...hits.values()].slice(0, 20)
   }
 
   async rename(taskId: string, title: string): Promise<void> {
@@ -229,6 +306,7 @@ export class AgentHarness {
     const conversation = await this.conversation(taskId)
     if (conversation) await conversation.abort(CONTEXT).catch(() => undefined)
     await this.deps.db.deleteTaskMeta(taskId)
+    await this.deps.db.deleteSearchDocs(taskId)
     await this.refreshTaskList()
   }
 
@@ -248,7 +326,7 @@ export class AgentHarness {
     return out
   }
 
-  async openTask(taskId: string): Promise<TaskView> {
+  async openTask(taskId: string, focus?: string): Promise<TaskView> {
     const conversation = await this.conversation(taskId)
     if (!conversation) throw new Error('Task not found.')
     const meta = await this.deps.db.getTaskMeta(taskId)
@@ -259,7 +337,11 @@ export class AgentHarness {
       const entries = mapEntries(state.value.entries)
       this.active!.entries = entries
       const live = this.mapLive(state.value, taskId)
-      const start = Math.max(0, entries.length - INITIAL_ENTRIES)
+      let start = Math.max(0, entries.length - INITIAL_ENTRIES)
+      if (focus) {
+        const index = entries.findIndex((entry) => entry.id === focus)
+        if (index >= 0) start = Math.max(0, index - 20)
+      }
       const slice = entries.slice(start)
       return {
         task: {
@@ -346,14 +428,18 @@ export class AgentHarness {
   ): Promise<void> {
     try {
       const settled = await submission.wait(CONTEXT)
-      if (settled.status === 'unanswered') {
+      if (settled.status === 'unanswered' && settled.reason !== 'aborted') {
         const reason = settled.reason ? ` (${settled.reason})` : ''
         await conversation.submit(
           {
             type: 'write',
             entry: {
               kind: 'sa.notice',
-              data: { text: `The run ended without an answer${reason}.`, tone: 'error' },
+              data: {
+                text: `The run ended without an answer${reason}.`,
+                tone: 'error',
+                action: 'retry',
+              },
             },
           },
           CONTEXT,
@@ -378,6 +464,7 @@ export class AgentHarness {
     } finally {
       await this.deps.db.touchTask(taskId)
       await this.refreshTaskList()
+      await this.indexConversation(taskId).catch(() => undefined)
       await refreshDigest(
         {
           db: this.deps.db,
@@ -427,24 +514,101 @@ export class AgentHarness {
       | {
           run?: unknown
           generation?: { message?: AssistantMessage }
-          tools?: { name: string; status: string; details?: { target?: string } }[]
+          tools?: {
+            callId: string
+            name: string
+            status: string
+            output?: string
+            details?: { target?: string }
+          }[]
         }
       | undefined
     if (!live?.run) {
       this.liveStarted.delete(taskId)
+      this.toolStarted.clear()
       return null
     }
     const startedAt = this.liveStarted.get(taskId) ?? new Date().toISOString()
     this.liveStarted.set(taskId, startedAt)
-    const running = live.tools?.find((tool) => tool.status === 'running')
+    const tools: LiveTool[] = []
+    const seen = new Set<string>()
+    for (const slot of live.tools ?? []) {
+      if (slot.status === 'done') continue
+      seen.add(slot.callId)
+      const since = this.toolStarted.get(slot.callId) ?? new Date().toISOString()
+      this.toolStarted.set(slot.callId, since)
+      tools.push({
+        callId: slot.callId,
+        name: slot.name as ToolName,
+        target: String(slot.details?.target ?? ''),
+        note: lastLine(slot.output),
+        startedAt: since,
+      })
+    }
+    for (const callId of [...this.toolStarted.keys()]) {
+      if (!seen.has(callId)) this.toolStarted.delete(callId)
+    }
     const text = live.generation?.message ? textOf(live.generation.message) : ''
     return {
-      phase: running ? 'tool' : text ? 'writing' : 'thinking',
-      tool: running
-        ? { name: running.name as ToolName, target: running.details?.target ?? '' }
-        : null,
+      phase: tools.length ? 'tool' : text ? 'writing' : 'thinking',
+      tools,
       text: text || null,
       startedAt,
+    }
+  }
+
+  private async lastUserText(taskId: string): Promise<string | null> {
+    const conversation = await this.conversation(taskId)
+    if (!conversation) return null
+    const state = await conversation.viewState(CONTEXT)
+    try {
+      for (let index = state.value.entries.length - 1; index >= 0; index -= 1) {
+        const entry = state.value.entries[index]!
+        if (entry.kind !== 'sa.user') continue
+        const data = entry.data as { text?: string } | undefined
+        if (data?.text) return data.text
+      }
+      return null
+    } finally {
+      state.dispose()
+    }
+  }
+
+  private async indexConversation(taskId: string): Promise<void> {
+    const conversation = await this.conversation(taskId)
+    if (!conversation) return
+    const state = await conversation.viewState(CONTEXT)
+    try {
+      const docs: { entryId: string; kind: string; text: string; at: string }[] = []
+      for (const entry of state.value.entries) {
+        if (entry.kind === 'sa.user') {
+          const data = entry.data as { text?: string } | undefined
+          if (data?.text) {
+            docs.push({ entryId: String(entry.id), kind: 'user', text: data.text, at: '' })
+          }
+        } else if (entry.kind === 'pi.assistant') {
+          const message = entry.model?.[0] as AssistantMessage | undefined
+          const text = message ? textOf(message) : ''
+          if (text) {
+            docs.push({
+              entryId: String(entry.id),
+              kind: 'answer',
+              text,
+              at: message?.timestamp ? new Date(message.timestamp).toISOString() : '',
+            })
+          }
+        }
+      }
+      await this.deps.db.replaceSearchDocs(taskId, docs)
+    } finally {
+      state.dispose()
+    }
+  }
+
+  private async rebuildSearch(): Promise<void> {
+    const ids = await this.deps.db.conversationsWithoutSearch()
+    for (const id of ids) {
+      await this.indexConversation(id).catch(() => undefined)
     }
   }
 
@@ -498,6 +662,25 @@ export class AgentHarness {
   private async refreshTaskList(): Promise<void> {
     this.deps.emit({ type: 'tasks', tasks: await this.listTasks() })
   }
+}
+
+function cleanResult(text: string): string {
+  return text
+    .replace(/<\/?harness>/gi, ' ')
+    .replace(/\[\/?error\]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160)
+}
+
+function lastLine(output: string | undefined): string | null {
+  if (!output) return null
+  const lines = output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const last = lines.at(-1)
+  return last ? last.slice(0, 90) : null
 }
 
 function deriveTitle(text: string): string {
@@ -564,16 +747,30 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
             ms?: number
           }
         | undefined
+      const resultText = cleanResult(
+        message.content.map((part) => (part.type === 'text' ? part.text : '')).join(' '),
+      )
+      const aborted = /aborted/i.test(resultText)
+      const timedOut = /timed out/i.test(resultText)
       out.push({
         id,
         kind: 'tool',
         at: message.timestamp ? new Date(message.timestamp).toISOString() : '',
         name: (message.toolName ?? toolNames.get(message.toolCallId) ?? 'estate') as ToolName,
         target: details?.target ?? '',
-        status: message.isError ? 'failed' : 'done',
-        note: details?.note ?? null,
+        status: aborted ? 'stopped' : message.isError ? 'failed' : 'done',
+        note:
+          details?.note ??
+          (aborted
+            ? null
+            : timedOut
+              ? 'Timed out'
+              : message.isError && resultText
+                ? resultText
+                : null),
         ms: message.durationMs ?? details?.ms ?? null,
         view: (details?.view as never) ?? null,
+        callId: message.toolCallId,
       })
       continue
     }
@@ -582,13 +779,16 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       continue
     }
     if (entry.kind === 'sa.notice') {
-      const data = entry.data as { text?: string; tone?: 'info' | 'warn' | 'error' } | undefined
+      const data = entry.data as
+        | { text?: string; tone?: 'info' | 'warn' | 'error'; action?: 'retry' | 'continue' }
+        | undefined
       out.push({
         id,
         kind: 'notice',
         at: '',
         text: data?.text ?? '',
         tone: data?.tone ?? 'info',
+        ...(data?.action ? { action: data.action } : {}),
       })
     }
   }

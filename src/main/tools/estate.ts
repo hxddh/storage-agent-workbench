@@ -23,8 +23,9 @@ export function estateTools(deps: ToolDeps) {
       }),
       timeoutMs: 20_000,
       target: (args) => args.bucket ?? 'memory',
-      run: async (args, _run) => {
+      run: async (args, run) => {
         const config = await deps.providers.resolve(args.provider_id)
+        await run.setTarget(config.name)
         const lang = deps.lang()
         const buckets = await deps.db.listBuckets(config.id)
         const table: Table = {
@@ -71,6 +72,7 @@ export function estateTools(deps: ToolDeps) {
         ]
         return {
           model: lines.join('\n'),
+          target: config.name,
           note: `${buckets.length} bucket${buckets.length === 1 ? '' : 's'} · ${issues.length} issue${issues.length === 1 ? '' : 's'}`,
           view: {
             kind: 'estate' as const,

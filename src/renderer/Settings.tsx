@@ -2,6 +2,7 @@ import type { Account, AccountInput, Bootstrap, Lang, Theme } from '@shared/cont
 import { X } from 'lucide-react'
 import { useState } from 'react'
 import { dict } from './i18n'
+import { useFocusTrap } from './lib/focus'
 
 type Provider = 'openai' | 'anthropic' | 'compatible'
 
@@ -41,6 +42,8 @@ export function Settings({
   const [form, setForm] = useState<AccountInput>(EMPTY_ACCOUNT)
   const [showForm, setShowForm] = useState(boot.accounts.length === 0)
   const [accountStatus, setAccountStatus] = useState<{ ok: boolean; detail: string } | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
+  const trap = useFocusTrap<HTMLDivElement>(onClose)
 
   const saveModel = async () => {
     setModelBusy(true)
@@ -108,6 +111,7 @@ export function Settings({
   }
 
   const editAccount = (account: Account) => {
+    setConfirmRemove(null)
     setForm({
       id: account.id,
       name: account.name,
@@ -134,7 +138,7 @@ export function Settings({
   }
 
   return (
-    <div className="sheet" role="dialog" aria-modal="true">
+    <div className="sheet" role="dialog" aria-modal="true" ref={trap}>
       <div className="sheet-head">
         <div className="sheet-head-inner">
           <h2>{t.settings}</h2>
@@ -278,11 +282,16 @@ export function Settings({
                       className="btn ghost danger"
                       type="button"
                       onClick={() => {
-                        if (window.confirm(`${t.remove} ${account.name}?`))
-                          void removeAccount(account.id)
+                        if (confirmRemove !== account.id) {
+                          setConfirmRemove(account.id)
+                          setTimeout(() => setConfirmRemove(null), 3000)
+                          return
+                        }
+                        setConfirmRemove(null)
+                        void removeAccount(account.id)
                       }}
                     >
-                      {t.remove}
+                      {confirmRemove === account.id ? `${t.remove}?` : t.remove}
                     </button>
                   </div>
                 </div>

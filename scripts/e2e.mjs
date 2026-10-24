@@ -11,9 +11,7 @@ import { join } from 'node:path'
 import { _electron as electron } from 'playwright-core'
 
 const root = new URL('..', import.meta.url).pathname
-if (!existsSync(join(root, 'out/main/index.js'))) {
-  execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' })
-}
+execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' })
 const dataDir = mkdtempSync(join(tmpdir(), 'sa-e2e-'))
 const s3Port = 9110
 const modelPort = 9210
@@ -21,6 +19,7 @@ const modelPort = 9210
 function start(script, port) {
   const child = spawn(process.execPath, [join(root, script), String(port)], {
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, SLOW_MS: '350' },
   })
   child.stdout.on('data', (data) => process.stdout.write(`[${script}] ${data}`))
   child.stderr.on('data', (data) => process.stderr.write(`[${script}] ${data}`))
@@ -82,6 +81,10 @@ try {
   await page.locator('.composer textarea').fill('Which buckets are public?')
   await page.keyboard.press('Enter')
 
+  await page.waitForSelector('.tool-row .pulse-icon', { timeout: 10_000 })
+  await page.waitForTimeout(600)
+  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-running.png') })
+
   await page.waitForSelector('text=demo-public is publicly accessible', { timeout: 60_000 })
   const body = await page.locator('body').innerText()
   console.log('ANSWER OK')
@@ -100,6 +103,27 @@ try {
   console.log(fixBody.slice(0, 900))
   await page.waitForTimeout(350)
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-fix.png') })
+
+  await page.getByRole('button', { name: 'New task' }).click()
+  await page.locator('.composer textarea').fill('Check demo-private again')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.tool-row .pulse-icon', { timeout: 10_000 })
+  await page.getByRole('button', { name: 'Stop' }).click()
+  await page.waitForSelector('text=Stopped.', { timeout: 10_000 })
+  console.log('STOP OK')
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await page.waitForSelector('text=demo-public is publicly accessible', { timeout: 60_000 })
+  console.log('CONTINUE OK')
+
+  await page.locator('.sidebar-search input').click()
+  await page.keyboard.type('public')
+  await page.waitForSelector('.search-hit', { timeout: 10_000 })
+  const hits = await page.locator('.search-hit').count()
+  console.log('SEARCH HITS:', hits)
+  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-search.png') })
+  await page.locator('.search-hit').first().click()
+  await page.waitForSelector('.entry-user', { timeout: 10_000 })
+  console.log('SEARCH OPEN OK')
 
   const db = readFileSync(join(dataDir, 'storage-agent.db'))
   console.log('DB BYTES:', db.length)

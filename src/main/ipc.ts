@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises'
 import type { AccountInput, AppSettings } from '@shared/contract'
 import { dialog, ipcMain, nativeTheme, shell } from 'electron'
 import type { App } from './app'
@@ -6,7 +7,9 @@ import type { ModelProvider } from './settings'
 export function registerIpc(app: App): void {
   ipcMain.handle('agent:bootstrap', () => app.bootstrap())
 
-  ipcMain.handle('agent:openTask', (_event, id: string) => app.harness.openTask(id))
+  ipcMain.handle('agent:openTask', (_event, id: string, focus?: string) =>
+    app.harness.openTask(id, focus),
+  )
   ipcMain.handle('agent:older', (_event, id: string, before: string) =>
     app.harness.older(id, before),
   )
@@ -31,6 +34,32 @@ export function registerIpc(app: App): void {
     app.harness.rename(id, title),
   )
   ipcMain.handle('agent:deleteTask', (_event, id: string) => app.harness.deleteTask(id))
+  ipcMain.handle('agent:retryTask', (_event, id: string) => app.harness.retry(id))
+  ipcMain.handle('agent:continueTask', (_event, id: string) => app.harness.continueTask(id))
+  ipcMain.handle('agent:search', (_event, query: string) => app.harness.search(query))
+
+  ipcMain.handle(
+    'agent:saveText',
+    async (_event, input: { name: string; content: string; kind: 'markdown' | 'csv' }) => {
+      if (typeof input?.content !== 'string' || input.content.length > 10 * 1024 * 1024)
+        return false
+      const extension = input.kind === 'csv' ? 'csv' : 'md'
+      const result = await dialog.showSaveDialog({
+        title: 'Save',
+        defaultPath: input.name.endsWith(`.${extension}`)
+          ? input.name
+          : `${input.name}.${extension}`,
+        filters: [
+          input.kind === 'csv'
+            ? { name: 'CSV', extensions: ['csv'] }
+            : { name: 'Markdown', extensions: ['md'] },
+        ],
+      })
+      if (result.canceled || !result.filePath) return false
+      await writeFile(result.filePath, input.content, 'utf8')
+      return true
+    },
+  )
 
   ipcMain.handle('agent:pickFiles', async () => {
     const result = await dialog.showOpenDialog({

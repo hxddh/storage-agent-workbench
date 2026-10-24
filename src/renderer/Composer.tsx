@@ -1,7 +1,7 @@
 import type { Live, StagedFile } from '@shared/contract'
-import { ArrowUp, Paperclip, Square, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, Paperclip, Square, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { dict, toolLabel } from './i18n'
+import { dict } from './i18n'
 
 export function Composer({
   lang,
@@ -108,6 +108,7 @@ export function Composer({
           </button>
           <button className="model-chip" type="button" onClick={onOpenSettings}>
             <span>{hasModel ? (modelLabel ?? 'Model') : 'Model'}</span>
+            <ChevronDown size={11} />
           </button>
           <span className="spacer" />
           {live ? (
@@ -145,12 +146,6 @@ export function Composer({
           )}
         </div>
       </div>
-      {live?.tool && (
-        <div className="view-sub" style={{ textAlign: 'center', marginTop: 6 }}>
-          {toolLabel(live.tool.name, lang)}
-          {live.tool.target ? ` · ${live.tool.target}` : ''}
-        </div>
-      )}
     </div>
   )
 }

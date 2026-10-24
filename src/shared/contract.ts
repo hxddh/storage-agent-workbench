@@ -115,6 +115,14 @@ export type ToolView =
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped'
 
+export interface LiveTool {
+  callId: string
+  name: ToolName
+  target: string
+  note: string | null
+  startedAt: string
+}
+
 export interface AttachmentRef {
   name: string
   bytes: number
@@ -144,8 +152,16 @@ export type UiEntry =
       note: string | null
       ms: number | null
       view: ToolView | null
+      callId?: string
     }
-  | { id: string; kind: 'notice'; at: string; text: string; tone: 'info' | 'warn' | 'error' }
+  | {
+      id: string
+      kind: 'notice'
+      at: string
+      text: string
+      tone: 'info' | 'warn' | 'error'
+      action?: 'retry' | 'continue'
+    }
   | { id: string; kind: 'compaction'; at: string; text: string }
 
 export interface TaskSummary {
@@ -159,9 +175,19 @@ export interface TaskSummary {
 
 export interface Live {
   phase: 'thinking' | 'tool' | 'writing'
-  tool: { name: ToolName; target: string } | null
+  tools: LiveTool[]
   text: string | null
   startedAt: string
+}
+
+export interface SearchHit {
+  taskId: string
+  title: string
+  kind: 'title' | 'user' | 'answer'
+  snippet: string
+  matchStart: number
+  matchLength: number
+  entryId: string | null
 }
 
 export interface TaskView {
@@ -236,7 +262,7 @@ export type AppEvent =
 /** The preload surface. Nothing else is exposed to the renderer. */
 export interface AgentApi {
   bootstrap(): Promise<Bootstrap>
-  openTask(id: string): Promise<TaskView>
+  openTask(id: string, focus?: string): Promise<TaskView>
   older(
     taskId: string,
     before: string,
@@ -247,6 +273,10 @@ export interface AgentApi {
   stop(taskId: string): Promise<void>
   renameTask(taskId: string, title: string): Promise<void>
   deleteTask(taskId: string): Promise<void>
+  retryTask(taskId: string): Promise<void>
+  continueTask(taskId: string): Promise<void>
+  search(query: string): Promise<SearchHit[]>
+  saveText(input: { name: string; content: string; kind: 'markdown' | 'csv' }): Promise<boolean>
   pickFiles(): Promise<StagedFile[]>
   saveAccount(input: AccountInput): Promise<Account>
   deleteAccount(id: string): Promise<void>

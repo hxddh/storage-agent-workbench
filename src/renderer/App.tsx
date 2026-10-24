@@ -20,6 +20,7 @@ export function App() {
   const [tasks, setTasks] = useState<TaskSummary[]>([])
   const [view, setView] = useState<TaskView | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [focusId, setFocusId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [fatal, setFatal] = useState(false)
 
@@ -101,9 +102,10 @@ export function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const openTask = async (id: string) => {
-    const next = await window.agent.openTask(id)
+  const openTask = async (id: string, focus?: string) => {
+    const next = await window.agent.openTask(id, focus)
     setView(next)
+    setFocusId(focus ?? null)
     setSidebarOpen(false)
   }
 
@@ -162,7 +164,7 @@ export function App() {
         activeId={view?.task.id ?? null}
         lang={lang}
         open={sidebarOpen}
-        onOpen={(id) => void openTask(id)}
+        onOpen={(id, focus) => void openTask(id, focus)}
         onNew={newTask}
         onSettings={() => setSettingsOpen(true)}
         onRename={(id, title) => void rename(id, title)}
@@ -171,9 +173,9 @@ export function App() {
       <main className="main">
         {view ? (
           <>
-            <div className="main-head">
+            <div className="mobile-head">
               <button
-                className="icon-btn only-mobile"
+                className="icon-btn"
                 type="button"
                 aria-label={t.showTasks}
                 onClick={() => setSidebarOpen(true)}
@@ -181,9 +183,15 @@ export function App() {
                 <Menu size={16} />
               </button>
               <span className="task-title">{view.task.title}</span>
-              <span />
             </div>
-            <Stream view={view} lang={lang} onOlder={() => void older()} />
+            <Stream
+              view={view}
+              lang={lang}
+              focusId={focusId}
+              onOlder={() => void older()}
+              onRetry={() => void window.agent.retryTask(view.task.id)}
+              onContinue={() => void window.agent.continueTask(view.task.id)}
+            />
           </>
         ) : (
           <div className="empty">

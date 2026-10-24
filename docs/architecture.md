@@ -27,14 +27,18 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
    registers IPC.
 2. `harness.createConversation()` creates one conversation per task; every new
    conversation receives the configured model.
-3. `submit` writes a `sa.user` entry and runs pi's generation task. Tool calls
-   become `pi.tool-result` entries carrying `details` (the UI view).
+3. `submit` writes a `sa.user` entry and runs pi's generation task. A running
+   call is projected from `pi.live.tools` (name, target, progress, start time);
+   when it settles it becomes a `pi.tool-result` entry carrying `details` (the UI
+   view), and the row is replaced in place.
 4. The open task is watched with `conversation.watch()`. Each frame appends new
    entries and pushes the live state to the window through `agent:event`.
 5. `harness.watchTaskGraph()` supplies working state for the sidebar.
 6. `conversation.abort()` stops a run; pi keeps what was committed.
 7. pi compacts when the model's context window fills; compaction appears as a
    divider in the stream.
+8. When a task settles, its requests and answers are written to `search_docs`.
+   Tasks without rows are backfilled in the background at startup.
 
 The window never receives `entry.model` (the provider-facing messages). The
 mapper in `runtime/harness.ts` projects entries into `UiEntry`, extracting only
@@ -58,13 +62,17 @@ the answer text and the tool details.
 | `main/estate/fixes.ts` | fix formats and impact preview |
 | `main/analysis/*` | import (bounded, redacted) and whitelisted aggregates |
 | `main/app.ts` | service wiring, watch tick, notifications |
+| `main/window-state.ts` | window bounds in `window.json`, clamped to a display |
+| `renderer/Sidebar.tsx` | task list, ⌘K search, rename, inline delete |
+| `renderer/Stream.tsx` | entries, running calls, focus, copy/save |
 
 ## Storage layout
 
 ```
 <userData>/
-  storage-agent.db          app + pi_ tables
+  storage-agent.db          app + pi_ tables + search_docs
   settings.json             non-secret settings
+  window.json               window bounds
   .vault-key                only when no OS keyring (0600)
   staging/<token>/          files waiting for their message
   tasks/<conversation>/

@@ -23,8 +23,8 @@ Defined in `src/renderer/styles.css`. No component uses a raw colour.
 
 ## Type
 
-System UI at 15px for prose, 13px for UI, 11px for meta, 28px for the one page
-heading. Line height 1.6–1.7 for prose, 1.35 for rows. Prose is capped at 68
+System UI at 15px for prose, 13px for UI, 11px for meta, 20px for the Home
+heading. The task page has no heading: the request is the first line. Line height 1.6–1.7 for prose, 1.35 for rows. Prose is capped at 68
 characters. Mono is used for bucket names, keys and generated text.
 
 ## Shape
@@ -34,13 +34,15 @@ section rhythm). Radii: 6 for controls, 10 for panels, 14 for the composer. One
 shadow level exists, and only the composer and menus use it.
 
 The document is flat: hairline separators and space, no cards. The composer is
-the only elevated surface on the page; tool results are bordered blocks because
-they are embedded data, not page structure.
+the only elevated surface on the page. A tool result is a section under its row,
+separated by a hairline — never a bordered card inside the document. Tables and
+code blocks keep their own rules because they are data surfaces.
 
 ## Layout
 
-- Sidebar 252px, `bg-sunken`, one list, Settings at the foot.
-- Document column 760px, centred; 68ch prose inside it.
+- Sidebar 252px, `bg-sunken`: New task, ⌘K search, one list, Settings at the foot.
+- Document column 760px, centred; 68ch prose inside it. The task title appears
+  once, in the sidebar.
 - Composer docked at the bottom on every screen, 760px wide.
 - Below 860px the sidebar becomes an overlay; the composer stays.
 
