@@ -7,15 +7,25 @@ import type {
   BriefNotice,
 } from '@shared/brief'
 import { buildBrief } from '@shared/brief'
-import type { Lang, Table, TaskView, ToolName, ToolView, Usage } from '@shared/contract'
+import {
+  type Lang,
+  TASK_LINK_PREFIX,
+  type Table,
+  type TaskView,
+  type ToolName,
+  type ToolView,
+  type Usage,
+} from '@shared/contract'
 import {
   Activity,
   ArrowDownToLine,
   BarChart3,
   ChevronRight,
+  Code2,
   Copy,
   Database,
   FileText,
+  Link2,
   List,
   Radar,
   Shield,
@@ -41,6 +51,7 @@ const ICONS: Record<ToolName, typeof Radar> = {
   fix: Wrench,
   analyze: BarChart3,
   note: StickyNote,
+  query: Code2,
 }
 
 const FINDINGS_SHOWN = 5
@@ -136,7 +147,9 @@ function briefMarkdown(title: string, brief: BriefModel, t: Dict, lang: Lang): s
   }
   if (brief.data) {
     const view = brief.data.view
-    if (view.kind === 'survey') parts.push(`## ${t.buckets}`, tableMarkdown(view.buckets))
+    if (view.kind === 'query')
+      parts.push(`## ${view.title}`, tableMarkdown(view.rows), `\`\`\`js\n${view.code}\n\`\`\``)
+    else if (view.kind === 'survey') parts.push(`## ${t.buckets}`, tableMarkdown(view.buckets))
     else if (view.kind === 'estate' && view.buckets)
       parts.push(`## ${t.buckets} (${t.remembered})`, tableMarkdown(view.buckets))
     else if (view.kind === 'analyze') parts.push(`## ${view.dataset}`, tableMarkdown(view.rows))
@@ -191,8 +204,9 @@ function FindingRow({
           <span className="finding-title">{finding.title}</span>
           <span className="finding-meta">
             {severityLabel(finding, t)}
+            {finding.control ? ` · ${finding.control}` : ''}
             {' · '}
-            <span className="mono">{finding.bucket}</span>
+            {finding.bucket ? <span className="mono">{finding.bucket}</span> : t.accountWide}
             {finding.source === 'memory' && tagMemory && (
               <span className="memory-tag">
                 {when ? fill(t.rememberedAgo, { when }) : t.remembered}
@@ -233,6 +247,17 @@ function Fold({ label, tone, children }: { label: string; tone?: 'ok'; children:
 
 function DataSection({ data, t }: { data: BriefData; t: Dict }) {
   const view = data.view
+  if (view.kind === 'query') {
+    return (
+      <>
+        {view.chart && <ChartView chart={view.chart} />}
+        <TableView table={view.rows} name={view.title} empty={t.noRows} t={t} limit={10} />
+        <p className="quiet">
+          {fill(t.queryReceipt, { calls: view.calls, items: view.listed.toLocaleString() })}
+        </p>
+      </>
+    )
+  }
   if (view.kind === 'survey') {
     return (
       <TableView
@@ -293,13 +318,35 @@ function DataSection({ data, t }: { data: BriefData; t: Dict }) {
   return null
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
+}
+
 function bucketCount(n: number, t: Dict): string {
   return `${n} ${n === 1 ? t.bucketsOne : t.bucketsShort}`
 }
 
 function dataSummary(data: BriefData, t: Dict): string {
   const view = data.view
-  if (view.kind === 'survey') return bucketCount(view.buckets.rows.length, t)
+  if (view.kind === 'query') return view.title
+  if (view.kind === 'survey')
+    return [
+      bucketCount(view.buckets.rows.length, t),
+      ...(view.capacity
+        ? [
+            formatBytes(view.capacity.bytes),
+            fill(t.perMonth, { usd: `$${view.capacity.monthlyUsd.toLocaleString()}` }),
+          ]
+        : []),
+    ].join(' · ')
   if (view.kind === 'estate')
     return `${t.memoryData} · ${bucketCount(view.buckets?.rows.length ?? 0, t)}`
   if (view.kind === 'analyze') return view.dataset
@@ -329,7 +376,8 @@ function CheckRow({
   // Views already rendered on the page (findings, the data table, chart, fixes)
   // do not open again here; the check row is their provenance.
   const inline = check.view
-    ? ['buckets', 'objects', 'object', 'estate', 'probe', 'note'].includes(check.view.kind)
+    ? // A query's rows are on the page; its script, the evidence, opens here.
+      ['buckets', 'objects', 'object', 'estate', 'probe', 'note', 'query'].includes(check.view.kind)
     : false
   const expandable = inline && check.status !== 'running'
   const shown = duration(check.ms)
@@ -439,6 +487,7 @@ export function Brief({
   const [allFindings, setAllFindings] = useState(false)
   const [dataOpen, setDataOpen] = useState<boolean | null>(null)
   const [copied, setCopied] = useState(false)
+  const [linked, setLinked] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const focused = useRef<string | null>(null)
 
@@ -511,6 +560,8 @@ export function Brief({
   const answered = brief.findings.length > 0 || brief.accepted.length > 0
   const dataExpanded = dataOpen ?? !answered
   const ungrounded = new Set(brief.verdict?.ungrounded ?? [])
+  const contradicted = new Set(brief.verdict?.contradicted ?? [])
+  const shownIssues = brief.findings.length + brief.accepted.length
   const markdown = () => briefMarkdown(title, brief, t, lang)
   const ruleTitle = (fix: BriefFix) =>
     [...brief.findings, ...brief.accepted, ...brief.resolved].find(
@@ -529,9 +580,29 @@ export function Brief({
       ? () => void window.agent.acceptIssue(finding.issueId!, finding.status !== 'accepted')
       : undefined
 
+  // j / k move between findings, Enter opens the evidence, a accepts or reopens.
+  const navigate = (event: React.KeyboardEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement
+    if (!target.classList.contains('finding-main')) return
+    const rows = [...(root.current?.querySelectorAll<HTMLElement>('.finding-main') ?? [])]
+    const index = rows.indexOf(target)
+    if (event.key === 'j' || event.key === 'ArrowDown') {
+      event.preventDefault()
+      rows[Math.min(rows.length - 1, index + 1)]?.focus()
+    } else if (event.key === 'k' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      rows[Math.max(0, index - 1)]?.focus()
+    } else if (event.key === 'a') {
+      const key = target.closest<HTMLElement>('.finding-row')?.dataset.findingKey
+      const finding = [...brief.findings, ...brief.accepted].find((item) => item.key === key)
+      if (finding) accept(finding)?.()
+    }
+  }
+
   return (
     <div className="scroll">
-      <article className="brief" ref={root} aria-busy={live}>
+      <article className="brief" ref={root} aria-busy={live} onKeyDown={navigate}>
+        <h1 className="visually-hidden">{title}</h1>
         <div className={`brief-meta ${hasContent ? '' : 'silent'}`}>
           <span>
             {checked ? fill(t.checkedAt, { when: checked }) : ''}
@@ -544,6 +615,19 @@ export function Brief({
               <button className="text-action" type="button" onClick={() => void copy()}>
                 <Copy size={12} aria-hidden="true" />
                 {copied ? t.copied : t.copyBrief}
+              </button>
+              <button
+                className="text-action"
+                type="button"
+                onClick={async () => {
+                  if (await copyText(`${TASK_LINK_PREFIX}${view.task.id}`)) {
+                    setLinked(true)
+                    setTimeout(() => setLinked(false), 1500)
+                  }
+                }}
+              >
+                <Link2 size={12} aria-hidden="true" />
+                {linked ? t.copied : t.copyLink}
               </button>
               <button
                 className="text-action"
@@ -576,15 +660,17 @@ export function Brief({
                 remarkPlugins={[remarkGfm]}
                 components={{
                   code: ({ children, className }) => {
-                    const text = String(children ?? '')
-                    const flagged = !className && ungrounded.has(text.trim())
+                    const text = String(children ?? '').trim()
+                    const missing = !className && ungrounded.has(text)
+                    const wrong = !className && contradicted.has(text)
                     return (
                       <code
                         className={
-                          [className, flagged ? 'ungrounded' : ''].filter(Boolean).join(' ') ||
-                          undefined
+                          [className, missing || wrong ? 'ungrounded' : '']
+                            .filter(Boolean)
+                            .join(' ') || undefined
                         }
-                        title={flagged ? t.ungroundedHint : undefined}
+                        title={missing ? t.ungroundedHint : wrong ? t.contradictedHint : undefined}
                       >
                         {children}
                       </code>
@@ -600,6 +686,12 @@ export function Brief({
             <p className="grounding">
               <TriangleAlert size={12} strokeWidth={1.7} aria-hidden="true" />
               {t.ungroundedNote}
+            </p>
+          )}
+          {contradicted.size > 0 && !brief.verdict?.streaming && (
+            <p className="grounding">
+              <TriangleAlert size={12} strokeWidth={1.7} aria-hidden="true" />
+              {t.contradictedNote}
             </p>
           )}
 
@@ -653,6 +745,11 @@ export function Brief({
                   ? t.less
                   : fill(t.moreRows, { n: brief.findings.length - FINDINGS_SHOWN })}
               </button>
+            )}
+            {brief.issueTotal !== null && brief.issueTotal > shownIssues && (
+              <p className="quiet">
+                {fill(t.issuesShown, { shown: shownIssues, total: brief.issueTotal })}
+              </p>
             )}
             {brief.accepted.length > 0 && (
               <Fold

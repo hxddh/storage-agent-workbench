@@ -162,7 +162,10 @@ describe('tools over the estate', () => {
     const view = details.view
     if (view?.kind !== 'survey') throw new Error('expected a survey view')
     expect(view.coverage.unknown).toEqual(['acl-hidden'])
-    expect(view.observations?.length).toBeGreaterThan(20)
+    // A first survey resolves nothing, so it carries no resolutions; the open Issues are in the view.
+    expect(view.observations).toEqual([])
+    expect(view.issueTotal).toBeGreaterThan(5)
+    expect(view.issues.length).toBe(view.issueTotal)
   })
 
   it('resolves a fixed bucket when it is re-read, and nothing else', async () => {

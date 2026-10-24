@@ -3,6 +3,7 @@ import { isAbsolute } from 'node:path'
 import type { AccountInput, AppSettings, ModelInput, ThinkingLevel } from '@shared/contract'
 import { dialog, ipcMain, nativeTheme, shell } from 'electron'
 import type { App } from './app'
+import { detectLocalModels } from './local-models'
 import { awsProfiles } from './providers'
 
 const PROVIDERS = new Set(['openai', 'anthropic', 'compatible'])
@@ -96,6 +97,14 @@ export function registerIpc(app: App): void {
   })
 
   ipcMain.handle('agent:awsProfiles', () => awsProfiles())
+
+  ipcMain.handle('agent:addDemoAccount', async () => {
+    const account = await app.providers.addDemo()
+    await app.harness.refreshEstateDigest()
+    return account
+  })
+
+  ipcMain.handle('agent:localModels', () => detectLocalModels())
 
   ipcMain.handle('agent:acceptIssue', (_event, id: string, accepted: boolean) =>
     app.harness.acceptIssue(String(id), Boolean(accepted)),

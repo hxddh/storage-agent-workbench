@@ -33,7 +33,7 @@ import type {
   TaskView,
   UiEntry,
 } from '@shared/contract'
-import { knownNames } from '@shared/grounding'
+import { knownExposure, knownNames } from '@shared/grounding'
 import type { AppDb } from '../db'
 import type { Estate } from '../estate/estate'
 import type { Providers } from '../providers'
@@ -367,7 +367,8 @@ export class AgentHarness {
       (tx) => configure(tx, conversation.id, { model, thinkingLevel: thinking }),
       CONTEXT,
     )
-    this.state.runs.set(taskId, freshRun(knownNames(await this.entries(conversation))))
+    const entries = await this.entries(conversation)
+    this.state.runs.set(taskId, freshRun(knownNames(entries), knownExposure(entries)))
     this.failed.delete(taskId)
     const submission = await conversation.submit(
       { type: 'input', content: input.content, entry: input.entry as never },

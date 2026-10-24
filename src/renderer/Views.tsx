@@ -342,5 +342,20 @@ export function ToolViewBody({
       </div>
     )
   }
+  if (view.kind === 'query') {
+    return (
+      <div>
+        <div className="view-sub">{t.queryCode}</div>
+        <pre className="code">{view.code}</pre>
+        {view.output && (
+          <>
+            <div className="view-sub">{t.queryOutput}</div>
+            <pre className="code">{view.output}</pre>
+          </>
+        )}
+        <TableView table={view.rows} name={view.title} empty={t.noRows} t={t} />
+      </div>
+    )
+  }
   return <p className="impact-note">{view.text}</p>
 }

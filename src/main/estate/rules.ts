@@ -1,5 +1,7 @@
 import type { ConfigFinding, Severity } from '@shared/contract'
+import type { AccountFacts } from '../s3/account'
 import { type BucketFacts, blindSpots, type ExposureReason } from '../s3/facts'
+import { formatBytes } from '../s3/metrics'
 import type { ReadStatus } from '../s3/status'
 
 /** true: the problem is there; false: it is proved absent; null: a read was blind. */
@@ -15,8 +17,25 @@ export interface Rule {
   code: string
   severity: Severity
   title: { en: string; zh: string }
+  /** The AWS Security Hub control the rule matches, where one does exactly. */
+  control?: string
   decide: (facts: BucketFacts, words: Words) => Decision
 }
+
+/** The one account-scoped rule; its Issue's bucket is the empty string. */
+export interface AccountRule {
+  code: string
+  severity: Severity
+  title: { en: string; zh: string }
+  control: string
+  decide: (account: AccountFacts, aws: boolean, words: Words) => Decision
+}
+
+/** Where an account-scoped Issue lives in the bucket column. */
+export const ACCOUNT_SCOPE = ''
+
+/** A bucket this large, nearly all in Standard, with no transition, is worth a cost rule. */
+export const LARGE_STANDARD_BYTES = 500 * 1024 ** 3
 
 /** Evidence phrases, written for each language rather than translated word for word. */
 const WORDS = {
@@ -36,6 +55,9 @@ const WORDS = {
       pab: 'The public access block',
       lifecycle: 'Lifecycle',
       versioning: 'Versioning',
+      ownership: 'Object ownership',
+      logging: 'Access logging',
+      accountPab: "The account's public access block",
     },
     exposure: {
       status_public: 'the provider reports the bucket policy as public',
@@ -48,6 +70,8 @@ const WORDS = {
       acl_unknown: 'the ACL could not be read',
       restrict_blocks: 'RestrictPublicBuckets blocks the public policy',
       ignore_blocks: 'IgnorePublicAcls blocks the public ACL',
+      account_restrict_blocks: "the account's RestrictPublicBuckets blocks the public policy",
+      account_ignore_blocks: "the account's IgnorePublicAcls blocks the public ACL",
       account_block_unread: 'an account-level public access block, if set, would still apply',
       not_read: 'not read',
     } as Record<ExposureReason, string>,
@@ -65,6 +89,16 @@ const WORDS = {
       `${n} lifecycle rule${n === 1 ? '' : 's'}, none aborts incomplete uploads`,
     versionedNoLifecycle: 'Versioning is on and there are no lifecycle rules',
     versionedNoExpiry: 'Versioning is on and no rule expires noncurrent versions',
+    noTlsPolicy: 'There is no bucket policy, so plain-HTTP requests are not denied',
+    noTlsDeny: 'No statement denies requests where aws:SecureTransport is false',
+    aclsOn: (mode: string) => `Object Ownership is ${mode}; ACLs still grant access`,
+    aclsLegacy: 'No Object Ownership setting; ACLs still grant access',
+    loggingOff: 'No server access log is written for this bucket',
+    accountPabNone: 'The account has no public access block',
+    accountPabOff: (names: string[]) => `Off for the account: ${names.join(', ')}`,
+    largeStandard: (size: string, share: number) =>
+      `${size}, ${share}% in Standard, and no rule moves it to a cheaper class`,
+    awsOnly: 'Not applicable to this provider',
   },
   zh: {
     unreadable: (item: string, status: string) => `${item}无法读取（${status}）`,
@@ -82,6 +116,9 @@ const WORDS = {
       pab: '阻止公共访问配置',
       lifecycle: '生命周期',
       versioning: '版本控制',
+      ownership: '对象所有权',
+      logging: '访问日志',
+      accountPab: '账号级阻止公共访问',
     },
     exposure: {
       status_public: '服务商判定存储桶策略为公开',
@@ -94,6 +131,8 @@ const WORDS = {
       acl_unknown: '无法读取 ACL',
       restrict_blocks: 'RestrictPublicBuckets 阻止了公开策略',
       ignore_blocks: 'IgnorePublicAcls 阻止了公开 ACL',
+      account_restrict_blocks: '账号级 RestrictPublicBuckets 阻止了公开策略',
+      account_ignore_blocks: '账号级 IgnorePublicAcls 阻止了公开 ACL',
       account_block_unread: '账号级阻止公共访问未读取，如已开启仍会生效',
       not_read: '未读取',
     } as Record<ExposureReason, string>,
@@ -109,6 +148,16 @@ const WORDS = {
     noAbort: (n: number) => `${n} 条生命周期规则，都不会清理未完成的上传`,
     versionedNoLifecycle: '已开启版本控制，但没有生命周期规则',
     versionedNoExpiry: '已开启版本控制，但没有规则让非当前版本过期',
+    noTlsPolicy: '没有存储桶策略，明文 HTTP 请求不会被拒绝',
+    noTlsDeny: '没有语句拒绝 aws:SecureTransport 为 false 的请求',
+    aclsOn: (mode: string) => `对象所有权为 ${mode}，ACL 仍在授权`,
+    aclsLegacy: '未设置对象所有权，ACL 仍在授权',
+    loggingOff: '这个存储桶没有写入服务器访问日志',
+    accountPabNone: '账号没有配置阻止公共访问',
+    accountPabOff: (names: string[]) => `账号级未开启：${names.join('、')}`,
+    largeStandard: (size: string, share: number) =>
+      `${size}，${share}% 在标准存储，且没有规则转入更便宜的存储类别`,
+    awsOnly: '不适用于此服务商',
   },
 }
 
@@ -132,6 +181,7 @@ export const RULES: Rule[] = [
   {
     code: 'public_exposure',
     severity: 'high',
+    control: 'S3.2',
     title: { en: 'Bucket is publicly accessible', zh: '存储桶可被公开访问' },
     decide: (facts, w) => {
       const exposure = facts.exposure
@@ -191,6 +241,7 @@ export const RULES: Rule[] = [
   {
     code: 'public_access_block_missing',
     severity: 'medium',
+    control: 'S3.8',
     title: { en: 'Public access block not fully enabled', zh: '阻止公共访问未完全开启' },
     decide: (facts, w) => {
       if (facts.pab.status === 'not_configured') return { verdict: true, detail: w.noPab }
@@ -240,11 +291,109 @@ export const RULES: Rule[] = [
       }
     },
   },
+  {
+    code: 'insecure_transport',
+    severity: 'medium',
+    control: 'S3.5',
+    title: { en: 'Plain-HTTP requests are not denied', zh: '未拒绝明文 HTTP 请求' },
+    decide: (facts, w) => {
+      // Elsewhere TLS is the endpoint's business; the policy key is AWS's.
+      if (!facts.aws) return { verdict: null, detail: null }
+      if (facts.policy.status === 'not_configured') return { verdict: true, detail: w.noTlsPolicy }
+      if (facts.policy.status !== 'available' || !facts.policy.value)
+        return undecided(facts.policy.status, w.items.policy, w)
+      if (facts.policy.value.unreadable) return { verdict: null, detail: w.policyInvalid }
+      return {
+        verdict: !facts.policy.value.enforcesTls,
+        detail: facts.policy.value.enforcesTls ? null : w.noTlsDeny,
+      }
+    },
+  },
+  {
+    code: 'acls_enabled',
+    severity: 'low',
+    control: 'S3.12',
+    title: { en: 'ACLs are enabled', zh: 'ACL 处于启用状态' },
+    decide: (facts, w) => {
+      if (facts.ownership.status === 'available' && facts.ownership.value?.mode) {
+        const mode = facts.ownership.value.mode
+        return mode === 'BucketOwnerEnforced'
+          ? { verdict: false, detail: null }
+          : { verdict: true, detail: w.aclsOn(mode) }
+      }
+      if (facts.ownership.status === 'not_configured')
+        return facts.aws ? { verdict: true, detail: w.aclsLegacy } : { verdict: null, detail: null }
+      return undecided(facts.ownership.status, w.items.ownership, w)
+    },
+  },
+  {
+    code: 'access_logging_off',
+    severity: 'low',
+    control: 'S3.9',
+    title: { en: 'Server access logging is off', zh: '服务器访问日志未开启' },
+    decide: (facts, w) => {
+      if (facts.logging.status === 'not_configured') return { verdict: true, detail: w.loggingOff }
+      if (facts.logging.status !== 'available' || !facts.logging.value)
+        return undecided(facts.logging.status, w.items.logging, w)
+      return facts.logging.value.enabled
+        ? { verdict: false, detail: null }
+        : { verdict: true, detail: w.loggingOff }
+    },
+  },
+  {
+    code: 'large_standard_only',
+    severity: 'low',
+    title: {
+      en: 'Large bucket stays in Standard storage',
+      zh: '大容量存储桶一直停留在标准存储',
+    },
+    decide: (facts, w) => {
+      const capacity = facts.capacity
+      if (!capacity) return { verdict: null, detail: null }
+      const standard = capacity.byClass.StandardStorage ?? 0
+      const share = capacity.bytes ? Math.round((standard / capacity.bytes) * 100) : 0
+      if (capacity.bytes < LARGE_STANDARD_BYTES || share < 90)
+        return { verdict: false, detail: null }
+      if (facts.lifecycle.status === 'available' && facts.lifecycle.value?.transition)
+        return { verdict: false, detail: null }
+      if (facts.lifecycle.status !== 'available' && facts.lifecycle.status !== 'not_configured')
+        return undecided(facts.lifecycle.status, w.items.lifecycle, w)
+      return { verdict: true, detail: w.largeStandard(formatBytes(capacity.bytes), share) }
+    },
+  },
 ]
 
-export const BY_CODE = new Map(RULES.map((rule) => [rule.code, rule]))
+export const ACCOUNT_RULE: AccountRule = {
+  code: 'account_public_access_block_missing',
+  severity: 'medium',
+  control: 'S3.1',
+  title: {
+    en: 'Account public access block not fully enabled',
+    zh: '账号级阻止公共访问未完全开启',
+  },
+  decide: (account, aws, w) => {
+    if (!aws) return { verdict: null, detail: null }
+    if (account.pab.status === 'not_configured') return { verdict: true, detail: w.accountPabNone }
+    if (account.pab.status !== 'available' || !account.pab.value)
+      return undecided(account.pab.status, w.items.accountPab, w)
+    const off = Object.entries(account.pab.value)
+      .filter(([, on]) => !on)
+      .map(([key]) => key.charAt(0).toUpperCase() + key.slice(1))
+    return { verdict: off.length > 0, detail: off.length ? w.accountPabOff(off) : null }
+  },
+}
 
-export function ruleTitle(rule: Rule, lang: string): string {
+/** Every rule by code, the account rule included, for titles, severities and fixes. */
+export const BY_CODE = new Map<string, Rule | AccountRule>([
+  ...RULES.map((rule) => [rule.code, rule] as const),
+  [ACCOUNT_RULE.code, ACCOUNT_RULE],
+])
+
+export function decideAccount(account: AccountFacts, aws: boolean, lang = 'en'): Decision {
+  return ACCOUNT_RULE.decide(account, aws, wordsFor(lang))
+}
+
+export function ruleTitle(rule: Rule | AccountRule, lang: string): string {
   return lang.toLowerCase().startsWith('zh') ? rule.title.zh : rule.title.en
 }
 
@@ -284,16 +433,6 @@ interface Advisory {
 /** Low-severity observations a review shows. They never open an Issue. */
 const ADVISORIES: Advisory[] = [
   {
-    code: 'acls_active',
-    title: { en: 'ACLs are still active', zh: 'ACL 仍处于启用状态' },
-    detail: {
-      en: 'Object Ownership is not BucketOwnerEnforced.',
-      zh: '对象所有权不是 BucketOwnerEnforced。',
-    },
-    applies: (f) =>
-      f.ownership.status === 'available' && f.ownership.value?.mode !== 'BucketOwnerEnforced',
-  },
-  {
     code: 'no_expiration',
     title: { en: 'No expiration rules', zh: '没有过期规则' },
     detail: {
@@ -310,17 +449,6 @@ const ADVISORIES: Advisory[] = [
       zh: '没有生命周期规则把对象转入更便宜的存储类别。',
     },
     applies: (f) => f.lifecycle.status === 'available' && !f.lifecycle.value?.transition,
-  },
-  {
-    code: 'logging_off',
-    title: { en: 'Server access logging is off', zh: '服务器访问日志未开启' },
-    detail: {
-      en: 'There is no access log to audit or analyze.',
-      zh: '没有可供审计或分析的访问日志。',
-    },
-    applies: (f) =>
-      (f.logging.status === 'available' && !f.logging.value?.enabled) ||
-      f.logging.status === 'not_configured',
   },
   {
     code: 'no_tags',
@@ -340,15 +468,17 @@ const ASPECT_RULES: Record<'security' | 'lifecycle' | 'observability', string[]>
     'cors_all_origins',
     'no_default_encryption',
     'public_access_block_missing',
+    'insecure_transport',
+    'acls_enabled',
   ],
-  lifecycle: ['no_abort_mpu', 'noncurrent_never_expire'],
-  observability: [],
+  lifecycle: ['no_abort_mpu', 'noncurrent_never_expire', 'large_standard_only'],
+  observability: ['access_logging_off'],
 }
 
 const ASPECT_ADVISORIES: Record<'security' | 'lifecycle' | 'observability', string[]> = {
-  security: ['acls_active'],
+  security: [],
   lifecycle: ['no_expiration', 'no_transition'],
-  observability: ['logging_off', 'no_tags'],
+  observability: ['no_tags'],
 }
 
 const BLIND_TITLE = {
@@ -369,7 +499,7 @@ export function reviewFindings(
   const findings: ConfigFinding[] = []
   let passed = 0
   for (const code of ASPECT_RULES[aspect]) {
-    const rule = BY_CODE.get(code)!
+    const rule = RULES.find((item) => item.code === code)!
     const decision = rule.decide(facts, words)
     if (decision.verdict === true) {
       findings.push({

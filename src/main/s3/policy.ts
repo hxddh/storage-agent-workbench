@@ -18,6 +18,8 @@ export interface PolicyFacts {
   publicRead: boolean
   publicList: boolean
   publicWrite: boolean
+  /** A Deny for everyone on every S3 action when aws:SecureTransport is false. */
+  enforcesTls: boolean
   /** The document could not be parsed; nothing above can be trusted. */
   unreadable: boolean
 }
@@ -71,6 +73,23 @@ function restricted(condition: unknown): boolean {
   return false
 }
 
+/** A Deny to everyone, on all of S3, when the request did not use TLS. */
+function deniesPlainHttp(statement: Record<string, unknown>): boolean {
+  if (!everyone(statement.Principal)) return false
+  const actions = list(statement.Action).map((a) => String(a).toLowerCase())
+  if (!actions.some((a) => a === 's3:*' || a === '*')) return false
+  const condition = statement.Condition as Record<string, Record<string, unknown>> | undefined
+  if (!condition) return false
+  for (const [operator, block] of Object.entries(condition)) {
+    if (!/^bool(ifexists)?$/i.test(operator) || !block) continue
+    for (const [key, value] of Object.entries(block)) {
+      if (key.toLowerCase() !== 'aws:securetransport') continue
+      if (list(value).some((v) => String(v).toLowerCase() === 'false')) return true
+    }
+  }
+  return false
+}
+
 export function evaluatePolicy(document: string | undefined | null): PolicyFacts {
   const facts: PolicyFacts = {
     wildcardPrincipal: false,
@@ -78,6 +97,7 @@ export function evaluatePolicy(document: string | undefined | null): PolicyFacts
     publicRead: false,
     publicList: false,
     publicWrite: false,
+    enforcesTls: false,
     unreadable: false,
   }
   if (!document) return facts
@@ -91,6 +111,7 @@ export function evaluatePolicy(document: string | undefined | null): PolicyFacts
   for (const raw of list(parsed?.Statement)) {
     if (!raw || typeof raw !== 'object') continue
     const statement = raw as Record<string, unknown>
+    if (statement.Effect === 'Deny' && deniesPlainHttp(statement)) facts.enforcesTls = true
     if (statement.Effect !== 'Allow') continue
     const open = everyone(statement.Principal) || statement.NotPrincipal !== undefined
     if (!open) continue

@@ -23,6 +23,7 @@ export type ToolName =
   | 'fix'
   | 'analyze'
   | 'note'
+  | 'query'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
 
@@ -42,6 +43,8 @@ export interface IssueRow {
   status: 'open' | 'resolved' | 'accepted'
   title: string
   detail: string | null
+  /** The AWS Security Hub control the rule matches, when one does. */
+  control?: string
   openedAt: string
   lastSeenAt: string
   recurred: number
@@ -108,7 +111,13 @@ export type ToolView =
       providerId?: string
       buckets: Table
       issues: IssueRow[]
+      /** Open Issues of the account in the estate; `issues` may hold fewer. */
+      issueTotal?: number
       observations?: Observation[]
+      /** Account-wide posture: the S3 Control public access block. */
+      account?: { pab: 'on' | 'partial' | 'off' | 'unknown' | 'n/a' }
+      /** Storage totals from CloudWatch, when the account publishes them. */
+      capacity?: { bytes: number; objects: number; monthlyUsd: number; buckets: number } | null
       coverage: {
         visible: number
         processed: number
@@ -157,6 +166,17 @@ export type ToolView =
     }
   | { kind: 'analyze'; dataset: string; rows: Table; chart: Chart | null; note: string | null }
   | { kind: 'note'; text: string }
+  | {
+      kind: 'query'
+      title: string
+      /** The script that produced the rows: the evidence for them. */
+      code: string
+      rows: Table
+      chart: Chart | null
+      output: string | null
+      calls: number
+      listed: number
+    }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'
 
@@ -356,6 +376,16 @@ export type AppEvent =
 
 export type AppCommand = 'settings' | 'new-task' | 'stop' | 'search'
 
+/** A model already running on this machine (Ollama, LM Studio). */
+export interface LocalModel {
+  source: 'Ollama' | 'LM Studio'
+  baseUrl: string
+  modelId: string
+}
+
+/** The link that opens a task from anywhere: `storage-agent://task/<id>`. */
+export const TASK_LINK_PREFIX = 'storage-agent://task/'
+
 /** The preload surface. Nothing else is exposed to the renderer. */
 export interface AgentApi {
   bootstrap(): Promise<Bootstrap>
@@ -385,6 +415,9 @@ export interface AgentApi {
   /** Stage files dropped or pasted into the composer. */
   stageFiles(files: File[]): Promise<StagedFile[]>
   installUpdate(): Promise<void>
+  /** Add the in-process demo account: a sample estate, no network. */
+  addDemoAccount(): Promise<Account>
+  localModels(): Promise<LocalModel[]>
   saveModel(input: ModelInput): Promise<void>
   clearModel(): Promise<void>
   testModel(): Promise<{ ok: boolean; detail: string }>
@@ -405,4 +438,5 @@ export const TOOL_LABEL: Record<ToolName, string> = {
   fix: 'Prepared fix',
   analyze: 'Analyzed file',
   note: 'Remembered',
+  query: 'Ran a read-only query',
 }

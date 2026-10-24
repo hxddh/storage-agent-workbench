@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { UiEntry } from './contract'
-import { knownNames, ungrounded } from './grounding'
+import { contradicted, knownNames, ungrounded } from './grounding'
 
 const entries: UiEntry[] = [
   { id: 'u', kind: 'user', at: '', text: 'q', attachments: [{ name: 'access.log', bytes: 1 }] },
@@ -46,5 +46,35 @@ describe('grounding', () => {
     expect(ungrounded('`logs-bucket/2026/x.gz` and `aws s3api put-x --bucket y`', known)).toEqual(
       [],
     )
+  })
+})
+
+describe('exposure claims', () => {
+  const exposure = new Map([
+    ['open-bucket', true],
+    ['closed-bucket', false],
+  ])
+
+  it('flags a bucket called public that a reading proved private, and the reverse', () => {
+    expect(contradicted('`closed-bucket` is publicly accessible.', exposure)).toEqual([
+      'closed-bucket',
+    ])
+    expect(contradicted('`open-bucket` is not public.', exposure)).toEqual(['open-bucket'])
+    expect(contradicted('`closed-bucket` 是公开的。', exposure)).toEqual(['closed-bucket'])
+  })
+
+  it('accepts true claims, including negation elsewhere in the sentence', () => {
+    expect(
+      contradicted(
+        '`open-bucket` has no default encryption and is publicly accessible. `closed-bucket` is not public.',
+        exposure,
+      ),
+    ).toEqual([])
+    expect(contradicted('`closed-bucket` 不是公开的。', exposure)).toEqual([])
+  })
+
+  it('leaves sentences naming several buckets or unknown ones alone', () => {
+    expect(contradicted('`open-bucket` and `closed-bucket` are public.', exposure)).toEqual([])
+    expect(contradicted('`elsewhere` is public.', exposure)).toEqual([])
   })
 })

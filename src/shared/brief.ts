@@ -27,7 +27,7 @@ import type {
   ToolView,
   UiEntry,
 } from './contract'
-import { knownNames, ungrounded } from './grounding'
+import { contradicted, knownExposure, knownNames, ungrounded } from './grounding'
 
 export interface BriefFinding {
   key: string
@@ -37,6 +37,8 @@ export interface BriefFinding {
   title: string
   detail: string | null
   severity: Severity
+  /** The AWS Security Hub control, when the rule matches one. */
+  control: string | null
   /** The estate Issue behind the finding; null for a review advisory. */
   issueId: string | null
   status: 'open' | 'accepted'
@@ -80,6 +82,11 @@ export interface BriefCheck {
 
 export interface BriefCoverage {
   provider: string
+  /** The account-wide public access block: on, partial, off, unknown, or n/a off AWS. */
+  accountBlock: 'on' | 'partial' | 'off' | 'unknown' | 'n/a' | null
+  capacity: { bytes: number; objects: number; monthlyUsd: number; buckets: number } | null
+  /** Open Issues of the account in the estate when it was surveyed. */
+  issueTotal: number | null
   visible: number
   processed: number
   pending: number
@@ -121,6 +128,8 @@ export interface Brief {
     stale: boolean
     /** Backticked names no tool result in the task shows. */
     ungrounded: string[]
+    /** Buckets the verdict calls public, or not, against what the readings proved. */
+    contradicted: string[]
   } | null
   findings: BriefFinding[]
   accepted: BriefFinding[]
@@ -139,6 +148,8 @@ export interface Brief {
   lastReadAt: string | null
   /** Newest entry in the task, for ordering and the live line. */
   lastAt: string | null
+  /** Open Issues across the surveyed accounts; more than `findings` when a view carried only the first ones. */
+  issueTotal: number | null
 }
 
 export interface LiveInput {
@@ -155,6 +166,7 @@ export interface LiveInput {
 
 const SEVERITY_ORDER: Record<Severity, number> = { high: 0, medium: 1, low: 2 }
 const DATA_KINDS = new Set<ToolView['kind']>([
+  'query',
   'survey',
   'buckets',
   'objects',
@@ -169,6 +181,7 @@ const STORAGE_READS = new Set<ToolName>([
   'object',
   'config',
   'probe',
+  'query',
 ])
 
 function later(a: string | null, b: string): string {
@@ -256,6 +269,7 @@ function issueFinding(issue: IssueRow, check: BriefCheck, source: 'read' | 'memo
     title: issue.title,
     detail: issue.detail ?? null,
     severity: issue.severity,
+    control: issue.control ?? null,
     issueId: issue.id,
     status: issue.status === 'accepted' ? 'accepted' : 'open',
     source,
@@ -282,6 +296,7 @@ function reviewFinding(
     title: finding.title,
     detail: finding.detail || null,
     severity: finding.severity === 'ok' || finding.severity === 'blind' ? 'low' : finding.severity,
+    control: null,
     issueId: null,
     status: 'open',
     source: 'read',
@@ -305,8 +320,11 @@ function fold(set: FindingSet, blind: Map<string, BriefBlind>, check: BriefCheck
   if (view.kind === 'survey') {
     const provider = view.providerId ?? view.issues[0]?.provider ?? null
     applyObservations(set, view.observations)
-    // The survey's Issue list is the account's whole open list at that moment.
-    set.replaceIssues(provider, null, new Set(view.issues.map((issue) => issue.id)))
+    // A complete Issue list is the account's whole open list at that moment; a
+    // list cut short says nothing about the Issues it left out.
+    const open = view.issues.filter((issue) => issue.status === 'open').length
+    if (view.issueTotal === undefined || open >= view.issueTotal)
+      set.replaceIssues(provider, null, new Set(view.issues.map((issue) => issue.id)))
     const read = new Set(view.buckets.rows.map((row) => String(row[0])))
     for (const issue of view.issues)
       set.set(issueFinding(issue, check, read.has(issue.bucket) ? 'read' : 'memory'))
@@ -435,6 +453,9 @@ export function buildBrief(
     if (view.kind === 'survey') {
       coverage.set(view.providerId ?? view.provider, {
         provider: view.provider,
+        accountBlock: view.account?.pab ?? null,
+        capacity: view.capacity ?? null,
+        issueTotal: view.issueTotal ?? null,
         visible: view.coverage.visible,
         processed: view.coverage.processed,
         pending: view.coverage.pending ?? 0,
@@ -475,6 +496,7 @@ export function buildBrief(
     : null
 
   const known = knownNames(entries)
+  const exposure = knownExposure(entries)
   const streamed = live?.text?.trim() ? live.text.trim() : null
   const lastAnswer = answers.at(-1) ?? null
   const verdict = streamed
@@ -484,6 +506,7 @@ export function buildBrief(
         streaming: true,
         stale: false,
         ungrounded: [],
+        contradicted: [],
       }
     : lastAnswer
       ? {
@@ -492,6 +515,7 @@ export function buildBrief(
           streaming: false,
           stale: lastAnswer.index < lastQuestionIndex,
           ungrounded: ungrounded(lastAnswer.text, known),
+          contradicted: contradicted(lastAnswer.text, exposure),
         }
       : null
 
@@ -510,6 +534,9 @@ export function buildBrief(
     durationMs,
     lastReadAt,
     lastAt: live?.startedAt ? later(lastAt, live.startedAt) : lastAt,
+    issueTotal: [...coverage.values()].some((item) => item.issueTotal !== null)
+      ? [...coverage.values()].reduce((sum, item) => sum + (item.issueTotal ?? 0), 0)
+      : null,
   }
 }
 
