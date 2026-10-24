@@ -18,6 +18,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron } from 'playwright-core'
+import { objectsOf } from '../src/main/demo/fake-s3-core.mjs'
 import { startFakeS3 } from './fake-s3.mjs'
 
 const root = new URL('..', import.meta.url).pathname
@@ -111,6 +112,32 @@ const SCENARIOS = [
     expect: { firstCall: 'Recalled memory', lastTurnMaxCalls: 2 },
   },
   {
+    name: 'largest-prefix',
+    buckets: {
+      'events-lake': {
+        encryption: true,
+        blocked: true,
+        lifecycle: 'abort',
+        objects: { count: 4000, prefixes: ['raw/', 'curated/', 'tmp/', 'exports/'] },
+      },
+    },
+    turns: [{ ask: 'Which top-level prefix in events-lake takes the most space?' }],
+    expect: { usesTool: 'Ran a read-only query', topPrefix: 'events-lake', maxCalls: 4 },
+  },
+  {
+    name: 'stale-data',
+    buckets: {
+      'media-archive': {
+        encryption: true,
+        blocked: true,
+        lifecycle: 'abort',
+        objects: { count: 3000, prefixes: ['video/', 'audio/'] },
+      },
+    },
+    turns: [{ ask: 'How much data in media-archive has not changed for over two years?' }],
+    expect: { usesTool: 'Ran a read-only query', mentions: ['media-archive'], maxCalls: 4 },
+  },
+  {
     name: 'fix-text',
     buckets: { 'web-assets': { public: true, encryption: true } },
     turns: [{ ask: 'Make web-assets private. Give me the exact change.' }],
@@ -202,6 +229,17 @@ function score(scenario, brief, allChecks, lastTurnChecks, elapsedMs) {
   if (e.resolvedFold) check('brief shows what was fixed', brief.resolvedFold)
   if (e.fixShown) check('brief shows the fix', brief.fixShown)
   if (e.firstCall) check(`first call is ${e.firstCall}`, lastTurnChecks[0]?.verb === e.firstCall)
+  if (e.usesTool)
+    check(`uses ${e.usesTool}`, allChecks.some((c) => c.verb === e.usesTool && c.status === 'done'))
+  if (e.topPrefix) {
+    const sizes = new Map()
+    for (const o of objectsOf(structuredClone(scenario.buckets[e.topPrefix]))) {
+      const prefix = `${o.key.split('/')[0]}/`
+      sizes.set(prefix, (sizes.get(prefix) ?? 0) + o.size)
+    }
+    const top = [...sizes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+    check(`names the largest prefix ${top}`, brief.verdict.includes(top))
+  }
   if (e.maxCalls) check(`at most ${e.maxCalls} calls`, allChecks.length <= e.maxCalls, false)
   if (e.lastTurnMaxCalls)
     check(`last turn at most ${e.lastTurnMaxCalls} calls`, lastTurnChecks.length <= e.lastTurnMaxCalls, false)

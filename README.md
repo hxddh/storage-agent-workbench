@@ -9,11 +9,16 @@ writes, deletes or changes anything in storage.
 
 ## What it does
 
-- Surveys an account: reads every bucket's policy, ACL, public access block,
-  CORS, encryption and lifecycle once, remembers each bucket as it is read, and
-  decides seven deterministic rules — public exposure, wildcard principal,
-  CORS `*`, no default encryption, incomplete public access block, no
-  incomplete-multipart cleanup, noncurrent versions never expiring.
+- Surveys an account of up to 5,000 buckets: reads every bucket's policy, ACL,
+  public access block, TLS policy, ownership, CORS, logging, encryption and
+  lifecycle once, plus the account-wide public access block and — on AWS —
+  CloudWatch capacity with a monthly storage estimate. It remembers each bucket
+  as it is read and decides twelve deterministic rules, mapped to AWS Security
+  Hub controls where they match exactly.
+- Answers questions no fixed check can — the largest prefixes, data untouched
+  for two years, versions piling up — by writing a short read-only script that
+  runs in a sandbox with no network, files or process; the rows become the page
+  and the script stays as the evidence.
 - Evaluates bucket policies locally, so an S3-compatible store without AWS's
   policy-status API can still be proved public — or proved narrowed by a
   network or organization condition.
@@ -30,7 +35,10 @@ writes, deletes or changes anything in storage.
 - Shows each tool call where it happens, with real progress, and keeps it as
   the receipt behind every finding; every table can be copied as CSV or saved,
   the whole brief as Markdown. Every bucket the answer names is checked against
-  what the tools returned.
+  what the tools returned, and so is every claim that a bucket is or is not
+  public.
+- Starts without setup: demo storage answers in process, and models already
+  running on this machine (Ollama, LM Studio) are one click away.
 - Searches task titles, questions, findings and the current answer with ⌘K;
   failed or stopped runs offer Retry or Continue.
 
@@ -45,7 +53,7 @@ model and the accounts.
 ┌──────────────────────────── Electron ────────────────────────────┐
 │  renderer (React)                    main                        │
 │  tasks · brief · composer     ⇄ IPC ⇄  pi-durable harness        │
-│                                        ├ 10 read-only tools      │
+│                                        ├ 11 read-only tools      │
 │                                        ├ estate (rules/issues)   │
 │                                        └ pi-ai → model           │
 │                              one SQLite: pi_* + host tables      │
@@ -95,6 +103,9 @@ server-side before any call. Tool output reaches the model inside an
 stored, shown or sent. See [docs/security.md](docs/security.md).
 
 ## Deliberate omissions
+
+Twelve rules are not a compliance scanner: they are the checks a reading can
+decide without guessing intent.
 
 No message editing or version trees, no Evidence side pane, no report or trace
 export, no MCP bridge, no user skills, no standing instructions, no subagents,

@@ -52,6 +52,7 @@ export function namesInView(view: ToolView | null, target: string, names: Set<st
       names.add(view.endpoint)
       break
     case 'query': {
+      for (const bucket of view.buckets ?? []) names.add(bucket)
       // The first column, and any column that holds names, grounds what the verdict says.
       const named = view.rows.columns
         .map((column, index) =>

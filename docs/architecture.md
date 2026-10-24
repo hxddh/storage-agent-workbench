@@ -67,8 +67,10 @@ question.
 lifecycle, observability) and returns typed facts, each with its read status.
 `readBucket()` reads the bucket's region first and switches to that region's
 client when the account spans regions; every client follows region redirects.
-`s3/policy.ts` evaluates the policy document locally. `estate/rules.ts` decides
-the seven rules from facts by code; `survey` and `config` both apply the same
+`s3/policy.ts` evaluates the policy document locally, including whether it
+denies plain HTTP. On AWS, `s3/account.ts` reads the account-wide block and
+`s3/metrics.ts` reads CloudWatch capacity; both feed the same facts. `estate/rules.ts` decides
+the twelve rules (eleven per bucket, one per account) from facts by code; `survey` and `config` both apply the same
 decisions to the estate and attach the observations (`bucket, code, verdict`)
 to their view, which is how the brief knows a finding was proved fixed.
 
@@ -89,8 +91,13 @@ to their view, which is how the brief knows a finding was proved fixed.
 | `main/runtime/search.ts` | sidebar search, index rows |
 | `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details |
 | `main/s3/facts.ts` | one reading per bucket, exposure, rememberable posture |
-| `main/s3/policy.ts` | local policy evaluation |
-| `main/estate/rules.ts` | seven rules over facts, review findings, advisories |
+| `main/s3/policy.ts` | local policy evaluation, TLS enforcement |
+| `main/s3/account.ts` | account-wide public access block (STS, S3 Control) |
+| `main/s3/metrics.ts` | CloudWatch capacity, storage class mix, list-price estimate |
+| `main/tools/query.ts` | code mode: read-only primitives in a QuickJS sandbox, budgets |
+| `main/demo/*` | demo storage answered in process through an SDK request handler |
+| `main/local-models.ts` | Ollama and LM Studio detection on localhost |
+| `main/estate/rules.ts` | twelve rules over facts, Security Hub controls, review findings |
 | `main/estate/estate.ts` | applying decisions, gone buckets, Issue rows |
 | `main/estate/fixes.ts` | fix formats and impact preview |
 | `main/analysis/*` | import (bounded, redacted) and whitelisted aggregates |
@@ -99,7 +106,7 @@ to their view, which is how the brief knows a finding was proved fixed.
 | `renderer/Sidebar.tsx` | task list, ⌘K search, rename, inline delete |
 | `renderer/Brief.tsx` | the brief, checks, focus, copy/save |
 | `shared/brief.ts` | deterministic projection from entries to the brief, current state |
-| `shared/grounding.ts` | names a task's results show; ungrounded verdict names |
+| `shared/grounding.ts` | names and exposure a task's results show; ungrounded and contradicted verdicts |
 
 ## Storage layout
 

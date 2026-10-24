@@ -32,6 +32,16 @@
 8. **Status is structured.** A call's status is written by `agentTool()` into
    `details`; nothing parses result text, which a bucket name or an error body
    could forge.
+10. **Code mode.** `query` scripts run in a QuickJS VM in a worker thread with
+   no network, filesystem, process, timers or modules, and with model access
+   off. The six primitives check the account scope on every bucket, call only
+   List, Head and configuration reads, and count against budgets of 2,000
+   calls, 500,000 listed items, 120 seconds and 256 MiB. Returned rows are
+   redacted before the model or the window sees them.
+11. **Account id.** The account-wide block needs the account id (STS); it is
+   passed to S3 Control and dropped. Fixes use `<account-id>`.
+12. **Demo storage** answers in process through an SDK request handler: no
+   port is opened and nothing leaves the machine.
 9. **Dropped files.** The preload turns a dropped or pasted `File` into a path
    with `webUtils.getPathForFile`, which yields nothing for a file the page
    constructed; the main process accepts only absolute paths to regular files

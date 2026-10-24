@@ -23,8 +23,9 @@ npm run dist         # installers for the current OS
 ## Tests
 
 - **Vitest** covers what must not drift: local policy evaluation, exposure, the
-  seven rules and their tri-state evaluation, the Issue lifecycle (accepted,
-  gone, recurred), the v4 migration, generated fixes and impact, log
+  twelve rules and their tri-state evaluation, the account rule, TLS policy
+  detection, the Issue lifecycle (accepted, gone, recurred), the v5 migration,
+  code mode (sandbox, scope, budgets, timeout), demo storage, generated fixes and impact, log
   normalization and IP masking, CSV/Parquet import, the aggregate whitelist,
   the search index and its escaping, the entry → UI projection, the brief's
   current-state folding, verdict grounding, the run guardrails, redaction and
@@ -33,15 +34,26 @@ npm run dist         # installers for the current OS
   real tools over HTTP against `scripts/fake-s3.mjs` profiles — AWS, an
   S3-compatible store without policy status, a denied ACL, a condition-narrowed
   policy, CORS `*`, versioning — into a real SQLite estate.
+- **Compatibility** (`src/main/compat.test.ts`) runs survey against moto, an
+  independent AWS emulator, for exposure and the account-wide block. It runs
+  only with `STORAGE_AGENT_AWS_ENDPOINT`; the `compat` CI job starts
+  `moto_server`:
+
+  ```bash
+  pip install 'moto[server]==5.1.4' && moto_server -p 5055 &
+  STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 npx vitest run src/main/compat.test.ts
+  ```
 - **Playwright + Electron** (`scripts/e2e.mjs`) drives the real window against
   `scripts/fake-s3.mjs` (delayed, so a running call is observable) and
   `scripts/fake-model.mjs`: configure a model, add an account, ask a question,
   see the running row, open the evidence, accept a risk, apply a fix outside
   the app and verify it, get a grounding correction, ask for a fix, stop a run,
-  continue it, then search and open a hit.
+  continue it, search and open a hit, answer a question with code mode, walk
+  findings by keyboard, and open the demo account.
 - **Eval** (`scripts/eval.mjs`) runs scenarios against a real model in the real
   window and scores findings, grounding, honesty about blind reads, memory
-  first, verify-after-fix and call counts. `--smoke` checks the plumbing with
+  first, verify-after-fix, code mode for open questions (largest prefix),
+  re-surveying stale memory and call counts. `--smoke` checks the plumbing with
   the fake model (CI runs it); the `Eval` workflow runs it with a real model on
   demand.
 - **`scripts/shots.mjs`** captures the states that matter under

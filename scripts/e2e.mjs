@@ -170,6 +170,44 @@ try {
   await page.waitForSelector('.finding-row.flash', { timeout: 10_000 })
   console.log('SEARCH FINDING OK')
 
+  // Read-only code mode: the rows are the data section, the script is the evidence.
+  await page.getByRole('button', { name: 'New task' }).click()
+  await page.locator('.composer textarea').fill('What are the largest prefixes in demo-public?')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('text=holds everything', { timeout: 60_000 })
+  await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
+  await page.waitForSelector('.data-section table', { timeout: 10_000 })
+  const firstCell = await page.locator('.data-section table tbody td').first().innerText()
+  if (firstCell !== 'reports/') await fail(`query rows: ${firstCell}`)
+  await page.locator('.checks-head').click()
+  await page.locator('.check-line', { hasText: 'Ran a read-only query' }).click()
+  await page.waitForSelector('.check-body pre.code:has-text("tools.list")', { timeout: 5_000 })
+  if (await page.locator('.verdict code.ungrounded').count()) await fail('a grounded query verdict was marked')
+  console.log('QUERY OK')
+  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-query.png') })
+
+  // Keyboard: j moves between findings.
+  await page.locator('.sidebar-search input').fill('public')
+  await page.locator('.search-hit', { hasText: 'Which buckets are public?' }).first().click()
+  await page.waitForSelector('.finding-main', { timeout: 10_000 })
+  await page.locator('.finding-main').first().focus()
+  await page.keyboard.press('j')
+  const moved = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.finding-main')]
+    return rows.indexOf(document.activeElement) === 1
+  })
+  if (!moved) await fail('j did not move to the next finding')
+  console.log('KEYS OK')
+
+  // Demo storage: an in-process account, offered once.
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Try with demo storage' }).click()
+  await page.waitForSelector('.account-name:has-text("Demo storage")', { timeout: 5_000 })
+  if (await page.getByRole('button', { name: 'Try with demo storage' }).count())
+    await fail('the demo was offered twice')
+  console.log('DEMO OK')
+  await page.getByRole('button', { name: 'Close' }).click()
+
   const db = readFileSync(join(dataDir, 'storage-agent.db'))
   console.log('DB BYTES:', db.length)
 } catch (error) {

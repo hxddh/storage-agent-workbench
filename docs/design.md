@@ -67,6 +67,13 @@ are disclosures; their headers are 12px labels, not buttons that look like
 buttons. A backticked name the checks never showed gets a dashed `--warn`
 border and one quiet line under the verdict.
 
+A code-mode result shows its rows as a table or a bar chart, then the script
+and its output folded under them in monospace. Byte columns render as human
+sizes; the CSV keeps the raw numbers.
+
+Keyboard: `j`/`k` move between findings, `Enter` opens a finding's check, `a`
+accepts the focused risk. The page has one visually hidden `h1`.
+
 Dropping a file anywhere shows a dashed accent border on the composer and one
 centred line; nothing else on the page moves.
 

@@ -2,14 +2,15 @@
 
 ## Application tables (`storage-agent.db`)
 
-`user_version` is the schema version (head **4**); migrations are append-only in
+`user_version` is the schema version (head **5**); migrations are append-only in
 `main/db.ts`. Version 3 dropped the unused `watch` table and `task_meta.origin`.
 Version 4 added account auth kinds, bucket region and disappearance, Issue
-evidence and the accepted state.
+evidence and the accepted state. Version 5 added the account posture
+(`providers.account_json`, `account_at`).
 
 | Table | Columns (essential) |
 |---|---|
-| `providers` | `id`, `name`, `endpoint`, `region`, `force_path_style`, `auth` (`keys`/`profile`), `profile`, `access_key_id`, `secret_ref`, `session_ref`, `scope_json`, `created_at` |
+| `providers` | `id`, `name`, `endpoint`, `region`, `force_path_style`, `auth` (`keys`/`profile`), `profile`, `access_key_id`, `secret_ref`, `session_ref`, `scope_json`, `account_json`, `account_at`, `created_at` |
 | `buckets` | `provider_id`, `name`, `posture_json`, `posture_at`, `region`, `first_seen`, `last_seen`, `gone_at` |
 | `issues` | `id`, `provider_id`, `bucket`, `code`, `severity`, `status` (`open`/`resolved`/`accepted`), `detail`, `opened_at`, `resolved_at`, `accepted_at`, `last_seen_at`, `recurred` |
 | `issue_events` | `id`, `issue_id`, `conversation_id`, `kind`, `at`, `detail_json` |
@@ -27,8 +28,10 @@ Nothing else reads it.
 
 `secret_ref` and `session_ref` are vault references (ciphertext), never plaintext;
 a profile account stores an empty `secret_ref` and only the profile name.
-`posture_json` stores status enums and booleans only — no policy document, no
-account id, no ARN. `issues.detail` is a short phrase from the rule ("Off:
+`posture_json` stores status enums, booleans and capacity numbers (`size_bytes`,
+`objects`, `monthly_usd`, `growth_bytes`, `capacity_at`) — no policy document,
+no account id, no ARN. `account_json` holds the account block's status and
+switches only. The account rule's Issue uses the empty string as its bucket. `issues.detail` is a short phrase from the rule ("Off:
 RestrictPublicBuckets"), never a document. `issue_events.kind` is `opened`,
 `resolved`, `recurred`, `gone`, `accepted` or `reopened`.
 

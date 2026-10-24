@@ -176,6 +176,8 @@ export type ToolView =
       output: string | null
       calls: number
       listed: number
+      /** Buckets the script read. */
+      buckets?: string[]
     }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'

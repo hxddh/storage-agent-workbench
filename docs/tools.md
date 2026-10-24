@@ -1,6 +1,6 @@
 # Tools
 
-Ten tools, all read-only, all registered in one pi extension
+Eleven tools, all read-only, all registered in one pi extension
 (`runtime/agent.ts`). Every call goes through `agentTool()`, which applies the
 account scope, a timeout, an audit row, redaction and the untrusted-data
 envelope, and attaches a typed `view` and a `status` (`done`, `failed`,
@@ -8,7 +8,7 @@ envelope, and attaches a typed `view` and a `status` (`done`, `failed`,
 
 | Tool | Input | Model output | View |
 |---|---|---|---|
-| `survey` | `provider_id?`, `buckets?` (≤50), `limit?` (≤500) | buckets read, public, undecided rules per bucket, issue delta, what was not read | bucket table, open and accepted Issues, observations, coverage |
+| `survey` | `provider_id?`, `buckets?` (≤50), `limit?` (≤5000) | buckets read, public, account block, capacity and largest buckets, undecided rules, issue delta, what was not read | bucket table with capacity, open and accepted Issues (first 1,000 and the total), resolutions, account block, coverage |
 | `buckets` | `provider_id?` | names | name + created |
 | `objects` | `bucket`, `prefix?`, `kind?` (`keys`/`versions`/`uploads`), `limit?` (≤200) | count | key table |
 | `object` | `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`) | facts | fact list, bounded text preview |
@@ -18,16 +18,42 @@ envelope, and attaches a typed `view` and a `status` (`done`, `failed`,
 | `fix` | `bucket`, `code` (an open or accepted Issue) | CLI command, notes, impact | CLI/Terraform/API tabs, impact |
 | `analyze` | `file`, `kind?`, `metric?`, `group_by?`, `filters?`, `limit?` | aggregates only | table + bar chart |
 | `note` | `text`, `scope?`, `bucket?`, `provider_id?` | confirmation | note text |
+| `query` | `title`, `code`, `provider_id?` | the first 40 rows, call and listing counts, script output | table, bar chart, the script, buckets read |
+
+## Code mode (`query`)
+
+The script runs in a QuickJS sandbox (`@earendil-works/pi-codemode`): no
+`fetch`, `require`, `process`, timers or modules. Its only capabilities are six
+read-only primitives, all scoped to the account:
+
+| Primitive | Reads |
+|---|---|
+| `buckets()` | ListBuckets, filtered by scope |
+| `list({bucket, prefix?, delimiter?, kind?, token?, max?})` | one page of ListObjectsV2, ListObjectVersions or ListMultipartUploads |
+| `head({bucket, key})` | HeadObject; metadata keys, never values |
+| `config({bucket, aspect?})` | the same reading `config` uses, as statuses and proved rule codes |
+| `capacity({bucket})` | CloudWatch storage metrics (AWS only) |
+| `estate()` | remembered buckets and open Issues |
+
+Budget per script: 2,000 calls, 500,000 listed items, 120 seconds, 256 MiB.
+The returned rows (at most 500 on the page, 40 to the model) are redacted; the
+script and the buckets it read are kept in the view as evidence.
 
 ## Rules the tools enforce
 
 - A bucket outside `provider.scope.buckets` is refused before any request.
 - `survey` and `config` read through `s3/facts.ts` and decide rules from facts;
   a blind read decides nothing. `survey` remembers each bucket as soon as it is
-  read, stops starting buckets 20 s before its 300 s timeout, and reports the
-  rest as not read. Only a complete, unscoped listing marks a bucket gone.
+  read, reads the longest-unread first, stops starting buckets 20 s before its
+  300 s timeout, and reports the rest as not read; calling it again continues.
+  Only a complete, unscoped listing marks a bucket gone.
+- On AWS, `survey` reads the account-wide public access block (STS
+  GetCallerIdentity, then S3 Control) and CloudWatch capacity, one
+  GetMetricData call per region and 40 buckets. An S3-compatible endpoint has
+  neither, and the rules that need them stay undecided.
 - The harness blocks a storage read repeated with the same arguments in one run
-  (`estate`, `fix` and `note` may repeat) and every call after 24 rounds.
+  (`estate`, `fix`, `note` and `survey` may repeat) and every call after 24
+  rounds.
 - `object.preview` reads at most 8 KiB and only for text-like content types under
   1 MiB; the body of a large object is never downloaded.
 - `analyze` imports at most 2,000,000 rows and answers only whitelisted metrics
