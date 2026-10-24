@@ -187,7 +187,8 @@ const en = {
   accepted: 'accepted',
   accountWide: 'whole account',
   perMonth: '≈ {usd}/month',
-  queryReceipt: '{calls} read-only calls over {items} listed items',
+  queryReceipt: '{items} items read in {calls} read-only calls',
+  queryReceiptOne: '{items} items read in one read-only call',
   contradictedHint: 'The checks in this task proved the opposite.',
   contradictedNote:
     'This answer says the opposite of what a check proved about a bucket’s exposure.',
@@ -388,7 +389,8 @@ const zh: typeof en = {
   accepted: '已接受',
   accountWide: '整个账号',
   perMonth: '约 {usd}/月',
-  queryReceipt: '{calls} 次只读调用，共列出 {items} 项',
+  queryReceipt: '{calls} 次只读调用，共读取 {items} 项',
+  queryReceiptOne: '1 次只读调用，共读取 {items} 项',
   contradictedHint: '本任务的检查证明的是相反的结论。',
   contradictedNote: '答案关于某个存储桶是否公开的说法，与检查结果相反。',
   copyLink: '复制链接',
@@ -422,6 +424,7 @@ const TOOL_EN: Record<string, string> = {
   fix: 'Prepared fix',
   analyze: 'Analyzed file',
   note: 'Remembered',
+  query: 'Ran a read-only query',
 }
 
 const TOOL_ZH: Record<string, string> = {
@@ -435,6 +438,7 @@ const TOOL_ZH: Record<string, string> = {
   fix: '生成修复',
   analyze: '分析文件',
   note: '记住',
+  query: '运行只读查询',
 }
 
 export function toolLabel(name: string, lang: Lang): string {

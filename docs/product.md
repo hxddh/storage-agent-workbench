@@ -81,7 +81,8 @@ problems found".
 
 The verdict names buckets, keys and accounts in backticks. A name no tool in the
 task returned gets one correction request before the answer settles; if it is
-still there, the page marks it and says so.
+still there, the page marks it and says so. A verdict that calls a bucket public
+when the readings say it is not — or the reverse — is treated the same way.
 
 ## Search
 
@@ -93,18 +94,24 @@ handles Chinese substrings (FTS trigram needs three characters).
 
 ## Issues
 
-Seven deterministic rules open Issues from survey posture and configuration
-reviews:
+Twelve deterministic rules open Issues from survey posture and configuration
+reviews. Where a rule matches an AWS Security Hub control exactly, the finding
+names it:
 
-| Code | Severity | Rule |
-|---|---|---|
-| `public_exposure` | high | Bucket is publicly accessible |
-| `wildcard_principal` | medium | Policy allows a wildcard principal |
-| `cors_all_origins` | medium | CORS allows all origins |
-| `no_default_encryption` | medium | No default encryption |
-| `public_access_block_missing` | medium | Public access block not fully enabled (names the switches that are off) |
-| `no_abort_mpu` | medium | Incomplete multipart uploads are never cleaned up |
-| `noncurrent_never_expire` | medium | Noncurrent versions never expire |
+| Code | Severity | Control | Rule |
+|---|---|---|---|
+| `account_public_access_block_missing` | medium | S3.1 | Account-wide public access block not fully enabled (AWS) |
+| `public_exposure` | high | S3.2 | Bucket is publicly accessible |
+| `wildcard_principal` | medium | | Policy allows a wildcard principal |
+| `insecure_transport` | medium | S3.5 | Policy does not deny plain HTTP (AWS) |
+| `cors_all_origins` | medium | | CORS allows all origins |
+| `no_default_encryption` | medium | | No default encryption |
+| `public_access_block_missing` | medium | S3.8 | Public access block not fully enabled (names the switches that are off) |
+| `acls_enabled` | low | S3.12 | ACLs still decide access (ownership not enforced) |
+| `access_logging_off` | low | S3.9 | Server access logging is off |
+| `no_abort_mpu` | medium | | Incomplete multipart uploads are never cleaned up |
+| `noncurrent_never_expire` | medium | | Noncurrent versions never expire |
+| `large_standard_only` | low | | Over 500 GiB in Standard with no transition (AWS, CloudWatch) |
 
 Every rule is decided from one reading of the bucket (`s3/facts.ts`), so a
 survey and a review cannot disagree. A rule is decided only by a read that could
@@ -115,13 +122,33 @@ Exposure is proved by the provider's policy-status verdict when it has one, and
 otherwise by evaluating the policy document: an Allow to everyone that no
 source-IP, VPC, organization, account or principal condition narrows. A bucket's
 public access block cancels exposure (`RestrictPublicBuckets`,
-`IgnorePublicAcls`); the account-level block is not read, and the detail says
-so.
+`IgnorePublicAcls`), and so does the account-wide block on AWS. When the
+account block could not be read, the detail says so.
 
 An Issue is `open`, `resolved` or `accepted`. The model does not open, close,
 re-grade or accept one. The user may accept a risk; it stays accepted while
 readings still observe it and resolves when one proves it gone. A bucket that a
 complete listing no longer shows resolves its Issues as gone.
+
+## Questions no rule answers
+
+The largest prefixes, data untouched for two years, versions piling up in one
+prefix: the agent writes a short script against read-only primitives (list,
+head, config, capacity, estate) and runs it with `query`, in a sandbox with no
+network or files, inside a budget. The rows become a table or a bar chart on
+the page; the script is kept under the data as the evidence.
+
+## Capacity and cost
+
+On AWS a survey reads CloudWatch's daily storage metrics: size, objects, the
+mix of storage classes and 14-day growth. The monthly figure is a list-price
+estimate for us-east-1 and is labelled as one; it is not a bill.
+
+## Getting started
+
+Settings offers demo storage — six believable buckets answered in process — and
+lists models already running on this machine (Ollama, LM Studio). A task can be
+linked as `storage-agent://task/<id>`; the link opens it.
 
 ## Fixes
 

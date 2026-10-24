@@ -38,7 +38,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
-import { ChartView, FixView, TableView, ToolViewBody } from './Views'
+import { ChartView, FixView, humanBytes, TableView, ToolViewBody } from './Views'
 
 const ICONS: Record<ToolName, typeof Radar> = {
   survey: Radar,
@@ -253,7 +253,10 @@ function DataSection({ data, t }: { data: BriefData; t: Dict }) {
         {view.chart && <ChartView chart={view.chart} />}
         <TableView table={view.rows} name={view.title} empty={t.noRows} t={t} limit={10} />
         <p className="quiet">
-          {fill(t.queryReceipt, { calls: view.calls, items: view.listed.toLocaleString() })}
+          {fill(view.calls === 1 ? t.queryReceiptOne : t.queryReceipt, {
+            calls: view.calls,
+            items: view.listed.toLocaleString(),
+          })}
         </p>
       </>
     )
@@ -318,18 +321,6 @@ function DataSection({ data, t }: { data: BriefData; t: Dict }) {
   return null
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  const units = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB']
-  let value = bytes / 1024
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
-}
-
 function bucketCount(n: number, t: Dict): string {
   return `${n} ${n === 1 ? t.bucketsOne : t.bucketsShort}`
 }
@@ -342,7 +333,7 @@ function dataSummary(data: BriefData, t: Dict): string {
       bucketCount(view.buckets.rows.length, t),
       ...(view.capacity
         ? [
-            formatBytes(view.capacity.bytes),
+            humanBytes(view.capacity.bytes),
             fill(t.perMonth, { usd: `$${view.capacity.monthlyUsd.toLocaleString()}` }),
           ]
         : []),

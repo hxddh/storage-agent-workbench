@@ -13,6 +13,27 @@ import { useState } from 'react'
 import { type Dict, fill } from './i18n'
 import { copyText, safeFileName, toCsv } from './lib/export'
 
+/** Bytes as people read them; a CSV keeps the raw number. */
+export function humanBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
+}
+
+const BYTE_COLUMN = /^(bytes|size|size_bytes|total_bytes|sizebytes)$/i
+
+function display(column: string, cell: string | number | null): string {
+  if (cell === null || cell === '') return '—'
+  if (typeof cell === 'number' && BYTE_COLUMN.test(column)) return humanBytes(cell)
+  return String(cell)
+}
+
 export function TableView({
   table,
   name,
@@ -78,7 +99,7 @@ export function TableView({
             {shown.map((row, index) => (
               <tr key={index}>
                 {row.map((cell, cellIndex) => (
-                  <td key={cellIndex}>{cell === null || cell === '' ? '—' : String(cell)}</td>
+                  <td key={cellIndex}>{display(table.columns[cellIndex] ?? '', cell)}</td>
                 ))}
               </tr>
             ))}
@@ -353,7 +374,6 @@ export function ToolViewBody({
             <pre className="code">{view.output}</pre>
           </>
         )}
-        <TableView table={view.rows} name={view.title} empty={t.noRows} t={t} />
       </div>
     )
   }

@@ -26,6 +26,14 @@ function plan(body) {
     if (ask.includes('applied')) {
       return { tool: call('call_verify_1', 'survey', { buckets: ['demo-public'] }) }
     }
+    if (ask.includes('largest')) {
+      return {
+        tool: call('call_query_1', 'query', {
+          title: 'Largest prefixes in demo-public',
+          code: "const sizes = {}; let token = null; do { const page = await tools.list({ bucket: 'demo-public', token }); for (const o of page.items) { const p = o.key.split('/')[0] + '/'; sizes[p] = (sizes[p] ?? 0) + o.size } token = page.next } while (token); return Object.entries(sizes).map(([prefix, bytes]) => ({ prefix, bytes }))",
+        }),
+      }
+    }
     if (ask.includes('fix')) {
       return { tool: call('call_fix_1', 'fix', { bucket: 'demo-private', code: 'no_abort_mpu' }) }
     }
@@ -34,11 +42,14 @@ function plan(body) {
     }
     return { tool: call('call_survey_1', 'survey', {}) }
   }
-  if (toolMessages.length === 1 && ask.includes('public') && !ask.includes('fix') && !ask.includes('issue')) {
+  if (toolMessages.length === 1 && ask.includes('public') && !ask.includes('fix') && !ask.includes('issue') && !ask.includes('largest')) {
     return { tool: call('call_config_1', 'config', { bucket: 'demo-public', aspect: 'security' }) }
   }
   if (ask.includes('applied')) {
     return { text: '`demo-public` is no longer public; the fix took.' }
+  }
+  if (ask.includes('largest')) {
+    return { text: '`reports/` holds everything in `demo-public`.' }
   }
   if (ask.includes('fix')) {
     return { text: 'Add an abort rule for incomplete uploads on `demo-private`.' }

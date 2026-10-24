@@ -111,6 +111,8 @@ interface Context {
   signal: AbortSignal
   regional?: (region: string) => S3Client
   usage: { calls: number; listed: number }
+  /** Buckets the script read: they ground what the verdict says about it. */
+  touched: Set<string>
 }
 
 function primitives(ctx: Context): CodemodeTool[] {
@@ -128,6 +130,7 @@ function primitives(ctx: Context): CodemodeTool[] {
     const bucket = String((args as { bucket?: unknown })?.bucket ?? '')
     if (!bucket) throw new Error('bucket is required.')
     assertInScope(config, bucket)
+    ctx.touched.add(bucket)
     return bucket
   }
   const send = <T>(command: unknown) =>
@@ -443,6 +446,7 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
         throw new Error(`The script is longer than ${QUERY_BUDGET.codeChars} characters.`)
       const { config, client } = await run.provider(args.provider_id)
       const usage = { calls: 0, listed: 0 }
+      const touched = new Set<string>()
       const sandbox = new CodemodeSandbox({
         tools: primitives({
           deps,
@@ -451,6 +455,7 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
           signal: run.signal,
           regional: run.regional,
           usage,
+          touched,
         }),
         timeoutMs,
         memoryLimitBytes: QUERY_BUDGET.memoryBytes,
@@ -498,7 +503,7 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
       ]
       return {
         model: lines.join('\n'),
-        note: `${table.rows.length} row${table.rows.length === 1 ? '' : 's'} · ${usage.calls} calls`,
+        note: `${table.rows.length} row${table.rows.length === 1 ? '' : 's'} · ${usage.calls} call${usage.calls === 1 ? '' : 's'}`,
         view: {
           kind: 'query' as const,
           title: args.title.slice(0, 120),
@@ -508,6 +513,7 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
           output: output || null,
           calls: usage.calls,
           listed: usage.listed,
+          buckets: [...touched].slice(0, 200),
         },
       }
     },

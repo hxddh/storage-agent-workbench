@@ -78,6 +78,17 @@ export function awsProfiles(env: NodeJS.ProcessEnv = process.env): string[] {
  */
 const AWS_EMULATOR = process.env.STORAGE_AGENT_AWS_ENDPOINT || ''
 
+/**
+ * S3 Control puts the account id in the host name (`<account>.s3-control…`); an
+ * emulator on an address cannot answer that, so its endpoint is fixed.
+ */
+export function emulatorControl(
+  options: Record<string, unknown>,
+  endpoint = AWS_EMULATOR,
+): S3ControlClient {
+  return new S3ControlClient({ ...options, endpointProvider: () => ({ url: new URL(endpoint) }) })
+}
+
 export class Providers {
   private readonly clients = new Map<string, S3Client>()
   private readonly services = new Map<string, STSClient | S3ControlClient | CloudWatchClient>()
@@ -268,11 +279,10 @@ export class Providers {
   }
 
   control(provider: ProviderConfig): S3ControlClient {
-    return this.service(
-      provider,
-      'control',
-      provider.region || 'us-east-1',
-      (o) => new S3ControlClient({ ...o, ...(AWS_EMULATOR ? { forcePathStyle: true } : {}) }),
+    return this.service(provider, 'control', provider.region || 'us-east-1', (o) =>
+      AWS_EMULATOR && provider.endpoint === AWS_EMULATOR
+        ? emulatorControl(o)
+        : new S3ControlClient(o),
     )
   }
 

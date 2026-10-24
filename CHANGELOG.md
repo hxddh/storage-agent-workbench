@@ -1,5 +1,44 @@
 # Changelog
 
+## 19.0.0
+
+From a checker to an agent that can answer the question asked. Same product —
+one task, one brief — with eleven read-only tools.
+
+### Added
+
+- **Code mode.** `query` answers what no fixed check can — the largest prefixes,
+  data untouched for years, versions piling up — with a short script over six
+  read-only primitives in a QuickJS sandbox: no network, files, process or
+  timers; 2,000 calls, 500,000 listed items, 120 s and 256 MiB per script. The
+  rows become a table or a bar chart; the script stays as the evidence.
+- **The whole account.** The account-wide public access block is read (STS,
+  S3 Control) and cancels bucket exposure the way AWS does; the account id is
+  never stored. A survey reaches 5,000 buckets, reads the longest-unread first
+  and continues where it stopped.
+- **Twelve rules, mapped to Security Hub.** New: account block (S3.1), TLS not
+  enforced (S3.5), ACLs still deciding access (S3.12), access logging off
+  (S3.9), large Standard-only buckets. Findings name their control. Every new
+  rule has a CLI, Terraform and API fix.
+- **Capacity and cost.** CloudWatch storage metrics per bucket — size, objects,
+  class mix, 14-day growth — and a labelled list-price monthly estimate.
+- **Claim checks.** A verdict that calls a bucket public, or not public, against
+  the readings gets the same one correction as an ungrounded name, then a mark.
+- **Demo storage and local models.** Six believable buckets answered in process,
+  no port; Ollama and LM Studio models one click away.
+- **Native.** `storage-agent://task/<id>` links open a task; Copy link on the
+  brief; `j`/`k`/`a` walk findings by keyboard; Settings loads lazily.
+- **Compatibility CI.** A `compat` job runs survey against moto, an independent
+  AWS emulator, for exposure and the account block.
+
+### Changed
+
+- Schema head 5: `providers.account_json`, `account_at`. Bucket posture keeps
+  capacity numbers.
+- Survey shows the first 1,000 Issues and the total; the brief no longer
+  replaces what it knew from an incomplete list.
+- ACL and logging advisories became rules.
+
 ## 18.0.0
 
 Proven, measured, native. A rebuild of every layer under the same product: one
