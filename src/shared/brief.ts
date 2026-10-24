@@ -2,9 +2,16 @@
  * One task, one brief.
  *
  * The window does not replay a chat: it projects the task's tool results into a
- * page — a verdict, the findings those tools proved, one data section, the fix,
- * and the checks that produced them. The model writes the verdict; everything
- * else here is deterministic, so the page cannot contradict the tools.
+ * page — a verdict, the findings those results prove now, one data section, the
+ * fixes, and the checks that produced them. The model writes the verdict;
+ * everything else here is deterministic, so the page cannot contradict the
+ * tools.
+ *
+ * Findings are current state, not history. Results are folded in order: a
+ * survey replaces what the task knew about its account, a review replaces what
+ * it knew about the rules it read, and a reading that proves a rule clean
+ * removes its finding. The estate's current status (an Issue the user has since
+ * accepted or another task resolved) is laid over the top.
  *
  * Shared by the renderer and the main process (search indexes the same facts).
  */
@@ -12,20 +19,30 @@ import type {
   AttachmentRef,
   ConfigFinding,
   IssueRow,
+  NoticeCode,
+  Observation,
   Severity,
   ToolName,
+  ToolStatus,
   ToolView,
   UiEntry,
 } from './contract'
+import { knownNames, ungrounded } from './grounding'
 
 export interface BriefFinding {
   key: string
-  group: string
   provider: string | null
   bucket: string
+  code: string
   title: string
   detail: string | null
   severity: Severity
+  /** The estate Issue behind the finding; null for a review advisory. */
+  issueId: string | null
+  status: 'open' | 'accepted'
+  /** `memory`: last read before this task, by `estate` or for a bucket this survey did not read. */
+  source: 'read' | 'memory'
+  recurred: number
   sourceId: string
   sourceName: ToolName
   at: string
@@ -38,6 +55,7 @@ export interface BriefData {
   view: ToolView
   sourceId: string
   at: string
+  memory: boolean
 }
 
 export interface BriefFix {
@@ -51,7 +69,7 @@ export interface BriefCheck {
   id: string
   name: ToolName
   target: string
-  status: 'running' | 'done' | 'failed' | 'refused' | 'stopped'
+  status: ToolStatus
   note: string | null
   ms: number | null
   at: string
@@ -62,10 +80,19 @@ export interface BriefCoverage {
   provider: string
   visible: number
   processed: number
+  pending: number
   denied: string[]
   unknown: string[]
+  gone: string[]
   truncated: boolean
   at: string
+}
+
+export interface BriefBlind {
+  key: string
+  bucket: string
+  title: string
+  sourceId: string
 }
 
 export interface BriefQuestion {
@@ -77,38 +104,69 @@ export interface BriefQuestion {
 
 export interface BriefNotice {
   id: string
+  code?: NoticeCode
   text: string
   tone: 'info' | 'warn' | 'error'
   action?: 'retry' | 'continue'
 }
 
 export interface Brief {
-  verdict: { text: string; at: string; streaming: boolean } | null
+  verdict: {
+    text: string
+    at: string
+    streaming: boolean
+    /** The verdict answers an earlier question than the latest one. */
+    stale: boolean
+    /** Backticked names no tool result in the task shows. */
+    ungrounded: string[]
+  } | null
   findings: BriefFinding[]
+  accepted: BriefFinding[]
+  /** Findings this task saw open and then proved fixed. */
+  resolved: BriefFinding[]
+  blind: BriefBlind[]
   data: BriefData | null
-  fix: BriefFix | null
+  fixes: BriefFix[]
   checks: BriefCheck[]
-  coverage: BriefCoverage | null
+  coverage: BriefCoverage[]
   questions: BriefQuestion[]
   notices: BriefNotice[]
   /** Sum of the current turn's tool durations; null while it has none. */
   durationMs: number | null
-  /** The freshest successful read in the task, for the "checked …" line. */
+  /** The freshest successful storage read in the task, for the "checked …" line. */
   lastReadAt: string | null
   /** Newest entry in the task, for ordering and the live line. */
   lastAt: string | null
 }
 
+export interface LiveInput {
+  tools: {
+    callId: string
+    name: ToolName
+    target: string
+    note: string | null
+    startedAt: string
+  }[]
+  text: string | null
+  startedAt: string
+}
+
 const SEVERITY_ORDER: Record<Severity, number> = { high: 0, medium: 1, low: 2 }
-const DATA_KINDS = new Set<ToolView['kind']>(['survey', 'buckets', 'objects', 'object', 'analyze'])
-const READ_KINDS = new Set<ToolName>([
+const DATA_KINDS = new Set<ToolView['kind']>([
+  'survey',
+  'buckets',
+  'objects',
+  'object',
+  'analyze',
+  'estate',
+])
+const STORAGE_READS = new Set<ToolName>([
   'survey',
   'buckets',
   'objects',
   'object',
   'config',
   'probe',
-  'estate',
 ])
 
 function later(a: string | null, b: string): string {
@@ -116,69 +174,177 @@ function later(a: string | null, b: string): string {
   return Date.parse(b) > Date.parse(a) ? b : a
 }
 
-function issueFinding(issue: IssueRow, check: BriefCheck): BriefFinding {
+/** Findings keyed by account, bucket and rule; an unknown account matches any. */
+class FindingSet {
+  private readonly map = new Map<string, BriefFinding>()
+  readonly resolved = new Map<string, BriefFinding>()
+
+  private static key(provider: string | null, bucket: string, code: string): string {
+    return `${provider ?? '*'}|${bucket}|${code}`
+  }
+
+  private find(provider: string | null, bucket: string, code: string): string | undefined {
+    const exact = FindingSet.key(provider, bucket, code)
+    if (this.map.has(exact)) return exact
+    const suffix = `|${bucket}|${code}`
+    for (const key of this.map.keys()) {
+      if (key.endsWith(suffix) && (provider === null || key.startsWith('*|'))) return key
+    }
+    return undefined
+  }
+
+  set(finding: BriefFinding): void {
+    const existing = this.find(finding.provider, finding.bucket, finding.code)
+    const previous = existing ? this.map.get(existing) : undefined
+    if (existing) this.map.delete(existing)
+    this.resolved.delete(finding.key)
+    this.map.set(
+      FindingSet.key(finding.provider ?? previous?.provider ?? null, finding.bucket, finding.code),
+      {
+        ...finding,
+        provider: finding.provider ?? previous?.provider ?? null,
+        issueId: finding.issueId ?? previous?.issueId ?? null,
+        detail: finding.detail ?? previous?.detail ?? null,
+      },
+    )
+  }
+
+  clear(provider: string | null, bucket: string, code: string): void {
+    const existing = this.find(provider, bucket, code)
+    if (!existing) return
+    const finding = this.map.get(existing)!
+    this.map.delete(existing)
+    if (finding.issueId) this.resolved.set(finding.key, finding)
+  }
+
+  /** Drop issue findings of an account (optionally one bucket) that a fresh list leaves out. */
+  replaceIssues(provider: string | null, bucket: string | null, keep: Set<string>): void {
+    for (const [key, finding] of [...this.map]) {
+      if (!finding.issueId) continue
+      if (provider && finding.provider && finding.provider !== provider) continue
+      if (bucket && finding.bucket !== bucket) continue
+      if (keep.has(finding.issueId)) continue
+      this.map.delete(key)
+      if (finding.source === 'read') this.resolved.set(finding.key, finding)
+    }
+  }
+
+  values(): BriefFinding[] {
+    return [...this.map.values()]
+  }
+
+  overlay(status: Record<string, IssueRow['status']>): void {
+    for (const [key, finding] of [...this.map]) {
+      const now = finding.issueId ? status[finding.issueId] : undefined
+      if (!now) continue
+      if (now === 'resolved') {
+        this.map.delete(key)
+        this.resolved.set(finding.key, finding)
+      } else if (now !== finding.status) this.map.set(key, { ...finding, status: now })
+    }
+  }
+}
+
+function issueFinding(issue: IssueRow, check: BriefCheck, source: 'read' | 'memory'): BriefFinding {
   return {
     key: `issue:${issue.id}`,
-    group: `${issue.bucket}:${issue.code}`,
-    provider: check.name === 'survey' || check.name === 'estate' ? check.target || null : null,
+    provider: issue.provider || null,
     bucket: issue.bucket,
+    code: issue.code,
     title: issue.title,
-    detail: issue.recurred > 0 ? `seen ${issue.recurred + 1}×` : null,
+    detail: issue.detail ?? null,
     severity: issue.severity,
+    issueId: issue.id,
+    status: issue.status === 'accepted' ? 'accepted' : 'open',
+    source,
+    recurred: issue.recurred,
     sourceId: check.id,
     sourceName: check.name,
     at: check.at,
   }
 }
 
-function configFinding(finding: ConfigFinding, bucket: string, check: BriefCheck): BriefFinding {
+function reviewFinding(
+  finding: ConfigFinding,
+  bucket: string,
+  provider: string | null,
+  check: BriefCheck,
+): BriefFinding {
+  const code = finding.code ?? finding.title.toLowerCase()
   return {
-    key: `config:${bucket}:${finding.code ?? finding.title}`,
-    group: `${bucket}:${finding.code ?? finding.title.toLowerCase()}`,
-    provider: null,
+    key: `config:${bucket}:${code}`,
+    provider,
     bucket,
+    code,
     title: finding.title,
     detail: finding.detail || null,
-    severity: finding.severity === 'ok' ? 'low' : finding.severity,
+    severity: finding.severity === 'ok' || finding.severity === 'blind' ? 'low' : finding.severity,
+    issueId: null,
+    status: 'open',
+    source: 'read',
+    recurred: 0,
     sourceId: check.id,
     sourceName: check.name,
     at: check.at,
   }
 }
 
-function findingsOf(check: BriefCheck): BriefFinding[] {
-  const view = check.view
-  if (!view) return []
-  if (view.kind === 'survey') return view.issues.map((issue) => issueFinding(issue, check))
-  if (view.kind === 'estate') return view.issues.map((issue) => issueFinding(issue, check))
-  if (view.kind === 'config') {
-    return view.findings
-      .filter((finding) => finding.severity !== 'ok')
-      .map((finding) => configFinding(finding, view.bucket, check))
+function applyObservations(set: FindingSet, observations: Observation[] | undefined): void {
+  for (const observation of observations ?? []) {
+    if (!observation.verdict) set.clear(observation.provider, observation.bucket, observation.code)
   }
-  return []
+}
+
+function fold(set: FindingSet, blind: Map<string, BriefBlind>, check: BriefCheck): void {
+  const view = check.view
+  if (!view) return
+  if (view.kind === 'survey') {
+    const provider = view.providerId ?? view.issues[0]?.provider ?? null
+    applyObservations(set, view.observations)
+    // The survey's Issue list is the account's whole open list at that moment.
+    set.replaceIssues(provider, null, new Set(view.issues.map((issue) => issue.id)))
+    const read = new Set(view.buckets.rows.map((row) => String(row[0])))
+    for (const issue of view.issues)
+      set.set(issueFinding(issue, check, read.has(issue.bucket) ? 'read' : 'memory'))
+    for (const key of [...blind.keys()]) if (read.has(blind.get(key)!.bucket)) blind.delete(key)
+    return
+  }
+  if (view.kind === 'estate') {
+    const provider = view.providerId ?? null
+    set.replaceIssues(provider, view.bucket ?? null, new Set(view.issues.map((issue) => issue.id)))
+    for (const issue of view.issues) set.set(issueFinding(issue, check, 'memory'))
+    return
+  }
+  if (view.kind === 'config') {
+    const provider = view.providerId ?? null
+    applyObservations(set, view.observations)
+    for (const key of [...blind.keys()])
+      if (blind.get(key)!.bucket === view.bucket) blind.delete(key)
+    for (const finding of view.findings) {
+      if (finding.severity === 'ok') continue
+      if (finding.severity === 'blind') {
+        const key = `${view.bucket}:${finding.code ?? finding.title}`
+        blind.set(key, { key, bucket: view.bucket, title: finding.title, sourceId: check.id })
+        continue
+      }
+      set.set(reviewFinding(finding, view.bucket, provider, check))
+    }
+  }
 }
 
 export function buildBrief(
   entries: readonly UiEntry[],
-  live?: {
-    tools: {
-      callId: string
-      name: ToolName
-      target: string
-      note: string | null
-      startedAt: string
-    }[]
-    text: string | null
-    startedAt: string
-  } | null,
+  live?: LiveInput | null,
+  issueStatus: Record<string, IssueRow['status']> = {},
 ): Brief {
   const questions: BriefQuestion[] = []
   const checks: BriefCheck[] = []
   const notices: BriefNotice[] = []
-  const answers: { text: string; at: string }[] = []
+  const answers: { text: string; at: string; index: number }[] = []
   let lastAt: string | null = null
-  let lastUserIndex = -1
+  let boundary = -1
+  let lastQuestionIndex = -1
+  const pending: { index: number; notice: BriefNotice }[] = []
 
   entries.forEach((entry, index) => {
     if (entry.at) lastAt = later(lastAt, entry.at)
@@ -189,9 +355,12 @@ export function buildBrief(
         at: entry.at,
         attachments: entry.attachments,
       })
-      lastUserIndex = index
+      boundary = index
+      lastQuestionIndex = index
+    } else if (entry.kind === 'resume') {
+      boundary = index
     } else if (entry.kind === 'answer') {
-      if (entry.text.trim()) answers.push({ text: entry.text.trim(), at: entry.at })
+      if (entry.text.trim()) answers.push({ text: entry.text.trim(), at: entry.at, index })
     } else if (entry.kind === 'tool') {
       checks.push({
         id: entry.id,
@@ -204,16 +373,20 @@ export function buildBrief(
         view: entry.view,
       })
     } else if (entry.kind === 'notice') {
-      if (index > lastUserIndex) {
-        notices.push({
+      pending.push({
+        index,
+        notice: {
           id: entry.id,
+          ...(entry.code ? { code: entry.code } : {}),
           text: entry.text,
           tone: entry.tone,
           ...(entry.action ? { action: entry.action } : {}),
-        })
-      }
+        },
+      })
     }
   })
+  // Only notices after the last question or resume still apply.
+  for (const item of pending) if (item.index > boundary) notices.push(item.notice)
 
   for (const tool of live?.tools ?? []) {
     checks.push({
@@ -228,63 +401,64 @@ export function buildBrief(
     })
   }
 
-  // An Issue and the review finding that produced it are the same problem. Group
-  // by rule code and bucket, keep the Issue (it carries the rule's severity and
-  // recurrence), and borrow the review's detail when the Issue has none.
-  const groups = new Map<string, BriefFinding>()
-  for (const check of checks) {
-    for (const finding of findingsOf(check)) {
-      const existing = groups.get(finding.group)
-      if (!existing) {
-        groups.set(finding.group, finding)
-        continue
-      }
-      if (finding.key.startsWith('issue:') && !existing.key.startsWith('issue:')) {
-        groups.set(finding.group, { ...finding, detail: finding.detail ?? existing.detail })
-        continue
-      }
-      if (!existing.detail && finding.detail) existing.detail = finding.detail
-    }
-  }
-  const findings = [...groups.values()]
-  findings.sort(
-    (a, b) =>
-      SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
-      Date.parse(b.at) - Date.parse(a.at),
-  )
-
+  const set = new FindingSet()
+  const blind = new Map<string, BriefBlind>()
+  const fixes = new Map<string, BriefFix>()
+  const coverage = new Map<string, BriefCoverage>()
   let data: BriefData | null = null
-  let fix: BriefFix | null = null
-  let coverage: BriefCoverage | null = null
   let lastReadAt: string | null = null
   for (const check of checks) {
     if (check.status !== 'done' || !check.view) continue
-    if (READ_KINDS.has(check.name) && check.at) lastReadAt = later(lastReadAt, check.at)
-    if (DATA_KINDS.has(check.view.kind)) {
+    fold(set, blind, check)
+    if (STORAGE_READS.has(check.name) && check.at) lastReadAt = later(lastReadAt, check.at)
+    const view = check.view
+    if (DATA_KINDS.has(view.kind) && !(view.kind === 'estate' && !view.buckets?.rows.length)) {
       data = {
         key: check.id,
-        kind: check.view.kind,
+        kind: view.kind,
         title: check.target,
-        view: check.view,
+        view,
         sourceId: check.id,
         at: check.at,
+        memory: view.kind === 'estate',
       }
     }
-    if (check.view.kind === 'fix') {
-      fix = { key: check.id, sourceId: check.id, view: check.view, at: check.at }
+    if (view.kind === 'fix') {
+      const key = `${view.bucket}|${view.code}`
+      fixes.delete(key)
+      fixes.set(key, { key, sourceId: check.id, view, at: check.at })
     }
-    if (check.view.kind === 'survey') {
-      coverage = {
-        provider: check.view.provider,
-        visible: check.view.coverage.visible,
-        processed: check.view.coverage.processed,
-        denied: check.view.coverage.denied,
-        unknown: check.view.coverage.unknown,
-        truncated: check.view.coverage.truncated,
+    if (view.kind === 'survey') {
+      coverage.set(view.providerId ?? view.provider, {
+        provider: view.provider,
+        visible: view.coverage.visible,
+        processed: view.coverage.processed,
+        pending: view.coverage.pending ?? 0,
+        denied: view.coverage.denied,
+        unknown: view.coverage.unknown,
+        gone: view.coverage.gone ?? [],
+        truncated: view.coverage.truncated,
         at: check.at,
-      }
+      })
     }
   }
+  set.overlay(issueStatus)
+
+  const all = set.values()
+  const order = (a: BriefFinding, b: BriefFinding) =>
+    SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
+    (a.source === b.source ? 0 : a.source === 'read' ? -1 : 1) ||
+    Date.parse(b.at) - Date.parse(a.at) ||
+    a.bucket.localeCompare(b.bucket)
+  const findings = all.filter((finding) => finding.status === 'open').sort(order)
+  const accepted = all.filter((finding) => finding.status === 'accepted').sort(order)
+
+  // A fix stops being shown once the task proved its problem fixed.
+  const fixed = new Set(
+    [...set.resolved.values()].map((finding) => `${finding.bucket}|${finding.code}`),
+  )
+  for (const finding of all) fixed.delete(`${finding.bucket}|${finding.code}`)
+  const shownFixes = [...fixes.values()].filter((fix) => !fixed.has(fix.key)).reverse()
 
   const current = checks.filter((check) => {
     const question = questions.at(-1)
@@ -296,21 +470,37 @@ export function buildBrief(
     ? measured.reduce((total, check) => total + (check.ms ?? 0), 0)
     : null
 
+  const known = knownNames(entries)
   const streamed = live?.text?.trim() ? live.text.trim() : null
   const lastAnswer = answers.at(-1) ?? null
   const verdict = streamed
-    ? { text: streamed, at: live?.startedAt ?? new Date().toISOString(), streaming: true }
+    ? {
+        text: streamed,
+        at: live?.startedAt ?? new Date().toISOString(),
+        streaming: true,
+        stale: false,
+        ungrounded: [],
+      }
     : lastAnswer
-      ? { text: lastAnswer.text, at: lastAnswer.at, streaming: false }
+      ? {
+          text: lastAnswer.text,
+          at: lastAnswer.at,
+          streaming: false,
+          stale: lastAnswer.index < lastQuestionIndex,
+          ungrounded: ungrounded(lastAnswer.text, known),
+        }
       : null
 
   return {
     verdict,
     findings,
+    accepted,
+    resolved: [...set.resolved.values()],
+    blind: [...blind.values()],
     data,
-    fix,
+    fixes: shownFixes,
     checks,
-    coverage,
+    coverage: [...coverage.values()],
     questions,
     notices,
     durationMs,
@@ -324,13 +514,11 @@ export function briefSearchText(
   brief: Brief,
 ): { entryId: string; kind: string; text: string; at: string }[] {
   const docs: { entryId: string; kind: string; text: string; at: string }[] = []
-  for (const finding of brief.findings) {
+  for (const finding of [...brief.findings, ...brief.accepted]) {
     docs.push({
       entryId: `f:${finding.key}`,
       kind: 'finding',
-      text: [finding.provider, finding.bucket, finding.title, finding.detail]
-        .filter(Boolean)
-        .join(' · '),
+      text: [finding.bucket, finding.title, finding.detail].filter(Boolean).join(' · '),
       at: finding.at,
     })
   }

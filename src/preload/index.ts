@@ -1,5 +1,5 @@
-import type { AgentApi, AppEvent } from '@shared/contract'
-import { contextBridge, ipcRenderer } from 'electron'
+import type { AgentApi, AppCommand, AppEvent } from '@shared/contract'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 const api: AgentApi = {
   bootstrap: () => ipcRenderer.invoke('agent:bootstrap'),
@@ -14,8 +14,19 @@ const api: AgentApi = {
   retryTask: (taskId) => ipcRenderer.invoke('agent:retryTask', taskId),
   continueTask: (taskId) => ipcRenderer.invoke('agent:continueTask', taskId),
   search: (query) => ipcRenderer.invoke('agent:search', query),
+  notes: () => ipcRenderer.invoke('agent:notes'),
+  deleteNote: (id) => ipcRenderer.invoke('agent:deleteNote', id),
   saveText: (input) => ipcRenderer.invoke('agent:saveText', input),
   pickFiles: () => ipcRenderer.invoke('agent:pickFiles'),
+  // Only a real dropped or pasted file has a path; a File the page constructs has none.
+  stageFiles: (files) =>
+    ipcRenderer.invoke(
+      'agent:stagePaths',
+      files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
+    ),
+  acceptIssue: (id, accepted) => ipcRenderer.invoke('agent:acceptIssue', id, accepted),
+  awsProfiles: () => ipcRenderer.invoke('agent:awsProfiles'),
+  installUpdate: () => ipcRenderer.invoke('agent:installUpdate'),
   saveAccount: (input) => ipcRenderer.invoke('agent:saveAccount', input),
   deleteAccount: (id) => ipcRenderer.invoke('agent:deleteAccount', id),
   testAccount: (id) => ipcRenderer.invoke('agent:testAccount', id),
@@ -23,8 +34,6 @@ const api: AgentApi = {
   clearModel: () => ipcRenderer.invoke('agent:clearModel'),
   testModel: () => ipcRenderer.invoke('agent:testModel'),
   saveSettings: (patch) => ipcRenderer.invoke('agent:saveSettings', patch),
-  notes: () => ipcRenderer.invoke('agent:notes'),
-  deleteNote: (id) => ipcRenderer.invoke('agent:deleteNote', id),
   openExternal: (url) => ipcRenderer.invoke('agent:openExternal', url),
   onEvent: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, value: AppEvent) => listener(value)
@@ -32,8 +41,7 @@ const api: AgentApi = {
     return () => ipcRenderer.removeListener('agent:event', handler)
   },
   onCommand: (listener) => {
-    const handler = (_event: Electron.IpcRendererEvent, command: 'settings' | 'new-task') =>
-      listener(command)
+    const handler = (_event: Electron.IpcRendererEvent, command: AppCommand) => listener(command)
     ipcRenderer.on('agent:command', handler)
     return () => ipcRenderer.removeListener('agent:command', handler)
   },

@@ -141,7 +141,9 @@ export function Sidebar({
   onSettings,
   onRename,
   onDelete,
+  searchSignal = 0,
 }: {
+  searchSignal?: number
   tasks: TaskSummary[]
   activeId: string | null
   lang: 'en' | 'zh'
@@ -169,6 +171,13 @@ export function Sidebar({
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  // ⌘K from the application menu.
+  useEffect(() => {
+    if (!searchSignal) return
+    input.current?.focus()
+    input.current?.select()
+  }, [searchSignal])
 
   useEffect(() => {
     const value = query.trim()

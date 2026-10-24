@@ -5,7 +5,19 @@ import { redact } from '../security/redact'
 import { agentTool, assertInScope, bucketParam, providerParam, type ToolDeps, Type } from './policy'
 
 function dim(value: unknown): string {
-  return value === 'available' ? 'on' : value === 'not_configured' ? 'off' : '?'
+  return value === 'available'
+    ? 'on'
+    : value === 'not_configured'
+      ? 'off'
+      : value === 'partial'
+        ? 'partial'
+        : '?'
+}
+
+function age(iso: string | null): string {
+  if (!iso) return 'never'
+  const days = Math.floor((Date.now() - Date.parse(iso)) / 86_400_000)
+  return days <= 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`
 }
 
 export function estateTools(deps: ToolDeps) {
@@ -29,7 +41,7 @@ export function estateTools(deps: ToolDeps) {
         const lang = deps.lang()
         const buckets = await deps.db.listBuckets(config.id)
         const table: Table = {
-          columns: ['Bucket', 'Public', 'Encryption', 'Lifecycle', 'Checked'],
+          columns: ['Bucket', 'Public', 'Encryption', 'Access block', 'Lifecycle', 'Checked'],
           rows: buckets.map((row) => {
             let posture: Record<string, unknown> = {}
             try {
@@ -47,6 +59,7 @@ export function estateTools(deps: ToolDeps) {
                   ? 'no'
                   : 'unknown',
               dim(posture.encryption_status),
+              dim(posture.public_access_block_status),
               dim(posture.lifecycle_status),
               row.posture_at ? row.posture_at.slice(0, 10) : '—',
             ]
@@ -63,11 +76,27 @@ export function estateTools(deps: ToolDeps) {
                 ref: args.bucket ? `${config.id}/${args.bucket}` : undefined,
                 limit: 20,
               })
+        const newest = buckets.reduce<string | null>(
+          (at, row) => (row.posture_at && (!at || row.posture_at > at) ? row.posture_at : at),
+          null,
+        )
+        const oldest = buckets.reduce<string | null>(
+          (at, row) => (row.posture_at && (!at || row.posture_at < at) ? row.posture_at : at),
+          null,
+        )
+        const open = issues.filter((issue) => issue.status === 'open')
+        const accepted = issues.length - open.length
         const lines = [
-          `${config.name}: ${buckets.length} bucket(s) recorded, ${issues.length} open Issue(s).`,
-          ...issues
+          `${config.name}: ${buckets.length} bucket(s) remembered, read ${age(oldest)}${
+            oldest !== newest ? ` to ${age(newest)}` : ''
+          }. ${open.length} open Issue(s)${accepted ? `, ${accepted} accepted by the user` : ''}.`,
+          'This is memory, not a fresh read: survey when the question is about the current state.',
+          ...open
             .slice(0, 8)
-            .map((issue) => `[${issue.severity}] ${issue.title} — ${issue.bucket}`),
+            .map(
+              (issue) =>
+                `[${issue.severity}] ${issue.title} — ${issue.bucket}${issue.detail ? ` (${issue.detail})` : ''}`,
+            ),
           ...notes.slice(0, 6).map((note) => `note: ${note.text.slice(0, 160)}`),
         ]
         return {
@@ -76,6 +105,9 @@ export function estateTools(deps: ToolDeps) {
           note: `${buckets.length} bucket${buckets.length === 1 ? '' : 's'} · ${issues.length} issue${issues.length === 1 ? '' : 's'}`,
           view: {
             kind: 'estate' as const,
+            providerId: config.id,
+            bucket: args.bucket ?? null,
+            readAt: oldest,
             buckets: table,
             issues,
             notes: notes.map((note) => ({
@@ -108,8 +140,10 @@ export function estateTools(deps: ToolDeps) {
         const config = await deps.providers.resolve(args.provider_id)
         assertInScope(config, args.bucket)
         const issue = await deps.db.findIssue(config.id, args.bucket, args.code)
-        if (!issue)
-          throw new Error(`No recorded Issue '${args.code}' on ${args.bucket}. Survey first.`)
+        if (!issue || issue.status === 'resolved')
+          throw new Error(
+            `No open Issue '${args.code}' on ${args.bucket}. Survey or review it first.`,
+          )
         const rule = BY_CODE.get(args.code)
         if (!rule) throw new Error(`Unknown Issue code: ${args.code}`)
         const fix = generateFix(rule, args.bucket, config.endpoint || null, config.region || null)
@@ -131,6 +165,7 @@ export function estateTools(deps: ToolDeps) {
           note: impact.verdict,
           view: {
             kind: 'fix' as const,
+            providerId: config.id,
             bucket: args.bucket,
             code: args.code,
             formats: fix.formats,

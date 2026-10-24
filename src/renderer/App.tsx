@@ -1,6 +1,6 @@
 import type { AppEvent, Bootstrap, TaskSummary, TaskView } from '@shared/contract'
 import { Menu } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Brief } from './Brief'
 import { Composer } from './Composer'
 import { dict } from './i18n'
@@ -23,6 +23,8 @@ export function App() {
   const [focusId, setFocusId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [fatal, setFatal] = useState(false)
+  const [searchSignal, setSearchSignal] = useState(0)
+  const restored = useRef(false)
 
   const lang = boot?.settings.language ?? 'en'
   const t = useMemo(() => dict(lang), [lang])
@@ -60,6 +62,22 @@ export function App() {
         setView((current) =>
           current && current.task.id === event.taskId ? { ...current, live: event.live } : current,
         )
+      } else if (event.type === 'usage') {
+        setView((current) =>
+          current && current.task.id === event.taskId
+            ? { ...current, usage: event.usage }
+            : current,
+        )
+      } else if (event.type === 'issues') {
+        setView((current) =>
+          current
+            ? { ...current, issueStatus: { ...current.issueStatus, ...event.statuses } }
+            : current,
+        )
+      } else if (event.type === 'update') {
+        setBoot((current) => (current ? { ...current, update: event.update } : current))
+      } else if (event.type === 'open') {
+        void openTaskRef.current(event.taskId)
       }
     })
   }, [])
@@ -83,11 +101,22 @@ export function App() {
     setSidebarOpen(false)
   }, [])
 
+  const viewRef = useRef(view)
+  viewRef.current = view
+
   useEffect(() => {
     if (!('agent' in window)) return
     return window.agent.onCommand((command) => {
       if (command === 'settings') setSettingsOpen(true)
       if (command === 'new-task') newTask()
+      if (command === 'search') {
+        setSidebarOpen(true)
+        setSearchSignal((n) => n + 1)
+      }
+      if (command === 'stop') {
+        const current = viewRef.current
+        if (current?.live) void window.agent.stop(current.task.id)
+      }
     })
   }, [newTask])
 
@@ -108,6 +137,15 @@ export function App() {
     setFocusId(focus ?? null)
     setSidebarOpen(false)
   }
+  const openTaskRef = useRef(openTask)
+  openTaskRef.current = openTask
+
+  // Reopen the task that was open when the window last closed.
+  useEffect(() => {
+    if (!boot || restored.current) return
+    restored.current = true
+    if (boot.lastTaskId) void openTaskRef.current(boot.lastTaskId).catch(() => undefined)
+  }, [boot])
 
   const submit = async (text: string, tokens: string[]) => {
     if (view) {
@@ -169,6 +207,7 @@ export function App() {
         onSettings={() => setSettingsOpen(true)}
         onRename={(id, title) => void rename(id, title)}
         onDelete={(id) => void remove(id)}
+        searchSignal={searchSignal}
       />
       <main className="main">
         {view ? (

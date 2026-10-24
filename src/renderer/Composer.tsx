@@ -1,6 +1,6 @@
 import type { Live, StagedFile } from '@shared/contract'
 import { ArrowUp, ChevronDown, Paperclip, Square, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { dict } from './i18n'
 
 export function Composer({
@@ -27,7 +27,50 @@ export function Composer({
   const [files, setFiles] = useState<StagedFile[]>([])
   const [busy, setBusy] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
+
+  const stage = useCallback(async (list: FileList | File[]) => {
+    const picked = await window.agent.stageFiles([...list])
+    if (picked.length) setFiles((current) => [...current, ...picked].slice(0, 10))
+  }, [])
+
+  // The whole window is a drop target; the composer shows where the file goes.
+  useEffect(() => {
+    let depth = 0
+    const hasFiles = (event: DragEvent) => Boolean(event.dataTransfer?.types.includes('Files'))
+    const enter = (event: DragEvent) => {
+      if (!hasFiles(event)) return
+      depth += 1
+      setDragging(true)
+    }
+    const leave = (event: DragEvent) => {
+      if (!hasFiles(event)) return
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) setDragging(false)
+    }
+    const over = (event: DragEvent) => {
+      if (hasFiles(event)) event.preventDefault()
+    }
+    const drop = (event: DragEvent) => {
+      if (!hasFiles(event)) return
+      event.preventDefault()
+      depth = 0
+      setDragging(false)
+      if (event.dataTransfer?.files.length) void stage(event.dataTransfer.files)
+      ref.current?.focus()
+    }
+    window.addEventListener('dragenter', enter)
+    window.addEventListener('dragleave', leave)
+    window.addEventListener('dragover', over)
+    window.addEventListener('drop', drop)
+    return () => {
+      window.removeEventListener('dragenter', enter)
+      window.removeEventListener('dragleave', leave)
+      window.removeEventListener('dragover', over)
+      window.removeEventListener('drop', drop)
+    }
+  }, [stage])
 
   useEffect(() => {
     const element = ref.current
@@ -63,7 +106,8 @@ export function Composer({
 
   return (
     <div className="composer-dock">
-      <div className={`composer ${focused ? 'focused' : ''}`}>
+      <div className={`composer ${focused ? 'focused' : ''} ${dragging ? 'dragging' : ''}`}>
+        {dragging && <div className="drop-hint">{t.dropHint}</div>}
         {files.length > 0 && (
           <div className="attachments">
             {files.map((file) => (
@@ -90,6 +134,11 @@ export function Composer({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onChange={(event) => setText(event.target.value)}
+          onPaste={(event) => {
+            if (event.clipboardData.files.length === 0) return
+            event.preventDefault()
+            void stage(event.clipboardData.files)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault()

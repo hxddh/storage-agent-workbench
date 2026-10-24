@@ -1,9 +1,17 @@
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3'
+import { fromIni } from '@aws-sdk/credential-provider-ini'
 import type { Account, AccountInput } from '@shared/contract'
 import type { AppDb, ProviderRow } from './db'
 import { maskKey } from './security/redact'
 import type { Vault } from './security/vault'
+
+export type Credentials =
+  | { kind: 'keys'; accessKeyId: string; secretAccessKey: string; sessionToken: string | null }
+  | { kind: 'profile'; profile: string }
 
 export interface ProviderConfig {
   id: string
@@ -11,9 +19,7 @@ export interface ProviderConfig {
   endpoint: string
   region: string
   forcePathStyle: boolean
-  accessKeyId: string
-  secretAccessKey: string
-  sessionToken: string | null
+  credentials: Credentials
   scope: { buckets: string[] }
 }
 
@@ -22,7 +28,7 @@ function parseScope(json: string): { buckets: string[] } {
     const value = JSON.parse(json) as { buckets?: unknown }
     return {
       buckets: Array.isArray(value.buckets)
-        ? value.buckets.filter((b) => typeof b === 'string')
+        ? value.buckets.filter((b): b is string => typeof b === 'string')
         : [],
     }
   } catch {
@@ -30,7 +36,40 @@ function parseScope(json: string): { buckets: string[] } {
   }
 }
 
+/**
+ * Profile names from the shared AWS config and credentials files. Names only:
+ * the files are never parsed for keys here; the SDK resolves a profile itself.
+ */
+export function awsProfiles(env: NodeJS.ProcessEnv = process.env): string[] {
+  const names = new Set<string>()
+  const read = (path: string, prefixed: boolean) => {
+    let text = ''
+    try {
+      text = readFileSync(path, 'utf8')
+    } catch {
+      return
+    }
+    for (const line of text.split(/\r?\n/)) {
+      const match = /^\s*\[([^\]]+)\]\s*$/.exec(line)
+      if (!match) continue
+      let name = match[1]!.trim()
+      if (prefixed) {
+        if (name.startsWith('profile ')) name = name.slice(8).trim()
+        else if (name !== 'default') continue
+      }
+      if (name && /^[\w.@+-]{1,128}$/.test(name)) names.add(name)
+    }
+  }
+  read(env.AWS_CONFIG_FILE || join(homedir(), '.aws', 'config'), true)
+  read(env.AWS_SHARED_CREDENTIALS_FILE || join(homedir(), '.aws', 'credentials'), false)
+  return [...names].sort((a, b) =>
+    a === 'default' ? -1 : b === 'default' ? 1 : a.localeCompare(b),
+  )
+}
+
 export class Providers {
+  private readonly clients = new Map<string, S3Client>()
+
   constructor(
     private readonly db: AppDb,
     private readonly vault: Vault,
@@ -38,20 +77,18 @@ export class Providers {
 
   async list(): Promise<Account[]> {
     const rows = await this.db.listProviders()
-    const out: Account[] = []
-    for (const row of rows) {
-      out.push({
-        id: row.id,
-        name: row.name,
-        endpoint: row.endpoint,
-        region: row.region,
-        forcePathStyle: row.force_path_style === 1,
-        accessKeyMasked: maskKey(row.access_key_id),
-        hasSessionToken: Boolean(row.session_ref),
-        scope: parseScope(row.scope_json),
-      })
-    }
-    return out
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      endpoint: row.endpoint,
+      region: row.region,
+      forcePathStyle: row.force_path_style === 1,
+      auth: row.auth === 'profile' ? 'profile' : 'keys',
+      profile: row.profile ?? null,
+      accessKeyMasked: row.auth === 'profile' ? '' : maskKey(row.access_key_id),
+      hasSessionToken: Boolean(row.session_ref),
+      scope: parseScope(row.scope_json),
+    }))
   }
 
   async config(id: string): Promise<ProviderConfig> {
@@ -79,24 +116,42 @@ export class Providers {
   async save(input: AccountInput): Promise<Account> {
     const existing = input.id ? await this.db.getProvider(input.id) : undefined
     const id = existing?.id ?? randomUUID()
-    const secret = input.secretAccessKey?.trim()
-    const secretRef = secret ? this.vault.seal(secret) : existing?.secret_ref
-    if (!secretRef) throw new Error('A secret access key is required.')
-    const sessionRef = input.sessionToken?.trim()
-      ? this.vault.seal(input.sessionToken.trim())
-      : (existing?.session_ref ?? null)
+    const auth = input.auth === 'profile' ? 'profile' : 'keys'
+    let secretRef = ''
+    let sessionRef: string | null = null
+    let accessKeyId: string | null = null
+    let profile: string | null = null
+    if (auth === 'profile') {
+      profile = input.profile?.trim() || null
+      if (!profile) throw new Error('Choose an AWS profile.')
+    } else {
+      const secret = input.secretAccessKey?.trim()
+      const keep = existing?.auth !== 'profile'
+      secretRef = secret ? this.vault.seal(secret) : keep ? (existing?.secret_ref ?? '') : ''
+      if (!secretRef) throw new Error('A secret access key is required.')
+      sessionRef = input.sessionToken?.trim()
+        ? this.vault.seal(input.sessionToken.trim())
+        : keep
+          ? (existing?.session_ref ?? null)
+          : null
+      accessKeyId = input.accessKeyId?.trim() || (keep ? existing?.access_key_id : null) || null
+      if (!accessKeyId) throw new Error('An access key id is required.')
+    }
     await this.db.upsertProvider({
       id,
       name: input.name.trim() || 'Storage',
       endpoint: input.endpoint.trim(),
       region: input.region.trim() || 'us-east-1',
       force_path_style: input.forcePathStyle ? 1 : 0,
-      access_key_id: input.accessKeyId.trim() || existing?.access_key_id || null,
+      access_key_id: accessKeyId,
       secret_ref: secretRef,
       session_ref: sessionRef,
       scope_json: JSON.stringify({ buckets: input.scope.buckets.filter(Boolean) }),
       created_at: existing?.created_at ?? new Date().toISOString(),
+      auth,
+      profile,
     })
+    this.forget(id)
     const account = (await this.list()).find((a) => a.id === id)
     if (!account) throw new Error('The account could not be saved.')
     return account
@@ -104,13 +159,13 @@ export class Providers {
 
   async remove(id: string): Promise<void> {
     await this.db.deleteProvider(id)
+    this.forget(id)
   }
 
   async test(id: string): Promise<{ ok: boolean; detail: string }> {
     try {
       const provider = await this.config(id)
-      const client = this.client(provider)
-      const response = await client.send(new ListBucketsCommand({}))
+      const response = await this.client(provider).send(new ListBucketsCommand({}))
       const count = response.Buckets?.length ?? 0
       return { ok: true, detail: `${count} bucket${count === 1 ? '' : 's'} visible` }
     } catch (error) {
@@ -118,19 +173,51 @@ export class Providers {
     }
   }
 
-  client(provider: ProviderConfig): S3Client {
-    return new S3Client({
-      region: provider.region || 'us-east-1',
+  /**
+   * One client per account and region. Clients follow region redirects, so a
+   * multi-region AWS account reads every bucket from its own region.
+   */
+  client(provider: ProviderConfig, region?: string): S3Client {
+    const target = region || provider.region || 'us-east-1'
+    const key = `${provider.id}:${target}`
+    const cached = this.clients.get(key)
+    if (cached) return cached
+    const credentials =
+      provider.credentials.kind === 'profile'
+        ? fromIni({ profile: provider.credentials.profile })
+        : {
+            accessKeyId: provider.credentials.accessKeyId,
+            secretAccessKey: provider.credentials.secretAccessKey,
+            ...(provider.credentials.sessionToken
+              ? { sessionToken: provider.credentials.sessionToken }
+              : {}),
+          }
+    const client = new S3Client({
+      region: target,
       endpoint: provider.endpoint || undefined,
       forcePathStyle: provider.forcePathStyle,
-      credentials: {
-        accessKeyId: provider.accessKeyId,
-        secretAccessKey: provider.secretAccessKey,
-        ...(provider.sessionToken ? { sessionToken: provider.sessionToken } : {}),
-      },
+      followRegionRedirects: true,
+      credentials,
       maxAttempts: 2,
       requestHandler: { requestTimeout: 20_000, connectionTimeout: 5_000 },
     })
+    this.clients.set(key, client)
+    return client
+  }
+
+  /** The regional client factory a reading uses; a custom endpoint has one region. */
+  regional(provider: ProviderConfig): ((region: string) => S3Client) | undefined {
+    if (provider.endpoint) return undefined
+    return (region: string) => this.client(provider, region)
+  }
+
+  private forget(id: string): void {
+    for (const [key, client] of this.clients) {
+      if (key.startsWith(`${id}:`)) {
+        client.destroy()
+        this.clients.delete(key)
+      }
+    }
   }
 
   private fromRow(row: ProviderRow): ProviderConfig {
@@ -140,9 +227,15 @@ export class Providers {
       endpoint: row.endpoint,
       region: row.region,
       forcePathStyle: row.force_path_style === 1,
-      accessKeyId: row.access_key_id ?? '',
-      secretAccessKey: this.vault.open(row.secret_ref),
-      sessionToken: row.session_ref ? this.vault.open(row.session_ref) : null,
+      credentials:
+        row.auth === 'profile'
+          ? { kind: 'profile', profile: row.profile ?? 'default' }
+          : {
+              kind: 'keys',
+              accessKeyId: row.access_key_id ?? '',
+              secretAccessKey: this.vault.open(row.secret_ref),
+              sessionToken: row.session_ref ? this.vault.open(row.session_ref) : null,
+            },
       scope: parseScope(row.scope_json),
     }
   }
@@ -152,6 +245,9 @@ export function describe(error: unknown): string {
   if (error instanceof Error) {
     const named = error as Error & { $metadata?: { httpStatusCode?: number }; name?: string }
     const status = named.$metadata?.httpStatusCode
+    if (/sso|token.*expired|refresh/i.test(error.message) && named.name !== 'AccessDenied') {
+      return `${named.name ?? 'Error'}: ${error.message.slice(0, 160)} — run \`aws sso login\` for this profile.`
+    }
     return `${named.name ?? 'Error'}${status ? ` (${status})` : ''}: ${error.message.slice(0, 200)}`
   }
   return String(error).slice(0, 200)
