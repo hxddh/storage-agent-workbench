@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { AppEvent, Bootstrap } from '@shared/contract'
-import { app, Notification } from 'electron'
+import { app } from 'electron'
 import { AppDb } from './db'
 import { Estate } from './estate/estate'
 import { Providers } from './providers'
@@ -25,8 +25,6 @@ export class App {
   private database!: Database
   private dataDir = ''
   private emit: (event: AppEvent) => void = () => undefined
-  private timer: NodeJS.Timeout | null = null
-  private runningWatch = new Set<string>()
   private models = createModelSet()
 
   async init(dataDir: string): Promise<void> {
@@ -60,7 +58,6 @@ export class App {
       dirs: harnessDirs(dataDir),
       emit: (event) => this.emit(event),
     })
-    this.startWatch()
   }
 
   setEmit(emit: (event: AppEvent) => void): void {
@@ -101,52 +98,7 @@ export class App {
   }
 
   async dispose(): Promise<void> {
-    if (this.timer) clearInterval(this.timer)
     await this.harness?.close().catch(() => undefined)
     await this.database?.close().catch(() => undefined)
-  }
-
-  private startWatch(): void {
-    this.timer = setInterval(() => void this.tick(), 60_000)
-  }
-
-  private async tick(): Promise<void> {
-    if (!this.harness.hasModel()) return
-    const watches = await this.db.enabledWatches()
-    const now = Date.now()
-    for (const watch of watches) {
-      if (this.runningWatch.has(watch.provider_id)) continue
-      const last = watch.last_run_at ? Date.parse(watch.last_run_at) : 0
-      if (now - last < watch.interval_hours * 3_600_000) continue
-      this.runningWatch.add(watch.provider_id)
-      void this.runWatch(watch.provider_id).finally(() =>
-        this.runningWatch.delete(watch.provider_id),
-      )
-    }
-  }
-
-  async runWatch(providerId: string): Promise<void> {
-    const account = (await this.providers.list()).find((a) => a.id === providerId)
-    if (!account) return
-    const started = new Date().toISOString()
-    const id = await this.harness.newTask(`Check ${account.name} for changes`, 'watch')
-    await this.harness.submit(
-      id,
-      `Run the scheduled check of ${account.name}: survey it and report only what changed since the last check.`,
-      [],
-    )
-    await this.db.markWatchRun(providerId)
-    await this.harness.waitForIdle(id)
-    const issues = await this.db.issuesForConversation(id)
-    const fresh = issues.filter((issue) => issue.status === 'open' && issue.opened_at >= started)
-    if (fresh.length && Notification.isSupported()) {
-      new Notification({
-        title: `${account.name}: ${fresh.length} new issue${fresh.length === 1 ? '' : 's'}`,
-        body: fresh
-          .slice(0, 3)
-          .map((issue) => `${issue.bucket}: ${issue.code}`)
-          .join('\n'),
-      }).show()
-    }
   }
 }

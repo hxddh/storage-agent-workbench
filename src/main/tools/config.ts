@@ -1,4 +1,4 @@
-import { evaluateReview } from '../estate/rules'
+import { codeForReviewTitle, evaluateReview } from '../estate/rules'
 import { reviewLifecycle, reviewObservability, reviewSecurity } from '../s3/review'
 import { agentTool, assertInScope, bucketParam, providerParam, type ToolDeps, Type } from './policy'
 
@@ -53,7 +53,10 @@ export function configTool(deps: ToolDeps) {
         view: {
           kind: 'config' as const,
           bucket: args.bucket,
-          findings: problems as unknown as import('@shared/contract').ConfigFinding[],
+          findings: problems.map((finding) => ({
+            ...finding,
+            code: codeForReviewTitle(finding.title),
+          })),
         },
       }
     },

@@ -4,8 +4,8 @@
 
 ```text
 Electron main                            Renderer (sandboxed)
-  app.ts      wiring, watches             App.tsx   state + layout
-  ipc.ts      the only IPC surface   ⇄    Sidebar / Stream / Composer
+  app.ts      wiring                     App.tsx   state + layout
+  ipc.ts      the only IPC surface   ⇄    Sidebar / Brief / Composer
   preload     contextBridge, CJS           Settings
   pi-durable  harness, tasks, entries
   tools       ten read-only tools
@@ -31,13 +31,14 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
    call is projected from `pi.live.tools` (name, target, progress, start time);
    when it settles it becomes a `pi.tool-result` entry carrying `details` (the UI
    view), and the row is replaced in place.
-4. The open task is watched with `conversation.watch()`. Each frame appends new
+4. The open task is streamed with `conversation.watch()`. Each frame appends new
    entries and pushes the live state to the window through `agent:event`.
 5. `harness.watchTaskGraph()` supplies working state for the sidebar.
 6. `conversation.abort()` stops a run; pi keeps what was committed.
 7. pi compacts when the model's context window fills; compaction appears as a
    divider in the stream.
-8. When a task settles, its requests and answers are written to `search_docs`.
+8. When a task settles, its requests, current verdict and findings are written
+   to `search_docs` from the same `buildBrief()` projection the window uses.
    Tasks without rows are backfilled in the background at startup.
 
 The window never receives `entry.model` (the provider-facing messages). The
@@ -61,10 +62,11 @@ the answer text and the tool details.
 | `main/estate/rules.ts` | seven rules and tri-state evaluation |
 | `main/estate/fixes.ts` | fix formats and impact preview |
 | `main/analysis/*` | import (bounded, redacted) and whitelisted aggregates |
-| `main/app.ts` | service wiring, watch tick, notifications |
+| `main/app.ts` | service wiring, model install |
 | `main/window-state.ts` | window bounds in `window.json`, clamped to a display |
 | `renderer/Sidebar.tsx` | task list, ⌘K search, rename, inline delete |
-| `renderer/Stream.tsx` | entries, running calls, focus, copy/save |
+| `renderer/Brief.tsx` | the brief, checks, focus, copy/save |
+| `shared/brief.ts` | deterministic projection from entries to the brief |
 
 ## Storage layout
 

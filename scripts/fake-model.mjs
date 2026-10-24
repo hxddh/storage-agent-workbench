@@ -34,7 +34,7 @@ function plan(body) {
   if (ask.includes('fix')) {
     return {
       text:
-        'The fix blocks public access on demo-public. Applying it refuses anonymous reads; put a CDN in front first if a website depends on them.',
+        'Block public access on demo-public.',
     }
   }
   if (ask.includes('issue')) {

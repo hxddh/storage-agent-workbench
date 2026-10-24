@@ -40,7 +40,6 @@ export class Providers {
     const rows = await this.db.listProviders()
     const out: Account[] = []
     for (const row of rows) {
-      const watch = await this.db.watchFor(row.id)
       out.push({
         id: row.id,
         name: row.name,
@@ -50,11 +49,6 @@ export class Providers {
         accessKeyMasked: maskKey(row.access_key_id),
         hasSessionToken: Boolean(row.session_ref),
         scope: parseScope(row.scope_json),
-        watch: {
-          enabled: watch.enabled,
-          intervalHours: watch.intervalHours,
-          lastRunAt: watch.lastRunAt,
-        },
       })
     }
     return out

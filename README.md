@@ -1,8 +1,9 @@
 # Storage Agent
 
 A local agent for object storage. You ask a question about your S3-compatible
-accounts; it surveys them read-only, remembers what it saw, and answers with the
-data in front of you. It never writes, deletes or changes anything in storage.
+accounts; it reads them read-only, remembers what it saw, and answers with a
+brief: a verdict, the findings it proved, the evidence and a fix. It never
+writes, deletes or changes anything in storage.
 
 ![Storage Agent](docs/screenshot.png)
 
@@ -21,15 +22,15 @@ data in front of you. It never writes, deletes or changes anything in storage.
   impact preview built only from what the estate already knows.
 - Analyzes an attached access log or object inventory (CSV, TSV, JSONL, Parquet)
   and answers whitelisted aggregates. Raw rows never reach the model.
-- Watches an account on a schedule and opens a task when something changed.
-- Shows each tool call where it happens, with real progress; every table can be
-  copied as CSV or saved, every answer as Markdown.
-- Searches task titles, questions and answers with ⌘K; failed or stopped runs
-  offer Retry or Continue.
+- Shows each tool call where it happens, with real progress, and keeps it as
+  the receipt behind every finding; every table can be copied as CSV or saved,
+  the whole brief as Markdown.
+- Searches task titles, questions, findings and the current answer with ⌘K;
+  failed or stopped runs offer Retry or Continue.
 
 ## Shape
 
-One window, one document, one composer. The task list is the only navigation.
+One window, one brief, one composer. The task list is the only navigation.
 There is no storage page, no bucket browser, no dashboard and no settings
 wizard: the agent resolves storage from the request, and Settings holds the
 model and the accounts.
@@ -37,7 +38,7 @@ model and the accounts.
 ```text
 ┌──────────────────────────── Electron ────────────────────────────┐
 │  renderer (React)                    main                        │
-│  tasks · document · composer  ⇄ IPC ⇄  pi-durable harness        │
+│  tasks · brief · composer     ⇄ IPC ⇄  pi-durable harness        │
 │                                        ├ 10 read-only tools      │
 │                                        ├ estate (rules/issues)   │
 │                                        └ pi-ai → model           │

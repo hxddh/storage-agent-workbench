@@ -2,8 +2,8 @@
 
 ## Application tables (`storage-agent.db`)
 
-`user_version` is the schema version (head **2**); migrations are append-only in
-`main/db.ts`.
+`user_version` is the schema version (head **3**); migrations are append-only in
+`main/db.ts`. Version 3 dropped the unused `watch` table and `task_meta.origin`.
 
 | Table | Columns (essential) |
 |---|---|
@@ -13,14 +13,15 @@
 | `issue_events` | `id`, `issue_id`, `conversation_id`, `kind`, `at`, `detail_json` |
 | `notes` | `id`, `scope`, `ref`, `text`, `author`, `created_at` |
 | `audit` | `id`, `conversation_id`, `tool`, `target`, `outcome`, `at` |
-| `watch` | `provider_id`, `enabled`, `interval_hours`, `last_run_at` |
-| `task_meta` | `conversation_id`, `title`, `origin`, `created_at`, `updated_at` |
-| `capability` | `provider_id`, `name`, `verdict`, `checked_at` |
+| `task_meta` | `conversation_id`, `title`, `created_at`, `updated_at` |
 | `datasets` | `id`, `conversation_id`, `kind`, `path`, `rows`, `bytes`, `created_at` |
 | `search_docs` | `conversation_id`, `entry_id`, `kind`, `text`, `at` — derived index |
 
 `search_docs` is rebuilt per conversation when it settles and backfilled at
-startup. Deleting a task deletes its rows. Nothing else reads it.
+startup. It stores the request text, the current verdict (`entry_id =
+'verdict'`) and one row per finding (`entry_id = 'f:<finding key>'`, so several
+findings from one tool call stay distinct). Deleting a task deletes its rows.
+Nothing else reads it.
 
 `secret_ref` and `session_ref` are vault references (ciphertext), never plaintext.
 `posture_json` stores status enums and booleans only — no policy document, no
@@ -40,7 +41,7 @@ Entry kinds the window understands:
 | `pi.assistant` | model output; the text is projected, `model` is not sent |
 | `pi.tool-result` | a tool result; `details` is `{ target, note, view, ms }` |
 | `pi.compaction` | compaction divider |
-| `sa.notice` | an app notice; data `{ text, tone }` |
+| `sa.notice` | an app notice; data `{ text, tone, action? }` |
 
 ## Datasets
 
@@ -52,6 +53,9 @@ truncated. Dataset files are never loaded into the model context.
 ## Retention
 
 Tasks, entries, issues and notes persist until the user deletes the task or the
-account. Deleting a task removes its metadata; pi's entries remain in the pi
-tables (there is no cross-store cascade in v1). There is no import from earlier
+account. Deleting a task is a real purge in one transaction: `task_meta`,
+`search_docs`, the task's `pi_conversations` / `pi_entries` / `pi_tasks` /
+`pi_submissions` / `pi_documents` / `pi_document_revisions` rows, datasets, audit
+events, and `tasks/<conversation>/` on disk (uploads included). Issue events keep
+history with `conversation_id` set to null. There is no import from earlier
 versions of the app.

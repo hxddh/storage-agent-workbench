@@ -56,6 +56,7 @@ export interface ConfigFinding {
   severity: Severity | 'ok'
   title: string
   detail: string
+  code?: string
 }
 
 export interface ProbeCheck {
@@ -167,7 +168,6 @@ export type UiEntry =
 export interface TaskSummary {
   id: string
   title: string
-  origin: 'user' | 'watch'
   state: TaskState
   createdAt: string
   updatedAt: string
@@ -183,7 +183,7 @@ export interface Live {
 export interface SearchHit {
   taskId: string
   title: string
-  kind: 'title' | 'user' | 'answer'
+  kind: 'title' | 'user' | 'answer' | 'finding'
   snippet: string
   matchStart: number
   matchLength: number
@@ -214,7 +214,6 @@ export interface Account {
   accessKeyMasked: string
   hasSessionToken: boolean
   scope: { buckets: string[] }
-  watch: { enabled: boolean; intervalHours: number; lastRunAt: string | null }
 }
 
 export interface AccountInput {
@@ -276,6 +275,8 @@ export interface AgentApi {
   retryTask(taskId: string): Promise<void>
   continueTask(taskId: string): Promise<void>
   search(query: string): Promise<SearchHit[]>
+  notes(): Promise<NoteRow[]>
+  deleteNote(id: string): Promise<void>
   saveText(input: { name: string; content: string; kind: 'markdown' | 'csv' }): Promise<boolean>
   pickFiles(): Promise<StagedFile[]>
   saveAccount(input: AccountInput): Promise<Account>
@@ -291,8 +292,6 @@ export interface AgentApi {
   clearModel(): Promise<void>
   testModel(): Promise<{ ok: boolean; detail: string }>
   saveSettings(patch: Partial<AppSettings>): Promise<void>
-  setWatch(providerId: string, patch: { enabled?: boolean; intervalHours?: number }): Promise<void>
-  runWatch(providerId: string): Promise<void>
   openExternal(url: string): Promise<void>
   onEvent(listener: (event: AppEvent) => void): () => void
   onCommand(listener: (command: 'settings' | 'new-task') => void): () => void

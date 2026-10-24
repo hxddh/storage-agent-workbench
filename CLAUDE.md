@@ -1,21 +1,21 @@
 # CLAUDE.md
 
-> Implementation contract for Storage Agent 16.0.1. Read
+> Implementation contract for Storage Agent 17.0.0. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes are history.
 
 ## The product
 
-A local, read-only agent for object storage. One window, one document, one
-composer. A **Task** is a conversation with the agent; the agent surveys storage,
-remembers what it saw in an **estate**, and answers with data rendered from tool
-results.
+A local, read-only agent for object storage. One window, one brief, one
+composer. A **Task** is a question the agent answers by reading storage; the
+agent remembers what it saw in an **estate**, and the task's page is a **brief**
+projected from its tool results.
 
 The invariant:
 
 > The task is the window's object; the estate is the agent's memory; every
-> answer is grounded in a tool call.
+> claim on the page is grounded in a tool call.
 
 ## Non-negotiables
 
@@ -26,18 +26,20 @@ The invariant:
 4. Tool output reaches the model inside `<untrusted-data>` and is bounded by
    `bound()` and `redact()`; `details` reaching the window are already shaped.
 5. Nothing is invented: an unreadable or unsupported read leaves the question
-   open, never a clean bill of health.
+   open, never a clean bill of health. The brief shows the blind spot.
 6. Fixes are text the user applies. There is no Apply button.
 
 ## Runtime
 
 - `src/main/index.ts` — window, menu, single instance.
-- `src/main/app.ts` — service wiring, watch loop, bootstrap.
+- `src/main/app.ts` — service wiring, bootstrap.
 - `src/main/ipc.ts` — the only IPC surface; every handler returns plain data.
 - `src/preload/index.ts` — `contextBridge` surface, sandboxed, CJS.
 - `src/shared/contract.ts` — the single type contract; both sides import it.
+- `src/shared/brief.ts` — the one projection from `UiEntry[]` to the brief;
+  the window renders it and the main process indexes the same findings.
 - `src/main/runtime/harness.ts` — pi-durable lifecycle, task CRUD, entry → UI
-  mapping, conversation watch, task-graph watch.
+  mapping, conversation watch, task-graph watch, purge on delete.
 - `src/main/runtime/agent.ts` — the one extension: prompt sections, tools, hooks.
 - `src/main/tools/*` — ten tools through `agentTool()`, which owns scope,
   bounds, timeout, audit, redaction and the envelope.
@@ -52,14 +54,19 @@ second queue, no SSE, no HTTP server. `viewState()`/`watch()` are the stream.
 ## Data
 
 Host tables in `storage-agent.db`: `providers`, `buckets`, `issues`,
-`issue_events`, `notes`, `audit`, `watch`, `task_meta`, `datasets`,
-`search_docs`. pi's tables are prefixed `pi_` in the same file. Datasets live
-under `<userData>/tasks/<conversation>/datasets/<id>.sqlite`.
+`issue_events`, `notes`, `audit`, `task_meta`, `datasets`, `search_docs`. pi's
+tables are prefixed `pi_` in the same file. Datasets live under
+`<userData>/tasks/<conversation>/datasets/<id>.sqlite`.
 
-`search_docs` is a derived index (title search reads `task_meta` directly). It is
-rebuilt for a conversation when that conversation settles, and backfilled at
-startup for tasks without rows. Schema changes are append-only migrations in
-`db.ts`, gated by `user_version` (head **2**).
+`search_docs` is a derived index (title search reads `task_meta` directly). It
+is rebuilt for a conversation when that conversation settles, and backfilled at
+startup for tasks without rows. It stores the request, the current verdict
+(`entry_id = 'verdict'`) and one row per finding (`f:<key>`). Schema changes are
+append-only migrations in `db.ts`, gated by `user_version` (head **3**).
+
+Deleting a task purges `task_meta`, `search_docs`, its pi conversation, entries,
+tasks, submissions, documents and revisions, datasets, audit rows and
+`tasks/<conversation>/` on disk. There is no background watch.
 
 ## Agent
 
@@ -67,27 +74,33 @@ One extension, ten tools: `survey`, `buckets`, `objects`, `object`, `config`,
 `probe`, `estate`, `fix`, `analyze`, `note`. Adding an eleventh requires saying
 why an existing one cannot do the job.
 
-Prompt sections: identity, method, answer format, five method cards, estate
-digest, language. The answer is short prose — no headings, no tables, no next
-steps; tables, findings and fixes are rendered by the window from `details`.
+Prompt sections: identity, today, method, answer format, five method cards,
+estate digest, language. The model writes only the verdict: at most two
+sentences, no headings, tables or restated numbers. Findings, tables, fixes and
+checks are projected by the window from `details`.
 
-A tool round counter blocks all tools after 40 rounds and tells the model to
-answer. Compaction is pi's, configured by model context window.
+The method reads memory first (`estate`), and surveys only when memory is empty,
+stale, or the question is about current exposure. A tool round counter blocks all
+tools after 40 rounds. Compaction is pi's, configured by model context window.
 
 ## Window
 
-`Sidebar · document · Composer`, plus a full-screen Settings sheet. No side
-pane, no command palette, no second window.
+`Sidebar · brief · Composer`, plus a full-screen Settings sheet. No side pane,
+no command palette, no second window, no chat transcript.
 
-A tool call appears as a row the moment it starts, shows its real progress and
-settles in place; the bottom "live" line does not exist. Results are flat
-sections separated by hairlines, never cards inside the document. The task title
-lives once, in the sidebar. Every table can be copied as CSV or saved; every
-answer can be copied as Markdown or saved. Failed and stopped runs offer Retry
-or Continue. The sidebar search (⌘K) covers titles, requests and answers.
+A check appears the moment a tool starts, shows its real progress and settles in
+place; the Checks section folds to a receipt when the run ends. The brief shows
+the verdict, findings (merged by rule and bucket, severity ordered), the fix, one
+data section (folded when findings already answer), checks and the folded
+questions. Results are flat sections separated by hairlines, never cards.
+
+The task title lives once, in the sidebar. Every table can be copied as CSV or
+saved; the page can be copied or saved as Markdown. Failed and stopped runs offer
+Retry or Continue. The sidebar search (⌘K) covers titles, requests, findings and
+the current verdict.
 
 Design tokens live in `src/renderer/styles.css`; never use a raw colour in a
-component.
+component. Secondary text clears WCAG AA on every surface.
 
 ## Commands
 

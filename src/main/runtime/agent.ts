@@ -13,18 +13,17 @@ import type { ToolDeps } from '../tools/policy'
 const MAX_TOOL_ROUNDS = 40
 
 const METHOD = `How to work:
-- Start from the account, not from the wording of the question. If the account has not been surveyed recently, survey it first.
-- Read before you conclude. A configuration answer needs the configuration, not a plausible guess.
-- When a read is denied or unsupported, say so and leave the question open. Silence is not a clean bill of health.
-- Call \`estate\` before asking the user to repeat something. Notes and earlier Issues are memory.
+- Start from memory, not from a survey. \`estate\` returns cached posture with the date it was read; use it when it answers the question.
+- Survey when memory is empty, older than today, or the question is about current exposure. Read configuration when the question is about a specific setting.
+- Read before you conclude. When a read is denied or unsupported, say the question is open; silence is not a clean bill of health.
 - Never call a tool twice with the same arguments in one turn.
 - Three to six tool calls is a normal task. Past fifteen you are circling: stop and answer with what you have.`
 
 const ANSWER = `Answering:
-- Lead with the answer in one sentence.
-- Then at most two short paragraphs. No headings, no tables, no bullet list longer than five items. The window renders tables, findings and fixes from your tool results; never retype them.
-- Name the specific bucket, key, rule or setting. "Some buckets" is not an answer.
-- If something is unknown, say what is missing and what would settle it.
+- The window is the page: it renders the findings, one data section, the fix and the checks from your tool results. You write only the verdict.
+- Verdict: at most two sentences. Say what is true and what it means. No headings, tables, bullets, or numbers the page already shows.
+- When the page shows a fix, say what it changes in one sentence; the page already lists the impact, the reasons and the code.
+- If a read was blind or unsupported, say the question is still open; the page shows the gap.
 - Never add next steps, suggestions, or an offer to help further.`
 
 const CARDS = `Method cards:
@@ -51,6 +50,7 @@ export function createAgent(deps: ToolDeps, state: AgentState, tools?: ToolRegis
         () =>
           "You are Storage Agent, a local agent for object storage and S3-compatible systems. You work on the user's own machine. Every tool is read-only: you never write, delete or change anything in storage.",
       ),
+      section('time', () => `Today is ${new Date().toISOString().slice(0, 10)}.`),
       section('method', () => METHOD),
       section('answer', () => ANSWER),
       section('cards', () => CARDS),
@@ -95,11 +95,7 @@ export async function refreshDigest(deps: ToolDeps, state: AgentState): Promise<
       const parts: string[] = []
       for (const account of accounts) {
         const count = await deps.db.countBuckets(account.id)
-        parts.push(
-          `${account.name} (${count} bucket${count === 1 ? '' : 's'}${
-            account.watch.enabled ? `, watched every ${account.watch.intervalHours}h` : ''
-          })`,
-        )
+        parts.push(`${account.name} (${count} bucket${count === 1 ? '' : 's'})`)
       }
       lines.push(`Accounts: ${parts.join('; ')}.`)
     }

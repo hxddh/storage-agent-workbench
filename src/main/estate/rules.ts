@@ -100,6 +100,11 @@ export function ruleTitle(rule: Rule, lang: string): string {
   return lang.toLowerCase().startsWith('zh') ? rule.title.zh : rule.title.en
 }
 
+/** The rule a review finding title belongs to, when one owns it. */
+export function codeForReviewTitle(title: string): string | undefined {
+  return BY_TITLE.get(title)?.code
+}
+
 /** Every rule the survey's posture flags can decide. `null` means it could not decide. */
 export function evaluatePosture(posture: Posture): Record<string, Verdict> {
   const out: Record<string, Verdict> = {}

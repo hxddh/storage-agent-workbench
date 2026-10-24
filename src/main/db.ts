@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 
-export const HOST_SCHEMA_VERSION = 2
+export const HOST_SCHEMA_VERSION = 3
 
 export interface ProviderRow {
   id: string
@@ -124,17 +124,10 @@ CREATE TABLE IF NOT EXISTS audit (
   at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS watch (
-  provider_id TEXT PRIMARY KEY,
-  enabled INTEGER NOT NULL DEFAULT 0,
-  interval_hours INTEGER NOT NULL DEFAULT 24,
-  last_run_at TEXT
-);
 
 CREATE TABLE IF NOT EXISTS task_meta (
   conversation_id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  origin TEXT NOT NULL DEFAULT 'user',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -174,7 +167,15 @@ export class AppDb {
     await raw.exec('PRAGMA foreign_keys = ON')
     await raw.exec(SCHEMA)
     const row = await raw.get<{ user_version: number }>('PRAGMA user_version')
-    if ((row?.user_version ?? 0) < HOST_SCHEMA_VERSION) {
+    const version = row?.user_version ?? 0
+    if (version < 3) {
+      await raw.exec('DROP TABLE IF EXISTS watch')
+      const columns = await raw.all<{ name: string }>('PRAGMA table_info(task_meta)')
+      if (columns.some((column) => column.name === 'origin')) {
+        await raw.exec('ALTER TABLE task_meta DROP COLUMN origin')
+      }
+    }
+    if (version < HOST_SCHEMA_VERSION) {
       await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
     }
     return new AppDb(raw)
@@ -211,17 +212,12 @@ export class AppDb {
       row.scope_json,
       row.created_at,
     )
-    await this.raw.run(
-      'INSERT INTO watch (provider_id, enabled, interval_hours) VALUES (?, 0, 24) ON CONFLICT DO NOTHING',
-      row.id,
-    )
   }
 
   async deleteProvider(id: string): Promise<void> {
     await this.raw.run('DELETE FROM providers WHERE id = ?', id)
     await this.raw.run('DELETE FROM buckets WHERE provider_id = ?', id)
     await this.raw.run('DELETE FROM issues WHERE provider_id = ?', id)
-    await this.raw.run('DELETE FROM watch WHERE provider_id = ?', id)
   }
 
   // -- buckets --------------------------------------------------------------
@@ -303,6 +299,10 @@ export class AppDb {
       bucket,
       code,
     )
+  }
+
+  async deleteNote(id: string): Promise<void> {
+    await this.raw.run('DELETE FROM notes WHERE id = ?', id)
   }
 
   async countNotes(author?: 'agent' | 'user'): Promise<number> {
@@ -480,73 +480,21 @@ export class AppDb {
     )
   }
 
-  // -- watch ----------------------------------------------------------------
-
-  async watchFor(
-    providerId: string,
-  ): Promise<{ enabled: boolean; intervalHours: number; lastRunAt: string | null }> {
-    const row = await this.raw.get<{
-      enabled: number
-      interval_hours: number
-      last_run_at: string | null
-    }>('SELECT * FROM watch WHERE provider_id = ?', providerId)
-    return {
-      enabled: row?.enabled === 1,
-      intervalHours: row?.interval_hours ?? 24,
-      lastRunAt: row?.last_run_at ?? null,
-    }
-  }
-
-  async setWatch(
-    providerId: string,
-    patch: { enabled?: boolean; intervalHours?: number },
-  ): Promise<void> {
-    const current = await this.watchFor(providerId)
-    await this.raw.run(
-      `INSERT INTO watch (provider_id, enabled, interval_hours) VALUES (?, ?, ?)
-       ON CONFLICT(provider_id) DO UPDATE SET enabled = excluded.enabled,
-         interval_hours = excluded.interval_hours`,
-      providerId,
-      (patch.enabled ?? current.enabled) ? 1 : 0,
-      Math.max(1, Math.min(patch.intervalHours ?? current.intervalHours, 24 * 30)),
-    )
-  }
-
-  async markWatchRun(providerId: string): Promise<void> {
-    await this.raw.run(
-      'UPDATE watch SET last_run_at = ? WHERE provider_id = ?',
-      new Date().toISOString(),
-      providerId,
-    )
-  }
-
-  async enabledWatches(): Promise<
-    { provider_id: string; interval_hours: number; last_run_at: string | null }[]
-  > {
-    return this.raw.all<{
-      provider_id: string
-      interval_hours: number
-      last_run_at: string | null
-    }>('SELECT provider_id, interval_hours, last_run_at FROM watch WHERE enabled = 1')
-  }
-
   // -- task metadata --------------------------------------------------------
 
   async upsertTaskMeta(row: {
     conversationId: string
     title: string
-    origin: 'user' | 'watch'
     createdAt?: string
   }): Promise<void> {
     const at = new Date().toISOString()
     await this.raw.run(
-      `INSERT INTO task_meta (conversation_id, title, origin, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO task_meta (conversation_id, title, created_at, updated_at)
+       VALUES (?, ?, ?, ?)
        ON CONFLICT(conversation_id) DO UPDATE SET title = excluded.title,
          updated_at = excluded.updated_at`,
       row.conversationId,
       row.title,
-      row.origin,
       row.createdAt ?? at,
       at,
     )
@@ -564,13 +512,12 @@ export class AppDb {
     {
       conversation_id: string
       title: string
-      origin: 'user' | 'watch'
       created_at: string
       updated_at: string
     }[]
   > {
     return this.raw.all(
-      'SELECT conversation_id, title, origin, created_at, updated_at FROM task_meta ORDER BY updated_at DESC LIMIT 500',
+      'SELECT conversation_id, title, created_at, updated_at FROM task_meta ORDER BY updated_at DESC LIMIT 500',
     )
   }
 
@@ -578,20 +525,57 @@ export class AppDb {
     | {
         conversation_id: string
         title: string
-        origin: 'user' | 'watch'
         created_at: string
         updated_at: string
       }
     | undefined
   > {
     return this.raw.get(
-      'SELECT conversation_id, title, origin, created_at, updated_at FROM task_meta WHERE conversation_id = ?',
+      'SELECT conversation_id, title, created_at, updated_at FROM task_meta WHERE conversation_id = ?',
       conversationId,
     )
   }
 
   async deleteTaskMeta(conversationId: string): Promise<void> {
     await this.raw.run('DELETE FROM task_meta WHERE conversation_id = ?', conversationId)
+  }
+
+  /**
+   * Delete everything a task owns: its pi conversation, entries, tasks,
+   * submissions, documents and revisions, plus analysis rows and audit events.
+   * The host schema is append-only, so this is the one place that removes rows.
+   */
+  async purgeTask(conversationId: string): Promise<void> {
+    if (!/^\d+$/.test(conversationId)) return
+    const id = Number(conversationId)
+    await this.raw.transaction(async (tx) => {
+      const tasks = await tx.all<{ id: number }>(
+        'SELECT id FROM pi_tasks WHERE conversation_id = ?',
+        id,
+      )
+      const taskIds = tasks.map((task) => task.id)
+      const docs = await tx.all<{ id: number }>(
+        taskIds.length
+          ? `SELECT id FROM pi_documents WHERE (scope_kind = 'conversation' AND owner_id = ?)
+             OR (scope_kind = 'task' AND owner_id IN (${taskIds.map(() => '?').join(',')}))`
+          : `SELECT id FROM pi_documents WHERE scope_kind = 'conversation' AND owner_id = ?`,
+        id,
+        ...taskIds,
+      )
+      const docIds = docs.map((doc) => doc.id)
+      if (docIds.length) {
+        const marks = docIds.map(() => '?').join(',')
+        await tx.run(`DELETE FROM pi_document_revisions WHERE document_id IN (${marks})`, ...docIds)
+        await tx.run(`DELETE FROM pi_documents WHERE id IN (${marks})`, ...docIds)
+      }
+      await tx.run('DELETE FROM pi_tasks WHERE conversation_id = ?', id)
+      await tx.run('DELETE FROM pi_submissions WHERE conversation_id = ?', id)
+      await tx.run('DELETE FROM pi_entries WHERE conversation_id = ?', id)
+      await tx.run('DELETE FROM pi_conversations WHERE id = ?', id)
+      await tx.run('UPDATE issue_events SET conversation_id = NULL WHERE conversation_id = ?', id)
+      await tx.run('DELETE FROM datasets WHERE conversation_id = ?', id)
+      await tx.run('DELETE FROM audit WHERE conversation_id = ?', id)
+    })
   }
 
   // -- search ---------------------------------------------------------------

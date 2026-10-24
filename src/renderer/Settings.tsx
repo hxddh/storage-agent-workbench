@@ -1,6 +1,6 @@
-import type { Account, AccountInput, Bootstrap, Lang, Theme } from '@shared/contract'
+import type { Account, AccountInput, Bootstrap, Lang, NoteRow, Theme } from '@shared/contract'
 import { X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { dict } from './i18n'
 import { useFocusTrap } from './lib/focus'
 
@@ -43,7 +43,17 @@ export function Settings({
   const [showForm, setShowForm] = useState(boot.accounts.length === 0)
   const [accountStatus, setAccountStatus] = useState<{ ok: boolean; detail: string } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
+  const [notes, setNotes] = useState<NoteRow[]>([])
   const trap = useFocusTrap<HTMLDivElement>(onClose)
+
+  useEffect(() => {
+    void window.agent.notes().then(setNotes)
+  }, [])
+
+  const forget = async (id: string) => {
+    await window.agent.deleteNote(id)
+    setNotes(await window.agent.notes())
+  }
 
   const saveModel = async () => {
     setModelBusy(true)
@@ -98,14 +108,6 @@ export function Settings({
   const removeAccount = async (id: string) => {
     await window.agent.deleteAccount(id)
     await onChanged()
-    const fresh = await window.agent.bootstrap()
-    setAccounts(fresh.accounts)
-  }
-
-  const setWatch = async (account: Account, value: string) => {
-    const patch =
-      value === 'off' ? { enabled: false } : { enabled: true, intervalHours: Number(value) }
-    await window.agent.setWatch(account.id, patch)
     const fresh = await window.agent.bootstrap()
     setAccounts(fresh.accounts)
   }
@@ -254,23 +256,6 @@ export function Settings({
                     <div className="account-meta">{account.endpoint || 'AWS'}</div>
                   </div>
                   <div className="account-actions">
-                    <select
-                      aria-label={t.watch}
-                      value={account.watch.enabled ? String(account.watch.intervalHours) : 'off'}
-                      onChange={(event) => void setWatch(account, event.target.value)}
-                    >
-                      <option value="off">{t.watchOff}</option>
-                      <option value="6">{t.watch6h}</option>
-                      <option value="24">{t.watchDaily}</option>
-                      <option value="168">{t.watchWeekly}</option>
-                    </select>
-                    <button
-                      className="btn ghost"
-                      type="button"
-                      onClick={() => void window.agent.runWatch(account.id)}
-                    >
-                      {t.checkNow}
-                    </button>
                     <button
                       className="btn ghost"
                       type="button"
@@ -409,6 +394,29 @@ export function Settings({
               <button className="btn" type="button" onClick={() => setShowForm(true)}>
                 {t.addAccount}
               </button>
+            )}
+          </section>
+
+          <section className="section">
+            <h3>{t.memory}</h3>
+            <p className="hint">{t.memoryHint}</p>
+            {notes.length === 0 ? (
+              <p className="hint">{t.noMemory}</p>
+            ) : (
+              <div className="memory-list">
+                {notes.map((note) => (
+                  <div className="memory-row" key={note.id}>
+                    <span className="memory-text">{note.text}</span>
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={() => void forget(note.id)}
+                    >
+                      {t.forget}
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </section>
 

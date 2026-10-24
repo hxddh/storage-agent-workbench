@@ -10,53 +10,61 @@ import type {
 } from '@shared/contract'
 import { Check, Copy, Download, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
-import type { Dict } from './i18n'
+import { type Dict, fill } from './i18n'
 import { copyText, safeFileName, toCsv } from './lib/export'
 
-function DataTable({
+export function TableView({
   table,
   name,
   empty,
   t,
+  limit,
+  tools = true,
 }: {
   table: Table
   name: string
   empty: string
   t: Dict
+  limit?: number
+  tools?: boolean
 }) {
   const [copied, setCopied] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const shown = limit && !expanded ? table.rows.slice(0, limit) : table.rows
   if (table.rows.length === 0) return <p className="view-empty">{empty}</p>
   return (
     <div className="table-block">
-      <div className="table-tools">
-        <button
-          className="text-action"
-          type="button"
-          onClick={async () => {
-            if (await copyText(toCsv(table))) {
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1500)
+      {tools && (
+        <div className="table-tools">
+          <button
+            className="text-action"
+            type="button"
+            onClick={async () => {
+              if (await copyText(toCsv(table))) {
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1500)
+              }
+            }}
+          >
+            <Copy size={12} />
+            {copied ? t.copied : t.copyCsv}
+          </button>
+          <button
+            className="text-action"
+            type="button"
+            onClick={() =>
+              void window.agent.saveText({
+                name: safeFileName(name, 'csv'),
+                content: toCsv(table),
+                kind: 'csv',
+              })
             }
-          }}
-        >
-          <Copy size={12} />
-          {copied ? t.copied : t.copyCsv}
-        </button>
-        <button
-          className="text-action"
-          type="button"
-          onClick={() =>
-            void window.agent.saveText({
-              name: safeFileName(name, 'csv'),
-              content: toCsv(table),
-              kind: 'csv',
-            })
-          }
-        >
-          <Download size={12} />
-          {t.saveAs}
-        </button>
-      </div>
+          >
+            <Download size={12} />
+            {t.saveAs}
+          </button>
+        </div>
+      )}
       <div className="table-wrap">
         <table className="data">
           <thead>
@@ -67,7 +75,7 @@ function DataTable({
             </tr>
           </thead>
           <tbody>
-            {table.rows.map((row, index) => (
+            {shown.map((row, index) => (
               <tr key={index}>
                 {row.map((cell, cellIndex) => (
                   <td key={cellIndex}>{cell === null || cell === '' ? '—' : String(cell)}</td>
@@ -77,6 +85,15 @@ function DataTable({
           </tbody>
         </table>
       </div>
+      {limit && table.rows.length > limit && (
+        <button
+          className="text-action table-more"
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? t.less : fill(t.moreRows, { n: table.rows.length - limit })}
+        </button>
+      )}
     </div>
   )
 }
@@ -97,7 +114,7 @@ function Issues({ issues, t }: { issues: IssueRow[]; t: Dict }) {
   )
 }
 
-function ChartView({ chart }: { chart: Chart }) {
+export function ChartView({ chart }: { chart: Chart }) {
   const max = Math.max(...chart.values, 1)
   return (
     <div>
@@ -122,17 +139,7 @@ function ChartView({ chart }: { chart: Chart }) {
   )
 }
 
-function FixView({
-  formats,
-  impact,
-  bucket,
-  t,
-}: {
-  formats: FixFormat[]
-  impact: Impact
-  bucket: string
-  t: Dict
-}) {
+export function FixView({ formats, impact, t }: { formats: FixFormat[]; impact: Impact; t: Dict }) {
   const [active, setActive] = useState(0)
   const [copied, setCopied] = useState(false)
   const format = formats[active]
@@ -171,23 +178,6 @@ function FixView({
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
           {copied ? t.copied : t.copy}
-        </button>
-        <button
-          className="text-action"
-          type="button"
-          onClick={() => {
-            if (!format) return
-            const extension =
-              format.language === 'json' ? 'json' : format.language === 'hcl' ? 'tf' : 'sh'
-            void window.agent.saveText({
-              name: safeFileName(`${bucket}-${format.label}`, extension),
-              content: format.text,
-              kind: 'markdown',
-            })
-          }}
-        >
-          <Download size={12} />
-          {t.saveAs}
         </button>
       </div>
       <div className="impact-block">
@@ -230,7 +220,7 @@ export function ToolViewBody({
             {view.coverage.truncated ? ` · ${t.truncated}` : ''}
           </span>
         </div>
-        <DataTable
+        <TableView
           table={view.buckets}
           name={`${view.provider}-buckets`}
           empty={t.noBuckets}
@@ -242,7 +232,7 @@ export function ToolViewBody({
   }
   if (view.kind === 'buckets' || view.kind === 'objects') {
     return (
-      <DataTable
+      <TableView
         table={view.rows}
         name={taskTitle || view.kind}
         empty={view.kind === 'buckets' ? t.noBuckets : t.noObjects}
@@ -307,7 +297,7 @@ export function ToolViewBody({
     return (
       <div>
         {view.buckets && (
-          <DataTable
+          <TableView
             table={view.buckets}
             name={`${taskTitle || 'estate'}-buckets`}
             empty={t.emptyEstate}
@@ -329,7 +319,7 @@ export function ToolViewBody({
     )
   }
   if (view.kind === 'fix') {
-    return <FixView formats={view.formats} impact={view.impact} bucket={view.bucket} t={t} />
+    return <FixView formats={view.formats} impact={view.impact} t={t} />
   }
   if (view.kind === 'analyze') {
     return (
@@ -339,7 +329,7 @@ export function ToolViewBody({
           {view.note && <span className="view-sub">{view.note}</span>}
         </div>
         {view.chart && <ChartView chart={view.chart} />}
-        <DataTable
+        <TableView
           table={view.rows}
           name={`${view.dataset.split('.')[0] ?? 'analysis'}-${view.dataset.split('.').pop() ?? 'csv'}`}
           empty={t.noRows}

@@ -1,11 +1,11 @@
 import type { AppEvent, Bootstrap, TaskSummary, TaskView } from '@shared/contract'
 import { Menu } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Brief } from './Brief'
 import { Composer } from './Composer'
 import { dict } from './i18n'
 import { Settings } from './Settings'
 import { Sidebar } from './Sidebar'
-import { Stream } from './Stream'
 
 function upsert(list: TaskSummary[], task: TaskSummary): TaskSummary[] {
   const index = list.findIndex((item) => item.id === task.id)
@@ -184,7 +184,8 @@ export function App() {
               </button>
               <span className="task-title">{view.task.title}</span>
             </div>
-            <Stream
+            <Brief
+              key={view.task.id}
               view={view}
               lang={lang}
               focusId={focusId}
@@ -196,8 +197,9 @@ export function App() {
         ) : (
           <div className="empty">
             <h1>{t.emptyTitle}</h1>
-            <p>{!hasModel ? t.emptyNoModel : !hasAccount ? t.emptyNoAccount : t.emptyHint}</p>
-            {(!hasModel || !hasAccount) && (
+            {hasModel && hasAccount ? (
+              <p>{t.emptyHint}</p>
+            ) : (
               <div className="setup">
                 <button className="btn" type="button" onClick={() => setSettingsOpen(true)}>
                   {!hasModel ? t.setModel : t.addAccount}

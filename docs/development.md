@@ -59,12 +59,9 @@ Outputs: `release/linux-unpacked`, `.AppImage`, `.deb`, `.dmg`, `.zip`, `.exe`.
 
 ## Known gaps
 
-- Deleting a task removes its `task_meta` row; pi's entries stay in the database
-  (no cross-store cascade yet).
 - Attachments are exercised at the import/aggregate level and through the
   composer; there is no automated test of the native file dialog or the save
   dialog.
-- Watch scheduling is verified manually through **Check now**; CI does not wait
-  for an interval.
-- Search indexes text only: requests and answers, not tool output or attachments.
+- Search indexes text only: titles, requests, findings and the current verdict,
+  not attachments or object names.
 - No import of data from the previous major version; the database starts empty.

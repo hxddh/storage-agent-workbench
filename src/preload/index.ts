@@ -23,8 +23,8 @@ const api: AgentApi = {
   clearModel: () => ipcRenderer.invoke('agent:clearModel'),
   testModel: () => ipcRenderer.invoke('agent:testModel'),
   saveSettings: (patch) => ipcRenderer.invoke('agent:saveSettings', patch),
-  setWatch: (providerId, patch) => ipcRenderer.invoke('agent:setWatch', providerId, patch),
-  runWatch: (providerId) => ipcRenderer.invoke('agent:runWatch', providerId),
+  notes: () => ipcRenderer.invoke('agent:notes'),
+  deleteNote: (id) => ipcRenderer.invoke('agent:deleteNote', id),
   openExternal: (url) => ipcRenderer.invoke('agent:openExternal', url),
   onEvent: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, value: AppEvent) => listener(value)

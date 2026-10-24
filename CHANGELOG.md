@@ -1,5 +1,38 @@
 # Changelog
 
+## 17.0.0
+
+The brief. A task is one page, not a transcript.
+
+### Added
+
+- **The brief.** A task renders as a verdict, findings, one data section, the
+  fix, the checks that proved it and the folded questions. One deterministic
+  projection (`shared/brief.ts`) feeds both the window and the search index.
+- **Evidence on demand.** A finding opens the check that produced it; findings
+  are searchable and open highlighted.
+- **Memory in Settings.** Notes the agent keeps are listed and can be forgotten.
+- **A real delete.** Deleting a task purges its pi conversation, entries, tasks,
+  submissions, documents, revisions, datasets, audit rows and task directory.
+
+### Changed
+
+- The model writes only the verdict, at most two sentences. Findings, tables,
+  fixes and checks are rendered from tool results, never retyped.
+- Findings are merged by rule and bucket, then ordered by severity.
+- Data folds when findings already answer; it opens by default when the table is
+  the answer.
+- The agent reads the estate first and surveys only when memory is empty, stale,
+  or the question is about current exposure.
+- The brief and composer share one 720px column; Home shows one readiness action.
+
+### Removed
+
+- Watch, scheduled checks and Check now.
+- The chat transcript, bubbles, per-block Copy/Save duplication and the
+  developer-inspector look.
+- The `watch` table and `task_meta.origin` (schema head 3).
+
 ## 16.0.1
 
 Secondary text now meets WCAG AA in both themes. `--ink-3`, used for

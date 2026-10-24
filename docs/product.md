@@ -2,57 +2,70 @@
 
 Storage Agent answers questions about object storage by reading it. It is not a
 console, a dashboard, a ticket system or a chat product: it is a task list and a
-document.
+brief.
 
 ## The three surfaces
 
 1. **Task list** — every task, newest first, with a state dot. New task, rename,
    delete, Settings. Nothing else.
-2. **Task** — the request, the tool calls it caused, the answer. One scroll.
-   A tool row expands in place to its rendered result: a table, findings, a
-   probe, a fix in three formats, a chart.
-3. **Settings** — model, storage accounts, language and theme. A full-screen
-   sheet, not a wizard.
+2. **Task** — one brief, not a transcript: a verdict, the findings the tools
+   proved, one data section, the fix, the checks that produced them, and the
+   questions that led here. The page scrolls; the composer stays.
+3. **Settings** — model, storage accounts, memory, language and theme. A
+   full-screen sheet, not a wizard.
 
 The composer is docked at the foot of the window on every screen, including
 Home. Home is an empty task: one heading, one hint when setup is missing.
 
 ## A task
 
-- The user writes a Direction. It is recorded immediately; the run is durable.
-- A tool call appears as a row the moment it starts, shows its real progress
-  (`3 of 12 buckets`) and settles in place. Nothing waits for the end to appear.
-- A partial answer streams as it is written; the call that produced it stays
-  above it.
-- When it settles, the calls remain as rows and the answer is the last block.
-  There are no suggestions, next steps or follow-up chips.
+- The user writes a request. It is recorded immediately; the run is durable.
+- While it runs, a check appears the moment a tool starts and shows its real
+  progress (`3 of 12 buckets`). The check row settles in place; the Checks
+  section opens while work is happening and folds to a receipt when it ends.
+- A partial verdict streams at the top of the page. Nothing waits for the end.
 - **Add to the request** (Enter while running) steers the run. **Stop** keeps
   what was written and offers **Continue**.
 - A failure becomes one notice with **Retry**; no dialog.
 - Long tasks survive a restart; pi resumes the interrupted work once.
 
-## The answer contract
+## The brief
 
-The model writes short prose: a lead sentence and at most two paragraphs. It
-does not write headings, tables or long lists, and it does not restate data the
-window already renders. Tool results carry a typed `view` that the window draws:
-survey tables, issue lists, configuration findings, probe checks, fix formats
-with an impact verdict, analysis tables and bar charts.
+The model writes one thing: the **verdict**, at most two sentences. Everything
+else is projected deterministically from tool results, so the page cannot
+contradict the tools.
 
-If a read was denied or unsupported, the answer says the question is open. It
-never turns silence into "no problems found".
+- **Findings** — open Issues and the configuration findings that produced them,
+  merged by rule and bucket, ordered by severity, capped at five with the rest
+  behind a single disclosure. Each row names the rule, the severity, the bucket
+  and the evidence detail. Clicking a row opens Checks at the call that proved
+  it.
+- **Data** — the latest tabular result: bucket posture, an object list, object
+  facts, or an analysis table and chart. Up to ten rows, then `N more`. It is
+  open by default when there are no findings, because then it is the answer; a
+  findings page keeps it folded.
+- **Fix** — the generated formats, the impact verdict and its reasons. The code
+  is text the user applies; there is no Apply button.
+- **Checks** — every tool call, in order, with target, result note and
+  duration. This is the evidence chain, not a debug pane: views already on the
+  page do not open again here.
+- **Questions** — the requests behind the page, folded into one line.
 
-Tables and findings are flat sections in the document, separated by hairlines —
-not cards inside cards. Every table has **Copy CSV** and **Save as…**; every
-answer has **Copy** and **Save as…**.
+There are no suggestions, next steps, follow-up chips or chat bubbles.
+
+## Honesty
+
+If a read was denied or unsupported, the brief says the question is open and
+shows how many buckets could not be read. It never turns silence into "no
+problems found".
 
 ## Search
 
-⌘K focuses the sidebar search. It covers task titles, requests and answers.
-Results show the matching fragment; opening one shows that task at the matching
-message. A derived `search_docs` table is rebuilt when a task settles and
-backfilled at startup; the search itself is `LIKE`, which handles Chinese
-substrings (FTS trigram needs three characters).
+⌘K focuses the sidebar search. It covers task titles, requests, findings and
+the current verdict. A finding hit opens its task with that finding highlighted;
+an answer hit opens the verdict. A derived `search_docs` table is rebuilt when a
+task settles and backfilled at startup; the search itself is `LIKE`, which
+handles Chinese substrings (FTS trigram needs three characters).
 
 ## Issues
 
@@ -81,9 +94,13 @@ targeting the account's endpoint and region. The bucket name must match
 preview uses the recorded posture and says what it cannot tell. Storage Agent
 never applies a fix.
 
-## Watching
+## Memory and retention
 
-An account can be watched (off, 6 h, daily, weekly). A watch opens a task with a
-shield in the list, asks the agent to survey and report what changed, and raises
-a desktop notification when new Issues were opened by that run. Watches stop
-when the model is not configured.
+The estate is the agent's memory: bucket posture with the date it was read, open
+Issues, and notes. Notes are visible and deletable in Settings. The prompt tells
+the agent to read memory first and survey only when it is empty, stale or the
+question is about current exposure.
+
+There is no watch, no background check and no scheduled task. A task runs when
+the user asks. Deleting a task permanently removes its conversation, entries,
+documents, datasets, uploads, search rows and audit events.

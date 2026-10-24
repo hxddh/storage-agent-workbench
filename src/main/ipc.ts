@@ -15,7 +15,7 @@ export function registerIpc(app: App): void {
   )
 
   ipcMain.handle('agent:createTask', async (_event, text: string, tokens: string[]) => {
-    const id = await app.harness.newTask(text, 'user')
+    const id = await app.harness.newTask(text)
     const files = await app.staging.consume(tokens, id, app.uploadsFor(id))
     await app.harness.submit(id, text, files)
     return app.harness.openTask(id)
@@ -129,14 +129,9 @@ export function registerIpc(app: App): void {
     if (patch.theme) nativeTheme.themeSource = patch.theme
   })
 
-  ipcMain.handle(
-    'agent:setWatch',
-    async (_event, providerId: string, patch: { enabled?: boolean; intervalHours?: number }) => {
-      await app.db.setWatch(providerId, patch)
-    },
-  )
+  ipcMain.handle('agent:notes', () => app.harness.notes())
 
-  ipcMain.handle('agent:runWatch', (_event, providerId: string) => app.runWatch(providerId))
+  ipcMain.handle('agent:deleteNote', (_event, id: string) => app.harness.deleteNote(id))
 
   ipcMain.handle('agent:openExternal', (_event, url: string) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url)

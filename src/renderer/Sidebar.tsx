@@ -1,5 +1,5 @@
 import type { SearchHit, TaskSummary } from '@shared/contract'
-import { MoreHorizontal, Plus, Search, Settings2, Shield, X } from 'lucide-react'
+import { MoreHorizontal, Plus, Search, Settings2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { dict } from './i18n'
 
@@ -76,7 +76,6 @@ function TaskRow({
           type="button"
         >
           {task.state !== 'ready' && <span className={`dot ${task.state}`} />}
-          {task.origin === 'watch' && <Shield size={11} className="watch" />}
           <span className="title">{task.title}</span>
         </button>
       )}

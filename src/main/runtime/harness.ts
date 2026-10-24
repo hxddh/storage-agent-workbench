@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
@@ -12,11 +13,13 @@ import {
   type WatchHandle,
 } from '@earendil-works/pi-durable'
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
+import { briefSearchText, buildBrief } from '@shared/brief'
 import type {
   AppEvent,
   AttachmentRef,
   Live,
   LiveTool,
+  NoteRow,
   SearchHit,
   TaskSummary,
   TaskView,
@@ -36,6 +39,7 @@ const CONTEXT = BACKGROUND_CONTEXT
 const INITIAL_ENTRIES = 200
 
 export interface HarnessDirs {
+  task: (conversationId: string) => string
   datasets: (conversationId: string) => string
   uploads: (conversationId: string) => string
 }
@@ -168,11 +172,11 @@ export class AgentHarness {
 
   // -- tasks ----------------------------------------------------------------
 
-  async newTask(text: string, origin: 'user' | 'watch' = 'user'): Promise<string> {
+  async newTask(text: string): Promise<string> {
     const conversation = await this.newConversation()
     const id = String(conversation.id)
     const title = deriveTitle(text)
-    await this.deps.db.upsertTaskMeta({ conversationId: id, title, origin })
+    await this.deps.db.upsertTaskMeta({ conversationId: id, title })
     await this.refreshTaskList()
     return id
   }
@@ -271,7 +275,7 @@ export class AgentHarness {
       hits.set(doc.conversation_id, {
         taskId: doc.conversation_id,
         title: task.title,
-        kind: doc.kind === 'user' ? 'user' : 'answer',
+        kind: doc.kind === 'user' ? 'user' : doc.kind === 'finding' ? 'finding' : 'answer',
         snippet: `${start > 0 ? '…' : ''}${doc.text
           .slice(start, end)
           .replace(/\s+/g, ' ')
@@ -284,6 +288,23 @@ export class AgentHarness {
     return [...hits.values()].slice(0, 20)
   }
 
+  async notes(): Promise<NoteRow[]> {
+    const rows = await this.deps.db.listNotes({ limit: 100 })
+    return rows.map((note) => ({
+      id: note.id,
+      scope: note.scope,
+      ref: note.ref,
+      text: note.text,
+      author: note.author,
+      createdAt: note.created_at,
+    }))
+  }
+
+  async deleteNote(id: string): Promise<void> {
+    await this.deps.db.deleteNote(id)
+    await this.refreshEstateDigest()
+  }
+
   async rename(taskId: string, title: string): Promise<void> {
     const clean = title.trim().slice(0, 120)
     if (!clean) return
@@ -292,7 +313,6 @@ export class AgentHarness {
     await this.deps.db.upsertTaskMeta({
       conversationId: taskId,
       title: clean,
-      origin: meta.origin,
       createdAt: meta.created_at,
     })
     await this.refreshTaskList()
@@ -307,6 +327,8 @@ export class AgentHarness {
     if (conversation) await conversation.abort(CONTEXT).catch(() => undefined)
     await this.deps.db.deleteTaskMeta(taskId)
     await this.deps.db.deleteSearchDocs(taskId)
+    await this.deps.db.purgeTask(taskId)
+    await rm(this.deps.dirs.task(taskId), { recursive: true, force: true }).catch(() => undefined)
     await this.refreshTaskList()
   }
 
@@ -317,7 +339,6 @@ export class AgentHarness {
       out.push({
         id: row.conversation_id,
         title: row.title,
-        origin: row.origin,
         state: this.stateOf(row.conversation_id),
         createdAt: row.created_at,
         updatedAt: row.updated_at,
@@ -347,7 +368,6 @@ export class AgentHarness {
         task: {
           id: taskId,
           title: meta.title,
-          origin: meta.origin,
           state: this.stateOf(taskId),
           createdAt: meta.created_at,
           updatedAt: meta.updated_at,
@@ -579,26 +599,14 @@ export class AgentHarness {
     if (!conversation) return
     const state = await conversation.viewState(CONTEXT)
     try {
+      const mapped = mapEntries(state.value.entries)
       const docs: { entryId: string; kind: string; text: string; at: string }[] = []
-      for (const entry of state.value.entries) {
-        if (entry.kind === 'sa.user') {
-          const data = entry.data as { text?: string } | undefined
-          if (data?.text) {
-            docs.push({ entryId: String(entry.id), kind: 'user', text: data.text, at: '' })
-          }
-        } else if (entry.kind === 'pi.assistant') {
-          const message = entry.model?.[0] as AssistantMessage | undefined
-          const text = message ? textOf(message) : ''
-          if (text) {
-            docs.push({
-              entryId: String(entry.id),
-              kind: 'answer',
-              text,
-              at: message?.timestamp ? new Date(message.timestamp).toISOString() : '',
-            })
-          }
+      for (const entry of mapped) {
+        if (entry.kind === 'user') {
+          docs.push({ entryId: entry.id, kind: 'user', text: entry.text, at: entry.at })
         }
       }
+      docs.push(...briefSearchText(buildBrief(mapped)))
       await this.deps.db.replaceSearchDocs(taskId, docs)
     } finally {
       state.dispose()
@@ -650,7 +658,6 @@ export class AgentHarness {
         task: {
           id: taskId,
           title: meta.title,
-          origin: meta.origin,
           state: this.stateOf(taskId),
           createdAt: meta.created_at,
           updatedAt: meta.updated_at,
@@ -701,14 +708,20 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
     if (entry.kind === 'pi.user' || entry.kind === 'sa.user') {
       const data = entry.data as { text?: string; attachments?: AttachmentRef[] } | undefined
       let text = data?.text ?? ''
-      if (!text) {
-        const message = entry.model?.[0] as { role?: string; content?: unknown } | undefined
-        if (message?.role === 'user') {
-          text =
-            typeof message.content === 'string' ? message.content : JSON.stringify(message.content)
-        }
+      const message = entry.model?.[0] as
+        | { role?: string; content?: unknown; timestamp?: number }
+        | undefined
+      if (!text && message?.role === 'user') {
+        text =
+          typeof message.content === 'string' ? message.content : JSON.stringify(message.content)
       }
-      out.push({ id, kind: 'user', at: '', text, attachments: data?.attachments ?? [] })
+      out.push({
+        id,
+        kind: 'user',
+        at: message?.timestamp ? new Date(message.timestamp).toISOString() : '',
+        text,
+        attachments: data?.attachments ?? [],
+      })
       continue
     }
     if (entry.kind === 'pi.assistant') {
@@ -797,6 +810,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
 
 export function harnessDirs(dataDir: string): HarnessDirs {
   return {
+    task: (conversationId) => join(dataDir, 'tasks', conversationId),
     datasets: (conversationId) => join(dataDir, 'tasks', conversationId, 'datasets'),
     uploads: (conversationId) => join(dataDir, 'tasks', conversationId, 'uploads'),
   }
