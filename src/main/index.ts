@@ -1,6 +1,11 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { AppCommand, AppEvent, TaskSummary } from '@shared/contract'
+import {
+  type AppCommand,
+  type AppEvent,
+  TASK_LINK_PREFIX,
+  type TaskSummary,
+} from '@shared/contract'
 import { app, BrowserWindow, Menu, Notification, nativeTheme, shell } from 'electron'
 import { App } from './app'
 import { registerIpc } from './ipc'
@@ -9,6 +14,27 @@ import { startUpdater } from './updater'
 import { loadWindowBounds, saveWindowBounds } from './window-state'
 
 const here = dirname(fileURLToPath(import.meta.url))
+let pendingLink: string | null = null
+
+/** Open `storage-agent://task/<id>`; queued until the window can show it. */
+function openLink(url: string | undefined): void {
+  if (!url?.startsWith(TASK_LINK_PREFIX)) return
+  const taskId = url.slice(TASK_LINK_PREFIX.length).replace(/[/?#].*$/, '')
+  if (!/^\d+$/.test(taskId)) return
+  if (!mainWindow) {
+    pendingLink = taskId
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  broadcast({ type: 'open', taskId })
+}
+
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  openLink(url)
+})
 const service = new App()
 
 if (process.env.STORAGE_AGENT_DATA_DIR) {
@@ -203,11 +229,12 @@ async function createWindow(): Promise<void> {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.focus()
     }
+    openLink(argv.find((arg) => arg.startsWith(TASK_LINK_PREFIX)))
   })
 
   app.whenReady().then(async () => {
@@ -217,8 +244,15 @@ if (!app.requestSingleInstanceLock()) {
     nativeTheme.themeSource = service.settings.get().theme
     registerIpc(service)
     buildMenu()
+    if (!process.env.STORAGE_AGENT_DATA_DIR) app.setAsDefaultProtocolClient('storage-agent')
     await createWindow()
     startUpdater(service)
+    const link = pendingLink ?? process.argv.find((arg) => arg.startsWith(TASK_LINK_PREFIX))
+    pendingLink = null
+    if (link)
+      mainWindow?.webContents.once('did-finish-load', () =>
+        openLink(link.startsWith(TASK_LINK_PREFIX) ? link : `${TASK_LINK_PREFIX}${link}`),
+      )
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) await createWindow()

@@ -29,6 +29,8 @@ import {
   ListBucketInventoryConfigurationsCommand,
   type S3Client,
 } from '@aws-sdk/client-s3'
+import type { AccountFacts } from './account'
+import type { Capacity } from './metrics'
 import { evaluatePolicy, type PolicyFacts, policyIsPublic } from './policy'
 import { classify, isAbort, type ReadStatus, read } from './status'
 
@@ -58,6 +60,8 @@ export type ExposureReason =
   | 'acl_unknown'
   | 'restrict_blocks'
   | 'ignore_blocks'
+  | 'account_restrict_blocks'
+  | 'account_ignore_blocks'
   | 'account_block_unread'
   | 'not_read'
 
@@ -70,6 +74,8 @@ export interface Exposure {
 export interface BucketFacts {
   bucket: string
   region: string
+  /** An AWS account, where AWS-only APIs and rules apply; false for an S3-compatible endpoint. */
+  aws: boolean
   head: ReadStatus
   versioning: Dim<{ enabled: boolean; suspended: boolean }>
   encryption: Dim<{ algorithm: string | null }>
@@ -91,6 +97,10 @@ export interface BucketFacts {
   tagging: Dim<{ count: number }>
   notifications: Dim<{ targets: number }>
   inventory: Dim<{ count: number }>
+  /** The account-wide public access block, read once per survey. */
+  account: AccountFacts
+  /** CloudWatch capacity, when the account publishes it. */
+  capacity: Capacity | null
   exposure: Exposure
 }
 
@@ -113,6 +123,9 @@ export interface ReadOptions {
   /** The client for a bucket's own region, when the account spans regions. */
   regional?: (region: string) => S3Client
   defaultRegion: string
+  aws?: boolean
+  account?: AccountFacts
+  capacity?: Capacity | null
 }
 
 export async function readBucket(
@@ -285,7 +298,7 @@ export async function readBucket(
           },
         )
       : UNREAD,
-    observability
+    security || observability
       ? dim(
           c<{ LoggingEnabled?: unknown }>(new GetBucketLoggingCommand({ Bucket: bucket })),
           (data) => ({
@@ -371,6 +384,7 @@ export async function readBucket(
   const facts: BucketFacts = {
     bucket,
     region,
+    aws: options.aws ?? false,
     head,
     versioning,
     encryption,
@@ -386,6 +400,8 @@ export async function readBucket(
     tagging,
     notifications,
     inventory,
+    account: options.account ?? { pab: { status: 'unread', value: null } },
+    capacity: options.capacity ?? null,
     exposure: { verdict: null, reasons: [] },
   }
   facts.exposure = security ? exposureOf(facts) : { verdict: null, reasons: ['not_read'] }
@@ -433,11 +449,23 @@ export function exposureOf(facts: BucketFacts): Exposure {
     aclPublic = false
     reasons.push('ignore_blocks')
   }
+  const account = facts.account.pab.value
+  if (account?.restrictPublicBuckets && policyPublic) {
+    policyPublic = false
+    reasons.push('account_restrict_blocks')
+  }
+  if (account?.ignorePublicAcls && aclPublic) {
+    aclPublic = false
+    reasons.push('account_ignore_blocks')
+  }
 
   let verdict: boolean | null = null
   if (policyPublic === true || aclPublic === true) verdict = true
   else if (policyPublic === false && aclPublic === false) verdict = false
-  if (verdict === true) reasons.push('account_block_unread')
+  // On AWS an unread account block could still cancel this; elsewhere there is none.
+  const accountKnown =
+    facts.account.pab.status === 'available' || facts.account.pab.status === 'not_configured'
+  if (verdict === true && facts.aws && !accountKnown) reasons.push('account_block_unread')
   return { verdict, reasons }
 }
 
@@ -464,6 +492,15 @@ export function rememberable(facts: BucketFacts): Record<string, unknown> {
     cors_status: facts.cors.status,
     logging_status: facts.logging.status,
     object_ownership: facts.ownership.value?.mode ?? null,
+    ...(facts.capacity
+      ? {
+          size_bytes: facts.capacity.bytes,
+          objects: facts.capacity.objects,
+          monthly_usd: facts.capacity.monthlyUsd,
+          growth_bytes: facts.capacity.growthBytes,
+          capacity_at: facts.capacity.at,
+        }
+      : {}),
   }
 }
 

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 
-export const HOST_SCHEMA_VERSION = 4
+export const HOST_SCHEMA_VERSION = 5
 
 export interface ProviderRow {
   id: string
@@ -18,6 +18,8 @@ export interface ProviderRow {
   created_at: string
   auth: 'keys' | 'profile'
   profile: string | null
+  account_json?: string | null
+  account_at?: string | null
 }
 
 export interface BucketRow {
@@ -200,6 +202,14 @@ export class AppDb {
       await add('issues', 'detail', 'detail TEXT')
       await add('issues', 'accepted_at', 'accepted_at TEXT')
     }
+    if (version < 5) {
+      // 19.0: the account-wide posture (statuses and booleans, never the account id).
+      const columns = await raw.all<{ name: string }>('PRAGMA table_info(providers)')
+      if (!columns.some((c) => c.name === 'account_json'))
+        await raw.exec('ALTER TABLE providers ADD COLUMN account_json TEXT')
+      if (!columns.some((c) => c.name === 'account_at'))
+        await raw.exec('ALTER TABLE providers ADD COLUMN account_at TEXT')
+    }
     if (version < HOST_SCHEMA_VERSION) {
       await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
     }
@@ -239,6 +249,23 @@ export class AppDb {
       row.auth,
       row.profile,
     )
+  }
+
+  async setAccountPosture(id: string, posture: Record<string, unknown>): Promise<void> {
+    await this.raw.run(
+      'UPDATE providers SET account_json = ?, account_at = ? WHERE id = ?',
+      JSON.stringify(posture),
+      new Date().toISOString(),
+      id,
+    )
+  }
+
+  async countOpenIssues(providerId: string): Promise<number> {
+    const row = await this.raw.get<{ n: number }>(
+      "SELECT count(*) AS n FROM issues WHERE provider_id = ? AND status = 'open'",
+      providerId,
+    )
+    return row?.n ?? 0
   }
 
   async deleteProvider(id: string): Promise<void> {
@@ -317,7 +344,7 @@ export class AppDb {
       params.push(filter.status)
     }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    params.push(Math.max(1, Math.min(filter.limit ?? 50, 200)))
+    params.push(Math.max(1, Math.min(filter.limit ?? 50, 1000)))
     return this.raw.all<IssueRecord>(
       `SELECT * FROM issues ${clause}
        ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,

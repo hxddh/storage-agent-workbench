@@ -46,7 +46,7 @@ describe('search index', () => {
 })
 
 describe('schema', () => {
-  it('migrates a 17.x database to head 4 without losing rows', async () => {
+  it('migrates a 17.x database to the head without losing rows', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sa-mig-'))
     const raw = await openNodeSqliteDatabase(join(dir, 'old.sqlite'))
     await raw.exec(`
@@ -64,7 +64,7 @@ describe('schema', () => {
     `)
     const db = await AppDb.open(raw)
     const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(4)
+    expect(version?.user_version).toBe(5)
     expect((await db.getProvider('p'))?.auth).toBe('keys')
     expect((await db.getIssue('i'))?.detail).toBeNull()
   })

@@ -1,10 +1,13 @@
 import type { AppEvent, Bootstrap, TaskSummary, TaskView } from '@shared/contract'
 import { Menu } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Brief } from './Brief'
 import { Composer } from './Composer'
 import { dict } from './i18n'
-import { Settings } from './Settings'
+
+// Settings is a sheet most launches never open; it loads on first use.
+const Settings = lazy(() => import('./Settings').then((module) => ({ default: module.Settings })))
+
 import { Sidebar } from './Sidebar'
 
 function upsert(list: TaskSummary[], task: TaskSummary): TaskSummary[] {
@@ -243,6 +246,19 @@ export function App() {
                 <button className="btn" type="button" onClick={() => setSettingsOpen(true)}>
                   {!hasModel ? t.setModel : t.addAccount}
                 </button>
+                {hasModel && !hasAccount && (
+                  <button
+                    className="btn ghost"
+                    type="button"
+                    title={t.demoHint}
+                    onClick={async () => {
+                      await window.agent.addDemoAccount()
+                      await refresh()
+                    }}
+                  >
+                    {t.tryDemo}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -259,13 +275,15 @@ export function App() {
         />
       </main>
       {settingsOpen && boot && (
-        <Settings
-          boot={boot}
-          onClose={() => setSettingsOpen(false)}
-          onChanged={async () => {
-            await refresh()
-          }}
-        />
+        <Suspense fallback={null}>
+          <Settings
+            boot={boot}
+            onClose={() => setSettingsOpen(false)}
+            onChanged={async () => {
+              await refresh()
+            }}
+          />
+        </Suspense>
       )}
     </div>
   )

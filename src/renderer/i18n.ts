@@ -185,6 +185,20 @@ const en = {
     'OpenAI (Responses API), Anthropic, or any OpenAI-compatible endpoint: Ollama, LM Studio, vLLM, OpenRouter.',
   optional: '(optional)',
   accepted: 'accepted',
+  accountWide: 'whole account',
+  perMonth: '≈ {usd}/month',
+  queryReceipt: '{calls} read-only calls over {items} listed items',
+  contradictedHint: 'The checks in this task proved the opposite.',
+  contradictedNote:
+    'This answer says the opposite of what a check proved about a bucket’s exposure.',
+  copyLink: 'Copy link',
+  issuesShown: 'Showing {shown} of {total} open Issues. Ask to narrow them down.',
+  queryCode: 'Script',
+  queryOutput: 'Output',
+  tryDemo: 'Try with demo storage',
+  demoHint: 'A sample estate answered on this machine; nothing leaves it.',
+  localModels: 'Running on this machine',
+  useModel: 'Use',
 }
 
 const zh: typeof en = {
@@ -372,6 +386,19 @@ const zh: typeof en = {
     '支持 OpenAI（Responses API）、Anthropic，以及任何 OpenAI 兼容接口：Ollama、LM Studio、vLLM、OpenRouter。',
   optional: '（可选）',
   accepted: '已接受',
+  accountWide: '整个账号',
+  perMonth: '约 {usd}/月',
+  queryReceipt: '{calls} 次只读调用，共列出 {items} 项',
+  contradictedHint: '本任务的检查证明的是相反的结论。',
+  contradictedNote: '答案关于某个存储桶是否公开的说法，与检查结果相反。',
+  copyLink: '复制链接',
+  issuesShown: '显示 {shown} 项，共 {total} 项未解决的问题。可以让它缩小范围。',
+  queryCode: '脚本',
+  queryOutput: '输出',
+  tryDemo: '用演示存储试一试',
+  demoHint: '在本机模拟的示例存储，不会联网。',
+  localModels: '本机正在运行',
+  useModel: '使用',
 }
 
 export type Dict = typeof en

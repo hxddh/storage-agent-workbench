@@ -51,6 +51,20 @@ export function namesInView(view: ToolView | null, target: string, names: Set<st
     case 'probe':
       names.add(view.endpoint)
       break
+    case 'query': {
+      // The first column, and any column that holds names, grounds what the verdict says.
+      const named = view.rows.columns
+        .map((column, index) =>
+          index === 0 || /bucket|key|prefix|name/i.test(column) ? index : -1,
+        )
+        .filter((index) => index >= 0)
+      for (const row of view.rows.rows)
+        for (const index of named) {
+          const value = row[index]
+          if (typeof value === 'string' && value) names.add(value)
+        }
+      break
+    }
     default:
       break
   }
@@ -79,6 +93,64 @@ export function ungrounded(verdict: string, known: ReadonlySet<string>): string[
     const head = name.split('/')[0]!
     if (name.includes('/') && known.has(head)) continue
     out.add(name)
+  }
+  return [...out]
+}
+
+/**
+ * What the task's readings say about each bucket's public exposure: true when
+ * proved public, false when proved not. Later readings replace earlier ones.
+ */
+export function exposureInView(view: ToolView | null, exposure: Map<string, boolean>): void {
+  if (!view) return
+  const fromTable = (table: { columns: string[]; rows: (string | number | null)[][] } | null) => {
+    if (!table) return
+    const column = table.columns.indexOf('Public')
+    if (column < 0) return
+    for (const row of table.rows) {
+      const bucket = row[0]
+      if (typeof bucket !== 'string') continue
+      if (row[column] === 'public') exposure.set(bucket, true)
+      else if (row[column] === 'no') exposure.set(bucket, false)
+    }
+  }
+  if (view.kind === 'survey') fromTable(view.buckets)
+  else if (view.kind === 'estate') fromTable(view.buckets)
+  else if (view.kind === 'config' && (view.aspect ?? 'security') === 'security') {
+    if (view.findings.some((finding) => finding.code === 'public_exposure'))
+      exposure.set(view.bucket, true)
+  }
+}
+
+export function knownExposure(entries: readonly UiEntry[]): Map<string, boolean> {
+  const exposure = new Map<string, boolean>()
+  for (const entry of entries)
+    if (entry.kind === 'tool' && entry.status === 'done') exposureInView(entry.view, exposure)
+  return exposure
+}
+
+const PUBLIC =
+  /\bpublic(ly)?\b|\banonymous(ly)?\b|\bopen to (anyone|everyone|the internet)\b|公开|匿名/i
+const NEGATION =
+  /\bnot\b|n['’]t\b|\bno longer\b|\bnever\b|\bneither\b|\bnor\b|\bnone\b|\bprivate\b|不|没有|未|非|无/i
+
+/**
+ * Sentences that name exactly one bucket and say it is, or is not, public
+ * against what the readings proved. Only exposure is checked: it is the claim
+ * that matters most and the one a sentence states plainly.
+ */
+export function contradicted(verdict: string, exposure: ReadonlyMap<string, boolean>): string[] {
+  const out = new Set<string>()
+  for (const sentence of verdict.split(/(?<=[.!?。！？；;])\s*/)) {
+    const names = [...sentence.matchAll(/`([^`\n]{1,256})`/g)].map((m) => m[1]!.trim())
+    const known = names.filter((name) => exposure.has(name))
+    if (names.length !== 1 || known.length !== 1) continue
+    const match = PUBLIC.exec(sentence)
+    if (!match) continue
+    // Negation counts only just before the claim: "has no encryption but is public" is a public claim.
+    const claimsPublic = !NEGATION.test(sentence.slice(Math.max(0, match.index - 32), match.index))
+    const name = known[0]!
+    if (claimsPublic !== exposure.get(name)) out.add(name)
   }
   return [...out]
 }

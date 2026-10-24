@@ -285,4 +285,32 @@ describe('brief projection', () => {
     expect(brief.data).toBeNull()
     expect(brief.checks.map((check) => check.status)).toEqual(['timeout', 'stopped'])
   })
+
+  it('keeps findings a survey view left out when its Issue list was cut short', () => {
+    const many = { ...survey([issue('a', 'high', 'demo')]), issueTotal: 1200 }
+    const brief = buildBrief([
+      tool('t1', 'estate', at(1), {
+        kind: 'estate',
+        providerId: 'p1',
+        buckets: null,
+        issues: [issue('z', 'low', 'far-away')],
+        notes: [],
+      }),
+      tool('t2', 'survey', at(2), many as ToolView),
+    ])
+    expect(brief.findings.map((finding) => finding.key).sort()).toEqual(['issue:a', 'issue:z'])
+    expect(brief.issueTotal).toBe(1200)
+  })
+
+  it('marks a verdict that calls a proved-private bucket public', () => {
+    const brief = buildBrief([
+      user('u1', at(0)),
+      tool('t1', 'survey', at(1), {
+        ...survey([]),
+        buckets: { columns: ['Bucket', 'Public'], rows: [['demo', 'no']] },
+      } as ToolView),
+      answer('a1', at(2), '`demo` is publicly accessible.'),
+    ])
+    expect(brief.verdict?.contradicted).toEqual(['demo'])
+  })
 })

@@ -7,7 +7,7 @@ import {
   ToolTask,
 } from '@earendil-works/pi-durable'
 import type { ToolDetails } from '@shared/contract'
-import { namesInView, ungrounded } from '@shared/grounding'
+import { contradicted, exposureInView, namesInView, ungrounded } from '@shared/grounding'
 import { BY_CODE, ruleTitle } from '../estate/rules'
 import { createTools } from '../tools'
 import type { ToolDeps } from '../tools/policy'
@@ -15,12 +15,15 @@ import type { ToolDeps } from '../tools/policy'
 /** Hard stop. The method asks for far fewer; this only ends a loop that is circling. */
 export const MAX_TOOL_ROUNDS = 24
 
-const MEMORY_TOOLS = new Set(['estate', 'fix', 'note'])
+// Memory and surveys change as the task reads (a survey continues where the last stopped).
+const MEMORY_TOOLS = new Set(['estate', 'fix', 'note', 'survey'])
 
 const METHOD = `How to work:
 - Start from memory. \`estate\` returns remembered posture with the date it was read; use it when it answers the question and say it is memory.
 - Survey when memory is empty, older than today, or the question is about current exposure. After the user says they applied a fix, survey only that bucket (\`buckets\`).
 - Review one bucket with \`config\` when the question is about a specific setting or a survey left a rule undecided.
+- Use \`query\` when the answer needs many objects or many buckets at once (largest prefixes, data untouched for a year, versions piling up, buckets by size). Write the shortest script that answers and return only the rows the page needs. Prefer CloudWatch capacity or a prefix-level listing (delimiter "/") to paging through millions of objects.
+- A survey that stops early has read the longest-unread buckets first; survey again to read the rest when the question needs them.
 - Read before you conclude. A denied, unsupported or failed read leaves the question open; silence is never a clean bill of health.
 - Calls that do not depend on each other can go in the same round.
 - Three to six tool calls is a normal task. Past twelve you are circling: answer with what you have.`
@@ -39,13 +42,17 @@ Security / IAM: a wildcard principal is not the same as anonymous access. A cond
 Protocol compatibility: S3-compatible providers answer 501 or 405 for configuration APIs they do not implement. That is a capability gap, not a clean result. Where the provider has no policy-status API, the policy document itself is evaluated.
 Issues the user accepted stay accepted until a reading proves them fixed. Mention them only when asked.
 Access logs: parse an attached S3, CloudFront or ALB log, then aggregate. Status classes, bytes and latency percentiles are the evidence; raw rows stay out of the answer.
-Lifecycle and cost: no AbortIncompleteMultipartUpload leaves parts billing forever. Versioning without NoncurrentVersionExpiration grows storage without bound. A lifecycle put replaces the whole configuration, so a generated fix must be merged, not applied blind.`
+Lifecycle and cost: no AbortIncompleteMultipartUpload leaves parts billing forever. Versioning without NoncurrentVersionExpiration grows storage without bound. A lifecycle put replaces the whole configuration, so a generated fix must be merged, not applied blind.
+Capacity: on AWS, survey reads CloudWatch's daily storage metrics — size by storage class, object count, 14-day growth and a storage-only estimate at us-east-1 list price. Call it an estimate. S3-compatible endpoints publish none; use \`query\` to measure a bucket there.
+Account: on AWS, the account-wide public access block applies to every bucket and can cancel exposure a bucket's own settings show; survey reads it. TLS: on AWS a bucket should deny requests where aws:SecureTransport is false.`
 
 /** Per-run state the hooks keep; the harness resets it at each submission. */
 export interface RunState {
   rounds: number
   calls: Set<string>
   known: Set<string>
+  /** What the task's readings proved about each bucket's exposure. */
+  exposure: Map<string, boolean>
   corrected: boolean
 }
 
@@ -55,8 +62,17 @@ export interface AgentState {
   runs: Map<string, RunState>
 }
 
-export function freshRun(known: Iterable<string> = []): RunState {
-  return { rounds: 0, calls: new Set(), known: new Set(known), corrected: false }
+export function freshRun(
+  known: Iterable<string> = [],
+  exposure: Iterable<[string, boolean]> = [],
+): RunState {
+  return {
+    rounds: 0,
+    calls: new Set(),
+    known: new Set(known),
+    exposure: new Map(exposure),
+    corrected: false,
+  }
 }
 
 function run(state: AgentState, id: string): RunState {
@@ -104,7 +120,7 @@ export function blockReason(
   return undefined
 }
 
-/** The one correction an ungrounded verdict gets, or undefined. */
+/** The one correction an ungrounded or contradicted verdict gets, or undefined. */
 export function groundingCorrection(
   state: AgentState,
   conversationId: string,
@@ -113,9 +129,20 @@ export function groundingCorrection(
   const current = run(state, conversationId)
   if (current.corrected || current.known.size === 0) return undefined
   const missing = ungrounded(verdict, current.known)
-  if (!missing.length) return undefined
+  const wrong = contradicted(verdict, current.exposure)
+  if (!missing.length && !wrong.length) return undefined
   current.corrected = true
-  return `Your verdict names ${missing.map((name) => `\`${name}\``).join(', ')}, which no tool result in this task shows. Rewrite the verdict naming only what the tools returned, or read it first.`
+  const parts: string[] = []
+  if (missing.length)
+    parts.push(
+      `Your verdict names ${missing.map((name) => `\`${name}\``).join(', ')}, which no tool result in this task shows.`,
+    )
+  if (wrong.length)
+    parts.push(
+      `Your verdict says the opposite of what the readings proved about the exposure of ${wrong.map((name) => `\`${name}\``).join(', ')}.`,
+    )
+  parts.push('Rewrite the verdict so it says only what the tools returned, or read it first.')
+  return parts.join(' ')
 }
 
 export function createAgent(deps: ToolDeps, state: AgentState, tools?: ToolRegistration[]) {
@@ -162,7 +189,9 @@ export function createAgent(deps: ToolDeps, state: AgentState, tools?: ToolRegis
         afterTool: (_call, result, api) => {
           const details = (result as { details?: ToolDetails }).details
           if (details && details.status === 'done') {
-            namesInView(details.view, details.target, run(state, String(api.conversationId)).known)
+            const current = run(state, String(api.conversationId))
+            namesInView(details.view, details.target, current.known)
+            exposureInView(details.view, current.exposure)
           }
           return undefined
         },

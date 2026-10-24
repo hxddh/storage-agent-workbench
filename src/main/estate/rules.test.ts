@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { type BucketFacts, exposureOf } from '../s3/facts'
 import { evaluatePolicy } from '../s3/policy'
-import { decide, RULES, reviewFindings, undecidedRules } from './rules'
+import { BY_CODE, decide, decideAccount, RULES, reviewFindings, undecidedRules } from './rules'
 
 const PRIVATE_PAB = {
   blockPublicAcls: true,
@@ -14,6 +14,7 @@ function facts(overrides: Partial<BucketFacts> = {}): BucketFacts {
   const base: BucketFacts = {
     bucket: 'b',
     region: 'us-east-1',
+    aws: true,
     head: 'available',
     versioning: { status: 'available', value: { enabled: false, suspended: false } },
     encryption: { status: 'available', value: { algorithm: 'AES256' } },
@@ -38,6 +39,8 @@ function facts(overrides: Partial<BucketFacts> = {}): BucketFacts {
     tagging: { status: 'unread', value: null },
     notifications: { status: 'unread', value: null },
     inventory: { status: 'unread', value: null },
+    account: { pab: { status: 'available', value: PRIVATE_PAB } },
+    capacity: null,
     exposure: { verdict: null, reasons: [] },
     ...overrides,
   }
@@ -100,6 +103,8 @@ describe('policy evaluation', () => {
 describe('exposure', () => {
   it('proves exposure from the local policy when the provider has no policy status', () => {
     const f = facts({
+      aws: false,
+      account: { pab: { status: 'unread', value: null } },
       policyStatus: { status: 'provider_unsupported', value: null },
       policy: {
         status: 'available',
@@ -137,12 +142,36 @@ describe('exposure', () => {
 })
 
 describe('rules', () => {
-  it('has seven rules', () => {
-    expect(RULES.map((rule) => rule.code)).toHaveLength(7)
+  it('has eleven bucket rules and one account rule', () => {
+    expect(RULES.map((rule) => rule.code)).toHaveLength(11)
+    expect(BY_CODE.size).toBe(12)
   })
 
   it('decides every rule on a fully readable private bucket, all clean', () => {
-    const decisions = decide(facts())
+    const decisions = decide(
+      facts({
+        policy: {
+          status: 'available',
+          value: evaluatePolicy(
+            policy({
+              Effect: 'Deny',
+              Principal: '*',
+              Action: 's3:*',
+              Condition: { Bool: { 'aws:SecureTransport': 'false' } },
+            }),
+          ),
+        },
+        logging: { status: 'available', value: { enabled: true } },
+        capacity: {
+          bytes: 1024,
+          objects: 1,
+          byClass: { StandardStorage: 1024 },
+          growthBytes: 0,
+          monthlyUsd: 0,
+          at: '',
+        },
+      }),
+    )
     expect(Object.keys(decisions).sort()).toEqual(RULES.map((rule) => rule.code).sort())
     expect(Object.values(decisions).every((d) => d.verdict === false)).toBe(true)
   })
@@ -193,5 +222,66 @@ describe('rules', () => {
       pab: { status: 'available', value: { ...PRIVATE_PAB, blockPublicAcls: false } },
     })
     expect(decide(f, 'zh').public_access_block_missing?.detail).toBe('未开启：BlockPublicAcls')
+  })
+
+  it('requires TLS on AWS and leaves it to the endpoint elsewhere', () => {
+    expect(decide(facts()).insecure_transport?.verdict).toBe(true)
+    expect(decide(facts({ aws: false })).insecure_transport).toBeUndefined()
+  })
+
+  it('flags a large bucket that never leaves Standard, and only with capacity known', () => {
+    const big = {
+      bytes: 600 * 1024 ** 3,
+      objects: 10,
+      byClass: { StandardStorage: 600 * 1024 ** 3 },
+      growthBytes: null,
+      monthlyUsd: 13.8,
+      at: '',
+    }
+    const lifecycle = {
+      status: 'available' as const,
+      value: {
+        rules: 1,
+        abortMpu: true,
+        expiration: true,
+        transition: false,
+        noncurrentExpiration: true,
+      },
+    }
+    expect(decide(facts({ capacity: big, lifecycle })).large_standard_only?.detail).toMatch(
+      /600 GiB, 100% in Standard/,
+    )
+    expect(decide(facts({ lifecycle })).large_standard_only).toBeUndefined()
+  })
+
+  it('lets the account block cancel exposure and decides the account rule', () => {
+    const exposed = facts({
+      pab: { status: 'not_configured', value: null },
+      policyStatus: { status: 'available', value: { isPublic: true } },
+      policy: {
+        status: 'available',
+        value: evaluatePolicy(policy({ Effect: 'Allow', Principal: '*', Action: 's3:GetObject' })),
+      },
+    })
+    expect(exposed.exposure.verdict).toBe(false)
+    expect(exposed.exposure.reasons).toContain('account_restrict_blocks')
+    expect(decideAccount({ pab: { status: 'not_configured', value: null } }, true).verdict).toBe(
+      true,
+    )
+    expect(
+      decideAccount({ pab: { status: 'not_configured', value: null } }, false).verdict,
+    ).toBeNull()
+  })
+
+  it('says an unread account block could still apply only on AWS', () => {
+    const open = (aws: boolean) =>
+      facts({
+        aws,
+        account: { pab: { status: 'access_denied', value: null } },
+        pab: { status: 'not_configured', value: null },
+        policyStatus: { status: 'available', value: { isPublic: true } },
+      })
+    expect(open(true).exposure.reasons).toContain('account_block_unread')
+    expect(open(false).exposure.reasons).not.toContain('account_block_unread')
   })
 })

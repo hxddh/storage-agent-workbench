@@ -51,6 +51,7 @@ const TOOL_NAMES = new Set<ToolName>([
   'fix',
   'analyze',
   'note',
+  'query',
 ])
 
 function iso(timestamp: number | undefined): string {

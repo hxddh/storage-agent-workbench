@@ -1,5 +1,8 @@
 import type { FixFormat, Impact } from '@shared/contract'
-import type { Rule } from './rules'
+import { ACCOUNT_SCOPE } from './rules'
+
+/** A fix only needs the rule's code. */
+type Rule = { code: string }
 
 const SAFE_BUCKET = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/
 
@@ -40,8 +43,24 @@ function tfName(bucket: string): string {
   return /^[A-Za-z_]/.test(name) ? name : `b_${name}`
 }
 
+const TLS_STATEMENT = (bucket: string) => ({
+  Sid: 'DenyInsecureTransport',
+  Effect: 'Deny',
+  Principal: '*',
+  Action: 's3:*',
+  Resource: [`arn:aws:s3:::${bucket}`, `arn:aws:s3:::${bucket}/*`],
+  Condition: { Bool: { 'aws:SecureTransport': 'false' } },
+})
+
 interface Fix {
-  kind: 'public_access_block' | 'default_encryption' | 'lifecycle'
+  kind:
+    | 'public_access_block'
+    | 'default_encryption'
+    | 'lifecycle'
+    | 'policy'
+    | 'ownership'
+    | 'logging'
+    | 'account_public_access_block'
   document: Record<string, unknown>
   command: string
   notes: string[]
@@ -49,6 +68,71 @@ interface Fix {
 
 function build(code: string, bucket: string): Fix | null {
   const b = quote(bucket)
+  if (code === 'account_public_access_block_missing') {
+    return {
+      kind: 'account_public_access_block',
+      document: PAB,
+      command: `aws s3control put-public-access-block --account-id <account-id> --public-access-block-configuration ${jsonArg(PAB)}`,
+      notes: [
+        'Replace <account-id> with this account’s id; Storage Agent never stores it.',
+        'Applies to every bucket in the account, including ones that serve public content on purpose.',
+      ],
+    }
+  }
+  if (code === 'insecure_transport') {
+    const doc = { Version: '2012-10-17', Statement: [TLS_STATEMENT(bucket)] }
+    return {
+      kind: 'policy',
+      document: doc,
+      command: `aws s3api put-bucket-policy --bucket ${b} --policy ${jsonArg(doc)}`,
+      notes: [
+        'This call REPLACES the bucket policy: add the DenyInsecureTransport statement to the existing policy instead when there is one.',
+        'Clients that still call over plain HTTP will be refused.',
+      ],
+    }
+  }
+  if (code === 'acls_enabled') {
+    const doc = { Rules: [{ ObjectOwnership: 'BucketOwnerEnforced' }] }
+    return {
+      kind: 'ownership',
+      document: doc,
+      command: `aws s3api put-bucket-ownership-controls --bucket ${b} --ownership-controls ${jsonArg(doc)}`,
+      notes: [
+        'Disables every bucket and object ACL; the bucket owner owns all objects.',
+        'Move any access granted by ACLs into the bucket policy first.',
+      ],
+    }
+  }
+  if (code === 'access_logging_off') {
+    const doc = {
+      LoggingEnabled: { TargetBucket: '<log-bucket>', TargetPrefix: `${bucket}/` },
+    }
+    return {
+      kind: 'logging',
+      document: doc,
+      command: `aws s3api put-bucket-logging --bucket ${b} --bucket-logging-status ${jsonArg(doc)}`,
+      notes: [
+        'Replace <log-bucket> with a bucket in the same region whose policy lets logging.s3.amazonaws.com write to it.',
+        'Never log a bucket into itself.',
+      ],
+    }
+  }
+  if (code === 'large_standard_only') {
+    const doc = lifecycle(
+      { Transitions: [{ Days: 30, StorageClass: 'INTELLIGENT_TIERING' }] },
+      'intelligent-tiering-30d',
+    )
+    return {
+      kind: 'lifecycle',
+      document: doc,
+      command: `aws s3api put-bucket-lifecycle-configuration --bucket ${b} --lifecycle-configuration ${jsonArg(doc)}`,
+      notes: [
+        'Objects move to Intelligent-Tiering after 30 days and then tier down as they go cold.',
+        'Intelligent-Tiering adds a small monitoring fee per object; objects under 128 KiB never tier.',
+        "This call REPLACES the bucket's lifecycle configuration: merge this rule into existing rules first.",
+      ],
+    }
+  }
   if (code === 'public_exposure' || code === 'public_access_block_missing') {
     return {
       kind: 'public_access_block',
@@ -120,6 +204,19 @@ function terraform(
       `resource "aws_s3_bucket_public_access_block" "${name}" {\n  bucket = ${b}\n\n` +
       '  block_public_acls       = true\n  ignore_public_acls      = true\n' +
       '  block_public_policy     = true\n  restrict_public_buckets = true\n}'
+  } else if (fix.kind === 'account_public_access_block') {
+    body =
+      'resource "aws_s3_account_public_access_block" "account" {\n' +
+      '  block_public_acls       = true\n  ignore_public_acls      = true\n' +
+      '  block_public_policy     = true\n  restrict_public_buckets = true\n}'
+  } else if (fix.kind === 'policy') {
+    body =
+      `# Merge into the bucket's existing policy document when there is one.\n` +
+      `resource "aws_s3_bucket_policy" "${name}" {\n  bucket = ${b}\n  policy = jsonencode(${JSON.stringify(fix.document, null, 2).replace(/\n/g, '\n  ')})\n}`
+  } else if (fix.kind === 'ownership') {
+    body = `resource "aws_s3_bucket_ownership_controls" "${name}" {\n  bucket = ${b}\n\n  rule {\n    object_ownership = "BucketOwnerEnforced"\n  }\n}`
+  } else if (fix.kind === 'logging') {
+    body = `resource "aws_s3_bucket_logging" "${name}" {\n  bucket        = ${b}\n  target_bucket = "<log-bucket>"\n  target_prefix = ${tfString(`${bucket}/`)}\n}`
   } else if (fix.kind === 'default_encryption') {
     body =
       `resource "aws_s3_bucket_server_side_encryption_configuration" "${name}" {\n  bucket = ${b}\n\n` +
@@ -139,6 +236,12 @@ function terraform(
       if (abort) {
         lines.push(
           `    abort_incomplete_multipart_upload {\n      days_after_initiation = ${abort.DaysAfterInitiation ?? 7}\n    }`,
+        )
+      }
+      const transitions = rule.Transitions as { Days?: number; StorageClass?: string }[] | undefined
+      for (const transition of transitions ?? []) {
+        lines.push(
+          `    transition {\n      days          = ${transition.Days ?? 30}\n      storage_class = ${tfString(transition.StorageClass ?? 'INTELLIGENT_TIERING')}\n    }`,
         )
       }
       const noncurrent = rule.NoncurrentVersionExpiration as { NoncurrentDays?: number } | undefined
@@ -172,7 +275,8 @@ export function generateFix(
   endpoint: string | null,
   region: string | null,
 ): GeneratedFix | null {
-  if (!SAFE_BUCKET.test(bucket)) return null
+  const account = bucket === ACCOUNT_SCOPE && rule.code === 'account_public_access_block_missing'
+  if (!account && !SAFE_BUCKET.test(bucket)) return null
   const fix = build(rule.code, bucket)
   if (!fix) return null
   let command = fix.command
@@ -184,6 +288,8 @@ export function generateFix(
       .filter(Boolean)
       .join(' ')
     command = command.replace('aws s3api ', `aws ${target} s3api `)
+    if (account && region)
+      command = command.replace('aws s3control ', `aws --region ${quote(region)} s3control `)
   }
   const formats: FixFormat[] = [{ label: 'AWS CLI', language: 'bash', text: command }]
   const tf = terraform(fix, bucket, endpoint, region)
@@ -205,6 +311,16 @@ export function impactPreview(
 ): Impact {
   const reasons: string[] = []
   let verdict: Impact['verdict'] = 'low'
+  if (rule.code === 'account_public_access_block_missing') {
+    return {
+      verdict: 'caution',
+      reasons: [
+        'Every bucket in the account loses public access at once, including any that serve public content on purpose.',
+        'Survey the account first to see which buckets are public today.',
+      ],
+      gap: null,
+    }
+  }
   if (!posture) {
     return {
       verdict: 'unknown',
@@ -246,6 +362,41 @@ export function impactPreview(
       )
     }
     reasons.push('Permanently deletes noncurrent versions older than 30 days.')
+  } else if (rule.code === 'insecure_transport') {
+    verdict = posture.policy_status === 'available' ? 'caution' : 'low'
+    if (posture.policy_status === 'available')
+      reasons.push(
+        'The bucket already has a policy: add the statement to it instead of replacing it.',
+      )
+    reasons.push('Requests over plain HTTP are refused; HTTPS clients are unaffected.')
+  } else if (rule.code === 'acls_enabled') {
+    verdict = 'caution'
+    reasons.push(
+      'Any access that ACLs grant today stops working; move it into the bucket policy first.',
+    )
+  } else if (rule.code === 'access_logging_off') {
+    verdict = 'unknown'
+    reasons.push('Logs cost storage in the target bucket; reads and writes are unaffected.')
+    return {
+      verdict,
+      reasons,
+      gap: 'The target log bucket is your choice; the fix leaves it as <log-bucket>.',
+    }
+  } else if (rule.code === 'large_standard_only') {
+    if (hasLifecycle) {
+      verdict = 'caution'
+      reasons.push(
+        'The bucket already has lifecycle rules: this command replaces them, so merge the new rule first.',
+      )
+    }
+    reasons.push(
+      'No data is deleted; objects keep their keys and stay readable at the same latency.',
+    )
+    const usd = typeof posture.monthly_usd === 'number' ? posture.monthly_usd : null
+    if (usd)
+      reasons.push(
+        `Storage is about $${usd}/month at list price today; cold objects tier down and cost less.`,
+      )
   } else {
     return {
       verdict: 'unknown',

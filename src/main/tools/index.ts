@@ -5,6 +5,7 @@ import { configTool } from './config'
 import { estateTools } from './estate'
 import type { ToolDeps } from './policy'
 import { probeTool } from './probe'
+import { queryTool } from './query'
 import { surveyTool } from './survey'
 
 export function createTools(deps: ToolDeps): ToolRegistration[] {
@@ -15,5 +16,6 @@ export function createTools(deps: ToolDeps): ToolRegistration[] {
     probeTool(deps),
     ...estateTools(deps),
     analyzeTool(deps),
+    queryTool(deps),
   ] as ToolRegistration[]
 }

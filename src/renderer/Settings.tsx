@@ -3,6 +3,7 @@ import type {
   AccountInput,
   Bootstrap,
   Lang,
+  LocalModel,
   ModelProvider,
   NoteRow,
   Theme,
@@ -50,6 +51,7 @@ export function Settings({
   const [contextWindow, setContextWindow] = useState(boot.model?.contextWindow ?? 128_000)
   const [thinking, setThinking] = useState<ThinkingLevel>(boot.model?.thinking ?? 'off')
   const [profiles, setProfiles] = useState<string[]>([])
+  const [localModels, setLocalModels] = useState<LocalModel[]>([])
   const [modelStatus, setModelStatus] = useState<{ ok: boolean; detail: string } | null>(null)
   const [modelBusy, setModelBusy] = useState(false)
 
@@ -64,7 +66,23 @@ export function Settings({
   useEffect(() => {
     void window.agent.notes().then(setNotes)
     void window.agent.awsProfiles().then(setProfiles)
+    void window.agent.localModels().then(setLocalModels)
   }, [])
+
+  const chooseLocal = (model: LocalModel) => {
+    setProvider('compatible')
+    setModelId(model.modelId)
+    setBaseUrl(model.baseUrl)
+    setApiKey('local')
+  }
+
+  const addDemo = async () => {
+    await window.agent.addDemoAccount()
+    await onChanged()
+    const fresh = await window.agent.bootstrap()
+    setAccounts(fresh.accounts)
+    setShowForm(false)
+  }
 
   const forget = async (id: string) => {
     await window.agent.deleteNote(id)
@@ -164,7 +182,7 @@ export function Settings({
   }
 
   return (
-    <div className="sheet" role="dialog" aria-modal="true" ref={trap}>
+    <div className="sheet" role="dialog" aria-modal="true" aria-label={t.settings} ref={trap}>
       <div className="sheet-head">
         <div className="sheet-head-inner">
           <h2>{t.settings}</h2>
@@ -180,6 +198,24 @@ export function Settings({
           <section className="section">
             <h3>{t.model}</h3>
             <p className="hint">{t.modelHint}</p>
+            {localModels.length > 0 && (
+              <>
+                <span className="field-label">{t.localModels}</span>
+                <div className="local-models">
+                  {localModels.map((model) => (
+                    <button
+                      key={`${model.source}:${model.modelId}`}
+                      className="local-model"
+                      type="button"
+                      onClick={() => chooseLocal(model)}
+                    >
+                      {t.useModel} {model.modelId}
+                      <span className="hint">{model.source}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             <div className="field">
               <label htmlFor="provider">{t.provider}</label>
               <select
@@ -497,9 +533,16 @@ export function Settings({
                 </div>
               </div>
             ) : (
-              <button className="btn" type="button" onClick={() => setShowForm(true)}>
-                {t.addAccount}
-              </button>
+              <div className="account-actions">
+                <button className="btn" type="button" onClick={() => setShowForm(true)}>
+                  {t.addAccount}
+                </button>
+                {!accounts.some((account) => account.endpoint.includes('demo.storage-agent')) && (
+                  <button className="btn ghost" type="button" onClick={() => void addDemo()}>
+                    {t.tryDemo}
+                  </button>
+                )}
+              </div>
             )}
           </section>
 

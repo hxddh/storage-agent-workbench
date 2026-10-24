@@ -2,10 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { CloudWatchClient } from '@aws-sdk/client-cloudwatch'
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3'
+import { S3ControlClient } from '@aws-sdk/client-s3-control'
+import { STSClient } from '@aws-sdk/client-sts'
 import { fromIni } from '@aws-sdk/credential-provider-ini'
 import type { Account, AccountInput } from '@shared/contract'
 import type { AppDb, ProviderRow } from './db'
+import { DEMO_ENDPOINT, demoHandler } from './demo/storage'
 import { maskKey } from './security/redact'
 import type { Vault } from './security/vault'
 
@@ -67,8 +71,16 @@ export function awsProfiles(env: NodeJS.ProcessEnv = process.env): string[] {
   )
 }
 
+/**
+ * Test seam: an AWS emulator (moto, LocalStack) that also answers STS, S3
+ * Control and CloudWatch. Unset in the app, where only an account without a
+ * custom endpoint is AWS.
+ */
+const AWS_EMULATOR = process.env.STORAGE_AGENT_AWS_ENDPOINT || ''
+
 export class Providers {
   private readonly clients = new Map<string, S3Client>()
+  private readonly services = new Map<string, STSClient | S3ControlClient | CloudWatchClient>()
 
   constructor(
     private readonly db: AppDb,
@@ -157,6 +169,22 @@ export class Providers {
     return account
   }
 
+  /** Add the in-process demo account, once. */
+  async addDemo(): Promise<Account> {
+    const existing = (await this.list()).find((account) => account.endpoint === DEMO_ENDPOINT)
+    if (existing) return existing
+    return this.save({
+      name: 'Demo storage',
+      endpoint: DEMO_ENDPOINT,
+      region: 'us-east-1',
+      forcePathStyle: true,
+      auth: 'keys',
+      accessKeyId: 'AKIADEMODEMODEMODEMO',
+      secretAccessKey: 'demo',
+      scope: { buckets: [] },
+    })
+  }
+
   async remove(id: string): Promise<void> {
     await this.db.deleteProvider(id)
     this.forget(id)
@@ -182,27 +210,74 @@ export class Providers {
     const key = `${provider.id}:${target}`
     const cached = this.clients.get(key)
     if (cached) return cached
-    const credentials =
-      provider.credentials.kind === 'profile'
-        ? fromIni({ profile: provider.credentials.profile })
-        : {
-            accessKeyId: provider.credentials.accessKeyId,
-            secretAccessKey: provider.credentials.secretAccessKey,
-            ...(provider.credentials.sessionToken
-              ? { sessionToken: provider.credentials.sessionToken }
-              : {}),
-          }
+    const credentials = this.credentialsOf(provider)
+    const demo = provider.endpoint === DEMO_ENDPOINT
     const client = new S3Client({
       region: target,
       endpoint: provider.endpoint || undefined,
-      forcePathStyle: provider.forcePathStyle,
-      followRegionRedirects: true,
+      forcePathStyle: demo || provider.forcePathStyle,
+      followRegionRedirects: !demo,
       credentials,
-      maxAttempts: 2,
-      requestHandler: { requestTimeout: 20_000, connectionTimeout: 5_000 },
+      maxAttempts: demo ? 1 : 2,
+      requestHandler: demo
+        ? (demoHandler(provider.id) as never)
+        : { requestTimeout: 20_000, connectionTimeout: 5_000 },
     })
     this.clients.set(key, client)
     return client
+  }
+
+  /** An AWS account: the account-wide and CloudWatch reads apply. */
+  isAws(provider: ProviderConfig): boolean {
+    return !provider.endpoint || (Boolean(AWS_EMULATOR) && provider.endpoint === AWS_EMULATOR)
+  }
+
+  private credentialsOf(provider: ProviderConfig) {
+    return provider.credentials.kind === 'profile'
+      ? fromIni({ profile: provider.credentials.profile })
+      : {
+          accessKeyId: provider.credentials.accessKeyId,
+          secretAccessKey: provider.credentials.secretAccessKey,
+          ...(provider.credentials.sessionToken
+            ? { sessionToken: provider.credentials.sessionToken }
+            : {}),
+        }
+  }
+
+  private service<T extends STSClient | S3ControlClient | CloudWatchClient>(
+    provider: ProviderConfig,
+    kind: string,
+    region: string,
+    make: (options: Record<string, unknown>) => T,
+  ): T {
+    const key = `${provider.id}:${kind}:${region}`
+    const cached = this.services.get(key)
+    if (cached) return cached as T
+    const client = make({
+      region,
+      credentials: this.credentialsOf(provider),
+      maxAttempts: 3,
+      ...(AWS_EMULATOR && provider.endpoint === AWS_EMULATOR ? { endpoint: AWS_EMULATOR } : {}),
+    })
+    this.services.set(key, client)
+    return client
+  }
+
+  sts(provider: ProviderConfig): STSClient {
+    return this.service(provider, 'sts', provider.region || 'us-east-1', (o) => new STSClient(o))
+  }
+
+  control(provider: ProviderConfig): S3ControlClient {
+    return this.service(
+      provider,
+      'control',
+      provider.region || 'us-east-1',
+      (o) => new S3ControlClient({ ...o, ...(AWS_EMULATOR ? { forcePathStyle: true } : {}) }),
+    )
+  }
+
+  cloudwatch(provider: ProviderConfig, region: string): CloudWatchClient {
+    return this.service(provider, 'cloudwatch', region, (o) => new CloudWatchClient(o))
   }
 
   /** The regional client factory a reading uses; a custom endpoint has one region. */
@@ -212,10 +287,12 @@ export class Providers {
   }
 
   private forget(id: string): void {
-    for (const [key, client] of this.clients) {
-      if (key.startsWith(`${id}:`)) {
-        client.destroy()
-        this.clients.delete(key)
+    for (const map of [this.clients, this.services] as Map<string, { destroy(): void }>[]) {
+      for (const [key, client] of map) {
+        if (key.startsWith(`${id}:`)) {
+          client.destroy()
+          map.delete(key)
+        }
       }
     }
   }

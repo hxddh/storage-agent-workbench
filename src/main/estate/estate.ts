@@ -1,6 +1,6 @@
 import type { IssueRow } from '@shared/contract'
 import type { AppDb, IssueRecord } from '../db'
-import { BY_CODE, type Decision, RULES, ruleTitle } from './rules'
+import { BY_CODE, type Decision, ruleTitle } from './rules'
 
 export interface Delta {
   opened: number
@@ -32,7 +32,6 @@ export class Estate {
       if (decision.verdict === null) continue
       const rule = BY_CODE.get(code)
       if (!rule) continue
-      observations.push({ provider: providerId, bucket, code, verdict: decision.verdict })
       const result = await this.db.upsertIssue({
         providerId,
         bucket,
@@ -45,6 +44,9 @@ export class Estate {
       if (result.event === 'opened') delta.opened += 1
       else if (result.event === 'resolved') delta.resolved += 1
       else if (result.event === 'recurred') delta.recurred += 1
+      // Only a resolution changes what the brief already shows; open Issues travel in the view.
+      if (result.event === 'resolved')
+        observations.push({ provider: providerId, bucket, code, verdict: false })
     }
     return { delta, observations }
   }
@@ -72,10 +74,11 @@ export class Estate {
           conversationId,
           resolution: 'gone',
         })
-        if (result.event) resolved += 1
+        if (result.event) {
+          resolved += 1
+          observations.push({ provider: providerId, bucket, code: issue.code, verdict: false })
+        }
       }
-      for (const rule of RULES)
-        observations.push({ provider: providerId, bucket, code: rule.code, verdict: false })
     }
     return { resolved, observations }
   }
@@ -96,6 +99,7 @@ export class Estate {
       severity: issue.severity,
       status: issue.status,
       title: BY_CODE.has(issue.code) ? ruleTitle(BY_CODE.get(issue.code)!, lang) : issue.code,
+      ...(BY_CODE.get(issue.code)?.control ? { control: BY_CODE.get(issue.code)!.control } : {}),
       detail: issue.detail,
       openedAt: issue.opened_at,
       lastSeenAt: issue.last_seen_at,
