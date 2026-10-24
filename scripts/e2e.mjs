@@ -127,9 +127,7 @@ try {
   await page.locator('.sidebar-search input').fill('Block public access')
   await page.waitForSelector('.search-hit:has-text("Block public access")', { timeout: 10_000 })
   await page.locator('.search-hit', { hasText: 'Block public access' }).first().click()
-  await page.waitForSelector('.brief .verdict', { timeout: 10_000 })
-  const opened = await page.locator('.brief').innerText()
-  if (!/Block public access/.test(opened)) await fail('search did not open the matching answer')
+  await page.waitForSelector('.brief .verdict:has-text("Block public access")', { timeout: 10_000 })
   console.log('SEARCH OPEN OK')
 
   await page.locator('.sidebar-search input').fill('multipart')
