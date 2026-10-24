@@ -570,7 +570,7 @@ button {
   color: var(--ink);
 }
 .memory-tag {
-  margin-left: 6px;
+  margin: 0 2px 0 6px;
   padding: 0 5px;
   border: 1px solid var(--line);
   border-radius: 4px;

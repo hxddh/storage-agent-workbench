@@ -169,13 +169,16 @@ function FindingRow({
   t,
   onOpen,
   onAccept,
+  tagMemory = true,
 }: {
   finding: BriefFinding
   t: Dict
   onOpen: () => void
   onAccept?: () => void
+  /** False when every finding is memory and the meta line already says so. */
+  tagMemory?: boolean
 }) {
-  const when = finding.source === 'memory' ? ago(finding.at, t) : null
+  const when = finding.source === 'memory' && tagMemory ? ago(finding.at, t) : null
   return (
     <div
       className="finding-row"
@@ -190,13 +193,13 @@ function FindingRow({
             {severityLabel(finding, t)}
             {' · '}
             <span className="mono">{finding.bucket}</span>
-            {finding.detail ? ` · ${finding.detail}` : ''}
-            {finding.recurred > 0 ? ` · ×${finding.recurred + 1}` : ''}
-            {finding.source === 'memory' && (
+            {finding.source === 'memory' && tagMemory && (
               <span className="memory-tag">
                 {when ? fill(t.rememberedAgo, { when }) : t.remembered}
               </span>
             )}
+            {finding.detail ? ` · ${finding.detail}` : ''}
+            {finding.recurred > 0 ? ` · ×${finding.recurred + 1}` : ''}
           </span>
         </span>
         <ChevronRight size={13} className="chev" />
@@ -290,11 +293,15 @@ function DataSection({ data, t }: { data: BriefData; t: Dict }) {
   return null
 }
 
+function bucketCount(n: number, t: Dict): string {
+  return `${n} ${n === 1 ? t.bucketsOne : t.bucketsShort}`
+}
+
 function dataSummary(data: BriefData, t: Dict): string {
   const view = data.view
-  if (view.kind === 'survey') return `${view.buckets.rows.length} ${t.buckets.toLowerCase()}`
+  if (view.kind === 'survey') return bucketCount(view.buckets.rows.length, t)
   if (view.kind === 'estate')
-    return `${t.memoryData} · ${view.buckets?.rows.length ?? 0} ${t.buckets.toLowerCase()}`
+    return `${t.memoryData} · ${bucketCount(view.buckets?.rows.length ?? 0, t)}`
   if (view.kind === 'analyze') return view.dataset
   if (view.kind === 'buckets' || view.kind === 'objects')
     return `${view.rows.rows.length} ${t.rows}`
@@ -322,9 +329,7 @@ function CheckRow({
   // Views already rendered on the page (findings, the data table, chart, fixes)
   // do not open again here; the check row is their provenance.
   const inline = check.view
-    ? ['buckets', 'objects', 'object', 'estate', 'probe', 'note', 'config', 'survey'].includes(
-        check.view.kind,
-      )
+    ? ['buckets', 'objects', 'object', 'estate', 'probe', 'note'].includes(check.view.kind)
     : false
   const expandable = inline && check.status !== 'running'
   const shown = duration(check.ms)
@@ -492,6 +497,11 @@ export function Brief({
 
   const live = Boolean(view.live)
   const visibleFindings = allFindings ? brief.findings : brief.findings.slice(0, FINDINGS_SHOWN)
+  const allMemory =
+    brief.findings.length > 0 && brief.findings.every((finding) => finding.source === 'memory')
+  const rememberedAt = allMemory
+    ? (brief.findings.map((finding) => finding.at).sort()[0] ?? null)
+    : null
   const pending = brief.coverage.reduce((n, item) => n + item.pending, 0)
   const unread = new Set(brief.coverage.flatMap((item) => [...item.denied, ...item.unknown])).size
   const gone = brief.coverage.flatMap((item) => item.gone)
@@ -527,6 +537,7 @@ export function Brief({
             {checked ? fill(t.checkedAt, { when: checked }) : ''}
             {brief.findings.length > 0 &&
               `${checked ? ' · ' : ''}${fill(t.findingsCount, { n: brief.findings.length })}`}
+            {rememberedAt && ` · ${fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' })}`}
           </span>
           {hasContent && (
             <span className="brief-actions">
@@ -628,6 +639,7 @@ export function Brief({
                   t={t}
                   onOpen={() => revealCheck(finding.sourceId)}
                   onAccept={accept(finding)}
+                  tagMemory={!allMemory}
                 />
               ))}
             </div>

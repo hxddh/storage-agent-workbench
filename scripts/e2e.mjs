@@ -16,12 +16,17 @@ const dataDir = mkdtempSync(join(tmpdir(), 'sa-e2e-'))
 const s3Port = 9110
 const modelPort = 9210
 
+const seen = new Set()
+
 function start(script, port) {
   const child = spawn(process.execPath, [join(root, script), String(port)], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, SLOW_MS: '350' },
   })
-  child.stdout.on('data', (data) => process.stdout.write(`[${script}] ${data}`))
+  child.stdout.on('data', (data) => {
+    if (String(data).includes('GROUNDING_CORRECTION')) seen.add('correction')
+    process.stdout.write(`[${script}] ${data}`)
+  })
   child.stderr.on('data', (data) => process.stderr.write(`[${script}] ${data}`))
   return child
 }
@@ -33,7 +38,7 @@ await new Promise((resolve) => setTimeout(resolve, 600))
 const app = await electron.launch({
   args: ['.', '--no-sandbox'],
   cwd: root,
-  env: { ...process.env, STORAGE_AGENT_DATA_DIR: dataDir },
+  env: { ...process.env, STORAGE_AGENT_DATA_DIR: dataDir, STORAGE_AGENT_NO_UPDATE: '1' },
 })
 const page = await app.firstWindow()
 page.on('console', (message) => console.log('[renderer]', message.type(), message.text()))
@@ -69,7 +74,7 @@ try {
   await page.locator('#accRegion').fill('us-east-1')
   await page.locator('#accKey').fill('demo-key')
   await page.locator('#accSecret').fill('demo-secret')
-  await page.locator('input[type=checkbox]').check()
+  await page.getByLabel('Path-style addressing').check()
   const accountForm = page.locator('.account').last()
   await accountForm.getByRole('button', { name: 'Save', exact: true }).click()
   await page.waitForTimeout(1000)
@@ -89,7 +94,9 @@ try {
   const body = await page.locator('body').innerText()
   console.log('ANSWER OK')
   console.log(body.slice(0, 1200))
-  await page.locator('.finding-row').first().click()
+  if ((await page.locator('.verdict code.ungrounded').count()) !== 0)
+    await fail('a grounded verdict was marked')
+  await page.locator('.finding-main').first().click()
   await page.waitForSelector('.check-row.flash', { timeout: 5_000 })
   await page.locator('.section-head').click()
   await page.waitForSelector('.data-section table', { timeout: 5_000 })
@@ -97,8 +104,35 @@ try {
   await page.waitForTimeout(350)
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-answer.png') })
 
+  // Accepting a risk is the user's call; it folds the finding and survives a reload.
+  const encryption = page.locator('.finding-row', { hasText: 'No default encryption' }).first()
+  await encryption.hover()
+  await encryption.getByRole('button', { name: 'Accept risk' }).click()
+  await page.waitForSelector('.fold-head:has-text("1 accepted")', { timeout: 5_000 })
+  console.log('ACCEPT OK')
+
+  // The user applies the fix outside the app; the agent re-reads that bucket only.
+  await fetch(`http://127.0.0.1:${s3Port}/__fake/fix?bucket=demo-public`, { method: 'POST' })
+  await page.locator('.composer textarea').fill('I applied the fix to demo-public')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('text=no longer public', { timeout: 60_000 })
+  await page.waitForSelector('.fold.ok .fold-head', { timeout: 10_000 })
+  const fixed = await page.locator('.fold.ok .fold-head').innerText()
+  console.log('VERIFY OK:', fixed)
+  if (await page.locator('.finding-row', { hasText: 'publicly accessible' }).count())
+    await fail('a fixed finding is still on the page')
+  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-verified.png') })
+
+  // A verdict naming a bucket no tool returned is corrected once, then marked.
   await page.getByRole('button', { name: 'New task' }).click()
-  await page.locator('.composer textarea').fill('Show the fix for demo-public')
+  await page.locator('.composer textarea').fill('Is ghost-bucket exposed?')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.verdict code.ungrounded', { timeout: 60_000 })
+  if (!seen.has('correction')) await fail('the harness did not ask for a grounded verdict')
+  console.log('GROUNDING OK')
+
+  await page.getByRole('button', { name: 'New task' }).click()
+  await page.locator('.composer textarea').fill('Show the fix for demo-private')
   await page.keyboard.press('Enter')
   await page.waitForSelector('text=AWS CLI', { timeout: 60_000 })
   const fixBody = await page.locator('body').innerText()
@@ -124,10 +158,10 @@ try {
   const hits = await page.locator('.search-hit').count()
   console.log('SEARCH HITS:', hits)
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-search.png') })
-  await page.locator('.sidebar-search input').fill('Block public access')
-  await page.waitForSelector('.search-hit:has-text("Block public access")', { timeout: 10_000 })
-  await page.locator('.search-hit', { hasText: 'Block public access' }).first().click()
-  await page.waitForSelector('.brief .verdict:has-text("Block public access")', { timeout: 10_000 })
+  await page.locator('.sidebar-search input').fill('abort rule')
+  await page.waitForSelector('.search-hit:has-text("abort rule")', { timeout: 10_000 })
+  await page.locator('.search-hit', { hasText: 'abort rule' }).first().click()
+  await page.waitForSelector('.brief .verdict:has-text("abort rule")', { timeout: 10_000 })
   console.log('SEARCH OPEN OK')
 
   await page.locator('.sidebar-search input').fill('multipart')

@@ -27,7 +27,7 @@ await new Promise((resolve) => setTimeout(resolve, 600))
 const app = await electron.launch({
   args: ['.', '--no-sandbox'],
   cwd: root,
-  env: { ...process.env, STORAGE_AGENT_DATA_DIR: dataDir },
+  env: { ...process.env, STORAGE_AGENT_DATA_DIR: dataDir, STORAGE_AGENT_NO_UPDATE: '1' },
 })
 const page = await app.firstWindow()
 await page.waitForTimeout(1200)
@@ -44,7 +44,7 @@ async function configure() {
   await page.locator('#accRegion').fill('us-east-1')
   await page.locator('#accKey').fill('demo-key')
   await page.locator('#accSecret').fill('demo-secret')
-  await page.locator('input[type=checkbox]').check()
+  await page.getByLabel('Path-style addressing').check()
   await page.locator('.account').last().getByRole('button', { name: 'Save', exact: true }).click()
   await page.waitForTimeout(600)
 }

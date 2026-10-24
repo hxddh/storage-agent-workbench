@@ -125,6 +125,8 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       const name = toolName(message.toolName ?? toolNames.get(message.toolCallId ?? ''))
       if (!name) continue
       const details = isDetails(message.details) ? message.details : null
+      // A call the harness blocked never read anything; it is not a check.
+      if (!details && message.isError && BLOCKED.test(textOf(message))) continue
       // A result without our details came from pi itself: the call never reached
       // `agentTool()` (blocked by a hook, aborted before start, or faulted).
       const status: ToolStatus = details?.status ?? (message.isError ? 'failed' : 'done')
@@ -173,10 +175,10 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
   return out
 }
 
-/** A hook's block reason is ours and safe to show; anything else is summarized. */
+const BLOCKED = /step budget reached|already ran in this task/i
+
+/** A result pi wrote without running the tool; its text is not shown. */
 function blockedNote(text: string): string | null {
-  if (/step budget/i.test(text)) return 'Step budget reached'
-  if (/already ran in this task/i.test(text)) return 'Repeated call skipped'
   return text ? 'Did not run' : null
 }
 

@@ -16,12 +16,18 @@ const call = (id, name, args) => ({
 
 function plan(body) {
   const messages = Array.isArray(body.messages) ? body.messages : []
-  const toolMessages = messages.filter((message) => message.role === 'tool')
-  const lastUser = [...messages].reverse().find((message) => message.role === 'user')
+  const lastUserIndex = messages.findLastIndex((message) => message.role === 'user')
+  const lastUser = messages[lastUserIndex]
+  // Tool results of the current turn only: a task can hold several turns.
+  const toolMessages = messages.slice(lastUserIndex + 1).filter((message) => message.role === 'tool')
   const ask = String(lastUser?.content ?? '').toLowerCase()
+  if (ask.includes('no tool result in this task shows')) console.log('GROUNDING_CORRECTION')
   if (toolMessages.length === 0) {
+    if (ask.includes('applied')) {
+      return { tool: call('call_verify_1', 'survey', { buckets: ['demo-public'] }) }
+    }
     if (ask.includes('fix')) {
-      return { tool: call('call_fix_1', 'fix', { bucket: 'demo-public', code: 'public_exposure' }) }
+      return { tool: call('call_fix_1', 'fix', { bucket: 'demo-private', code: 'no_abort_mpu' }) }
     }
     if (ask.includes('issue')) {
       return { tool: call('call_estate_1', 'estate', {}) }
@@ -31,21 +37,25 @@ function plan(body) {
   if (toolMessages.length === 1 && ask.includes('public') && !ask.includes('fix') && !ask.includes('issue')) {
     return { tool: call('call_config_1', 'config', { bucket: 'demo-public', aspect: 'security' }) }
   }
+  if (ask.includes('applied')) {
+    return { text: '`demo-public` is no longer public; the fix took.' }
+  }
   if (ask.includes('fix')) {
-    return {
-      text:
-        'Block public access on demo-public.',
-    }
+    return { text: 'Add an abort rule for incomplete uploads on `demo-private`.' }
   }
   if (ask.includes('issue')) {
     return {
       text:
-        'Five issues are open: demo-public is public, has no default encryption and no public access block; both buckets never clean up incomplete uploads.',
+        'Five issues are open: `demo-public` is public, has no default encryption and no public access block; both buckets never clean up incomplete uploads.',
     }
+  }
+  // The harness asks once for a correction when the verdict names something no tool returned.
+  if (ask.includes('ghost')) {
+    return { text: '`demo-public` is public and so is `ghost-bucket`.' }
   }
   return {
     text:
-      'demo-public is publicly accessible and has no default encryption. demo-private is not public, is encrypted, and blocks public access.',
+      '`demo-public` is publicly accessible and has no default encryption. `demo-private` is not public, is encrypted, and blocks public access.',
   }
 }
 
