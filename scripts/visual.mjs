@@ -68,7 +68,9 @@ for (const name of names) {
             changed += 1
         }
       }
-      if (changed > 200 && changed / ((right - x) * (bottom - y)) > 0.2) hotTiles += 1
+      // Font rasterization changes many pixels inside a line without moving
+      // anything. A real missing/shifted control changes most of a tile.
+      if (changed > 400 && changed / ((right - x) * (bottom - y)) > 0.4) hotTiles += 1
     }
   }
   if (ratio > 0.05 || hotTiles > 0) {

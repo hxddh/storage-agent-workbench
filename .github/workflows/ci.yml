@@ -49,6 +49,13 @@ jobs:
       - run: xvfb-run -a node scripts/perf.mjs
       - run: xvfb-run -a node scripts/shots.mjs
       - run: node scripts/visual.mjs
+      - name: Keep visual captures when the gate fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-captures
+          path: .amp/in/artifacts/*.png
+          if-no-files-found: ignore
 
   compat:
     name: AWS compatibility (moto)
