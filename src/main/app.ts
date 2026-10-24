@@ -1,18 +1,24 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
-import type { AppEvent, Bootstrap } from '@shared/contract'
+import type { AppEvent, Bootstrap, TaskSummary, UpdateState } from '@shared/contract'
 import { app } from 'electron'
 import { AppDb } from './db'
 import { Estate } from './estate/estate'
 import { Providers } from './providers'
-import { AgentHarness, harnessDirs } from './runtime/harness'
-import { createModelSet, installModel, testModel } from './runtime/model'
+import { AgentHarness, harnessDirs, type RunOutcome } from './runtime/harness'
+import { createModelSet, testModel } from './runtime/model'
 import { Vault } from './security/vault'
 import { Settings } from './settings'
 import { Staging } from './staging'
 
 type Database = Awaited<ReturnType<typeof openNodeSqliteDatabase>>
+
+export interface ShellHooks {
+  emit: (event: AppEvent) => void
+  settled: (task: TaskSummary, outcome: RunOutcome) => void
+  working: (count: number) => void
+}
 
 export class App {
   db!: AppDb
@@ -22,10 +28,17 @@ export class App {
   vault!: Vault
   harness!: AgentHarness
   staging!: Staging
+  update: UpdateState = { state: 'idle' }
+  /** Set by the shell once an update is downloaded. */
+  installUpdate?: () => void
   private database!: Database
   private dataDir = ''
-  private emit: (event: AppEvent) => void = () => undefined
-  private models = createModelSet()
+  private readonly models = createModelSet()
+  private hooks: ShellHooks = {
+    emit: () => undefined,
+    settled: () => undefined,
+    working: () => undefined,
+  }
 
   async init(dataDir: string): Promise<void> {
     this.dataDir = dataDir
@@ -40,53 +53,60 @@ export class App {
     this.staging = new Staging(join(dataDir, 'staging'))
     await this.staging.clear()
 
-    const stored = this.settings.get().model
-    if (stored) {
-      try {
-        installModel(this.models, stored, this.vault)
-      } catch {
-        // A broken model setting must not stop the app; Settings shows the error.
-      }
-    }
-
     this.harness = await AgentHarness.open(this.database, {
       db: this.db,
       providers: this.providers,
       estate: this.estate,
       settings: this.settings,
       vault: this.vault,
+      models: this.models,
       dirs: harnessDirs(dataDir),
-      emit: (event) => this.emit(event),
+      emit: (event) => this.hooks.emit(event),
+      settled: (task, outcome) => this.hooks.settled(task, outcome),
+      working: (count) => this.hooks.working(count),
     })
   }
 
-  setEmit(emit: (event: AppEvent) => void): void {
-    this.emit = emit
+  setHooks(hooks: ShellHooks): void {
+    this.hooks = hooks
+  }
+
+  setUpdate(update: UpdateState): void {
+    this.update = update
+    this.hooks.emit({ type: 'update', update })
   }
 
   async bootstrap(): Promise<Bootstrap> {
+    const model = this.settings.get().model
+    const lastTaskId = this.settings.get().lastTaskId
+    const tasks = await this.harness.listTasks()
     return {
       version: app.getVersion(),
       platform: process.platform,
-      tasks: await this.harness.listTasks(),
+      tasks,
       accounts: await this.providers.list(),
-      model: this.settings.get().model
+      model: model
         ? {
-            provider: this.settings.get().model!.provider,
-            modelId: this.settings.get().model!.modelId,
-            baseUrl: this.settings.get().model!.baseUrl || null,
-            contextWindow: this.settings.get().model!.contextWindow || null,
+            provider: model.provider,
+            modelId: model.modelId,
+            baseUrl: model.baseUrl || null,
+            contextWindow: model.contextWindow || null,
+            thinking: model.thinking,
             hasKey: true,
           }
         : null,
       settings: this.settings.public(),
+      update: this.update,
+      lastTaskId: lastTaskId && tasks.some((task) => task.id === lastTaskId) ? lastTaskId : null,
     }
   }
 
   async testModel(): Promise<{ ok: boolean; detail: string }> {
     const stored = this.settings.get().model
     if (!stored) return { ok: false, detail: 'No model is configured.' }
-    return testModel(this.models, stored, this.vault)
+    const result = await testModel(this.models, stored, this.vault)
+    this.harness.applyModel()
+    return result
   }
 
   applyModel(): void {

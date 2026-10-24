@@ -107,6 +107,7 @@ function Issues({ issues, t }: { issues: IssueRow[]; t: Dict }) {
           <span className={`sev ${issue.severity}`} />
           <span className="bucket">{issue.bucket}</span>
           <span>{issue.title}</span>
+          {issue.status === 'accepted' && <span className="code">{t.accepted}</span>}
           {issue.recurred > 0 && <span className="code">×{issue.recurred + 1}</span>}
         </div>
       ))}
@@ -218,6 +219,9 @@ export function ToolViewBody({
               ? ` · ${view.coverage.unknown.length} ${t.unknownExposure}`
               : ''}
             {view.coverage.truncated ? ` · ${t.truncated}` : ''}
+            {view.coverage.pending
+              ? ` · ${fill(t.pendingBuckets, { n: view.coverage.pending })}`
+              : ''}
           </span>
         </div>
         <TableView

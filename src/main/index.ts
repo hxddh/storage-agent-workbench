@@ -1,9 +1,11 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { AppEvent } from '@shared/contract'
-import { app, BrowserWindow, Menu, nativeTheme, shell } from 'electron'
+import type { AppCommand, AppEvent, TaskSummary } from '@shared/contract'
+import { app, BrowserWindow, Menu, Notification, nativeTheme, shell } from 'electron'
 import { App } from './app'
 import { registerIpc } from './ipc'
+import type { RunOutcome } from './runtime/harness'
+import { startUpdater } from './updater'
 import { loadWindowBounds, saveWindowBounds } from './window-state'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -20,8 +22,35 @@ function broadcast(event: AppEvent): void {
   }
 }
 
-function sendCommand(command: 'settings' | 'new-task'): void {
+function sendCommand(command: AppCommand): void {
   mainWindow?.webContents.send('agent:command', command)
+}
+
+const NOTICE = {
+  en: { answered: 'Answered', failed: 'The run failed', stopped: 'Stopped' },
+  zh: { answered: '已完成', failed: '运行失败', stopped: '已停止' },
+}
+
+/** Tell the user a run finished, only when they are looking elsewhere. */
+function notifySettled(task: TaskSummary, outcome: RunOutcome): void {
+  if (outcome === 'stopped' || !service.settings.get().notify) return
+  if (mainWindow?.isFocused() || !Notification.isSupported()) return
+  const words = NOTICE[service.settings.get().language] ?? NOTICE.en
+  const notification = new Notification({ title: task.title, body: words[outcome], silent: false })
+  notification.on('click', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+    broadcast({ type: 'open', taskId: task.id })
+  })
+  notification.show()
+}
+
+/** A badge on macOS, an indeterminate taskbar bar elsewhere, while anything runs. */
+function showWorking(count: number): void {
+  if (process.platform === 'darwin') app.setBadgeCount(count)
+  else mainWindow?.setProgressBar(count > 0 ? 2 : -1, { mode: 'indeterminate' })
 }
 
 function buildMenu(): void {
@@ -56,6 +85,16 @@ function buildMenu(): void {
           label: 'New task',
           accelerator: 'CmdOrCtrl+N',
           click: () => sendCommand('new-task'),
+        },
+        {
+          label: 'Search tasks',
+          accelerator: 'CmdOrCtrl+K',
+          click: () => sendCommand('search'),
+        },
+        {
+          label: 'Stop',
+          accelerator: 'CmdOrCtrl+.',
+          click: () => sendCommand('stop'),
         },
         ...(isMac
           ? []
@@ -174,11 +213,12 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     app.setName('Storage Agent')
     await service.init(app.getPath('userData'))
-    service.setEmit(broadcast)
+    service.setHooks({ emit: broadcast, settled: notifySettled, working: showWorking })
     nativeTheme.themeSource = service.settings.get().theme
     registerIpc(service)
     buildMenu()
     await createWindow()
+    startUpdater(service)
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) await createWindow()

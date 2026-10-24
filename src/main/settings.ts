@@ -1,28 +1,35 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AppSettings, Lang, Theme } from '@shared/contract'
+import type { AppSettings, Lang, ModelProvider, Theme, ThinkingLevel } from '@shared/contract'
 
-export type ModelProvider = 'openai' | 'anthropic' | 'compatible'
+export type { ModelProvider }
 
 export interface StoredModel {
   provider: ModelProvider
   modelId: string
   baseUrl: string
   contextWindow: number
+  thinking: ThinkingLevel
   keyRef: string
 }
 
 export interface StoredSettings {
   language: Lang
   theme: Theme
+  notify: boolean
   model: StoredModel | null
+  lastTaskId: string | null
 }
 
 const DEFAULTS: StoredSettings = {
   language: 'en',
   theme: 'system',
+  notify: true,
   model: null,
+  lastTaskId: null,
 }
+
+const THINKING = new Set<ThinkingLevel>(['off', 'low', 'medium', 'high'])
 
 export class Settings {
   private value: StoredSettings
@@ -38,12 +45,20 @@ export class Settings {
   }
 
   public(): AppSettings {
-    return { language: this.value.language, theme: this.value.theme }
+    return { language: this.value.language, theme: this.value.theme, notify: this.value.notify }
   }
 
   patch(patch: Partial<AppSettings>): void {
-    if (patch.language) this.value.language = patch.language
-    if (patch.theme) this.value.theme = patch.theme
+    if (patch.language === 'en' || patch.language === 'zh') this.value.language = patch.language
+    if (patch.theme === 'light' || patch.theme === 'dark' || patch.theme === 'system')
+      this.value.theme = patch.theme
+    if (typeof patch.notify === 'boolean') this.value.notify = patch.notify
+    this.save()
+  }
+
+  setLastTask(id: string | null): void {
+    if (this.value.lastTaskId === id) return
+    this.value.lastTaskId = id
     this.save()
   }
 
@@ -56,10 +71,21 @@ export class Settings {
     try {
       if (!existsSync(this.path)) return { ...DEFAULTS }
       const raw = JSON.parse(readFileSync(this.path, 'utf8')) as Partial<StoredSettings>
+      const model = raw.model
+        ? {
+            ...raw.model,
+            provider: (['openai', 'anthropic', 'compatible'] as const).includes(raw.model.provider)
+              ? raw.model.provider
+              : 'compatible',
+            thinking: THINKING.has(raw.model.thinking) ? raw.model.thinking : 'off',
+          }
+        : null
       return {
         language: raw.language === 'zh' ? 'zh' : 'en',
         theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
-        model: raw.model ?? null,
+        notify: raw.notify !== false,
+        model,
+        lastTaskId: typeof raw.lastTaskId === 'string' ? raw.lastTaskId : null,
       }
     } catch {
       return { ...DEFAULTS }

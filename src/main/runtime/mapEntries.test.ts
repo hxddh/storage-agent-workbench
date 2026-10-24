@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapEntries } from './harness'
+import { mapEntries } from './project'
 
 const entries = (value: unknown[]) => mapEntries(value as never)
 
@@ -111,5 +111,75 @@ describe('entry projection', () => {
     ])
     expect(out[0]).toMatchObject({ kind: 'notice', tone: 'error' })
     expect(out[1]).toMatchObject({ kind: 'compaction' })
+  })
+
+  it('takes status from details, never from result text', () => {
+    const out = entries([
+      {
+        id: 'e8',
+        kind: 'pi.tool-result',
+        model: [
+          {
+            role: 'toolResult',
+            toolCallId: 'call-3',
+            toolName: 'survey',
+            content: [{ type: 'text', text: 'Public: aborted-uploads, timed-out-logs.' }],
+            details: { target: 'Demo', note: null, view: null, ms: 5, status: 'done' },
+            isError: false,
+            timestamp: 1,
+          },
+        ],
+      },
+      {
+        id: 'e9',
+        kind: 'pi.tool-result',
+        model: [
+          {
+            role: 'toolResult',
+            toolCallId: 'call-4',
+            toolName: 'config',
+            content: [{ type: 'text', text: 'Timed out' }],
+            details: {
+              target: 'demo',
+              note: 'Timed out',
+              view: null,
+              ms: 90_000,
+              status: 'timeout',
+            },
+            isError: true,
+            timestamp: 2,
+          },
+        ],
+      },
+    ])
+    expect(out.map((entry) => (entry.kind === 'tool' ? entry.status : null))).toEqual([
+      'done',
+      'timeout',
+    ])
+  })
+
+  it('hides the harness messages to the model and shows a resume as a boundary', () => {
+    const out = entries([
+      { id: 'e10', kind: 'pi.user', model: [{ role: 'user', content: 'Rewrite the verdict' }] },
+      {
+        id: 'e11',
+        kind: 'sa.continue',
+        model: [{ role: 'user', content: 'Continue', timestamp: 3 }],
+      },
+    ])
+    expect(out).toEqual([{ id: 'e11', kind: 'resume', at: new Date(3).toISOString() }])
+  })
+
+  it('drops a tool result for a tool this app does not have', () => {
+    const out = entries([
+      {
+        id: 'e12',
+        kind: 'pi.tool-result',
+        model: [
+          { role: 'toolResult', toolCallId: 'x', toolName: 'shell', content: [], timestamp: 1 },
+        ],
+      },
+    ])
+    expect(out).toHaveLength(0)
   })
 })

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 
-export const HOST_SCHEMA_VERSION = 3
+export const HOST_SCHEMA_VERSION = 4
 
 export interface ProviderRow {
   id: string
@@ -16,6 +16,8 @@ export interface ProviderRow {
   session_ref: string | null
   scope_json: string
   created_at: string
+  auth: 'keys' | 'profile'
+  profile: string | null
 }
 
 export interface BucketRow {
@@ -25,6 +27,8 @@ export interface BucketRow {
   posture_at: string | null
   first_seen: string
   last_seen: string
+  region: string | null
+  gone_at: string | null
 }
 
 export interface IssueRecord {
@@ -33,12 +37,18 @@ export interface IssueRecord {
   bucket: string
   code: string
   severity: Severity
-  status: 'open' | 'resolved'
+  status: IssueStatus
   opened_at: string
   resolved_at: string | null
   last_seen_at: string
   recurred: number
+  detail: string | null
+  accepted_at: string | null
 }
+
+export type IssueStatus = 'open' | 'resolved' | 'accepted'
+
+export type IssueEvent = 'opened' | 'resolved' | 'recurred' | 'gone' | 'accepted' | 'reopened'
 
 export interface NoteRecord {
   id: string
@@ -175,6 +185,21 @@ export class AppDb {
         await raw.exec('ALTER TABLE task_meta DROP COLUMN origin')
       }
     }
+    if (version < 4) {
+      // 18.0: account auth kinds, bucket region and disappearance, Issue evidence
+      // and the user-owned accepted state.
+      const add = async (table: string, column: string, ddl: string) => {
+        const columns = await raw.all<{ name: string }>(`PRAGMA table_info(${table})`)
+        if (!columns.some((c) => c.name === column))
+          await raw.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
+      }
+      await add('providers', 'auth', "auth TEXT NOT NULL DEFAULT 'keys'")
+      await add('providers', 'profile', 'profile TEXT')
+      await add('buckets', 'region', 'region TEXT')
+      await add('buckets', 'gone_at', 'gone_at TEXT')
+      await add('issues', 'detail', 'detail TEXT')
+      await add('issues', 'accepted_at', 'accepted_at TEXT')
+    }
     if (version < HOST_SCHEMA_VERSION) {
       await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
     }
@@ -194,13 +219,13 @@ export class AppDb {
   async upsertProvider(row: ProviderRow): Promise<void> {
     await this.raw.run(
       `INSERT INTO providers (id, name, endpoint, region, force_path_style, access_key_id,
-         secret_ref, session_ref, scope_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         secret_ref, session_ref, scope_json, created_at, auth, profile)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name, endpoint = excluded.endpoint, region = excluded.region,
          force_path_style = excluded.force_path_style, access_key_id = excluded.access_key_id,
          secret_ref = excluded.secret_ref, session_ref = excluded.session_ref,
-         scope_json = excluded.scope_json`,
+         scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile`,
       row.id,
       row.name,
       row.endpoint,
@@ -211,6 +236,8 @@ export class AppDb {
       row.session_ref,
       row.scope_json,
       row.created_at,
+      row.auth,
+      row.profile,
     )
   }
 
@@ -226,33 +253,49 @@ export class AppDb {
     providerId: string,
     name: string,
     posture: Record<string, unknown>,
+    region: string | null = null,
   ): Promise<void> {
     const at = new Date().toISOString()
     await this.raw.run(
-      `INSERT INTO buckets (provider_id, name, posture_json, posture_at, first_seen, last_seen)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO buckets (provider_id, name, posture_json, posture_at, first_seen, last_seen, region, gone_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
        ON CONFLICT(provider_id, name) DO UPDATE SET
          posture_json = excluded.posture_json, posture_at = excluded.posture_at,
-         last_seen = excluded.last_seen`,
+         last_seen = excluded.last_seen, region = coalesce(excluded.region, buckets.region),
+         gone_at = NULL`,
       providerId,
       name,
       JSON.stringify(posture),
       at,
       at,
       at,
+      region,
     )
+  }
+
+  /** Record that a complete listing no longer shows these buckets. */
+  async markGone(providerId: string, names: string[]): Promise<void> {
+    const at = new Date().toISOString()
+    for (const name of names) {
+      await this.raw.run(
+        'UPDATE buckets SET gone_at = ? WHERE provider_id = ? AND name = ? AND gone_at IS NULL',
+        at,
+        providerId,
+        name,
+      )
+    }
   }
 
   async listBuckets(providerId: string): Promise<BucketRow[]> {
     return this.raw.all<BucketRow>(
-      'SELECT * FROM buckets WHERE provider_id = ? ORDER BY name',
+      'SELECT * FROM buckets WHERE provider_id = ? AND gone_at IS NULL ORDER BY name',
       providerId,
     )
   }
 
   async countBuckets(providerId: string): Promise<number> {
     const row = await this.raw.get<{ n: number }>(
-      'SELECT count(*) AS n FROM buckets WHERE provider_id = ?',
+      'SELECT count(*) AS n FROM buckets WHERE provider_id = ? AND gone_at IS NULL',
       providerId,
     )
     return row?.n ?? 0
@@ -261,7 +304,7 @@ export class AppDb {
   // -- issues ---------------------------------------------------------------
 
   async listIssues(
-    filter: { providerId?: string; status?: 'open' | 'resolved'; limit?: number } = {},
+    filter: { providerId?: string; status?: IssueStatus; limit?: number } = {},
   ): Promise<IssueRecord[]> {
     const where: string[] = []
     const params: (string | number)[] = []
@@ -282,6 +325,20 @@ export class AppDb {
        LIMIT ?`,
       ...params,
     )
+  }
+
+  async issueStatuses(ids: string[]): Promise<Record<string, IssueStatus>> {
+    const out: Record<string, IssueStatus> = {}
+    for (let start = 0; start < ids.length; start += 200) {
+      const chunk = ids.slice(start, start + 200)
+      if (!chunk.length) break
+      const rows = await this.raw.all<{ id: string; status: IssueStatus }>(
+        `SELECT id, status FROM issues WHERE id IN (${chunk.map(() => '?').join(',')})`,
+        ...chunk,
+      )
+      for (const row of rows) out[row.id] = row.status
+    }
+    return out
   }
 
   async getIssue(id: string): Promise<IssueRecord | undefined> {
@@ -315,28 +372,31 @@ export class AppDb {
     return row?.n ?? 0
   }
 
+  /**
+   * Record one rule observation. `observed` true opens or keeps an Issue; false
+   * resolves it. An accepted Issue stays accepted while it is still observed:
+   * acceptance belongs to the user, and only a clean reading ends it.
+   */
   async upsertIssue(input: {
     providerId: string
     bucket: string
     code: string
     severity: Severity
     observed: boolean
+    detail?: string | null
     conversationId: string | null
-  }): Promise<{ issue: IssueRecord; event: 'opened' | 'resolved' | 'recurred' | null }> {
+    resolution?: 'resolved' | 'gone'
+  }): Promise<{ issue: IssueRecord | null; event: IssueEvent | null }> {
     const at = new Date().toISOString()
-    const existing = await this.raw.get<IssueRecord>(
-      'SELECT * FROM issues WHERE provider_id = ? AND bucket = ? AND code = ?',
-      input.providerId,
-      input.bucket,
-      input.code,
-    )
+    const detail = input.detail ?? null
+    const existing = await this.findIssue(input.providerId, input.bucket, input.code)
     if (input.observed) {
       if (!existing) {
         const id = randomUUID()
         await this.raw.run(
           `INSERT INTO issues (id, provider_id, bucket, code, severity, status, opened_at,
-             resolved_at, last_seen_at, recurred)
-           VALUES (?, ?, ?, ?, ?, 'open', ?, NULL, ?, 0)`,
+             resolved_at, last_seen_at, recurred, detail, accepted_at)
+           VALUES (?, ?, ?, ?, ?, 'open', ?, NULL, ?, 0, ?, NULL)`,
           id,
           input.providerId,
           input.bucket,
@@ -344,40 +404,85 @@ export class AppDb {
           input.severity,
           at,
           at,
+          detail,
         )
-        await this.insertEvent(id, input.conversationId, 'opened', at, null)
+        await this.insertEvent(id, input.conversationId, 'opened', at, detail ? { detail } : null)
         return { issue: (await this.getIssue(id))!, event: 'opened' }
       }
       if (existing.status === 'resolved') {
         await this.raw.run(
-          `UPDATE issues SET status = 'open', severity = ?, resolved_at = NULL,
-             last_seen_at = ?, recurred = recurred + 1 WHERE id = ?`,
+          `UPDATE issues SET status = 'open', severity = ?, resolved_at = NULL, accepted_at = NULL,
+             last_seen_at = ?, recurred = recurred + 1, detail = ? WHERE id = ?`,
           input.severity,
           at,
+          detail,
           existing.id,
         )
-        await this.insertEvent(existing.id, input.conversationId, 'recurred', at, null)
+        await this.insertEvent(
+          existing.id,
+          input.conversationId,
+          'recurred',
+          at,
+          detail ? { detail } : null,
+        )
         return { issue: (await this.getIssue(existing.id))!, event: 'recurred' }
       }
       await this.raw.run(
-        'UPDATE issues SET severity = ?, last_seen_at = ? WHERE id = ?',
+        'UPDATE issues SET severity = ?, last_seen_at = ?, detail = coalesce(?, detail) WHERE id = ?',
         input.severity,
         at,
+        detail,
         existing.id,
       )
       return { issue: (await this.getIssue(existing.id))!, event: null }
     }
-    if (existing && existing.status === 'open') {
+    if (existing && existing.status !== 'resolved') {
+      const event = input.resolution ?? 'resolved'
       await this.raw.run(
         "UPDATE issues SET status = 'resolved', resolved_at = ?, last_seen_at = ? WHERE id = ?",
         at,
         at,
         existing.id,
       )
-      await this.insertEvent(existing.id, input.conversationId, 'resolved', at, null)
-      return { issue: (await this.getIssue(existing.id))!, event: 'resolved' }
+      await this.insertEvent(existing.id, input.conversationId, event, at, null)
+      return { issue: (await this.getIssue(existing.id))!, event }
     }
-    return { issue: existing ?? (null as unknown as IssueRecord), event: null }
+    return { issue: existing ?? null, event: null }
+  }
+
+  /** The user accepts a risk, or takes the acceptance back. Never the model. */
+  async setAccepted(id: string, accepted: boolean): Promise<IssueRecord | undefined> {
+    const issue = await this.getIssue(id)
+    if (!issue || issue.status === 'resolved') return issue
+    const at = new Date().toISOString()
+    if (accepted && issue.status === 'open') {
+      await this.raw.run(
+        "UPDATE issues SET status = 'accepted', accepted_at = ? WHERE id = ?",
+        at,
+        id,
+      )
+      await this.insertEvent(id, null, 'accepted', at, null)
+    } else if (!accepted && issue.status === 'accepted') {
+      await this.raw.run("UPDATE issues SET status = 'open', accepted_at = NULL WHERE id = ?", id)
+      await this.insertEvent(id, null, 'reopened', at, null)
+    }
+    return this.getIssue(id)
+  }
+
+  async openIssuesFor(providerId: string, bucket: string): Promise<IssueRecord[]> {
+    return this.raw.all<IssueRecord>(
+      "SELECT * FROM issues WHERE provider_id = ? AND bucket = ? AND status != 'resolved'",
+      providerId,
+      bucket,
+    )
+  }
+
+  async countIssues(status: IssueStatus): Promise<number> {
+    const row = await this.raw.get<{ n: number }>(
+      'SELECT count(*) AS n FROM issues WHERE status = ?',
+      status,
+    )
+    return row?.n ?? 0
   }
 
   async insertEvent(

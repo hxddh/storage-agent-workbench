@@ -1,16 +1,29 @@
-import type { Account, AccountInput, Bootstrap, Lang, NoteRow, Theme } from '@shared/contract'
+import type {
+  Account,
+  AccountInput,
+  Bootstrap,
+  Lang,
+  ModelProvider,
+  NoteRow,
+  Theme,
+  ThinkingLevel,
+} from '@shared/contract'
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { dict } from './i18n'
+import { dict, fill } from './i18n'
 import { useFocusTrap } from './lib/focus'
 
-type Provider = 'openai' | 'anthropic' | 'compatible'
+type Provider = ModelProvider
+
+const THINKING: ThinkingLevel[] = ['off', 'low', 'medium', 'high']
 
 const EMPTY_ACCOUNT: AccountInput = {
   name: '',
   endpoint: '',
   region: 'us-east-1',
   forcePathStyle: false,
+  auth: 'keys',
+  profile: '',
   accessKeyId: '',
   secretAccessKey: '',
   sessionToken: '',
@@ -34,7 +47,9 @@ export function Settings({
   const [modelId, setModelId] = useState(boot.model?.modelId ?? '')
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState(boot.model?.baseUrl ?? '')
-  const [contextWindow, setContextWindow] = useState(boot.model?.contextWindow ?? 32_768)
+  const [contextWindow, setContextWindow] = useState(boot.model?.contextWindow ?? 128_000)
+  const [thinking, setThinking] = useState<ThinkingLevel>(boot.model?.thinking ?? 'off')
+  const [profiles, setProfiles] = useState<string[]>([])
   const [modelStatus, setModelStatus] = useState<{ ok: boolean; detail: string } | null>(null)
   const [modelBusy, setModelBusy] = useState(false)
 
@@ -48,6 +63,7 @@ export function Settings({
 
   useEffect(() => {
     void window.agent.notes().then(setNotes)
+    void window.agent.awsProfiles().then(setProfiles)
   }, [])
 
   const forget = async (id: string) => {
@@ -65,6 +81,7 @@ export function Settings({
         apiKey: apiKey || undefined,
         baseUrl,
         contextWindow,
+        thinking,
       })
       setApiKey('')
       setModelStatus({ ok: true, detail: 'Saved' })
@@ -120,6 +137,8 @@ export function Settings({
       endpoint: account.endpoint,
       region: account.region,
       forcePathStyle: account.forcePathStyle,
+      auth: account.auth,
+      profile: account.profile ?? '',
       accessKeyId: '',
       secretAccessKey: '',
       sessionToken: '',
@@ -139,6 +158,11 @@ export function Settings({
     await onChanged()
   }
 
+  const setNotify = async (notify: boolean) => {
+    await window.agent.saveSettings({ notify })
+    await onChanged()
+  }
+
   return (
     <div className="sheet" role="dialog" aria-modal="true" ref={trap}>
       <div className="sheet-head">
@@ -155,10 +179,7 @@ export function Settings({
         <div className="sheet-inner">
           <section className="section">
             <h3>{t.model}</h3>
-            <p className="hint">
-              Works with OpenAI, Anthropic, and any OpenAI-compatible endpoint (Ollama, LM Studio,
-              vLLM, OpenRouter).
-            </p>
+            <p className="hint">{t.modelHint}</p>
             <div className="field">
               <label htmlFor="provider">{t.provider}</label>
               <select
@@ -183,7 +204,7 @@ export function Settings({
             <div className="field">
               <label htmlFor="baseUrl">
                 {t.baseUrl}
-                {provider === 'compatible' ? '' : ' (optional)'}
+                {provider === 'compatible' ? '' : ` ${t.optional}`}
               </label>
               <input
                 id="baseUrl"
@@ -220,6 +241,28 @@ export function Settings({
                 onChange={(event) => setContextWindow(Number(event.target.value))}
               />
             </div>
+            <div className="field">
+              <span className="field-label">{t.thinkingLevel}</span>
+              <div className="segmented">
+                {THINKING.map((level) => (
+                  <button
+                    key={level}
+                    className={thinking === level ? 'active' : ''}
+                    type="button"
+                    onClick={() => setThinking(level)}
+                  >
+                    {level === 'off'
+                      ? t.thinkingOff
+                      : level === 'low'
+                        ? t.thinkingLow
+                        : level === 'medium'
+                          ? t.thinkingMedium
+                          : t.thinkingHigh}
+                  </button>
+                ))}
+              </div>
+              <span className="hint">{t.thinkingHint}</span>
+            </div>
             <div className="account-actions">
               <button
                 className="btn primary"
@@ -253,7 +296,14 @@ export function Settings({
                 <div className="account-head">
                   <div>
                     <div className="account-name">{account.name}</div>
-                    <div className="account-meta">{account.endpoint || 'AWS'}</div>
+                    <div className="account-meta">
+                      {account.endpoint || 'AWS'}
+                      {account.auth === 'profile' && account.profile
+                        ? ` · ${t.profile} ${account.profile}`
+                        : account.accessKeyMasked
+                          ? ` · ${account.accessKeyMasked}`
+                          : ''}
+                    </div>
                   </div>
                   <div className="account-actions">
                     <button
@@ -316,31 +366,87 @@ export function Settings({
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="accKey">{t.accessKey}</label>
-                  <input
-                    id="accKey"
-                    value={form.accessKeyId}
-                    onChange={(event) => setForm({ ...form, accessKeyId: event.target.value })}
-                  />
+                  <span className="field-label">{t.auth}</span>
+                  <div className="segmented">
+                    <button
+                      className={form.auth === 'keys' ? 'active' : ''}
+                      type="button"
+                      onClick={() => setForm({ ...form, auth: 'keys' })}
+                    >
+                      {t.authKeys}
+                    </button>
+                    <button
+                      className={form.auth === 'profile' ? 'active' : ''}
+                      type="button"
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          auth: 'profile',
+                          profile: form.profile || profiles[0] || '',
+                        })
+                      }
+                    >
+                      {t.authProfile}
+                    </button>
+                  </div>
                 </div>
-                <div className="field">
-                  <label htmlFor="accSecret">{t.secretKey}</label>
-                  <input
-                    id="accSecret"
-                    type="password"
-                    value={form.secretAccessKey}
-                    onChange={(event) => setForm({ ...form, secretAccessKey: event.target.value })}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="accToken">{t.sessionToken}</label>
-                  <input
-                    id="accToken"
-                    type="password"
-                    value={form.sessionToken ?? ''}
-                    onChange={(event) => setForm({ ...form, sessionToken: event.target.value })}
-                  />
-                </div>
+                {form.auth === 'profile' ? (
+                  <div className="field">
+                    <label htmlFor="accProfile">{t.profile}</label>
+                    {profiles.length ? (
+                      <select
+                        id="accProfile"
+                        value={form.profile ?? ''}
+                        onChange={(event) => setForm({ ...form, profile: event.target.value })}
+                      >
+                        {profiles.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        id="accProfile"
+                        value={form.profile ?? ''}
+                        placeholder="default"
+                        onChange={(event) => setForm({ ...form, profile: event.target.value })}
+                      />
+                    )}
+                    <span className="hint">{profiles.length ? t.profileHint : t.noProfiles}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="field">
+                      <label htmlFor="accKey">{t.accessKey}</label>
+                      <input
+                        id="accKey"
+                        value={form.accessKeyId ?? ''}
+                        onChange={(event) => setForm({ ...form, accessKeyId: event.target.value })}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="accSecret">{t.secretKey}</label>
+                      <input
+                        id="accSecret"
+                        type="password"
+                        value={form.secretAccessKey ?? ''}
+                        onChange={(event) =>
+                          setForm({ ...form, secretAccessKey: event.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="accToken">{t.sessionToken}</label>
+                      <input
+                        id="accToken"
+                        type="password"
+                        value={form.sessionToken ?? ''}
+                        onChange={(event) => setForm({ ...form, sessionToken: event.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="field">
                   <label htmlFor="accScope">{t.scope}</label>
                   <input
@@ -456,10 +562,32 @@ export function Settings({
                 ))}
               </div>
             </div>
+            <label className="check-field">
+              <input
+                type="checkbox"
+                checked={boot.settings.notify}
+                onChange={(event) => void setNotify(event.target.checked)}
+              />
+              {t.notify}
+            </label>
           </section>
 
-          <p className="hint" style={{ paddingTop: 8 }}>
+          <p className="hint version-line">
             Storage Agent {boot.version}
+            {boot.update.state === 'downloading' &&
+              ` · ${fill(t.updateDownloading, { v: boot.update.version })}`}
+            {boot.update.state === 'ready' && (
+              <>
+                {` · ${fill(t.updateReady, { v: boot.update.version })} `}
+                <button
+                  className="text-action"
+                  type="button"
+                  onClick={() => void window.agent.installUpdate()}
+                >
+                  {t.restartToUpdate}
+                </button>
+              </>
+            )}
           </p>
         </div>
       </div>
