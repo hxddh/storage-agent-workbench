@@ -165,6 +165,7 @@ describe('brief projection', () => {
       }),
     ])
     expect(brief.findings[0]?.source).toBe('memory')
+    expect(brief.findings[0]?.readAt).toBe(at(1))
   })
 
   it('folds an Issue the user accepted and drops one resolved elsewhere', () => {

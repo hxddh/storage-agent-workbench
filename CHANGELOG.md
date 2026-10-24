@@ -1,5 +1,70 @@
 # Changelog
 
+## 18.0.0
+
+Proven, measured, native. A rebuild of every layer under the same product: one
+task, one brief, ten read-only tools.
+
+### Added
+
+- **One reading per bucket.** Survey and review read through the same typed
+  facts (`s3/facts.ts`); the seven rules decide from facts by code. A survey now
+  decides every rule, including wildcard principal, CORS and noncurrent
+  versions, and the two can no longer disagree.
+- **Local policy evaluation.** S3-compatible stores without GetBucketPolicyStatus
+  are judged from the policy document; a source-IP, VPC, organization or account
+  condition narrows an Allow to everyone. The bucket's public access block
+  cancels exposure.
+- **AWS profiles.** An account can use a named profile — SSO,
+  `credential_process` and assume-role resolve through the AWS SDK; nothing is
+  copied into the app. Multi-region accounts read each bucket from its region.
+- **Verify after a fix.** `survey` takes `buckets` to re-read only what the user
+  changed; the brief shows what the task proved fixed and drops the fix.
+- **Accept risk.** The user can accept an Issue from its finding; it folds
+  away and stays accepted until a reading proves it gone. The model never can.
+- **Grounded verdicts.** Every bucket, key and account the verdict names must
+  appear in a tool result of the task. The agent gets one correction; what is
+  still ungrounded is marked on the page.
+- **Reasoning models.** OpenAI through the Responses API, Anthropic thinking,
+  and a thinking level in Settings. Prompt caching where supported. The checks
+  receipt shows the run's tokens.
+- **Native.** A notification when a run finishes in the background, a dock
+  badge or taskbar progress while anything runs, files dropped or pasted onto
+  the composer, Stop on ⌘., Search on ⌘K in the menu, the last task reopened at
+  launch, and background updates from GitHub releases.
+- **Evals.** `scripts/eval.mjs` scores a real model in the real window against
+  fake S3 profiles; CI runs it in smoke mode. Domain tests run the real SDK and
+  tools over HTTP into a real estate.
+
+### Changed
+
+- The brief shows current state: a later reading that proves a rule clean
+  removes its finding; findings from memory say when they were read; several
+  fixes are kept, the newest open.
+- A survey remembers each bucket as it is read, honours Stop at once, stops
+  starting buckets before its time budget, and reports what it did not read.
+- A bucket a complete listing no longer shows resolves its Issues as gone.
+- Tool status is written by `agentTool()` and never parsed from result text.
+- Notices are codes the window words in the user's language. Retry carries the
+  request's files; Continue is a boundary, not a question.
+- Every run uses the model in Settings, so a model change reaches old tasks.
+- The step cap is 24 rounds and says so on the page; a repeated storage read is
+  blocked and left off the checks.
+- Redaction also covers model API keys, shared-credentials lines, tool targets
+  and error notes.
+- Schema head 4: account auth kinds, bucket region and `gone_at`, Issue
+  `detail` and `accepted_at`.
+
+### Fixed
+
+- A bucket whose name contained "aborted" or "timed out" marked its survey as
+  stopped and hid its data.
+- A finding resolved by a later survey stayed on the page.
+- A lifecycle review of a bucket without lifecycle rules resolved the
+  multipart and noncurrent-version Issues it should have kept open.
+- A model change could leave earlier tasks pointing at a model that no longer
+  existed.
+
 ## 17.0.0
 
 The brief. A task is one page, not a transcript.

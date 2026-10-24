@@ -46,11 +46,25 @@ export interface PublicAccessBlock {
   restrictPublicBuckets: boolean
 }
 
+/** What proved exposure, cancelled it, or left it open; worded by the rules in the user's language. */
+export type ExposureReason =
+  | 'status_public'
+  | 'policy_write'
+  | 'policy_read'
+  | 'policy_list'
+  | 'policy_unknown'
+  | 'acl_everyone'
+  | 'acl_authenticated'
+  | 'acl_unknown'
+  | 'restrict_blocks'
+  | 'ignore_blocks'
+  | 'account_block_unread'
+  | 'not_read'
+
 export interface Exposure {
   /** true: proved public; false: proved not public; null: a read was blind. */
   verdict: boolean | null
-  /** What proved it, or what left it open. Plain phrases, no document text. */
-  reasons: string[]
+  reasons: ExposureReason[]
 }
 
 export interface BucketFacts {
@@ -374,7 +388,7 @@ export async function readBucket(
     inventory,
     exposure: { verdict: null, reasons: [] },
   }
-  facts.exposure = security ? exposureOf(facts) : { verdict: null, reasons: ['not read'] }
+  facts.exposure = security ? exposureOf(facts) : { verdict: null, reasons: ['not_read'] }
   return facts
 }
 
@@ -384,48 +398,46 @@ export async function readBucket(
  * proved public here may still be blocked there, and the reasons say so.
  */
 export function exposureOf(facts: BucketFacts): Exposure {
-  const reasons: string[] = []
+  const reasons: ExposureReason[] = []
   let policyPublic: boolean | null = null
   if (facts.policyStatus.status === 'available') {
     policyPublic = Boolean(facts.policyStatus.value?.isPublic)
-    if (policyPublic) reasons.push('the provider reports the bucket policy as public')
+    if (policyPublic) reasons.push('status_public')
   } else if (facts.policy.status === 'not_configured') {
     policyPublic = false
   } else if (facts.policy.status === 'available' && facts.policy.value) {
     if (facts.policy.value.unreadable) policyPublic = null
     else {
       policyPublic = policyIsPublic(facts.policy.value)
-      if (facts.policy.value.publicWrite) reasons.push('the policy lets anyone write objects')
-      if (facts.policy.value.publicRead) reasons.push('the policy lets anyone read objects')
-      if (facts.policy.value.publicList) reasons.push('the policy lets anyone list the bucket')
+      if (facts.policy.value.publicWrite) reasons.push('policy_write')
+      if (facts.policy.value.publicRead) reasons.push('policy_read')
+      if (facts.policy.value.publicList) reasons.push('policy_list')
     }
   }
-  if (policyPublic === null) reasons.push('the bucket policy could not be evaluated')
+  if (policyPublic === null) reasons.push('policy_unknown')
 
   let aclPublic: boolean | null = null
   if (facts.acl.status === 'skipped_acls_disabled') aclPublic = false
   else if (facts.acl.status === 'available' && facts.acl.value) {
     aclPublic = facts.acl.value.allUsers || facts.acl.value.authenticatedUsers
-    if (facts.acl.value.allUsers) reasons.push('the ACL grants access to everyone')
-    else if (facts.acl.value.authenticatedUsers)
-      reasons.push('the ACL grants access to any authenticated AWS user')
-  } else reasons.push('the ACL could not be read')
+    if (facts.acl.value.allUsers) reasons.push('acl_everyone')
+    else if (facts.acl.value.authenticatedUsers) reasons.push('acl_authenticated')
+  } else reasons.push('acl_unknown')
 
   const pab = facts.pab.value
   if (pab?.restrictPublicBuckets && policyPublic) {
     policyPublic = false
-    reasons.push('RestrictPublicBuckets blocks the public policy')
+    reasons.push('restrict_blocks')
   }
   if (pab?.ignorePublicAcls && aclPublic) {
     aclPublic = false
-    reasons.push('IgnorePublicAcls blocks the public ACL')
+    reasons.push('ignore_blocks')
   }
 
   let verdict: boolean | null = null
   if (policyPublic === true || aclPublic === true) verdict = true
   else if (policyPublic === false && aclPublic === false) verdict = false
-  if (verdict === true)
-    reasons.push('an account-level public access block, if set, would still apply')
+  if (verdict === true) reasons.push('account_block_unread')
   return { verdict, reasons }
 }
 

@@ -10,7 +10,8 @@ Electron main                            Renderer (sandboxed)
   pi-durable  harness, tasks, entries
   tools       ten read-only tools
   estate      rules, issues, fixes
-  s3          AWS SDK v3 reads
+  s3          one reading per bucket
+  updater     GitHub releases
   analysis    SQLite per dataset
                      │
         storage-agent.db (node:sqlite)
@@ -25,48 +26,80 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
 
 1. `app.whenReady` opens the database, builds services, opens the harness and
    registers IPC.
-2. `harness.createConversation()` creates one conversation per task; every new
-   conversation receives the configured model.
-3. `submit` writes a `sa.user` entry and runs pi's generation task. A running
+2. `harness.createConversation()` creates one conversation per task.
+3. Before every run, `configure()` points the conversation at the model and
+   thinking level in Settings, so a model change reaches old tasks too. The run
+   state (round count, calls made, names the task has read) is seeded from the
+   task's entries.
+4. `submit` writes a `sa.user` entry and runs pi's generation task. A running
    call is projected from `pi.live.tools` (name, target, progress, start time);
-   when it settles it becomes a `pi.tool-result` entry carrying `details` (the UI
-   view), and the row is replaced in place.
-4. The open task is streamed with `conversation.watch()`. Each frame appends new
-   entries and pushes the live state to the window through `agent:event`.
-5. `harness.watchTaskGraph()` supplies working state for the sidebar.
-6. `conversation.abort()` stops a run; pi keeps what was committed.
-7. pi compacts when the model's context window fills; compaction appears as a
+   when it settles it becomes a `pi.tool-result` entry carrying `details`
+   (`{ target, note, view, ms, status }`), and the row is replaced in place.
+   Status is written by `agentTool()`: `done`, `failed`, `refused`, `timeout` or
+   `stopped`. The projection never reads it from result text.
+5. Hooks guard the run: `beforeTool` blocks a repeated storage read and every
+   call after 24 rounds; `afterTool` records the names a result shows;
+   `onYield` asks once for a corrected verdict when it names something no
+   result showed (`shared/grounding.ts`).
+6. The open task is streamed with `conversation.watch()`. Each frame appends new
+   entries and pushes the live state and the task's usage (`pi.usage`) to the
+   window through `agent:event`.
+7. `harness.watchTaskGraph()` supplies working state for the sidebar and the
+   dock badge.
+8. `conversation.abort()` stops a run; pi keeps what was committed. A stopped
+   survey has already remembered every bucket it read.
+9. pi compacts when the model's context window fills; compaction appears as a
    divider in the stream.
-8. When a task settles, its requests, current verdict and findings are written
-   to `search_docs` from the same `buildBrief()` projection the window uses.
-   Tasks without rows are backfilled in the background at startup.
+10. When a task settles, its requests, current verdict and findings are written
+    to `search_docs` from the same `buildBrief()` projection the window uses,
+    and the shell may send a notification. Tasks without rows are backfilled in
+    the background at startup.
 
 The window never receives `entry.model` (the provider-facing messages). The
-mapper in `runtime/harness.ts` projects entries into `UiEntry`, extracting only
-the answer text and the tool details.
+mapper in `runtime/project.ts` projects entries into `UiEntry`, extracting only
+the answer text and the tool details. `pi.user` entries (the harness's own
+correction to the model) are not shown; `sa.continue` is a boundary, not a
+question.
+
+## One reading, one set of rules
+
+`s3/facts.ts` reads a bucket once for the aspects asked for (security,
+lifecycle, observability) and returns typed facts, each with its read status.
+`readBucket()` reads the bucket's region first and switches to that region's
+client when the account spans regions; every client follows region redirects.
+`s3/policy.ts` evaluates the policy document locally. `estate/rules.ts` decides
+the seven rules from facts by code; `survey` and `config` both apply the same
+decisions to the estate and attach the observations (`bucket, code, verdict`)
+to their view, which is how the brief knows a finding was proved fixed.
 
 ## Modules
 
 | Module | Responsibility |
 |---|---|
 | `main/db.ts` | schema, migrations (`user_version`), typed queries |
-| `main/providers.ts` | account config, S3 clients, masking, connection test |
-| `main/settings.ts` | `settings.json` (language, theme, model reference) |
+| `main/providers.ts` | accounts (keys or AWS profile), regional S3 clients, profile list, connection test |
+| `main/settings.ts` | `settings.json` (language, theme, notify, model, last task) |
+| `main/updater.ts` | `electron-updater` against GitHub releases, packaged builds only |
 | `main/security/vault.ts` | `safeStorage` or AES-256-GCM fallback |
 | `main/security/redact.ts` | credential-shaped text removal, bounding |
-| `main/runtime/model.ts` | pi-ai provider construction and a one-shot test |
-| `main/runtime/agent.ts` | prompt sections, step-cap hooks, estate digest |
-| `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, details |
-| `main/s3/posture.ts` | one bounded snapshot per bucket |
-| `main/s3/review.ts` | security, lifecycle and observability findings |
-| `main/estate/rules.ts` | seven rules and tri-state evaluation |
+| `main/runtime/model.ts` | pi-ai provider (Anthropic, OpenAI Responses, Chat Completions) and a one-shot test |
+| `main/runtime/agent.ts` | prompt sections, guard hooks, grounding correction, estate digest |
+| `main/runtime/harness.ts` | task lifecycle, model per run, watches, settle bookkeeping |
+| `main/runtime/project.ts` | entries → `UiEntry`, live state, usage |
+| `main/runtime/search.ts` | sidebar search, index rows |
+| `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details |
+| `main/s3/facts.ts` | one reading per bucket, exposure, rememberable posture |
+| `main/s3/policy.ts` | local policy evaluation |
+| `main/estate/rules.ts` | seven rules over facts, review findings, advisories |
+| `main/estate/estate.ts` | applying decisions, gone buckets, Issue rows |
 | `main/estate/fixes.ts` | fix formats and impact preview |
 | `main/analysis/*` | import (bounded, redacted) and whitelisted aggregates |
 | `main/app.ts` | service wiring, model install |
 | `main/window-state.ts` | window bounds in `window.json`, clamped to a display |
 | `renderer/Sidebar.tsx` | task list, ⌘K search, rename, inline delete |
 | `renderer/Brief.tsx` | the brief, checks, focus, copy/save |
-| `shared/brief.ts` | deterministic projection from entries to the brief |
+| `shared/brief.ts` | deterministic projection from entries to the brief, current state |
+| `shared/grounding.ts` | names a task's results show; ungrounded verdict names |
 
 ## Storage layout
 
@@ -85,5 +118,5 @@ the answer text and the tool details.
 ## Deliberate absences
 
 No event-sourcing layer, no second queue, no SSE, no report generator, no trace
-export, no MCP bridge, no skills loader, no subagents, no approval UI. pi owns
-the durable loop; the product owns storage semantics.
+export, no MCP bridge, no skills loader, no subagents, no approval UI, no
+background watch. pi owns the durable loop; the product owns storage semantics.

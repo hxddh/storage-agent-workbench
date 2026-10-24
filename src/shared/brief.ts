@@ -42,6 +42,8 @@ export interface BriefFinding {
   status: 'open' | 'accepted'
   /** `memory`: last read before this task, by `estate` or for a bucket this survey did not read. */
   source: 'read' | 'memory'
+  /** When storage was last read for this finding: the Issue's last observation for memory. */
+  readAt: string
   recurred: number
   sourceId: string
   sourceName: ToolName
@@ -257,6 +259,7 @@ function issueFinding(issue: IssueRow, check: BriefCheck, source: 'read' | 'memo
     issueId: issue.id,
     status: issue.status === 'accepted' ? 'accepted' : 'open',
     source,
+    readAt: source === 'memory' && issue.lastSeenAt ? issue.lastSeenAt : check.at,
     recurred: issue.recurred,
     sourceId: check.id,
     sourceName: check.name,
@@ -282,6 +285,7 @@ function reviewFinding(
     issueId: null,
     status: 'open',
     source: 'read',
+    readAt: check.at,
     recurred: 0,
     sourceId: check.id,
     sourceName: check.name,

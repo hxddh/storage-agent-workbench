@@ -178,7 +178,7 @@ function FindingRow({
   /** False when every finding is memory and the meta line already says so. */
   tagMemory?: boolean
 }) {
-  const when = finding.source === 'memory' && tagMemory ? ago(finding.at, t) : null
+  const when = finding.source === 'memory' && tagMemory ? ago(finding.readAt, t) : null
   return (
     <div
       className="finding-row"
@@ -500,7 +500,7 @@ export function Brief({
   const allMemory =
     brief.findings.length > 0 && brief.findings.every((finding) => finding.source === 'memory')
   const rememberedAt = allMemory
-    ? (brief.findings.map((finding) => finding.at).sort()[0] ?? null)
+    ? (brief.findings.map((finding) => finding.readAt).sort()[0] ?? null)
     : null
   const pending = brief.coverage.reduce((n, item) => n + item.pending, 0)
   const unread = new Set(brief.coverage.flatMap((item) => [...item.denied, ...item.unknown])).size

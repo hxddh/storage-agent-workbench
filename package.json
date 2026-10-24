@@ -1,7 +1,7 @@
 {
   "name": "storage-agent",
   "productName": "Storage Agent",
-  "version": "17.0.0",
+  "version": "18.0.0",
   "description": "A local agent for object storage",
   "license": "Apache-2.0",
   "private": true,
@@ -20,7 +20,8 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "dist": "electron-vite build && electron-builder",
-    "dist:dir": "electron-vite build && electron-builder --dir"
+    "dist:dir": "electron-vite build && electron-builder --dir",
+    "eval": "node scripts/eval.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1156.0",

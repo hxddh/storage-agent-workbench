@@ -58,9 +58,17 @@ Save revealed on hover; the verdict; notices; findings; the fix; one data
 section; the checks receipt; the questions disclosure.
 
 Findings use a severity dot, a 14px title and a 12px meta line. There is no
-severity pill. Clicking a finding scrolls to its check and flashes it. Data and
-Checks are disclosures; their headers are 12px labels, not buttons that look
-like buttons.
+severity pill. Clicking a finding scrolls to its check and flashes it; **Accept
+risk** appears on hover at the row's end as quiet text. A finding from memory
+carries a hairline `remembered · 3d ago` tag — or, when every finding is memory,
+the meta line says it once. Accepted risks and what the task fixed are one-line
+folds; the fixed fold is the one place `--ok` colours a label. Data and Checks
+are disclosures; their headers are 12px labels, not buttons that look like
+buttons. A backticked name the checks never showed gets a dashed `--warn`
+border and one quiet line under the verdict.
+
+Dropping a file anywhere shows a dashed accent border on the composer and one
+centred line; nothing else on the page moves.
 
 ## Motion
 
@@ -72,6 +80,13 @@ reveal-on-scroll, no page transitions, no animation library.
 
 Lucide, 14–16px, 1.6 stroke. Six states exist: idle, hover, focus-visible,
 working (a pulsing accent dot), attention (warn dot) and failure (danger).
+
+## Accessibility
+
+The verdict and notices sit in a polite live region; the checks receipt is a
+`status`; an error notice is an `alert`. Icons next to text are `aria-hidden`.
+Every action is a real button reachable by keyboard; hover-revealed actions
+also appear on `:focus-visible`.
 
 ## Writing
 

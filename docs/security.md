@@ -11,11 +11,16 @@
 3. **Secrets.** Cloud keys live in the OS keychain through Electron
    `safeStorage`; without a keyring they are sealed with AES-256-GCM under a
    locally generated 0600 key. SQLite stores only the sealed reference. The
-   window receives a masked key id and a `hasSessionToken` boolean.
+   window receives a masked key id and a `hasSessionToken` boolean. A profile
+   account stores only the profile name; the AWS SDK resolves it from the
+   user's own `~/.aws` files at call time (SSO, `credential_process`,
+   assume-role), and the app lists profile names without reading keys.
 4. **Redaction.** `security/redact.ts` removes access-key shapes, `X-Amz-*`
    signatures and credentials, authorization headers, bearer tokens, secret JSON
-   fields, account ids inside ARNs and signature query parameters. It runs before
-   a value is stored, shown or sent to the model.
+   fields, account ids inside ARNs, signature query parameters, model API keys
+   (`sk-…`) and shared-credentials lines. It runs before a value is stored,
+   shown or sent to the model — including tool targets, progress lines and
+   error notes.
 5. **Envelope.** Every tool result the model sees is wrapped in
    `<untrusted-data source="storage">…</untrusted-data>` and bounded. Bucket
    names, object keys and log lines can contain hostile text; the envelope tells
@@ -23,7 +28,14 @@
 6. **No model-facing raw rows.** Logs and inventories are parsed into a local
    SQLite file; the model receives only aggregates and bounded samples.
 7. **Audit.** Every tool call writes `audit(tool, target, outcome, conversation)`.
-   A refused scope call is recorded as `refused`.
+   A refused scope call is recorded as `refused`, a stopped one as `stopped`.
+8. **Status is structured.** A call's status is written by `agentTool()` into
+   `details`; nothing parses result text, which a bucket name or an error body
+   could forge.
+9. **Dropped files.** The preload turns a dropped or pasted `File` into a path
+   with `webUtils.getPathForFile`, which yields nothing for a file the page
+   constructed; the main process accepts only absolute paths to regular files
+   up to 4 GiB.
 
 ## Threat notes
 
@@ -40,7 +52,12 @@
   preload, and a CSP that forbids remote script. It never receives a credential,
   a raw provider message or a filesystem handle.
 - **The model is untrusted**: it can propose a fix, never apply one; it cannot
-  open or resolve Issues, and its prose is never parsed as product state.
+  open, resolve or accept Issues, and its prose is never parsed as product
+  state. A name in the verdict that no tool returned is marked on the page.
+- **Updates** come from this repository's GitHub releases through
+  `electron-updater`, in packaged builds only. Unsigned macOS builds cannot
+  update themselves; the release workflow signs and notarizes when its secrets
+  are configured.
 
 ## Not claimed
 
