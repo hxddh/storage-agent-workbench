@@ -91,6 +91,14 @@ try {
   await page.waitForSelector('.home-account', { timeout: 5_000 })
   console.log('HOME OVERVIEW OK')
 
+  // Model-free account check: the same readers produce a brief without a model.
+  await page.getByRole('button', { name: 'Check account' }).click()
+  await page.waitForSelector('.brief .verdict', { timeout: 120_000 })
+  const auditText = await page.locator('.brief').innerText()
+  if (!/issue|problem|No open/i.test(auditText)) await fail('audit produced no conclusion')
+  console.log('AUDIT OK:', auditText.replace(/\s+/g, ' ').slice(0, 180))
+  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-audit.png') })
+
   await page.locator('.composer textarea').fill('Which buckets are public?')
   await page.keyboard.press('Enter')
 
@@ -243,9 +251,10 @@ try {
   console.log('QUERY OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-query.png') })
 
-  // Keyboard: j moves between findings.
+  // Keyboard: j moves between findings. Search resolves the audit task, which
+  // carries several findings; the request itself ran inside that task.
   await page.locator('.sidebar-search input').fill('public')
-  await page.locator('.search-hit', { hasText: 'Which buckets are public?' }).first().click()
+  await page.locator('.search-hit', { hasText: 'Check account' }).first().click()
   await page.waitForSelector('.finding-main', { timeout: 10_000 })
   await page.locator('.finding-main').first().focus()
   await page.keyboard.press('j')

@@ -36,6 +36,8 @@ export interface AccessRead {
   paths: AccessPath[]
   blind: { source: string; status: ReadStatus }[]
   coverage: AccessCoverage
+  /** AWS requests made while reading; code mode charges these to its budget. */
+  calls?: number
 }
 
 const READ_ACTIONS = [
@@ -109,32 +111,60 @@ function list(value: unknown): unknown[] {
   return Array.isArray(value) ? value : value === undefined || value === null ? [] : [value]
 }
 
-function glob(pattern: string): RegExp {
+function glob(pattern: string, flags = ''): RegExp {
   const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`^${escaped.replace(/\*/g, '.*').replace(/\?/g, '.')}$`, 'i')
+  return new RegExp(`^${escaped.replace(/\*/g, '.*').replace(/\?/g, '.')}$`, flags)
 }
 
-function matches(value: string, pattern: string): boolean {
-  return glob(pattern).test(value)
+function matches(value: string, pattern: string, flags = ''): boolean {
+  return glob(pattern, flags).test(value)
 }
 
+/** IAM action names are case-insensitive; ARNs are not. */
 function matchesAction(statement: Record<string, unknown>, action: string): boolean {
   if (statement.NotAction !== undefined)
-    return !list(statement.NotAction).some((item) => matches(action, String(item)))
+    return !list(statement.NotAction).some((item) => matches(action, String(item), 'i'))
   const actions = list(statement.Action)
   // A statement without an Action is malformed; never widen it to every action.
-  return actions.length > 0 && actions.some((item) => matches(action, String(item)))
+  return actions.length > 0 && actions.some((item) => matches(action, String(item), 'i'))
 }
 
-function matchesResource(statement: Record<string, unknown>, bucket: string): boolean {
-  const resources = [`arn:aws:s3:::${bucket}`, `arn:aws:s3:::${bucket}/*`]
+const OBJECT_ACTIONS = new Set([
+  's3:getobject',
+  's3:getobjectversion',
+  's3:putobject',
+  's3:deleteobject',
+  's3:deleteobjectversion',
+  's3:getobjectacl',
+  's3:putobjectacl',
+  's3:getobjecttagging',
+  's3:putobjecttagging',
+  's3:deleteobjecttagging',
+  's3:getobjectversionacl',
+  's3:getobjectversiontagging',
+  's3:abortmultipartupload',
+])
+
+/** The one resource an action needs. Object actions never match a bucket ARN. */
+function resourceForAction(bucket: string, action: string): string {
+  return OBJECT_ACTIONS.has(action.toLowerCase())
+    ? `arn:aws:s3:::${bucket}/*`
+    : `arn:aws:s3:::${bucket}`
+}
+
+function matchesResource(
+  statement: Record<string, unknown>,
+  bucket: string,
+  action: string,
+): boolean {
+  const resource = resourceForAction(bucket, action)
   if (statement.NotResource !== undefined) {
     const excluded = list(statement.NotResource).map(String)
-    return resources.some((resource) => !excluded.some((pattern) => matches(resource, pattern)))
+    return !excluded.some((pattern) => matches(resource, pattern))
   }
   const patterns = list(statement.Resource)
   // As with Action, an omitted Resource is not a wildcard.
-  return patterns.some((item) => resources.some((r) => matches(r, String(item))))
+  return patterns.some((item) => matches(resource, String(item)))
 }
 
 function conditionText(statement: Record<string, unknown>): string | null {
@@ -157,6 +187,45 @@ function hasCondition(statement: Record<string, unknown>): boolean {
   return Boolean(statement.Condition && typeof statement.Condition === 'object')
 }
 
+export interface PrincipalRef {
+  kind: 'user' | 'role'
+  name: string
+  arn?: string
+  accountId?: string
+}
+
+function awsPrincipalMatches(value: string, ref: PrincipalRef): boolean {
+  if (value === '*') return true
+  if (ref.arn && value === ref.arn) return true
+  if (ref.accountId && (value === ref.accountId || value === `arn:aws:iam::${ref.accountId}:root`))
+    return true
+  // A policy can name a user/role ARN from the same account even when the
+  // detail response omitted the full ARN; compare the stable suffix then.
+  const suffix = `:${ref.kind}/${ref.name}`
+  if (value.endsWith(suffix)) {
+    if (!ref.accountId) return true
+    return value.includes(`::${ref.accountId}:`)
+  }
+  return false
+}
+
+function principalMatches(raw: unknown, ref: PrincipalRef): boolean {
+  if (raw === '*') return true
+  if (typeof raw === 'string') return awsPrincipalMatches(raw, ref)
+  if (Array.isArray(raw)) return raw.some((item) => principalMatches(item, ref))
+  if (!raw || typeof raw !== 'object') return false
+  for (const [kind, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (kind !== 'AWS') continue
+    if (list(value).some((item) => awsPrincipalMatches(String(item), ref))) return true
+  }
+  return false
+}
+
+function matchesPrincipal(statement: Record<string, unknown>, ref: PrincipalRef): boolean {
+  if (statement.NotPrincipal !== undefined) return !principalMatches(statement.NotPrincipal, ref)
+  return statement.Principal !== undefined && principalMatches(statement.Principal, ref)
+}
+
 interface Evaluation {
   /** An unconditional grant exists and no unconditional or conditional deny can undo it. */
   allowed: boolean
@@ -176,6 +245,7 @@ export function evaluateStatements(
   documents: readonly Record<string, unknown>[],
   bucket: string,
   action: string,
+  principal?: PrincipalRef,
 ): Evaluation {
   let allow = false
   let conditionalAllow = false
@@ -183,7 +253,9 @@ export function evaluateStatements(
   let conditionalDeny = false
   let condition: string | null = null
   for (const statement of documents) {
-    if (!matchesAction(statement, action) || !matchesResource(statement, bucket)) continue
+    if (!matchesAction(statement, action)) continue
+    if (principal && !matchesPrincipal(statement, principal)) continue
+    if (!matchesResource(statement, bucket, action)) continue
     const effect = String(statement.Effect ?? '')
     if (effect === 'Deny') {
       if (hasCondition(statement)) {
@@ -218,7 +290,32 @@ interface Details {
   truncated: boolean
 }
 
-async function readDetails(client: IAMClient, signal?: AbortSignal): Promise<Details> {
+interface ScpRead {
+  docs: Record<string, unknown>[]
+  blind: AccessRead['blind']
+  truncated: boolean
+}
+
+/**
+ * One task-scoped cache. IAM details and SCPs are account-wide; reading them
+ * once per bucket turns a reverse principal query into a request storm.
+ */
+export interface AccessSession {
+  details?: Promise<Details>
+  scp?: Promise<ScpRead>
+  /** Requests made by the access reader, for code mode's call budget. */
+  calls?: number
+}
+
+function apiCall(session: AccessSession | undefined): void {
+  if (session) session.calls = (session.calls ?? 0) + 1
+}
+
+async function readDetails(
+  client: IAMClient,
+  signal?: AbortSignal,
+  session?: AccessSession,
+): Promise<Details> {
   const users: UserDetail[] = []
   const groups: GroupDetail[] = []
   const roles: RoleDetail[] = []
@@ -226,6 +323,7 @@ async function readDetails(client: IAMClient, signal?: AbortSignal): Promise<Det
   let marker: string | undefined
   let truncated = false
   for (let page = 0; page < 20; page += 1) {
+    apiCall(session)
     const response = await client.send(
       new GetAccountAuthorizationDetailsCommand({ Marker: marker, MaxItems: 100 }),
       { abortSignal: signal },
@@ -347,11 +445,8 @@ async function scpDocuments(
   client: OrganizationsClient,
   accountId: string | undefined,
   signal?: AbortSignal,
-): Promise<{
-  docs: Record<string, unknown>[]
-  blind: AccessRead['blind']
-  truncated: boolean
-}> {
+  session?: AccessSession,
+): Promise<ScpRead> {
   if (!accountId)
     return { docs: [], blind: [{ source: 'scp', status: 'unread' }], truncated: false }
   try {
@@ -360,6 +455,7 @@ async function scpDocuments(
     const targets = [accountId]
     let child = accountId
     for (let depth = 0; depth < 8; depth += 1) {
+      apiCall(session)
       const parents = await client.send(new ListParentsCommand({ ChildId: child }), {
         abortSignal: signal,
       })
@@ -373,6 +469,7 @@ async function scpDocuments(
     for (const target of targets) {
       let token: string | undefined
       for (let page = 0; page < 5; page += 1) {
+        apiCall(session)
         const listed = await client.send(
           new ListPoliciesForTargetCommand({
             TargetId: target,
@@ -391,6 +488,7 @@ async function scpDocuments(
     if (unique.length > 100) truncated = true
     const docs = []
     for (const id of unique.slice(0, 100)) {
+      apiCall(session)
       const policy = await client.send(new DescribePolicyCommand({ PolicyId: id }), {
         abortSignal: signal,
       })
@@ -407,10 +505,15 @@ async function iamPaths(
   client: IAMClient,
   bucket: string,
   scp: readonly Record<string, unknown>[],
+  resourcePolicy: readonly Record<string, unknown>[],
+  accountId: string | undefined,
   signal?: AbortSignal,
+  session?: AccessSession,
 ): Promise<{ paths: AccessPath[]; blind: AccessRead['blind']; coverage: AccessCoverage }> {
   try {
-    const details = await readDetails(client, signal)
+    const detailsPromise = session?.details ?? readDetails(client, signal, session)
+    if (session && !session.details) session.details = detailsPromise
+    const details = await detailsPromise
     const managed = managedDocs(details.policies)
     const groups = new Map<string, GroupDetail>()
     for (const group of details.groups) if (group.GroupName) groups.set(group.GroupName, group)
@@ -428,18 +531,28 @@ async function iamPaths(
         groups,
         managed,
       )
+      const kind: PrincipalRef['kind'] = 'UserName' in entity ? 'user' : 'role'
+      const principalRef: PrincipalRef = {
+        kind,
+        name,
+        ...('Arn' in entity && entity.Arn ? { arn: entity.Arn } : {}),
+        ...(accountId ? { accountId } : {}),
+      }
       if (missingBoundary || missingAttached) undecided += 1
       const allowed: string[] = []
       let conditional = false
       let condition: string | null = null
       for (const action of IAM_ACTIONS) {
         const result = evaluateStatements(docs, bucket, action)
-        // An unconditional Deny is final; a conditional Deny leaves the action
-        // undecided, not allowed.
-        if (result.denied) continue
-        if (result.conditionalDeny) {
+        // A resource-policy Deny applies to the identity grant as well. A
+        // conditional Deny cannot be turned into a clean allow.
+        const resource = resourcePolicy.length
+          ? evaluateStatements(resourcePolicy, bucket, action, principalRef)
+          : null
+        if (result.denied || resource?.denied) continue
+        if (result.conditionalDeny || resource?.conditionalDeny) {
           conditional = true
-          condition ??= result.condition
+          condition ??= result.condition ?? resource?.condition ?? null
           continue
         }
         // SCPs are an account-wide intersection too. They must allow the
@@ -529,22 +642,32 @@ async function iamPaths(
   }
 }
 
+function externalPolicyPrincipal(principal: string, accountId: string | undefined): boolean {
+  if (!accountId || principal === '*' || principal.includes('*')) return false
+  const accounts: string[] = principal.match(/\b\d{12}\b/g) ?? []
+  return accounts.length > 0 && !accounts.includes(accountId)
+}
+
 function fromPolicy(facts: BucketFacts): AccessPath[] {
   const policy = facts.policy.value
   if (!policy) return []
   const blocked =
     facts.pab.value?.restrictPublicBuckets === true ||
     facts.account.pab.value?.restrictPublicBuckets === true
-  return policy.statements.map((statement) =>
-    path(
+  return policy.statements.map((statement) => {
+    const notes: string[] = []
+    if (blocked && statement.public) notes.push('blocked by public access block')
+    if (externalPolicyPrincipal(statement.principal, facts.account.accountId))
+      notes.push('external identity policy not read')
+    return path(
       'policy',
       statement.principal,
       statement.actions,
       statement.condition,
       blocked ? false : statement.public,
-      blocked && statement.public ? 'blocked by public access block' : null,
-    ),
-  )
+      notes.length ? notes.join('; ') : null,
+    )
+  })
 }
 
 function aclActions(acl: { read: boolean; write: boolean }): string[] {
@@ -594,12 +717,15 @@ async function kmsPaths(
   client: KMSClient,
   keyArn: string,
   signal?: AbortSignal,
+  session?: AccessSession,
 ): Promise<{ paths: AccessPath[]; blind: AccessRead['blind'] }> {
   try {
+    apiCall(session)
     const described = await client.send(new DescribeKeyCommand({ KeyId: keyArn }), {
       abortSignal: signal,
     })
     const arn = described.KeyMetadata?.Arn ?? keyArn
+    apiCall(session)
     const policy = await client.send(
       new GetKeyPolicyCommand({ KeyId: arn, PolicyName: 'default' }),
       { abortSignal: signal },
@@ -628,12 +754,14 @@ async function analyzerPaths(
   client: AccessAnalyzerClient,
   bucket: string,
   signal?: AbortSignal,
+  session?: AccessSession,
 ): Promise<{ paths: AccessPath[]; blind: AccessRead['blind']; truncated: boolean }> {
   try {
     const analyzers = []
     let analyzerToken: string | undefined
     let truncated = false
     for (let page = 0; page < 5; page += 1) {
+      apiCall(session)
       const listed = await client.send(
         new ListAnalyzersCommand({ type: 'ACCOUNT', nextToken: analyzerToken }),
         { abortSignal: signal },
@@ -648,6 +776,7 @@ async function analyzerPaths(
       if (!analyzer.arn) continue
       let token: string | undefined
       for (let findingPage = 0; findingPage < 5; findingPage += 1) {
+        apiCall(session)
         const findings = await client.send(
           new ListFindingsCommand({
             analyzerArn: analyzer.arn,
@@ -700,7 +829,10 @@ export async function readAccess(input: {
   analyzer?: AccessAnalyzerClient
   organizations?: OrganizationsClient
   signal?: AbortSignal
+  /** Reuse IAM and SCP reads across buckets in one task. */
+  session?: AccessSession
 }): Promise<AccessRead> {
+  const session: AccessSession = input.session ?? {}
   const paths = [...fromPolicy(input.facts)]
   // Either the bucket or the account block can make a public ACL ineffective.
   const blockedAcl =
@@ -708,6 +840,15 @@ export async function readAccess(input: {
     input.facts.account.pab.value?.ignorePublicAcls === true
   paths.push(...fromAcl(input.facts, blockedAcl))
   const blind: AccessRead['blind'] = []
+  // A resource policy can name a principal in another account. Its identity
+  // policy is outside this reader, so the grant is evidence, not a decision.
+  if (
+    paths.some(
+      (item) =>
+        item.source === 'policy' && item.note?.includes('external identity policy not read'),
+    )
+  )
+    blind.push({ source: 'external identity policy', status: 'unread' })
   const bucketPab = input.facts.pab
   if (bucketPab.status !== 'available' && bucketPab.status !== 'not_configured')
     blind.push({ source: 'pab', status: bucketPab.status })
@@ -740,22 +881,37 @@ export async function readAccess(input: {
     principals: 0,
     evaluated: 0,
     undecided: 0,
-    truncated: false,
+    truncated: input.facts.policy.value?.statementsTruncated === true,
     sources: ['bucket policy', 'ACL'],
   }
   if (input.aws) {
-    const scp = input.organizations
-      ? await scpDocuments(input.organizations, input.facts.account.accountId, input.signal)
-      : { docs: [], blind: [{ source: 'scp', status: 'unread' as ReadStatus }], truncated: false }
+    const scpPromise = input.organizations
+      ? (session.scp ??
+        scpDocuments(input.organizations, input.facts.account.accountId, input.signal, session))
+      : Promise.resolve({
+          docs: [],
+          blind: [{ source: 'scp', status: 'unread' as ReadStatus }],
+          truncated: false,
+        })
+    if (input.organizations && !session.scp) session.scp = scpPromise
+    const scp = await scpPromise
     const results = await Promise.all([
       input.kms && input.facts.encryption.value?.keyArn
-        ? kmsPaths(input.kms, input.facts.encryption.value.keyArn, input.signal)
+        ? kmsPaths(input.kms, input.facts.encryption.value.keyArn, input.signal, session)
         : Promise.resolve({ paths: [], blind: [] }),
       input.analyzer
-        ? analyzerPaths(input.analyzer, input.bucket, input.signal)
+        ? analyzerPaths(input.analyzer, input.bucket, input.signal, session)
         : Promise.resolve({ paths: [], blind: [], truncated: false }),
       input.iam
-        ? iamPaths(input.iam, input.bucket, scp.docs, input.signal)
+        ? iamPaths(
+            input.iam,
+            input.bucket,
+            scp.docs,
+            input.facts.policy.value?.documents ?? [],
+            input.facts.account.accountId,
+            input.signal,
+            session,
+          )
         : Promise.resolve({
             paths: [],
             blind: [],
@@ -778,6 +934,7 @@ export async function readAccess(input: {
       ...iam.coverage,
       undecided: iam.coverage.undecided + scp.blind.length,
       truncated:
+        coverage.truncated ||
         iam.coverage.truncated ||
         scp.truncated ||
         Boolean((results[1] as { truncated?: boolean }).truncated),
@@ -786,5 +943,5 @@ export async function readAccess(input: {
   }
   const limited = paths.slice(0, 120)
   if (limited.length < paths.length) coverage.truncated = true
-  return { paths: limited, blind, coverage }
+  return { paths: limited, blind, coverage, calls: session.calls ?? 0 }
 }

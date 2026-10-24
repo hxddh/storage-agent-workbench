@@ -9,6 +9,7 @@
 import type { ConversationView, EntryRecord } from '@earendil-works/pi-durable'
 import type {
   AttachmentRef,
+  AuditReport,
   ContextRef,
   Live,
   LiveTool,
@@ -96,6 +97,25 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
         attachments: data?.attachments ?? [],
         ...(data?.context?.length ? { context: data.context } : {}),
       })
+      continue
+    }
+    if (entry.kind === 'sa.audit') {
+      const report = entry.data as AuditReport | undefined
+      if (report) {
+        for (const [index, check] of report.checks.entries())
+          out.push({
+            id: `${id}:${index}`,
+            kind: 'tool',
+            at: check.at,
+            name: check.name,
+            target: check.target,
+            status: check.status,
+            note: check.note,
+            ms: check.ms,
+            view: check.view,
+          })
+        out.push({ id: `${id}:answer`, kind: 'answer', at: report.at, text: report.verdict })
+      }
       continue
     }
     // `pi.user` entries are the harness's own messages to the model (a grounding

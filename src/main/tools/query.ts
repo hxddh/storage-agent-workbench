@@ -26,14 +26,14 @@ import {
   type S3Client,
 } from '@aws-sdk/client-s3'
 import { CodemodeSandbox, type CodemodeTool } from '@earendil-works/pi-codemode'
-import type { Chart, Table } from '@shared/contract'
+import type { AccessCoverage, Chart, Table } from '@shared/contract'
 import { parse as parseCsv } from 'csv-parse/sync'
 import { parquetReadObjects } from 'hyparquet'
 import { AggregationError, aggregate, type DatasetKind, preview } from '../analysis/aggregate'
 import { datasetBytes, importDataset, importInventoryFiles } from '../analysis/import'
 import { decide } from '../estate/rules'
 import type { ProviderConfig } from '../providers'
-import { readAccess } from '../s3/access'
+import { type AccessSession, readAccess } from '../s3/access'
 import { readAccount, UNREAD_ACCOUNT } from '../s3/account'
 import { readBucket } from '../s3/facts'
 import { readCapacity } from '../s3/metrics'
@@ -130,7 +130,12 @@ interface Context {
   signal: AbortSignal
   regional?: (region: string) => S3Client
   account?: () => Promise<import('../s3/account').AccountFacts>
-  usage: { calls: number; listed: number }
+  usage: {
+    calls: number
+    listed: number
+    coverage?: AccessCoverage
+    blind?: { source: string; status: string }[]
+  }
   /** Buckets the script read: they ground what the verdict says about it. */
   touched: Set<string>
   datasets: Map<string, { kind: DatasetKind; path: string; rows: number }>
@@ -139,14 +144,15 @@ interface Context {
 function primitives(ctx: Context): CodemodeTool[] {
   const { deps, config, client } = ctx
   const aws = deps.providers.isAws(config)
-  const spend = (listed = 0) => {
-    ctx.usage.calls += 1
+  const charge = (calls: number, listed = 0) => {
+    ctx.usage.calls += Math.max(0, calls)
     ctx.usage.listed += listed
     if (ctx.usage.calls > QUERY_BUDGET.calls)
       throw new BudgetError(`Call budget of ${QUERY_BUDGET.calls} reached.`)
     if (ctx.usage.listed > QUERY_BUDGET.listed)
       throw new BudgetError(`Listing budget of ${QUERY_BUDGET.listed} items reached.`)
   }
+  const spend = (listed = 0) => charge(1, listed)
   const bucketArg = (args: unknown): string => {
     const bucket = String((args as { bucket?: unknown })?.bucket ?? '')
     if (!bucket) throw new Error('bucket is required.')
@@ -791,7 +797,11 @@ function primitives(ctx: Context): CodemodeTool[] {
         const wanted = String(a.principal ?? '')
           .trim()
           .toLowerCase()
+        // Access paths redact the account id; match the same shape so a full
+        // ARN argument still finds a policy path that names it.
+        const needle = wanted.replace(/\b\d{12}\b/g, '<account>')
         const limit = Math.max(1, Math.min(Number(a.limit ?? 10) || 10, 20))
+        const session: AccessSession = {}
         const readOne = async (bucket: string) => {
           const name = bucketArg({ bucket })
           spend()
@@ -803,6 +813,7 @@ function primitives(ctx: Context): CodemodeTool[] {
             aws,
             account: (await ctx.account?.()) ?? UNREAD_ACCOUNT,
           })
+          const before = session.calls ?? 0
           const access = await readAccess({
             bucket: name,
             facts,
@@ -818,17 +829,31 @@ function primitives(ctx: Context): CodemodeTool[] {
                 : undefined,
             organizations: aws ? deps.providers.organizations(config) : undefined,
             signal: ctx.signal,
+            session,
           })
+          // The access reader makes many account-wide requests; charge only
+          // the delta, because the session totals are cumulative across buckets.
+          charge((access.calls ?? 0) - before)
           return {
             bucket: name,
             paths: access.paths.filter(
-              (item) => !wanted || item.principal.toLowerCase().includes(wanted),
+              (item) =>
+                !needle ||
+                item.principal.toLowerCase().includes(needle) ||
+                item.principal.includes('*') ||
+                item.principal === 'AllUsers' ||
+                item.public,
             ),
             coverage: access.coverage,
             blind: access.blind,
           }
         }
-        if (a.bucket) return readOne(String(a.bucket))
+        if (a.bucket) {
+          const result = await readOne(String(a.bucket))
+          ctx.usage.coverage = result.coverage
+          ctx.usage.blind = result.blind
+          return result
+        }
         spend()
         const listed = await send<{ Buckets?: { Name?: string }[] }>(new ListBucketsCommand({}))
         const visible = (listed.Buckets ?? []).flatMap((bucket) =>
@@ -848,16 +873,26 @@ function primitives(ctx: Context): CodemodeTool[] {
         const remembered = allRemembered.slice(0, limit)
         const results = []
         for (const bucket of remembered) results.push(await readOne(bucket))
-        return {
-          buckets: results,
-          coverage: {
-            principals: results.reduce((n, item) => n + item.coverage.principals, 0),
-            evaluated: results.reduce((n, item) => n + item.coverage.evaluated, 0),
-            undecided: results.reduce((n, item) => n + item.coverage.undecided, 0),
-            truncated: remembered.length < allRemembered.length,
-            sources: [...new Set(results.flatMap((item) => item.coverage.sources))],
-          },
+        const coverage = {
+          principals: results.reduce((n, item) => n + item.coverage.principals, 0),
+          evaluated: results.reduce((n, item) => n + item.coverage.evaluated, 0),
+          undecided: results.reduce((n, item) => n + item.coverage.undecided, 0),
+          truncated:
+            remembered.length < allRemembered.length ||
+            results.some((item) => item.coverage.truncated),
+          sources: [...new Set(results.flatMap((item) => item.coverage.sources))],
+          bucketsExamined: remembered.length,
+          bucketsTotal: allRemembered.length,
         }
+        ctx.usage.coverage = coverage
+        ctx.usage.blind = [
+          ...new Map(
+            results.flatMap((item) =>
+              item.blind.map((blind) => [`${blind.source}:${blind.status}`, blind]),
+            ),
+          ).values(),
+        ]
+        return { buckets: results, coverage }
       },
     },
     {
@@ -911,7 +946,12 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
       if (args.code.length > QUERY_BUDGET.codeChars)
         throw new Error(`The script is longer than ${QUERY_BUDGET.codeChars} characters.`)
       const { config, client } = await run.provider(args.provider_id)
-      const usage = { calls: 0, listed: 0 }
+      const usage: {
+        calls: number
+        listed: number
+        coverage?: AccessCoverage
+        blind?: { source: string; status: string }[]
+      } = { calls: 0, listed: 0 }
       const touched = new Set<string>()
       const aws = deps.providers.isAws(config)
       let accountFacts: import('../s3/account').AccountFacts | null = null
@@ -995,6 +1035,8 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
           calls: usage.calls,
           listed: usage.listed,
           buckets: [...touched].slice(0, 200),
+          ...(usage.coverage ? { coverage: usage.coverage } : {}),
+          ...(usage.blind?.length ? { blind: usage.blind } : {}),
         },
       }
     },

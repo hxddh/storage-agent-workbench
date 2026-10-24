@@ -54,16 +54,16 @@ rules because they are data surfaces, not cards.
 ## Home
 
 A quiet account summary, not a dashboard: one heading, account lines with the
-last read and unresolved risk, a change line and at most three rule-derived
-questions. The composer is in the same place as in a task. No cards, charts or
-large illustration.
+last read and unresolved risk, a change line and one **Check account** action.
+The composer is in the same place as in a task. No cards, charts, suggestion
+pills or large illustration.
 
 ## The brief
 
 Top to bottom: a 12px meta line (`checked 2m ago · 5 findings`) with Copy and
-Save revealed on hover; the verdict; notices; findings; changes; the fix; one
-data section (including access paths); the checks receipt; rule-derived next
-checks; the questions disclosure.
+Save revealed on hover; the latest request as one quiet line; the verdict;
+notices; findings; changes; the fix; one data section (including access paths);
+and the checks receipt. There is no next-step row and no chat transcript.
 
 Findings use a severity dot, a 14px title and a 12px meta line. There is no
 severity pill. Clicking a finding scrolls to its check and flashes it; **Accept

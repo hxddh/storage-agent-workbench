@@ -158,6 +158,39 @@ describe('entry projection', () => {
     ])
   })
 
+  it('expands a model-free audit into ordinary checks and a grounded answer', () => {
+    const out = entries([
+      {
+        id: 'audit1',
+        kind: 'sa.audit',
+        data: {
+          at: '2026-10-24T12:00:00.000Z',
+          verdict: '1 issue is open across 1 bucket including `demo`.',
+          checks: [
+            {
+              name: 'survey',
+              target: 'Demo',
+              status: 'done',
+              note: '1 bucket',
+              ms: 4,
+              at: '2026-10-24T12:00:00.000Z',
+              view: {
+                kind: 'buckets',
+                rows: { columns: ['Bucket'], rows: [['demo']] },
+              },
+            },
+          ],
+        },
+      },
+    ])
+    expect(out).toHaveLength(2)
+    expect(out[0]).toMatchObject({ kind: 'tool', name: 'survey', target: 'Demo' })
+    expect(out[1]).toMatchObject({
+      kind: 'answer',
+      text: '1 issue is open across 1 bucket including `demo`.',
+    })
+  })
+
   it('hides the harness messages to the model and shows a resume as a boundary', () => {
     const out = entries([
       { id: 'e10', kind: 'pi.user', model: [{ role: 'user', content: 'Rewrite the verdict' }] },

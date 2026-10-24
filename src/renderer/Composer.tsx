@@ -274,10 +274,12 @@ export function Composer({
           >
             <AtSign size={15} strokeWidth={1.7} />
           </button>
-          <button className="model-chip" type="button" onClick={onOpenSettings}>
-            <span>{hasModel ? (modelLabel ?? 'Model') : t.setModel}</span>
-            <ChevronDown size={11} />
-          </button>
+          {hasModel && (
+            <button className="model-chip" type="button" onClick={onOpenSettings}>
+              <span>{modelLabel ?? t.model}</span>
+              <ChevronDown size={11} />
+            </button>
+          )}
           <span className="spacer" />
           {live ? (
             <>

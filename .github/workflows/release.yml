@@ -1,13 +1,14 @@
 name: Release
 
-# Tag a commit (`git tag v21.0.0 && git push origin v21.0.0`) or run this
+# Tag a commit (`git tag v22.0.0 && git push origin v22.0.0`) or run this
 # workflow manually. Builds installers on macOS, Linux and Windows and attaches
 # them, with the update feeds (latest*.yml), to one GitHub release.
 #
-# Signing is required: CSC_LINK / CSC_KEY_PASSWORD (macOS Developer ID, .p12),
+# Signing is preferred: CSC_LINK / CSC_KEY_PASSWORD (macOS Developer ID, .p12),
 # APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID (notarization) and
-# WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD (Windows). The signing job fails before
-# build when any are missing.
+# WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD (Windows). When they are absent, macOS is
+# ad-hoc signed and Windows is unsigned; the release notes say so. A release
+# still needs all three platform builds: if one fails, nothing is published.
 on:
   push:
     tags:
@@ -15,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to release (e.g. v21.0.0)"
+        description: "Existing tag to release (e.g. v22.0.0)"
         required: true
 
 permissions:
@@ -23,8 +24,10 @@ permissions:
 
 jobs:
   eval:
-    name: Real-model evaluation
+    name: Real-model or smoke evaluation
     runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,7 +35,18 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
+      - run: npm run build
+      - id: mode
+        env:
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+        run: |
+          if [ -n "$EVAL_API_KEY" ]; then
+            echo "mode=real" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=smoke" >> "$GITHUB_OUTPUT"
+          fi
       - name: Evaluate primary model
+        if: steps.mode.outputs.mode == 'real'
         run: xvfb-run -a node scripts/eval.mjs --runs 2
         env:
           EVAL_PROVIDER: ${{ vars.EVAL_PROVIDER || 'anthropic' }}
@@ -40,14 +54,22 @@ jobs:
           EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
           EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
       - name: Keep primary report
+        if: steps.mode.outputs.mode == 'real'
         run: cp .amp/in/artifacts/eval-report.md eval-primary.md
       - name: Evaluate secondary model
+        if: steps.mode.outputs.mode == 'real'
         run: xvfb-run -a node scripts/eval.mjs --runs 2
         env:
           EVAL_PROVIDER: ${{ vars.EVAL_PROVIDER || 'anthropic' }}
           EVAL_MODEL: ${{ vars.EVAL_MODEL_SECONDARY }}
           EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
           EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+      - name: Smoke the harness when no model credentials exist
+        if: steps.mode.outputs.mode != 'real'
+        run: xvfb-run -a node scripts/eval.mjs --smoke
+      - name: Keep smoke report
+        if: steps.mode.outputs.mode != 'real'
+        run: cp .amp/in/artifacts/eval-report.md eval-primary.md
       - uses: actions/upload-artifact@v4
         with:
           name: eval-reports
@@ -56,10 +78,12 @@ jobs:
             .amp/in/artifacts/eval-report.md
 
   signing:
-    name: Require code signing
+    name: Detect signing credentials
     runs-on: ubuntu-latest
+    outputs:
+      signed: ${{ steps.detect.outputs.signed }}
     steps:
-      - name: Refuse an unsigned release
+      - id: detect
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -69,14 +93,11 @@ jobs:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
-          missing=
+          signed=true
           for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
-            [ -n "${!name}" ] || missing="$missing $name"
+            [ -n "${!name}" ] || signed=false
           done
-          if [ -n "$missing" ]; then
-            echo "Signed and notarized installers are required; missing:$missing" >&2
-            exit 1
-          fi
+          echo "signed=$signed" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.os }}
@@ -100,12 +121,16 @@ jobs:
         # An empty secret arrives as an empty string, which electron-builder
         # reads as a certificate path; unset what is not configured.
         run: |
+          if [ "$SIGNED" != "true" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
           for name in CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
             [ -n "${!name}" ] || unset "$name"
           done
           npx electron-builder --publish never
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' && 'true' || 'false' }}
+          SIGNED: ${{ needs.signing.outputs.signed }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ needs.signing.outputs.signed == 'true' && 'true' || 'false' }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
@@ -129,7 +154,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: build
+    needs: [build, eval, signing]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -141,12 +166,26 @@ jobs:
           name: eval-reports
           path: eval-reports
       - name: Build release notes from the eval reports
+        env:
+          EVAL_MODE: ${{ needs.eval.outputs.mode }}
+          SIGNED: ${{ needs.signing.outputs.signed }}
         run: |
           {
-            echo "## Real-model evaluation"
+            if [ "$EVAL_MODE" = "real" ]; then
+              echo "## Real-model evaluation"
+            else
+              echo "## Evaluation: harness smoke only"
+              echo "No model credentials were available; this report proves the harness runs, not answer quality."
+            fi
             cat eval-reports/eval-primary.md
             echo
-            cat eval-reports/eval-report.md
+            if [ "$EVAL_MODE" = "real" ]; then cat eval-reports/eval-report.md; fi
+            echo
+            if [ "$SIGNED" = "true" ]; then
+              echo "Installers are signed and notarized."
+            else
+              echo "These installers are unsigned. macOS builds are ad-hoc signed only; expect Gatekeeper and SmartScreen warnings."
+            fi
           } > release-notes.md
       - uses: softprops/action-gh-release@v2
         with:

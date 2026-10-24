@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for Storage Agent 21.0.0. Read
+> Implementation contract for Storage Agent 22.0.0. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes are history.
@@ -50,10 +50,12 @@ The invariant:
 - `src/shared/contract.ts` — the single type contract; both sides import it.
 - `src/shared/brief.ts` — the one projection from `UiEntry[]` to the brief;
   the window renders it and the main process indexes the same findings.
+- `src/shared/audit.ts` — the deterministic verdict for a model-free account
+  check; it names only buckets and counts already present in survey views.
 - `src/shared/grounding.ts` — which names a task's results show; used by the
   brief and by the agent's `onYield` correction.
 - `src/main/runtime/harness.ts` — pi-durable lifecycle, task CRUD, model per
-  run, conversation watch, task-graph watch, purge on delete.
+  run, conversation watch, task-graph watch, model-free `audit()`, purge on delete.
 - `src/main/runtime/project.ts` — entry → UI mapping, live state, usage.
 - `src/main/runtime/search.ts` — sidebar search and the index rows.
 - `src/main/runtime/agent.ts` — the one extension: prompt sections, tools, hooks.
@@ -63,7 +65,10 @@ The invariant:
   evaluates a policy document locally; `s3/account.ts` reads the account-wide
   block; `s3/metrics.ts` reads CloudWatch capacity and prices it;
   `s3/access.ts` reads policy/ACL/IAM/KMS/Access Analyzer and SCP grants with
-  coverage; `s3/changes.ts` diffs posture and queries CloudTrail's 90-day window;
+  coverage, intersects identity grants with bucket-policy Denies, pairs action
+  and resource forms, matches ARNs case-sensitively and caches account-wide
+  reads per task; `s3/changes.ts` diffs posture and queries CloudTrail's 90-day
+  window;
   `s3/capabilities.ts` is the provider matrix; `s3/permissions.ts` maps a denied
   read to an IAM action.
 - `src/main/estate/*` — eleven bucket rules and one account rule over facts,
@@ -96,6 +101,8 @@ changes are append-only migrations in `db.ts`, gated by `user_version` (head
 is rebuilt for a conversation when that conversation settles, and backfilled at
 startup for tasks without rows. It stores the request, the current verdict
 (`entry_id = 'verdict'`) and one row per finding (`f:<source entry>:<key>`).
+A model-free check is one `sa.audit` entry; it has no `sa.user` request, so the
+page shows its verdict and checks without a fake question.
 
 Deleting a task purges `task_meta`, `search_docs`, its pi conversation, entries,
 tasks, submissions, documents and revisions, datasets, audit rows and
@@ -122,11 +129,12 @@ stale, or the question is about current exposure, after a fix re-reads only
 that bucket (`survey` with `buckets`), and uses `query` for questions over many
 objects or buckets. A survey reads up to 5,000 buckets, longest-unread first,
 and may be called again to continue. Hooks: a repeated storage read is blocked
-and left off the page; all tools stop after 24 rounds and the brief says so; a
-verdict that names something no tool returned, or calls a bucket public (or
-not) against the readings, gets one correction. Every run is pointed at the model and
-thinking level in Settings. Compaction is pi's, configured by model context
-window.
+and left off the page; all tools stop after the model-tier round budget and the
+brief says so; a verdict that names something no tool returned, or calls a
+bucket public (or not) against the readings, gets one correction. Every run is
+pointed at the model and thinking level in Settings. Compaction is pi's,
+configured by model context window. The no-model `audit()` path runs the same
+readers without a model and writes only deterministic state.
 
 ## Window
 
@@ -138,9 +146,11 @@ place; the Checks section folds to a receipt (checks · time · tokens) when the
 run ends. The brief shows the verdict, the current findings (merged by rule and
 bucket, severity ordered, memory marked), what the task proved fixed, accepted
 risks folded, the blind spots, the fixes, one data section (folded when findings
-already answer; a query's rows and chart, or the survey table with capacity),
-checks and the folded questions. A query's script opens under its check as the
-evidence. Results are flat sections separated by hairlines, never cards.
+already answer; a query's rows and chart, or the survey table with capacity)
+and checks. The latest request is one quiet line above the verdict. There are no
+next-step suggestions or follow-up prompts. A query's script opens under its
+check as the evidence. Results are flat sections separated by hairlines, never
+cards.
 Findings carry their Security Hub control where one matches; when a survey
 view carries fewer Issues than the account has, the brief says how many.
 
@@ -160,7 +170,7 @@ component. Secondary text clears WCAG AA on every surface.
 
 `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run build`
 · `npm run budget` · `npm run audit` · `npm run sbom` · `npm run dist:dir` ·
-`xvfb-run -a node scripts/e2e.mjs`
+`xvfb-run -a node scripts/e2e.mjs` · `xvfb-run -a node scripts/e2e-audit.mjs`
 · `xvfb-run -a node scripts/eval.mjs --smoke` (or with `EVAL_*` for a real model)
 · `STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 npx vitest run src/main/compat.test.ts`
 (with `moto_server -p 5055` running)

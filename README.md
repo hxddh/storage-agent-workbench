@@ -30,11 +30,15 @@ writes, deletes or changes anything in storage.
   tags, ACL and a bounded text preview.
 - Generates fixes as text — AWS CLI, Terraform and the API document — with an
   impact preview built only from what the estate already knows.
-- Reads access paths: bucket policy and ACL locally, all IAM principals and
-  policies with `GetAccountAuthorizationDetails`, inherited SCPs, KMS key
-  policy and Access Analyzer findings. Coverage, undecided conditions and
-  truncation are shown; a blind read is named, never turned into an empty grant
-  list.
+- Reads access paths: bucket policy and ACL locally, all IAM users and roles and
+  their policies with `GetAccountAuthorizationDetails`, inherited SCPs, KMS key
+  policy and Access Analyzer findings. Identity grants are intersected with
+  bucket-policy Denies; action/resource forms are paired and ARNs are matched
+  case-sensitively. Coverage, undecided conditions and truncation are shown; a
+  blind read is named, never turned into an empty grant list.
+- **Check account** on Home runs the survey and access reads without a model or
+  an API key. On a first run it adds demo storage and writes a deterministic
+  brief, so the product can prove itself before any model is configured.
 - Compares each survey with the last remembered posture and, on AWS, asks
   CloudTrail who changed it over a stated 90-day window. A denied lookup leaves
   the actor unknown.
@@ -49,14 +53,15 @@ writes, deletes or changes anything in storage.
   the whole brief as Markdown. Every bucket the answer names is checked against
   what the tools returned, and so is every claim that a bucket is or is not
   public.
-- Starts without setup: demo storage answers in process, and models already
-  running on this machine (Ollama, LM Studio) are one click away. Home is a
-  quiet account summary, not a dashboard. `@` points at a remembered account,
-  bucket or issue; the names are focus, not authorization.
+- Starts without setup: **Check account** adds demo storage on first run and
+  works without a model; models already running on this machine (Ollama, LM
+  Studio) are one click away. Home is a quiet account summary, not a dashboard,
+  with no suggestion pills or follow-up prompts. `@` points at a remembered
+  account, bucket or issue; the names are focus, not authorization.
 - Sets the model in one step: paste a key and the provider's models are fetched,
   the context window is inferred and reasoning is automatic. A small model gets
   shorter method cards and a smaller tool budget.
-- Searches task titles, questions, findings and the current answer with ⌘K;
+- Searches task titles, requests, findings and the current answer with ⌘K;
   failed or stopped runs offer Retry or Continue.
 
 ## Shape
@@ -110,7 +115,8 @@ eval against a real model:
 
 ```bash
 xvfb-run -a node scripts/e2e.mjs
-xvfb-run -a node scripts/shots.mjs   # screenshots under .amp/in/artifacts
+xvfb-run -a node scripts/e2e-audit.mjs   # first run without a model
+xvfb-run -a node scripts/shots.mjs       # screenshots under .amp/in/artifacts
 EVAL_PROVIDER=anthropic EVAL_MODEL=… EVAL_API_KEY=… xvfb-run -a node scripts/eval.mjs
 ```
 

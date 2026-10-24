@@ -41,12 +41,15 @@
    List, Head, configuration, inventory and dataset reads, and count against
    budgets of 2,000 calls, 500,000 listed items, 120 seconds and 256 MiB.
    Returned rows are redacted before the model or the window sees them.
-10. **Access paths.** Policy and ACL evaluation is local. All IAM principals and
-    policies are read through `GetAccountAuthorizationDetails` and evaluated
-    locally; SCPs are read from the account/OU/root chain when Organizations
-    permits; KMS and Access Analyzer are bounded AWS reads. A denied read is a
-    blind spot, and coverage is shown. Scope is checked before the inventory
-    destination is read.
+10. **Access paths.** Policy and ACL evaluation is local. All IAM users and
+    roles and their policies are read through `GetAccountAuthorizationDetails`
+    and evaluated locally; SCPs are read from the account/OU/root chain when
+    Organizations permits; KMS and Access Analyzer are bounded AWS reads.
+    Identity grants are intersected with bucket-policy Denies, object and bucket
+    actions are matched to the resource type they can name, and ARNs are
+    case-sensitive. A grant to another account is marked as an unread identity
+    policy. A denied read is a blind spot, and coverage is shown. Scope is
+    checked before the inventory destination is read.
 11. **Evidence.** The JSON pack contains redacted views, finding controls and
     read timestamps; it is written only through the user's save dialog.
     Re-verify never calls a write API.
@@ -77,10 +80,11 @@
   open, resolve or accept Issues, and its prose is never parsed as product
   state. A name in the verdict that no tool returned is marked on the page.
 - **Updates** come from this repository's GitHub releases through
-  `electron-updater`, in packaged builds only. Unsigned macOS builds cannot
-  update themselves; the release workflow signs and notarizes when its secrets
-  are configured. Signing is a release requirement, not something the app can
-  prove from inside the build.
+  `electron-updater`, in packaged builds only. The release workflow signs and
+  notarizes when its secrets are configured; without them macOS is ad-hoc signed
+  and Windows is unsigned, and the release notes say so. The app can detect a
+  missing `latest*.yml` feed and reports it in Settings instead of failing
+  silently.
 
 ## Not claimed
 

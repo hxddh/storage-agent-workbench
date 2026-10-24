@@ -22,9 +22,12 @@ import {
   type WatchHandle,
 } from '@earendil-works/pi-durable'
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
+import { auditVerdict } from '@shared/audit'
 import type {
   AppEvent,
   AttachmentRef,
+  AuditCheck,
+  AuditReport,
   ContextRef,
   EstateRef,
   IssueRow,
@@ -35,20 +38,24 @@ import type {
   SearchHit,
   TaskSummary,
   TaskView,
+  ToolDetails,
+  ToolView,
   UiEntry,
 } from '@shared/contract'
 import { knownExposure, knownNames } from '@shared/grounding'
 import type { AppDb } from '../db'
 import type { Estate } from '../estate/estate'
 import { aspectsOf, BY_CODE, decide, ruleTitle } from '../estate/rules'
-import type { Providers } from '../providers'
-import { readAccess } from '../s3/access'
+import type { ProviderConfig, Providers } from '../providers'
+import { type AccessSession, readAccess } from '../s3/access'
 import { readAccount, UNREAD_ACCOUNT } from '../s3/account'
 import { readBucket } from '../s3/facts'
-import { escapeTags } from '../security/redact'
+import { accessPermissionGaps, permissionGaps } from '../s3/permissions'
+import { escapeTags, redact } from '../security/redact'
 import type { Vault } from '../security/vault'
 import type { Settings } from '../settings'
-import type { ToolDeps } from '../tools/policy'
+import { assertInScope, type ToolDeps } from '../tools/policy'
+import { surveyTool } from '../tools/survey'
 import { type AgentState, createAgent, freshRun, maxRounds, refreshDigest, tierFor } from './agent'
 import { installModel, type ModelRef } from './model'
 import { deriveTitle, LiveTracker, mapEntries, usageOf } from './project'
@@ -56,6 +63,7 @@ import { searchDocsFor, searchTasks } from './search'
 
 const CONTEXT = BACKGROUND_CONTEXT
 const INITIAL_ENTRIES = 200
+const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 } as const
 
 export interface HarnessDirs {
   task: (conversationId: string) => string
@@ -391,7 +399,10 @@ export class AgentHarness {
     let resolved = 0
     let undecided = 0
     let truncated = false
+    const sessions = new Map<string, AccessSession>()
     for (const [providerId, buckets] of wanted) {
+      const accessSession = sessions.get(providerId) ?? {}
+      sessions.set(providerId, accessSession)
       const config = await this.deps.providers.config(providerId).catch(() => null)
       if (!config) {
         skipped += buckets.size
@@ -468,6 +479,7 @@ export class AgentHarness {
                   : undefined,
               organizations: aws ? this.deps.providers.organizations(config) : undefined,
               signal,
+              session: accessSession,
             })
           } catch {
             skipped += 1
@@ -518,6 +530,200 @@ export class AgentHarness {
       .submit({ type: 'write', entry: { kind: 'sa.reverify', data: report as never } }, CONTEXT)
       .catch(() => undefined)
     return report
+  }
+
+  /**
+   * A deterministic account check. It runs the same survey and access readers
+   * as the tools, without a model, and stores one durable audit entry that the
+   * window projects into the ordinary brief.
+   */
+  async audit(taskId: string): Promise<void> {
+    const conversation = await this.require(taskId)
+    const accounts = await this.deps.providers.list()
+    if (accounts.length === 0) throw new Error('Add a storage account first.')
+    const lang = this.deps.settings.get().language
+    const signal = AbortSignal.timeout(300_000)
+    const checks: AuditCheck[] = []
+    const surveys: Extract<ToolView, { kind: 'survey' }>[] = []
+    let failedAccounts = 0
+    let accessExamined = 0
+    let accessTotal = 0
+    try {
+      for (const account of accounts) {
+        const config = await this.deps.providers.config(account.id)
+        const session: AccessSession = {}
+        const aws = this.deps.providers.isAws(config)
+        const accountFacts = aws
+          ? await readAccount(
+              this.deps.providers.sts(config),
+              this.deps.providers.control(config),
+              signal,
+            )
+          : UNREAD_ACCOUNT
+        const surveyDetails = await this.runAuditTool(
+          surveyTool(this.tools),
+          { provider_id: config.id },
+          taskId,
+          signal,
+        )
+        const surveyView = surveyDetails.view?.kind === 'survey' ? surveyDetails.view : null
+        if (surveyView) surveys.push(surveyView)
+        else failedAccounts += 1
+        if (surveyView) {
+          const bucketNames = surveyView.buckets.rows
+            .map((row) => String(row[0] ?? ''))
+            .filter(Boolean)
+          const issueBuckets = surveyView.issues
+            .filter((issue) => issue.bucket && issue.status === 'open')
+            .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+            .map((issue) => issue.bucket)
+          const selected = [...new Set([...issueBuckets, ...bucketNames])].slice(0, 24)
+          accessTotal += surveyView.coverage.visible
+          for (const bucket of selected) {
+            try {
+              const view = await this.auditAccess(config, bucket, accountFacts, session, signal)
+              checks.push({
+                name: 'config',
+                target: bucket,
+                status: 'done',
+                note: view.accessCoverage
+                  ? `${view.access?.length ?? 0} access path${(view.access?.length ?? 0) === 1 ? '' : 's'}`
+                  : null,
+                ms: null,
+                at: new Date().toISOString(),
+                view,
+              })
+              accessExamined += 1
+            } catch (error) {
+              checks.push({
+                name: 'config',
+                target: bucket,
+                status: 'failed',
+                note:
+                  error instanceof Error
+                    ? redact(error.message).slice(0, 160)
+                    : 'Access read failed',
+                ms: null,
+                at: new Date().toISOString(),
+                view: null,
+              })
+            }
+          }
+        }
+        checks.push({
+          name: 'survey',
+          target: surveyDetails.target || config.name,
+          status: surveyDetails.status,
+          note: surveyDetails.note,
+          ms: surveyDetails.ms,
+          at: new Date().toISOString(),
+          view: surveyDetails.view,
+        })
+      }
+      const base = surveys.length
+        ? auditVerdict(surveys, { examined: accessExamined, total: accessTotal }, lang)
+        : lang === 'zh'
+          ? '这次检查没有读到任何存储桶。'
+          : 'The account check could not read any bucket.'
+      const failed = failedAccounts
+        ? lang === 'zh'
+          ? `${failedAccounts} 个账号未能读取。`
+          : `${failedAccounts} account${failedAccounts === 1 ? '' : 's'} could not be read.`
+        : ''
+      const report: AuditReport = {
+        at: new Date().toISOString(),
+        verdict: [base, failed].filter(Boolean).join(' '),
+        checks,
+        ...(accessTotal > accessExamined
+          ? { accessBuckets: { examined: accessExamined, total: accessTotal } }
+          : {}),
+      }
+      await conversation.submit(
+        { type: 'write', entry: { kind: 'sa.audit', data: report as never } },
+        CONTEXT,
+      )
+      await this.deps.db.touchTask(taskId)
+      await this.index(taskId).catch(() => undefined)
+      await this.refreshTaskList()
+      await this.refreshEstateDigest()
+      this.emitTask(taskId)
+    } catch (error) {
+      await this.notice(
+        conversation,
+        'failed',
+        'error',
+        undefined,
+        error instanceof Error ? redact(error.message).slice(0, 200) : undefined,
+      )
+      throw error
+    }
+  }
+
+  private async runAuditTool(
+    tool: ReturnType<typeof surveyTool>,
+    args: Record<string, unknown>,
+    taskId: string,
+    signal: AbortSignal,
+  ): Promise<ToolDetails> {
+    const result = await tool.execute(
+      args as never,
+      {
+        conversationId: taskId,
+        output: () => undefined,
+        details: async () => undefined,
+      } as never,
+      { conversationId: taskId, abortSignal: signal } as never,
+    )
+    return result.details as unknown as ToolDetails
+  }
+
+  private async auditAccess(
+    config: ProviderConfig,
+    bucket: string,
+    account: Awaited<ReturnType<typeof readAccount>>,
+    session: AccessSession,
+    signal: AbortSignal,
+  ): Promise<Extract<ToolView, { kind: 'config' }>> {
+    assertInScope(config, bucket)
+    const aws = this.deps.providers.isAws(config)
+    const facts = await readBucket(this.deps.providers.client(config), bucket, {
+      aspects: new Set(['security']),
+      signal,
+      regional: this.deps.providers.regional(config),
+      defaultRegion: config.region,
+      aws,
+      account,
+    })
+    if (facts.head === 'missing') throw new Error(`Bucket '${bucket}' does not exist.`)
+    const access = await readAccess({
+      bucket,
+      facts,
+      aws,
+      iam: aws && config.caps.iam ? this.deps.providers.iam(config) : undefined,
+      kms:
+        aws && config.caps.kms && facts.encryption.value?.keyArn
+          ? this.deps.providers.kms(config, facts.region)
+          : undefined,
+      analyzer:
+        aws && config.caps.accessAnalyzer
+          ? this.deps.providers.accessAnalyzer(config, facts.region)
+          : undefined,
+      organizations: aws ? this.deps.providers.organizations(config) : undefined,
+      signal,
+      session,
+    })
+    return {
+      kind: 'config',
+      bucket,
+      providerId: config.id,
+      aspect: 'access',
+      findings: [],
+      access: access.paths,
+      accessBlind: access.blind,
+      accessCoverage: access.coverage,
+      permissions: [...permissionGaps(facts), ...accessPermissionGaps(bucket, access.blind)],
+      observations: [],
+    }
   }
 
   async acceptIssue(id: string, accepted: boolean): Promise<void> {

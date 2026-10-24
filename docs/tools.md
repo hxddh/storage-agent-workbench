@@ -67,7 +67,9 @@ only way to query it. Coverage and truncation are returned with the import.
 - `note` is capped at 1,000 characters and 500 notes; it is redacted and
   recorded as `author=agent`.
 - `survey` opens and resolves Issues through `estate`, never through prose.
-- `access` is evidence, not an authorization decision: IAM is read with
+- `access` is evidence, not an authorization decision: identity grants are
+  intersected with explicit bucket-policy Denies, action/resource forms are
+  paired and ARNs are matched case-sensitively. IAM is read with
   `GetAccountAuthorizationDetails` and evaluated locally; SCPs are read through
   Organizations when available; conditions, unread policies and truncation are
   shown in the coverage line. A provider that lacks a concept is not called

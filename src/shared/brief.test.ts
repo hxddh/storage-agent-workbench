@@ -316,23 +316,6 @@ describe('brief projection', () => {
 })
 
 describe('v20 brief additions', () => {
-  it('derives next checks from rule codes, once per code and bucket', () => {
-    const brief = buildBrief([
-      tool(
-        't1',
-        'survey',
-        at(1),
-        survey([
-          issue('a', 'high', 'demo', 'public_exposure'),
-          issue('b', 'high', 'demo', 'public_exposure'),
-          issue('c', 'medium', 'prod', 'no_default_encryption'),
-        ]),
-      ),
-    ])
-    expect(brief.followUps.map((item) => item.code)).toEqual(['access', 'key', 'changes'])
-    expect(brief.followUps[0]).toMatchObject({ bucket: 'demo' })
-  })
-
   it('keeps the latest re-verification report on the page', () => {
     const report = {
       at: at(5),

@@ -3,7 +3,6 @@ import type {
   BriefData,
   BriefFinding,
   BriefFix,
-  BriefFollowUp,
   Brief as BriefModel,
   BriefNotice,
 } from '@shared/brief'
@@ -20,7 +19,6 @@ import {
 import {
   Activity,
   ArrowDownToLine,
-  AtSign,
   ChevronRight,
   Code2,
   Copy,
@@ -88,36 +86,6 @@ function ago(iso: string, t: Dict): string | null {
   if (seconds < 3600) return fill(t.minutesAgo, { n: Math.floor(seconds / 60) })
   if (seconds < 86_400) return fill(t.hoursAgo, { n: Math.floor(seconds / 3600) })
   return fill(t.daysAgo, { n: Math.floor(seconds / 86_400) })
-}
-
-function followUpText(question: BriefFollowUp, t: Dict): string {
-  const bucket = question.bucket
-  switch (question.code) {
-    case 'access':
-      return t.followAccess(bucket)
-    case 'principals':
-      return t.followPrincipals(bucket)
-    case 'tls':
-      return t.followTls(bucket)
-    case 'acl':
-      return t.followAcl(bucket)
-    case 'key':
-      return t.followKey(bucket)
-    case 'block':
-      return t.followBlock(bucket)
-    case 'logs':
-      return t.followLogs(bucket)
-    case 'cleanup':
-      return t.followCleanup(bucket)
-    case 'cors':
-      return t.followCors(bucket)
-    case 'changes':
-      return t.followChanges
-    case 'permissions':
-      return t.followPermissions
-    default:
-      return t.followBreakdown
-  }
 }
 
 const FIELD_ZH: Record<string, string> = {
@@ -250,6 +218,7 @@ function FindingRow({
   onOpen,
   onAccept,
   tagMemory = true,
+  showBucket = true,
   staleDays = 7,
 }: {
   finding: BriefFinding
@@ -258,6 +227,8 @@ function FindingRow({
   onAccept?: () => void
   /** False when every finding is memory and the meta line already says so. */
   tagMemory?: boolean
+  /** The bucket is already the group heading. */
+  showBucket?: boolean
   staleDays?: number
 }) {
   const when = finding.source === 'memory' && tagMemory ? ago(finding.readAt, t) : null
@@ -287,8 +258,12 @@ function FindingRow({
           <span className="finding-meta">
             {severityLabel(finding, t)}
             {finding.control ? ` · ${finding.control}` : ''}
-            {' · '}
-            {finding.bucket ? <span className="mono">{finding.bucket}</span> : t.accountWide}
+            {showBucket && (
+              <>
+                {' · '}
+                {finding.bucket ? <span className="mono">{finding.bucket}</span> : t.accountWide}
+              </>
+            )}
             {finding.source === 'memory' && tagMemory && (
               <span className="memory-tag">
                 {when ? fill(t.rememberedAgo, { when }) : t.remembered}
@@ -331,6 +306,15 @@ function Fold({ label, tone, children }: { label: string; tone?: 'ok'; children:
 function DataSection({ data, t }: { data: BriefData; t: Dict }) {
   const view = data.view
   if (view.kind === 'query') {
+    const coverage = view.coverage
+    const showCoverage = Boolean(
+      coverage &&
+        (coverage.bucketsExamined !== undefined ||
+          coverage.truncated ||
+          coverage.principals > 0 ||
+          coverage.sources.includes('iam') ||
+          coverage.sources.includes('SCP')),
+    )
     return (
       <>
         {view.chart && <ChartView chart={view.chart} />}
@@ -341,6 +325,31 @@ function DataSection({ data, t }: { data: BriefData; t: Dict }) {
             items: view.listed.toLocaleString(),
           })}
         </p>
+        {showCoverage && coverage && (
+          <p className="quiet">
+            {coverage.bucketsExamined !== undefined && coverage.bucketsTotal !== undefined
+              ? fill(t.bucketsExamined, {
+                  examined: coverage.bucketsExamined,
+                  total: coverage.bucketsTotal,
+                })
+              : coverage.principals > 0 ||
+                  coverage.sources.includes('iam') ||
+                  coverage.sources.includes('SCP')
+                ? t.accessCoverage(
+                    coverage.evaluated,
+                    coverage.principals,
+                    coverage.undecided,
+                    coverage.truncated,
+                  )
+                : t.truncated}
+          </p>
+        )}
+        {view.blind?.map((item) => (
+          <p className="blind" key={`${item.source}:${item.status}`}>
+            <TriangleAlert size={12} strokeWidth={1.7} aria-hidden="true" />
+            {item.source} · {item.status}
+          </p>
+        ))}
       </>
     )
   }
@@ -537,21 +546,21 @@ export function Brief({
   view,
   lang,
   focusId,
-  onOlder,
   onRetry,
   onContinue,
-  onAsk,
   onReverify,
+  onAudit = () => undefined,
+  auditing = false,
   staleDays = 7,
 }: {
   view: TaskView
   lang: Lang
   focusId: string | null
-  onOlder: () => void
   onRetry: () => void
   onContinue: () => void
-  onAsk: (text: string) => void
   onReverify: () => Promise<void>
+  onAudit?: () => void
+  auditing?: boolean
   staleDays?: number
 }) {
   const t = dict(lang)
@@ -561,7 +570,6 @@ export function Brief({
   )
   const [openChecks, setOpenChecks] = useState(Boolean(view.live))
   const [openCheck, setOpenCheck] = useState<string | null>(null)
-  const [questionsOpen, setQuestionsOpen] = useState(false)
   const [allFindings, setAllFindings] = useState(false)
   const [dataOpen, setDataOpen] = useState<boolean | null>(null)
   const [copied, setCopied] = useState(false)
@@ -626,7 +634,6 @@ export function Brief({
       return
     }
     if (brief.questions.some((question) => question.id === focusId)) {
-      setQuestionsOpen(true)
       setTimeout(
         () => flash(root.current?.querySelector(`[data-entry-id="${CSS.escape(focusId)}"]`)),
         40,
@@ -802,6 +809,10 @@ export function Brief({
                 <ArrowDownToLine size={12} aria-hidden="true" />
                 {t.saveBrief}
               </button>
+              <button className="text-action" type="button" disabled={auditing} onClick={onAudit}>
+                <Radar size={12} aria-hidden="true" />
+                {auditing ? t.checkingAccount : t.checkAccount}
+              </button>
               <button
                 className="text-action"
                 type="button"
@@ -863,6 +874,11 @@ export function Brief({
           )}
         </div>
 
+        {!live && brief.questions.length > 0 && (
+          <p className="brief-request" data-entry-id={brief.questions.at(-1)?.id ?? undefined}>
+            {brief.questions.at(-1)?.text}
+          </p>
+        )}
         {live && brief.questions.length > 0 && (
           <p className="live-request">{brief.questions.at(-1)?.text}</p>
         )}
@@ -959,6 +975,7 @@ export function Brief({
                       onOpen={() => revealCheck(finding.sourceId)}
                       onAccept={accept(finding)}
                       tagMemory={!allMemory}
+                      showBucket={findingGroups.length === 1}
                       staleDays={staleDays}
                     />
                   ))}
@@ -973,7 +990,7 @@ export function Brief({
               >
                 {allFindings
                   ? t.less
-                  : fill(t.moreRows, { n: brief.findings.length - FINDINGS_SHOWN })}
+                  : fill(t.moreFindings, { n: brief.findings.length - FINDINGS_SHOWN })}
               </button>
             )}
             {brief.issueTotal !== null && brief.issueTotal > shownIssues && (
@@ -1202,73 +1219,6 @@ export function Brief({
                     t={t}
                     taskTitle={title}
                   />
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {!live && brief.followUps.length > 0 && (
-          <section className="follow-ups" aria-label={t.followUps}>
-            {brief.followUps.map((question) => {
-              const text = followUpText(question, t)
-              return (
-                <button
-                  className="follow-up"
-                  key={question.id}
-                  type="button"
-                  onClick={() => onAsk(text)}
-                >
-                  {text}
-                </button>
-              )
-            })}
-          </section>
-        )}
-
-        {!live && brief.questions.length > 0 && (
-          <section className="questions-section">
-            <button
-              className="questions-head"
-              type="button"
-              aria-expanded={questionsOpen}
-              onClick={() => setQuestionsOpen((value) => !value)}
-            >
-              {fill(brief.questions.length === 1 ? t.questionOne : t.questionsCount, {
-                n: brief.questions.length,
-              })}
-              <ChevronRight size={13} className={`chev ${questionsOpen ? 'open' : ''}`} />
-            </button>
-            {questionsOpen && (
-              <div className="questions-list">
-                {view.hasOlder && (
-                  <button className="text-action" type="button" onClick={onOlder}>
-                    {t.older}
-                  </button>
-                )}
-                {brief.questions.map((question) => (
-                  <div className="question" key={question.id} data-entry-id={question.id}>
-                    <p>{question.text}</p>
-                    {(question.attachments.length > 0 || (question.context?.length ?? 0) > 0) && (
-                      <div className="files">
-                        {question.context?.map((item) => (
-                          <span
-                            className="file-chip context-chip"
-                            key={`${item.providerId}:${item.label}`}
-                          >
-                            <AtSign size={11} aria-hidden="true" />
-                            {item.label}
-                          </span>
-                        ))}
-                        {question.attachments.map((file) => (
-                          <span className="file-chip" key={file.name}>
-                            <FileText size={11} aria-hidden="true" />
-                            {file.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
                 ))}
               </div>
             )}

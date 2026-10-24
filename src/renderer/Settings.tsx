@@ -746,6 +746,7 @@ export function Settings({
                 </button>
               </>
             )}
+            {boot.update.state === 'unavailable' && ` · ${t.updateUnavailable}`}
           </p>
         </div>
       </div>

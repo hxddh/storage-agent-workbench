@@ -1,5 +1,5 @@
-import type { Bootstrap, LocalModel, OverviewSuggestion } from '@shared/contract'
-import { ArrowUpRight, Sparkles } from 'lucide-react'
+import type { Bootstrap, LocalModel } from '@shared/contract'
+import { Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { dict, fill } from './i18n'
 
@@ -16,31 +16,18 @@ function ago(iso: string | null, lang: 'en' | 'zh'): string {
   return `read ${days} days ago`
 }
 
-function suggestionText(code: string, bucket: string, lang: 'en' | 'zh'): string {
-  const t = dict(lang)
-  if (code === 'changes') return t.followChanges
-  if (code === 'permissions') return t.followPermissions
-  if (code === 'survey') return t.homeSurvey
-  if (code === 'public') return t.homePublic
-  if (code === 'access') return t.followAccess(bucket)
-  if (code === 'tls') return t.followTls(bucket)
-  if (code === 'key') return t.followKey(bucket)
-  if (code === 'cleanup') return t.followCleanup(bucket)
-  return t.followPrincipals(bucket)
-}
-
 export function Home({
   boot,
-  onSend,
   onSetup,
-  onTryDemo,
   onUseLocal,
+  onAudit,
+  auditing,
 }: {
   boot: Bootstrap
-  onSend: (text: string) => void
   onSetup: () => void
-  onTryDemo: () => void
   onUseLocal: (model: LocalModel) => Promise<void>
+  onAudit: () => void
+  auditing: boolean
 }) {
   const lang = boot.settings.language
   const t = dict(lang)
@@ -86,7 +73,7 @@ export function Home({
     <div className="home">
       <div className="home-inner">
         <h1>{t.homeTitle}</h1>
-        {hasAccount ? (
+        {hasAccount && (
           <div className="home-estate">
             {overview.accounts.map((account) => (
               <p className="home-account" key={account.id}>
@@ -109,58 +96,56 @@ export function Home({
                 {t.homeChanges.replace('{n}', String(overview.changesSince))}
               </p>
             )}
+            <button
+              className="btn primary home-audit"
+              type="button"
+              disabled={auditing}
+              onClick={onAudit}
+            >
+              {auditing ? t.checkingAccount : t.checkAccount}
+            </button>
           </div>
-        ) : (
-          <p className="home-lede">{hasModel ? t.homeNoEstate : t.homeNoModel}</p>
         )}
 
-        {!hasModel || !hasAccount ? (
+        {!hasAccount ? (
+          <>
+            <p className="home-lede">{hasModel ? t.homeNoEstate : t.homeNoModel}</p>
+            <div className="home-setup">
+              {!hasModel && local.length > 0 && (
+                <div className="home-local">
+                  <span className="home-local-label">{t.localModels}</span>
+                  {local.map((model) => (
+                    <button
+                      className="home-prompt"
+                      key={`${model.source}:${model.modelId}`}
+                      type="button"
+                      disabled={starting !== null}
+                      onClick={() => void startLocal(model)}
+                    >
+                      <Sparkles size={12} strokeWidth={1.7} aria-hidden="true" />
+                      <span>{fill(t.useLocal, { model: model.modelId })}</span>
+                      <span className="hint">{model.source}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button className="btn primary" type="button" onClick={onAudit} disabled={auditing}>
+                {auditing ? t.checkingAccount : t.checkAccount}
+              </button>
+              <button className="btn" type="button" onClick={onSetup}>
+                {!hasModel ? t.setModel : t.addAccount}
+              </button>
+              {localError && <p className="brief-error">{localError}</p>}
+            </div>
+          </>
+        ) : !hasModel ? (
           <div className="home-setup">
-            {!hasModel && local.length > 0 && (
-              <div className="home-local">
-                <span className="home-local-label">{t.localModels}</span>
-                {local.map((model) => (
-                  <button
-                    className="home-prompt"
-                    key={`${model.source}:${model.modelId}`}
-                    type="button"
-                    disabled={starting !== null}
-                    onClick={() => void startLocal(model)}
-                  >
-                    <Sparkles size={12} strokeWidth={1.7} aria-hidden="true" />
-                    <span>{fill(t.useLocal, { model: model.modelId })}</span>
-                    <span className="hint">{model.source}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <button className="btn primary" type="button" onClick={onSetup}>
-              {!hasModel ? t.setModel : t.addAccount}
+            <button className="btn" type="button" onClick={onSetup}>
+              {t.setModel}
             </button>
-            {hasModel && !hasAccount && (
-              <button className="btn" type="button" onClick={onTryDemo}>
-                {t.tryDemo}
-              </button>
-            )}
-            {localError && <p className="brief-error">{localError}</p>}
-            <span className="hint home-setup-hint">{hasModel ? t.demoHint : t.homeModelHint}</span>
+            <span className="hint home-setup-hint">{t.checkAccountHint}</span>
           </div>
-        ) : (
-          <div className="home-prompts">
-            {overview.suggestions.map((item: OverviewSuggestion) => (
-              <button
-                className="home-prompt"
-                key={`${item.code}:${item.bucket}:${boot.accounts.length}`}
-                type="button"
-                onClick={() => onSend(suggestionText(item.code, item.bucket, lang))}
-              >
-                <Sparkles size={12} strokeWidth={1.7} aria-hidden="true" />
-                <span>{suggestionText(item.code, item.bucket, lang)}</span>
-                <ArrowUpRight size={12} strokeWidth={1.7} aria-hidden="true" />
-              </button>
-            ))}
-          </div>
-        )}
+        ) : null}
       </div>
     </div>
   )

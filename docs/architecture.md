@@ -54,6 +54,10 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
     to `search_docs` from the same `buildBrief()` projection the window uses,
     and the shell may send a notification. Tasks without rows are backfilled in
     the background at startup.
+11. `harness.audit()` is the deterministic path: it runs `survey` and the
+    access readers directly, builds an `AuditReport` from the projected views,
+    and writes one `sa.audit` entry. It never asks the model. The window expands
+    that entry into ordinary checks plus the rule-generated answer.
 
 The window never receives `entry.model` (the provider-facing messages). The
 mapper in `runtime/project.ts` projects entries into `UiEntry`, extracting only
@@ -71,8 +75,10 @@ client when the account spans regions; every client follows region redirects.
 denies plain HTTP. On AWS, `s3/account.ts` reads the account-wide block, `s3/metrics.ts` reads CloudWatch
 capacity, `s3/changes.ts` diffs the last remembered posture and asks CloudTrail,
 `s3/access.ts` reads policy/ACL/IAM/KMS/Access Analyzer and SCP grants with a
-coverage count; `s3/permissions.ts` turns an access-denied read into the missing
-action. They all feed the same facts. `estate/rules.ts` decides
+coverage count. Identity grants are intersected with explicit bucket-policy
+Denies; object and bucket actions use their matching resource form; ARNs are
+case-sensitive; IAM and SCP reads are cached per task. `s3/permissions.ts` turns
+an access-denied read into the missing action. They all feed the same facts. `estate/rules.ts` decides
 the twelve rules (eleven per bucket, one per account) from facts by code; `survey` and `config` both apply the same
 decisions to the estate and attach the observations (`bucket, code, verdict`)
 to their view, which is how the brief knows a finding was proved fixed.
@@ -93,6 +99,7 @@ to their view, which is how the brief knows a finding was proved fixed.
 | `main/runtime/harness.ts` | task lifecycle, model per run, watches, settle bookkeeping |
 | `main/runtime/project.ts` | entries → `UiEntry`, live state, usage |
 | `main/runtime/search.ts` | sidebar search, index rows |
+| `shared/audit.ts` | deterministic account-check verdict from survey views |
 | `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details |
 | `main/s3/facts.ts` | one reading per bucket, exposure, rememberable posture |
 | `main/s3/policy.ts` | local policy evaluation, TLS enforcement |
@@ -134,5 +141,6 @@ to their view, which is how the brief knows a finding was proved fixed.
 ## Deliberate absences
 
 No event-sourcing layer, no second queue, no SSE, no report generator, no MCP
-bridge, no skills loader, no subagents, no approval UI, no background watch, no
-second window, no dashboard. pi owns the durable loop; the product owns storage semantics.
+bridge, no skills loader, no subagents, no approval UI, no follow-up prompts, no
+background watch, no second window, no dashboard. pi owns the durable loop; the
+product owns storage semantics.

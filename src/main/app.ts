@@ -5,7 +5,6 @@ import type {
   AppEvent,
   Bootstrap,
   EstateOverview,
-  OverviewSuggestion,
   TaskSummary,
   UpdateState,
 } from '@shared/contract'
@@ -118,18 +117,8 @@ export class App {
     const accounts = await this.providers.list()
     const seen = this.settings.get().lastSeenAt
     const summary = []
-    const suggestions: OverviewSuggestion[] = []
     let lastRead: string | null = null
     let changesSince = 0
-    const suggest = (item: OverviewSuggestion) => {
-      if (
-        suggestions.some(
-          (existing) => existing.code === item.code && existing.bucket === item.bucket,
-        )
-      )
-        return
-      if (suggestions.length < 3) suggestions.push(item)
-    }
     for (const account of accounts) {
       const buckets = await this.db.listBuckets(account.id)
       const read = buckets.map((row) => row.posture_at).filter((at): at is string => Boolean(at))
@@ -147,34 +136,8 @@ export class App {
         openHigh,
         openTotal,
       })
-      if (buckets.length === 0 && openTotal === 0) {
-        suggest({ code: 'survey', bucket: '' })
-        suggest({ code: 'public', bucket: '' })
-      }
-      const issues = await this.db.listIssues({
-        providerId: account.id,
-        status: 'open',
-        limit: 100,
-      })
-      for (const issue of issues) {
-        if (!issue.bucket) continue
-        const code =
-          issue.code === 'public_exposure'
-            ? 'access'
-            : issue.code === 'insecure_transport'
-              ? 'tls'
-              : issue.code === 'no_default_encryption'
-                ? 'key'
-                : issue.code === 'large_standard_only' ||
-                    issue.code === 'no_abort_mpu' ||
-                    issue.code === 'noncurrent_never_expire'
-                  ? 'cleanup'
-                  : 'principals'
-        suggest({ code, bucket: issue.bucket })
-      }
     }
-    if (suggestions.length < 3) suggest({ code: 'changes', bucket: '' })
-    return { accounts: summary, lastRead, changesSince, suggestions: suggestions.slice(0, 3) }
+    return { accounts: summary, lastRead, changesSince }
   }
 
   async testModel(): Promise<{ ok: boolean; detail: string }> {

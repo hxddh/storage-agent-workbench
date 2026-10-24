@@ -17,7 +17,7 @@ blind spot. This table is what the UI and the method cards promise.
 | Account public access block | yes | no | no | no | no | no |
 | CloudWatch capacity | yes | no | no | no | no | no |
 | CloudTrail | yes | no | no | no | no | no |
-| IAM simulation | yes | no | no | no | no | no |
+| IAM evaluation | yes | no | no | no | no | no |
 | KMS key policy | yes | no | no | no | no | no |
 | Access Analyzer | yes | no | no | no | no | no |
 

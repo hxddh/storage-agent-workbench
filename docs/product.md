@@ -8,17 +8,18 @@ brief.
 
 1. **Task list** — every task, newest first, with a state dot. New task, rename,
    delete, Settings. Nothing else. The task open at quit opens at launch.
-2. **Task** — one brief, not a transcript: a verdict, the findings the tools
-   proved, one data section, the fix, the checks that produced them, and the
-   questions that led here. The page scrolls; the composer stays.
+2. **Task** — one brief, not a transcript: the current request, a verdict, the
+   findings the tools proved, one data section, the fix and the checks that
+   produced them. The page scrolls; the composer stays.
 3. **Settings** — model and thinking level, storage accounts (keys or AWS
    profile), memory, language, theme and notifications. A full-screen sheet,
    not a wizard. A downloaded update shows one line there.
 
 The composer is docked at the foot of the window on every screen, including
 Home. Home is a quiet estate summary: account names, the last read, unresolved
-risk, changes since the last visit and at most three questions derived from open
-issues. It is not a dashboard and has no charts or cards.
+risk and changes since the last visit. **Check account** runs the deterministic
+survey and access reads without a model; the first run adds demo storage when no
+account exists. Home is not a dashboard and has no charts or cards.
 
 ## A task
 
@@ -36,14 +37,15 @@ issues. It is not a dashboard and has no charts or cards.
 - A run that finishes while the window is in the background sends one system
   notification (Settings can turn it off). The dock shows a badge, or the
   taskbar a progress bar, while anything runs.
-- Every run uses the model and thinking level in Settings, including runs in
-  tasks started with another model.
+- Every model run uses the model and thinking level in Settings, including runs
+  in tasks started with another model. A model-free account check uses neither.
 
 ## The brief
 
-The model writes one thing: the **verdict**, at most two sentences. Everything
-else is projected deterministically from tool results, so the page cannot
-contradict the tools.
+On a model run the model writes one thing: the **verdict**, at most two
+sentences. On a model-free account check the same slot is a deterministic
+sentence built only from survey views. Everything else is projected from tool
+results, so the page cannot contradict the tools.
 
 - **Findings** — the current state, not the history. Results are folded in
   order: a survey replaces what the task knew about its account, a review
@@ -78,11 +80,12 @@ contradict the tools.
   reports which conclusions changed and which stayed blind, with a timestamp.
 - **Evidence pack / PDF** — findings with their control, read time and redacted
   reading export as JSON; the page can also be saved as PDF.
-- **Questions** — the requests behind the page, folded into one line.
+- **Request** — the latest request is a quiet line above the verdict, not a
+  transcript. Earlier requests remain in the durable task, but the page does
+  not replay them.
 
-There are no chat bubbles and no model-written next steps. Two or three quiet
-next checks are derived from finding codes by the window; clicking one asks it.
-They are not a claim about storage.
+There are no chat bubbles, next-step suggestions or follow-up prompts. The
+Composer is where the next question starts.
 
 ## Pointing at the estate
 
@@ -96,8 +99,12 @@ boundary, and the request is validated against the estate before it is sent.
 `config` aspect `access` answers who can reach a bucket. IAM users, groups and
 roles are read once with `GetAccountAuthorizationDetails` and evaluated locally,
 including managed/inline policies, boundaries and trust policies; SCPs are read
-from Organizations when permissions allow. The page shows `evaluated / total`,
-undecided conditions and truncation, so a partial answer never looks complete.
+from Organizations when permissions allow. Identity grants are intersected with
+the bucket policy's explicit and conditional Denies, action names are paired with
+the resource type they can name, and ARNs are matched case-sensitively. A grant
+to another account is evidence with its identity policy unread, never a clean
+allow. The page shows `evaluated / total`, undecided conditions and truncation,
+so a partial answer never looks complete.
 
 A survey diffs its reading against the last remembered posture. On AWS it asks
 CloudTrail who changed the bucket over a stated 90-day window and pages through
@@ -189,9 +196,11 @@ estimate for us-east-1 and is labelled as one; it is not a bill.
 
 ## Getting started
 
-Settings offers demo storage — six believable buckets answered in process — and
-lists models already running on this machine (Ollama, LM Studio). A task can be
-linked as `storage-agent://task/<id>`; the link opens it.
+Settings offers demo storage — believable buckets answered in process — and
+lists models already running on this machine (Ollama, LM Studio). **Check
+account** on Home needs neither a model nor a key: it adds demo storage on the
+first run and produces a deterministic brief. A task can be linked as
+`storage-agent://task/<id>`; the link opens it.
 
 ## Fixes
 

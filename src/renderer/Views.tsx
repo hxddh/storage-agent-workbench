@@ -141,34 +141,36 @@ export function AccessChain({
   coverage?: AccessCoverage
   t: Dict
 }) {
+  // Policy/ACL-only providers have no IAM identities; 0/0 would be noise.
+  const showCoverage = Boolean(
+    coverage &&
+      (coverage.truncated ||
+        coverage.principals > 0 ||
+        coverage.sources.includes('iam') ||
+        coverage.sources.includes('SCP')),
+  )
+  const coverageText =
+    coverage &&
+    (coverage.principals > 0 ||
+      coverage.sources.includes('iam') ||
+      coverage.sources.includes('SCP'))
+      ? t.accessCoverage(
+          coverage.evaluated,
+          coverage.principals,
+          coverage.undecided,
+          coverage.truncated,
+        )
+      : t.truncated
   if (paths.length === 0 && !blind?.length)
     return (
       <div>
-        {coverage && (
-          <p className="view-sub">
-            {t.accessCoverage(
-              coverage.evaluated,
-              coverage.principals,
-              coverage.undecided,
-              coverage.truncated,
-            )}
-          </p>
-        )}
+        {showCoverage && coverage && <p className="view-sub">{coverageText}</p>}
         <p className="view-empty">{t.noAccess}</p>
       </div>
     )
   return (
     <div className="access-chain">
-      {coverage && (
-        <p className="view-sub">
-          {t.accessCoverage(
-            coverage.evaluated,
-            coverage.principals,
-            coverage.undecided,
-            coverage.truncated,
-          )}
-        </p>
-      )}
+      {showCoverage && coverage && <p className="view-sub">{coverageText}</p>}
       {paths.map((item, index) => (
         <div className="access-row" key={`${item.source}:${item.principal}:${index}`}>
           <span className={`access-source ${item.source}`}>

@@ -134,6 +134,9 @@ export interface AccessCoverage {
   undecided: number
   truncated: boolean
   sources: string[]
+  /** Present on a principal-first reverse query. */
+  bucketsExamined?: number
+  bucketsTotal?: number
 }
 
 export interface FixFormat {
@@ -256,6 +259,10 @@ export type ToolView =
       listed: number
       /** Buckets the script read. */
       buckets?: string[]
+      /** Coverage of the access question when the script called principal(). */
+      coverage?: AccessCoverage
+      /** Sources the access question could not read. */
+      blind?: { source: string; status: string }[]
     }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'
@@ -303,6 +310,25 @@ export interface EstateRef extends ContextRef {
 /** A file chosen in the open dialog, staged until the message is sent. */
 export interface StagedFile extends AttachmentRef {
   token: string
+}
+
+export interface AuditCheck {
+  name: ToolName
+  target: string
+  status: ToolStatus
+  note: string | null
+  ms: number | null
+  at: string
+  view: ToolView | null
+}
+
+/** A deterministic, model-free account check, stored as one durable entry. */
+export interface AuditReport {
+  at: string
+  verdict: string
+  checks: AuditCheck[]
+  /** Access paths were sampled for large accounts; this makes that explicit. */
+  accessBuckets?: { examined: number; total: number }
 }
 
 export type UiEntry =
@@ -464,11 +490,8 @@ export type UpdateState =
   | { state: 'idle' }
   | { state: 'downloading'; version: string }
   | { state: 'ready'; version: string }
-
-export interface OverviewSuggestion {
-  code: string
-  bucket: string
-}
+  /** This platform's release feed is missing; updates cannot be checked. */
+  | { state: 'unavailable' }
 
 export interface AccountOverview {
   id: string
@@ -485,7 +508,6 @@ export interface EstateOverview {
   lastRead: string | null
   /** Issues opened since the home overview was last seen. */
   changesSince: number
-  suggestions: OverviewSuggestion[]
 }
 
 export interface Bootstrap {
@@ -535,6 +557,8 @@ export interface AgentApi {
     before: string,
   ): Promise<{ entries: UiEntry[]; hasOlder: boolean; cursor: string | null }>
   createTask(text: string, attachments: string[], context?: ContextRef[]): Promise<TaskView>
+  /** Run a deterministic survey + access check without a model. */
+  audit(): Promise<TaskView>
   send(taskId: string, text: string, attachments: string[], context?: ContextRef[]): Promise<void>
   estateRefs(query: string): Promise<EstateRef[]>
   steer(taskId: string, text: string): Promise<void>

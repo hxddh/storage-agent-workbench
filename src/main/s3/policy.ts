@@ -32,6 +32,10 @@ export interface PolicyFacts {
   unreadable: boolean
   /** Up to 20 Allow statements, for the access path. */
   statements: PolicyStatement[]
+  /** The policy has more Allow statements than the access path shows. */
+  statementsTruncated?: boolean
+  /** Parsed statements, including Deny and conditions, for the access engine. */
+  documents?: Record<string, unknown>[]
 }
 
 /** Condition keys that narrow an everyone-Allow to something that is not the public. */
@@ -168,13 +172,16 @@ export function evaluatePolicy(document: string | undefined | null): PolicyFacts
     return { ...facts, unreadable: true }
   }
   let unconditional = false
+  const documents: Record<string, unknown>[] = []
   for (const raw of list(parsed?.Statement)) {
     if (!raw || typeof raw !== 'object') continue
     const statement = raw as Record<string, unknown>
+    documents.push(statement)
     if (statement.Effect === 'Deny' && deniesPlainHttp(statement)) facts.enforcesTls = true
     if (statement.Effect !== 'Allow') continue
     const open = everyone(statement.Principal) || statement.NotPrincipal !== undefined
-    if (facts.statements.length < 20) {
+    if (facts.statements.length >= 20) facts.statementsTruncated = true
+    else {
       const principal = statement.NotPrincipal
         ? `everyone except ${JSON.stringify(statement.NotPrincipal).slice(0, 120)}`
         : principalText(statement.Principal)
@@ -211,6 +218,7 @@ export function evaluatePolicy(document: string | undefined | null): PolicyFacts
     if (allows(WRITE_ACTIONS)) facts.publicWrite = true
   }
   facts.conditional = facts.wildcardPrincipal && !unconditional
+  facts.documents = documents
   return facts
 }
 

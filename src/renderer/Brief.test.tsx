@@ -93,10 +93,8 @@ describe('the brief', () => {
         ])}
         lang="en"
         focusId={null}
-        onOlder={() => undefined}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onAsk={() => undefined}
         onReverify={async () => undefined}
       />,
     )
@@ -112,10 +110,8 @@ describe('the brief', () => {
         view={view([survey])}
         lang="en"
         focusId={null}
-        onOlder={() => undefined}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onAsk={() => undefined}
         onReverify={async () => undefined}
       />,
     )
@@ -126,10 +122,8 @@ describe('the brief', () => {
         view={view([survey], { issueStatus: { i1: 'accepted' } })}
         lang="en"
         focusId={null}
-        onOlder={() => undefined}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onAsk={() => undefined}
         onReverify={async () => undefined}
       />,
     )
@@ -145,10 +139,8 @@ describe('the brief', () => {
         ])}
         lang="en"
         focusId={null}
-        onOlder={() => undefined}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onAsk={() => undefined}
         onReverify={async () => undefined}
       />,
     )
@@ -176,10 +168,8 @@ describe('the brief', () => {
         ])}
         lang="zh"
         focusId={null}
-        onOlder={() => undefined}
         onRetry={() => undefined}
         onContinue={onContinue}
-        onAsk={() => undefined}
         onReverify={async () => undefined}
       />,
     )

@@ -23,6 +23,15 @@ export function registerIpc(app: App): void {
   ipcMain.handle('agent:openTask', (_event, id: string, focus?: string) =>
     app.harness.openTask(id, focus),
   )
+
+  ipcMain.handle('agent:audit', async () => {
+    if ((await app.providers.list()).length === 0) await app.providers.addDemo()
+    const id = await app.harness.newTask(
+      app.settings.get().language === 'zh' ? '检查账号' : 'Check account',
+    )
+    await app.harness.audit(id)
+    return app.harness.openTask(id)
+  })
   ipcMain.handle('agent:older', (_event, id: string, before: string) =>
     app.harness.older(id, before),
   )

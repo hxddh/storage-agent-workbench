@@ -58,6 +58,7 @@ Entry kinds the window understands:
 | `pi.compaction` | compaction divider |
 | `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window |
 | `sa.reverify` | a model-free re-read report; data `ReverifyReport` |
+| `sa.audit` | a deterministic account check without a model; data `AuditReport` (verdict + checks) |
 
 pi's `pi.usage` document is read for the task's token receipt.
 

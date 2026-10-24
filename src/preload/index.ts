@@ -7,6 +7,7 @@ const api: AgentApi = {
   older: (taskId, before) => ipcRenderer.invoke('agent:older', taskId, before),
   createTask: (text, attachments, context) =>
     ipcRenderer.invoke('agent:createTask', text, attachments, context),
+  audit: () => ipcRenderer.invoke('agent:audit'),
   send: (taskId, text, attachments, context) =>
     ipcRenderer.invoke('agent:send', taskId, text, attachments, context),
   estateRefs: (query) => ipcRenderer.invoke('agent:estateRefs', query),

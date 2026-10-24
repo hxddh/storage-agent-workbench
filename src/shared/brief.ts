@@ -124,25 +124,6 @@ export interface BriefQuestion {
   context?: import('./contract').ContextRef[]
 }
 
-/** A deterministic next question, derived from a finding's rule, never from the model. */
-export interface BriefFollowUp {
-  id: string
-  code:
-    | 'access'
-    | 'principals'
-    | 'tls'
-    | 'acl'
-    | 'key'
-    | 'block'
-    | 'logs'
-    | 'cleanup'
-    | 'cors'
-    | 'changes'
-    | 'permissions'
-    | 'breakdown'
-  bucket: string
-}
-
 export interface BriefNotice {
   id: string
   code?: NoticeCode
@@ -174,7 +155,6 @@ export interface Brief {
   checks: BriefCheck[]
   coverage: BriefCoverage[]
   questions: BriefQuestion[]
-  followUps: BriefFollowUp[]
   changes: PostureChange[]
   reverify: ReverifyReport | null
   attribution: {
@@ -428,49 +408,6 @@ function fold(
   }
 }
 
-/**
- * Next questions come from rule codes, not the model: the same finding always
- * offers the same check, and the list never claims anything the page does not show.
- */
-export function followUpsFor(
-  findings: BriefFinding[],
-  data: BriefData | null,
-  blind: number,
-): BriefFollowUp[] {
-  const questions: BriefFollowUp[] = []
-  const byCode: Record<string, BriefFollowUp['code']> = {
-    public_exposure: 'access',
-    wildcard_principal: 'principals',
-    insecure_transport: 'tls',
-    acls_enabled: 'acl',
-    no_default_encryption: 'key',
-    public_access_block_missing: 'block',
-    account_public_access_block_missing: 'block',
-    access_logging_off: 'logs',
-    no_abort_mpu: 'cleanup',
-    noncurrent_never_expire: 'cleanup',
-    large_standard_only: 'cleanup',
-    no_expiration: 'cleanup',
-    no_transition: 'cleanup',
-    no_tags: 'cleanup',
-    cors_all_origins: 'cors',
-  }
-  for (const finding of findings) {
-    const code = byCode[finding.code]
-    if (!code) continue
-    if (questions.some((item) => item.code === code && item.bucket === finding.bucket)) continue
-    questions.push({ id: `q:${code}:${finding.bucket}`, code, bucket: finding.bucket })
-    if (questions.length >= 3) return questions
-  }
-  if (questions.length < 3 && blind > 0)
-    questions.push({ id: 'q:permissions', code: 'permissions', bucket: '' })
-  if (questions.length < 3 && data?.view.kind === 'survey')
-    questions.push({ id: 'q:changes', code: 'changes', bucket: '' })
-  if (questions.length < 3 && (data?.view.kind === 'query' || data?.view.kind === 'buckets'))
-    questions.push({ id: 'q:breakdown', code: 'breakdown', bucket: '' })
-  return questions.slice(0, 3)
-}
-
 export function buildBrief(
   entries: readonly UiEntry[],
   live?: LiveInput | null,
@@ -685,7 +622,6 @@ export function buildBrief(
     checks,
     coverage: [...coverage.values()],
     questions,
-    followUps: followUpsFor(findings, data, blind.size + undecided.size),
     changes,
     reverify,
     attribution,

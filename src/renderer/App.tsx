@@ -36,6 +36,8 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [fatal, setFatal] = useState(false)
   const [searchSignal, setSearchSignal] = useState(0)
+  const [auditing, setAuditing] = useState(false)
+  const [auditError, setAuditError] = useState<string | null>(null)
   const restored = useRef(false)
   const seenHome = useRef(false)
 
@@ -191,6 +193,23 @@ export function App() {
     }
   }
 
+  const audit = async () => {
+    if (auditing) return
+    setAuditing(true)
+    setAuditError(null)
+    try {
+      const next = await window.agent.audit()
+      setView(next)
+      setFocusId(null)
+      setSidebarOpen(false)
+      void refresh()
+    } catch (error) {
+      setAuditError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setAuditing(false)
+    }
+  }
+
   const steer = async (text: string) => {
     if (!view) return
     await window.agent.steer(view.task.id, text)
@@ -198,17 +217,6 @@ export function App() {
 
   const stop = () => {
     if (view) void window.agent.stop(view.task.id)
-  }
-
-  const older = async () => {
-    if (!view?.cursor) return
-    const page = await window.agent.older(view.task.id, view.cursor)
-    setView({
-      ...view,
-      entries: [...page.entries, ...view.entries],
-      hasOlder: page.hasOlder,
-      cursor: page.cursor,
-    })
   }
 
   const rename = async (id: string, title: string) => {
@@ -268,11 +276,11 @@ export function App() {
                 view={view}
                 lang={lang}
                 focusId={focusId}
-                onOlder={() => void older()}
                 onRetry={() => void window.agent.retryTask(view.task.id)}
                 onContinue={() => void window.agent.continueTask(view.task.id)}
-                onAsk={(text) => void submit(text, [], [])}
                 onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
+                onAudit={() => void audit()}
+                auditing={auditing}
                 staleDays={boot?.settings.staleDays ?? 7}
               />
             </Suspense>
@@ -280,15 +288,13 @@ export function App() {
         ) : boot ? (
           <Home
             boot={boot}
-            onSend={(text) => void submit(text, [], [])}
             onSetup={() => setSettingsOpen(true)}
-            onTryDemo={async () => {
-              await window.agent.addDemoAccount()
-              await refresh()
-            }}
             onUseLocal={startLocal}
+            onAudit={() => void audit()}
+            auditing={auditing}
           />
         ) : null}
+        {auditError && <p className="brief-error audit-error">{auditError}</p>}
         <Composer
           lang={lang}
           modelLabel={boot?.model?.modelId ?? null}

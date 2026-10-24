@@ -5,6 +5,13 @@ import type { App } from './app'
 const { autoUpdater } = electronUpdater
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000
 
+function missingFeed(error: unknown): boolean {
+  const text = `${(error as { code?: string })?.code ?? ''} ${
+    error instanceof Error ? error.message : String(error)
+  }`
+  return /latest(-mac|-linux)?\.yml|channel file.*not found|404/i.test(text)
+}
+
 /**
  * Background updates from GitHub releases. Packaged builds only; a failure is
  * silent (an unsigned macOS build cannot update itself, and that is not the
@@ -23,10 +30,16 @@ export function startUpdater(service: App): void {
     service.installUpdate = () => autoUpdater.quitAndInstall()
     service.setUpdate({ state: 'ready', version: info.version })
   })
-  autoUpdater.on('error', () => {
+  autoUpdater.on('error', (error) => {
     if (service.update.state === 'downloading') service.setUpdate({ state: 'idle' })
+    if (missingFeed(error) && service.update.state !== 'ready')
+      service.setUpdate({ state: 'unavailable' })
   })
-  const check = () => void autoUpdater.checkForUpdates().catch(() => undefined)
+  const check = () =>
+    void autoUpdater.checkForUpdates().catch((error) => {
+      if (missingFeed(error) && service.update.state !== 'ready')
+        service.setUpdate({ state: 'unavailable' })
+    })
   check()
   setInterval(check, CHECK_EVERY_MS).unref()
 }

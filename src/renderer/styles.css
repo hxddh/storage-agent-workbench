@@ -391,7 +391,9 @@ button {
 .brief-actions {
   margin-left: auto;
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 10px;
   opacity: 0;
   transition: opacity var(--fast) var(--ease);
 }
@@ -401,7 +403,7 @@ button {
 }
 
 .verdict {
-  margin-top: -6px;
+  margin-top: 4px;
   font-size: 16px;
   line-height: 1.68;
 }
@@ -793,13 +795,11 @@ button {
   font-size: 13px;
 }
 
-.checks-section,
-.questions-section {
+.checks-section {
   border-top: 1px solid var(--line);
   padding-top: 14px;
 }
-.checks-head,
-.questions-head {
+.checks-head {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -808,16 +808,13 @@ button {
   padding: 0;
   transition: color var(--fast) var(--ease);
 }
-.checks-head:hover,
-.questions-head:hover {
+.checks-head:hover {
   color: var(--ink-2);
 }
-.checks-head .chev,
-.questions-head .chev {
+.checks-head .chev {
   transition: transform var(--fast) var(--ease);
 }
-.checks-head .chev.open,
-.questions-head .chev.open {
+.checks-head .chev.open {
   transform: rotate(90deg);
 }
 .checks-list {
@@ -909,27 +906,6 @@ button {
   }
 }
 
-.questions-list {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.question {
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--ink-2);
-}
-.question p {
-  margin: 0;
-  white-space: pre-wrap;
-}
-.question .files {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
 .file-chip {
   display: inline-flex;
   align-items: center;
@@ -1922,6 +1898,14 @@ pre.code {
   gap: 3px;
   margin-bottom: 24px;
 }
+.home-audit {
+  align-self: flex-start;
+  margin-top: 10px;
+}
+.audit-error {
+  flex: 0 0 auto;
+  padding: 0 28px 8px;
+}
 .home-account {
   display: flex;
   align-items: baseline;
@@ -1973,12 +1957,6 @@ pre.code {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.home-prompts {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
 .home-prompt {
   display: flex;
   align-items: center;
@@ -2000,13 +1978,6 @@ pre.code {
 }
 .home-prompt svg:first-child {
   color: var(--ink-3);
-}
-.home-prompt svg:last-child {
-  opacity: 0;
-  transition: opacity var(--fast) var(--ease);
-}
-.home-prompt:hover svg:last-child {
-  opacity: 0.7;
 }
 
 /* ---------- sidebar groups ---------- */
@@ -2204,33 +2175,6 @@ pre.code {
   color: var(--ink-2);
 }
 
-/* ---------- follow-ups ---------- */
-
-.follow-ups {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-top: 2px;
-}
-.follow-up {
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--ink-2);
-  font-size: 12px;
-  line-height: 1.4;
-  text-align: left;
-  transition:
-    border-color var(--fast) var(--ease),
-    color var(--fast) var(--ease),
-    background var(--fast) var(--ease);
-}
-.follow-up:hover {
-  border-color: var(--line-strong);
-  background: var(--surface-2);
-  color: var(--ink);
-}
-
 /* ---------- settings model picker ---------- */
 
 .model-pick {
@@ -2277,8 +2221,6 @@ pre.code {
   .dragbar,
   .brief-meta,
   .brief-actions,
-  .follow-ups,
-  .questions-section,
   .checks-section {
     display: none !important;
   }
@@ -2334,8 +2276,9 @@ pre.code {
   color: var(--ink);
 }
 
-.live-request {
-  margin: -6px 0 0;
+.live-request,
+.brief-request {
+  margin: 2px 0 0;
   max-width: 62ch;
   color: var(--ink-2);
   font-size: 13.5px;
