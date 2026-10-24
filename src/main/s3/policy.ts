@@ -10,6 +10,14 @@
  * cannot fully evaluate.
  */
 
+/** One Allow statement, reduced to what a person can read. */
+export interface PolicyStatement {
+  principal: string
+  actions: string[]
+  condition: string | null
+  public: boolean
+}
+
 export interface PolicyFacts {
   /** Some Allow statement names an everyone principal, conditional or not. */
   wildcardPrincipal: boolean
@@ -22,6 +30,8 @@ export interface PolicyFacts {
   enforcesTls: boolean
   /** The document could not be parsed; nothing above can be trusted. */
   unreadable: boolean
+  /** Up to 20 Allow statements, for the access path. */
+  statements: PolicyStatement[]
 }
 
 /** Condition keys that narrow an everyone-Allow to something that is not the public. */
@@ -45,7 +55,26 @@ const RESTRICTING_KEYS = new Set([
 
 const READ_ACTIONS = ['s3:GetObject', 's3:GetObjectVersion']
 const LIST_ACTIONS = ['s3:ListBucket', 's3:ListBucketVersions']
-const WRITE_ACTIONS = ['s3:PutObject', 's3:DeleteObject', 's3:PutObjectAcl', 's3:PutBucketPolicy']
+const WRITE_ACTIONS = [
+  's3:PutObject',
+  's3:DeleteObject',
+  's3:PutObjectAcl',
+  's3:PutObjectTagging',
+  's3:DeleteObjectVersion',
+  's3:AbortMultipartUpload',
+  's3:PutBucketPolicy',
+  's3:DeleteBucketPolicy',
+  's3:PutBucketAcl',
+  's3:PutBucketPublicAccessBlock',
+  's3:PutBucketVersioning',
+  's3:PutBucketLogging',
+  's3:PutBucketWebsite',
+  's3:PutBucketCors',
+  's3:PutBucketNotification',
+  's3:PutReplicationConfiguration',
+  's3:PutLifecycleConfiguration',
+  's3:DeleteBucket',
+]
 
 function list(value: unknown): unknown[] {
   return Array.isArray(value) ? value : value === undefined || value === null ? [] : [value]
@@ -56,18 +85,48 @@ function glob(pattern: string): RegExp {
   return new RegExp(`^${escaped.replace(/\*/g, '.*').replace(/\?/g, '.')}$`, 'i')
 }
 
+function principalText(principal: unknown): string {
+  if (principal === undefined || principal === null) return 'none'
+  if (typeof principal === 'string') return principal
+  if (typeof principal !== 'object') return String(principal)
+  const parts: string[] = []
+  for (const [kind, value] of Object.entries(principal as Record<string, unknown>)) {
+    for (const item of list(value)) parts.push(`${kind}:${String(item)}`)
+  }
+  return parts.slice(0, 6).join(', ') || 'none'
+}
+
 function everyone(principal: unknown): boolean {
   if (principal === '*') return true
   if (!principal || typeof principal !== 'object') return false
   return list((principal as Record<string, unknown>).AWS).some((value) => value === '*')
 }
 
+/** A condition value that still lets everyone in. */
+function everyoneValue(key: string, value: unknown): boolean {
+  for (const item of list(value)) {
+    const text = String(item ?? '').trim()
+    if (!text || text === '*') return true
+    if (key === 'aws:sourceip') {
+      const [address, bits] = text.split('/')
+      if (!address || !bits) continue
+      // Only a /0 prefix covers the whole internet; any narrower network is a restriction.
+      if (bits === '0') return true
+    }
+  }
+  return false
+}
+
 function restricted(condition: unknown): boolean {
   if (!condition || typeof condition !== 'object') return false
   for (const block of Object.values(condition as Record<string, unknown>)) {
     if (!block || typeof block !== 'object') continue
-    for (const key of Object.keys(block as Record<string, unknown>)) {
-      if (RESTRICTING_KEYS.has(key.toLowerCase())) return true
+    for (const [key, value] of Object.entries(block as Record<string, unknown>)) {
+      const name = key.toLowerCase()
+      if (!RESTRICTING_KEYS.has(name)) continue
+      // A condition key with `*`, an empty value or 0.0.0.0/0 is not a restriction.
+      if (everyoneValue(name, value)) continue
+      return true
     }
   }
   return false
@@ -99,6 +158,7 @@ export function evaluatePolicy(document: string | undefined | null): PolicyFacts
     publicWrite: false,
     enforcesTls: false,
     unreadable: false,
+    statements: [],
   }
   if (!document) return facts
   let parsed: { Statement?: unknown }
@@ -114,6 +174,30 @@ export function evaluatePolicy(document: string | undefined | null): PolicyFacts
     if (statement.Effect === 'Deny' && deniesPlainHttp(statement)) facts.enforcesTls = true
     if (statement.Effect !== 'Allow') continue
     const open = everyone(statement.Principal) || statement.NotPrincipal !== undefined
+    if (facts.statements.length < 20) {
+      const principal = statement.NotPrincipal
+        ? `everyone except ${JSON.stringify(statement.NotPrincipal).slice(0, 120)}`
+        : principalText(statement.Principal)
+      const actions =
+        statement.NotAction !== undefined ? ['*'] : list(statement.Action).map(String).slice(0, 12)
+      const condition =
+        statement.Condition && typeof statement.Condition === 'object'
+          ? Object.entries(statement.Condition as Record<string, unknown>)
+              .flatMap(([operator, block]) =>
+                block && typeof block === 'object'
+                  ? Object.keys(block as Record<string, unknown>).map((key) => `${operator}:${key}`)
+                  : [],
+              )
+              .slice(0, 6)
+              .join(', ') || null
+          : null
+      facts.statements.push({
+        principal,
+        actions,
+        condition,
+        public: open && !restricted(statement.Condition),
+      })
+    }
     if (!open) continue
     facts.wildcardPrincipal = true
     if (restricted(statement.Condition)) continue

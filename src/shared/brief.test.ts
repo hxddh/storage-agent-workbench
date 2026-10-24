@@ -193,7 +193,7 @@ describe('brief projection', () => {
     expect(brief.coverage[0]).toMatchObject({ denied: ['secret'], pending: 4 })
   })
 
-  it('shows a review blind spot until a later reading of that bucket', () => {
+  it('keeps a review blind spot until that review is repeated', () => {
     const blindReview: ToolView = {
       kind: 'config',
       bucket: 'demo',
@@ -207,7 +207,7 @@ describe('brief projection', () => {
         tool('t1', 'config', at(1), blindReview),
         tool('t2', 'survey', at(2), survey([])),
       ]).blind,
-    ).toHaveLength(0)
+    ).toHaveLength(1)
   })
 
   it('measures only the current turn', () => {
@@ -312,5 +312,57 @@ describe('brief projection', () => {
       answer('a1', at(2), '`demo` is publicly accessible.'),
     ])
     expect(brief.verdict?.contradicted).toEqual(['demo'])
+  })
+})
+
+describe('v20 brief additions', () => {
+  it('derives next checks from rule codes, once per code and bucket', () => {
+    const brief = buildBrief([
+      tool(
+        't1',
+        'survey',
+        at(1),
+        survey([
+          issue('a', 'high', 'demo', 'public_exposure'),
+          issue('b', 'high', 'demo', 'public_exposure'),
+          issue('c', 'medium', 'prod', 'no_default_encryption'),
+        ]),
+      ),
+    ])
+    expect(brief.followUps.map((item) => item.code)).toEqual(['access', 'key', 'changes'])
+    expect(brief.followUps[0]).toMatchObject({ bucket: 'demo' })
+  })
+
+  it('keeps the latest re-verification report on the page', () => {
+    const report = {
+      at: at(5),
+      checked: 3,
+      skipped: 0,
+      changes: [
+        {
+          bucket: 'demo',
+          code: 'public_exposure',
+          title: 'Public',
+          before: 'open' as const,
+          after: 'clear' as const,
+        },
+      ],
+      opened: 0,
+      resolved: 1,
+      undecided: 0,
+    }
+    const brief = buildBrief([{ id: 'r1', kind: 'reverify', at: at(5), report }])
+    expect(brief.reverify).toEqual(report)
+  })
+
+  it('carries posture changes from the latest survey', () => {
+    const view = {
+      ...survey([]),
+      postureChanges: [
+        { bucket: 'demo', field: 'public exposure', before: 'off', after: 'on', at: at(2) },
+      ],
+    } as ToolView
+    const brief = buildBrief([tool('t1', 'survey', at(2), view)])
+    expect(brief.changes[0]?.field).toBe('public exposure')
   })
 })

@@ -228,6 +228,26 @@ describe('tools over the estate', () => {
     })
   })
 
+  it('shows the policy and ACL grants behind access', async () => {
+    const { details } = await run(configTool(deps), {
+      bucket: 'compat-public',
+      aspect: 'access',
+    })
+    expect(details.status).toBe('done')
+    if (details.view?.kind !== 'config') throw new Error('expected a config view')
+    expect(details.view.access?.some((item) => item.source === 'policy')).toBe(true)
+    expect(details.view.access?.some((item) => item.public)).toBe(true)
+  })
+
+  it('generates a batch when no bucket or code narrows it', async () => {
+    await run(surveyTool(deps), {})
+    const [, fix] = estateTools(deps)
+    const { details } = await run(fix as Executable, {})
+    expect(details.status).toBe('done')
+    if (details.view?.kind !== 'fix') throw new Error('expected a fix view')
+    expect(details.view.formats.length).toBeGreaterThan(0)
+  })
+
   it('reports a stopped call as stopped, not failed', async () => {
     const controller = new AbortController()
     controller.abort()

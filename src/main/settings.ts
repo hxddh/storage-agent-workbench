@@ -17,16 +17,21 @@ export interface StoredSettings {
   language: Lang
   theme: Theme
   notify: boolean
+  staleDays: number
   model: StoredModel | null
   lastTaskId: string | null
+  /** Internal: when the home overview was last shown. Not part of AppSettings. */
+  lastSeenAt: string | null
 }
 
 const DEFAULTS: StoredSettings = {
   language: 'en',
   theme: 'system',
   notify: true,
+  staleDays: 7,
   model: null,
   lastTaskId: null,
+  lastSeenAt: null,
 }
 
 const THINKING = new Set<ThinkingLevel>(['off', 'low', 'medium', 'high'])
@@ -45,7 +50,12 @@ export class Settings {
   }
 
   public(): AppSettings {
-    return { language: this.value.language, theme: this.value.theme, notify: this.value.notify }
+    return {
+      language: this.value.language,
+      theme: this.value.theme,
+      notify: this.value.notify,
+      staleDays: this.value.staleDays,
+    }
   }
 
   patch(patch: Partial<AppSettings>): void {
@@ -53,6 +63,13 @@ export class Settings {
     if (patch.theme === 'light' || patch.theme === 'dark' || patch.theme === 'system')
       this.value.theme = patch.theme
     if (typeof patch.notify === 'boolean') this.value.notify = patch.notify
+    if (typeof patch.staleDays === 'number' && Number.isFinite(patch.staleDays))
+      this.value.staleDays = Math.max(1, Math.min(365, Math.round(patch.staleDays)))
+    this.save()
+  }
+
+  markSeen(at = new Date().toISOString()): void {
+    this.value.lastSeenAt = at
     this.save()
   }
 
@@ -84,8 +101,13 @@ export class Settings {
         language: raw.language === 'zh' ? 'zh' : 'en',
         theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
         notify: raw.notify !== false,
+        staleDays:
+          typeof raw.staleDays === 'number' && raw.staleDays >= 1 && raw.staleDays <= 365
+            ? Math.round(raw.staleDays)
+            : 7,
         model,
         lastTaskId: typeof raw.lastTaskId === 'string' ? raw.lastTaskId : null,
+        lastSeenAt: typeof raw.lastSeenAt === 'string' ? raw.lastSeenAt : null,
       }
     } catch {
       return { ...DEFAULTS }

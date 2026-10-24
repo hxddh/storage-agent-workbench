@@ -1,6 +1,6 @@
 name: Release
 
-# Tag a commit (`git tag v18.0.0 && git push origin v18.0.0`) or run this
+# Tag a commit (`git tag v20.0.0 && git push origin v18.0.0`) or run this
 # workflow manually. Builds installers on macOS, Linux and Windows and attaches
 # them, with the update feeds (latest*.yml), to one GitHub release.
 #
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to release (e.g. v15.0.0)"
+        description: "Existing tag to release (e.g. v20.0.0)"
         required: true
 
 permissions:
@@ -37,6 +37,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npm run sbom
       - name: Package
         shell: bash
         # An empty secret arrives as an empty string, which electron-builder
@@ -60,6 +61,7 @@ jobs:
           name: installers-${{ matrix.os }}
           if-no-files-found: error
           path: |
+            sbom.json
             release/*.dmg
             release/*.zip
             release/*.AppImage

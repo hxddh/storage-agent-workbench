@@ -9,8 +9,14 @@
  * account scope, every call counts against a budget, and only the script's
  * returned rows reach the model and the page.
  */
+import { createHash } from 'node:crypto'
+import { existsSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import {
+  GetObjectCommand,
   HeadObjectCommand,
+  ListBucketInventoryConfigurationsCommand,
   ListBucketsCommand,
   ListMultipartUploadsCommand,
   ListObjectsV2Command,
@@ -19,8 +25,13 @@ import {
 } from '@aws-sdk/client-s3'
 import { CodemodeSandbox, type CodemodeTool } from '@earendil-works/pi-codemode'
 import type { Chart, Table } from '@shared/contract'
+import { parse as parseCsv } from 'csv-parse/sync'
+import { parquetReadObjects } from 'hyparquet'
+import { AggregationError, aggregate, type DatasetKind, preview } from '../analysis/aggregate'
+import { datasetBytes, importDataset } from '../analysis/import'
 import { decide } from '../estate/rules'
 import type { ProviderConfig } from '../providers'
+import { readAccount, UNREAD_ACCOUNT } from '../s3/account'
 import { readBucket } from '../s3/facts'
 import { readCapacity } from '../s3/metrics'
 import { redact } from '../security/redact'
@@ -44,7 +55,10 @@ export const QUERY_API = `Primitives (all read-only, all async, all scoped to th
   config({bucket, aspect?: "security"|"lifecycle"|"observability"}): {exposure, statuses, issues}   // issues: rule codes the reading proves
   capacity({bucket}): {bytes, objects, byClass, growthBytes, monthlyUsd} | null   // AWS CloudWatch only
   estate(): {buckets: {name, readAt, posture}[], issues: {bucket, code, severity, status}[]}
-Call them as tools.list({...}) etc. Return an array of flat rows (objects with string/number/boolean values), or {rows, chart: {label: "<column>", value: "<numeric column>"}}. text("…") adds a line of output.
+  inventory({bucket, maxRows?}): {rows, format, manifestAt, truncated, note}   // latest S3 Inventory CSV; Parquet is reported, not parsed
+  dataset({file, kind?}): {file, kind, rows, columns}   // import one attached access log or inventory
+  aggregate({file, metric, groupBy?, filters?, limit?}): {rows}
+Call them as tools.list({...}) etc. dataset and aggregate are the only way to read an attached file; raw rows never reach you. Return an array of flat rows (objects with string/number/boolean values), or {rows, chart: {label: "<column>", value: "<numeric column>"}}. text("…") adds a line of output.
 Budget per script: ${QUERY_BUDGET.calls} calls, ${QUERY_BUDGET.listed.toLocaleString('en-US')} listed items, ${QUERY_BUDGET.timeoutMs / 1000} s.`
 
 class BudgetError extends Error {}
@@ -105,14 +119,17 @@ export function toTable(value: unknown): { table: Table; chart: Chart | null } {
 }
 
 interface Context {
+  conversationId: string
   deps: ToolDeps
   config: ProviderConfig
   client: S3Client
   signal: AbortSignal
   regional?: (region: string) => S3Client
+  account?: () => Promise<import('../s3/account').AccountFacts>
   usage: { calls: number; listed: number }
   /** Buckets the script read: they ground what the verdict says about it. */
   touched: Set<string>
+  datasets: Map<string, { kind: DatasetKind; path: string; rows: number }>
 }
 
 function primitives(ctx: Context): CodemodeTool[] {
@@ -132,6 +149,9 @@ function primitives(ctx: Context): CodemodeTool[] {
     assertInScope(config, bucket)
     ctx.touched.add(bucket)
     return bucket
+  }
+  const settle = (reserved: number, actual: number) => {
+    ctx.usage.listed = Math.max(0, ctx.usage.listed - Math.max(0, reserved - actual))
   }
   const send = <T>(command: unknown) =>
     client.send(command as never, { abortSignal: ctx.signal }) as Promise<T>
@@ -170,6 +190,9 @@ function primitives(ctx: Context): CodemodeTool[] {
           max?: number
         }
         const max = Math.max(1, Math.min(Number(a.max ?? 1000) || 1000, 1000))
+        // Charge the page before the request: a script cannot fan out 2,000
+        // listings and only then discover it passed the budget.
+        spend(max)
         const prefix = a.prefix ? String(a.prefix) : undefined
         const delimiter = a.delimiter ? String(a.delimiter) : undefined
         if (a.kind === 'versions') {
@@ -223,7 +246,6 @@ function primitives(ctx: Context): CodemodeTool[] {
               deleteMarker: true,
             })),
           ]
-          spend(items.length)
           return {
             items,
             prefixes: (r.CommonPrefixes ?? []).map((p) => p.Prefix ?? ''),
@@ -256,10 +278,11 @@ function primitives(ctx: Context): CodemodeTool[] {
             modified: u.Initiated ? new Date(u.Initiated).toISOString() : null,
             storageClass: u.StorageClass ?? 'STANDARD',
           }))
-          spend(items.length)
+          const prefixes = (r.CommonPrefixes ?? []).map((p) => p.Prefix ?? '')
+          settle(max, items.length + prefixes.length)
           return {
             items,
-            prefixes: (r.CommonPrefixes ?? []).map((p) => p.Prefix ?? ''),
+            prefixes,
             next: r.IsTruncated
               ? `${r.NextKeyMarker ?? ''}\u0000${r.NextUploadIdMarker ?? ''}`
               : null,
@@ -285,10 +308,11 @@ function primitives(ctx: Context): CodemodeTool[] {
           modified: o.LastModified ? new Date(o.LastModified).toISOString() : null,
           storageClass: o.StorageClass ?? 'STANDARD',
         }))
-        spend(items.length)
+        const prefixes = (r.CommonPrefixes ?? []).map((p) => p.Prefix ?? '')
+        settle(max, items.length + prefixes.length)
         return {
           items,
-          prefixes: (r.CommonPrefixes ?? []).map((p) => p.Prefix ?? ''),
+          prefixes,
           next: r.IsTruncated ? (r.NextContinuationToken ?? null) : null,
         }
       },
@@ -336,6 +360,7 @@ function primitives(ctx: Context): CodemodeTool[] {
           regional: ctx.regional,
           defaultRegion: config.region,
           aws,
+          account: (await ctx.account?.()) ?? UNREAD_ACCOUNT,
         })
         const statuses: Record<string, string> = {}
         for (const key of [
@@ -395,6 +420,285 @@ function primitives(ctx: Context): CodemodeTool[] {
       },
     },
     {
+      name: 'dataset',
+      description:
+        'Import one attached access log or object inventory into a local read-only SQLite dataset.',
+      execute: async (args) => {
+        const file = String((args as { file?: unknown })?.file ?? '')
+        if (!file) throw new Error('file is required.')
+        if (!/^[^/\\]{1,200}$/.test(file)) throw new Error('file must be a plain file name.')
+        const uploads = deps.uploadsDir(ctx.conversationId)
+        const path = join(uploads, file)
+        if (!existsSync(path)) {
+          const available = existsSync(uploads) ? readdirSync(uploads).slice(0, 20) : []
+          throw new Error(
+            available.length
+              ? `No attached file named '${file}'. Available: ${available.join(', ')}.`
+              : 'No files are attached to this task.',
+          )
+        }
+        const stat = statSync(path)
+        const id = createHash('sha1')
+          .update(`${ctx.conversationId}:${file}:${stat.size}:${stat.mtimeMs}`)
+          .digest('hex')
+          .slice(0, 16)
+        const datasetPath = join(deps.datasetsDir(ctx.conversationId), `${id}.sqlite`)
+        let kind: DatasetKind = 'access_log'
+        let rows = 0
+        if (!existsSync(datasetPath)) {
+          const requested = (args as { kind?: unknown })?.kind
+          const result = await importDataset({
+            filePath: path,
+            destPath: datasetPath,
+            ...(requested === 'inventory' || requested === 'access_log' ? { kind: requested } : {}),
+          })
+          kind = result.kind
+          rows = result.rows
+          await deps.db.insertDataset({
+            id,
+            conversation_id: ctx.conversationId,
+            kind,
+            path: datasetPath,
+            rows,
+            bytes: datasetBytes(datasetPath),
+          })
+        } else {
+          const known = await deps.db.listDatasets(ctx.conversationId)
+          kind = (known.find((row) => row.id === id)?.kind as DatasetKind) ?? 'access_log'
+          rows = known.find((row) => row.id === id)?.rows ?? 0
+        }
+        ctx.datasets.set(file, { kind, path: datasetPath, rows })
+        const sample = preview(datasetPath, kind, 3)
+        return { file, kind, rows, columns: sample.columns }
+      },
+    },
+    {
+      name: 'aggregate',
+      description:
+        'A whitelisted aggregate over one dataset imported in this script. Access metrics: count, sum_bytes, avg_bytes, min_bytes, max_bytes, avg_latency_ms, p50/p95/p99_latency_ms, max_latency_ms, distinct_ips, distinct_keys. Inventory metrics: count, total_size, avg_size, max_size, min_size, distinct_prefixes, distinct_storage_classes.',
+      execute: async (args) => {
+        const a = args as {
+          file?: unknown
+          metric?: unknown
+          groupBy?: unknown
+          filters?: unknown
+          limit?: unknown
+        }
+        const file = String(a.file ?? '')
+        const dataset = ctx.datasets.get(file)
+        if (!dataset) throw new Error(`Import '${file}' with dataset() first.`)
+        const metric = String(a.metric ?? '')
+        if (!metric) throw new Error('metric is required.')
+        const filters =
+          a.filters && typeof a.filters === 'object' && !Array.isArray(a.filters)
+            ? (a.filters as Record<string, string>)
+            : null
+        try {
+          const result = aggregate(dataset.path, dataset.kind, {
+            metric,
+            groupBy: a.groupBy ? String(a.groupBy) : null,
+            filters,
+            limit: Number(a.limit ?? 20),
+          })
+          return {
+            rows: result.groups
+              ? result.groups.map((group) => ({ group: group.group, value: group.value }))
+              : [{ value: result.value }],
+            metric,
+            groupBy: result.groupBy,
+          }
+        } catch (error) {
+          if (error instanceof AggregationError) throw new Error(error.message)
+          throw error
+        }
+      },
+    },
+    {
+      name: 'inventory',
+      description:
+        'The latest S3 Inventory manifest for one bucket. Reads a bounded page of CSV or Parquet rows; a larger file is reported instead of loaded whole.',
+      execute: async (args) => {
+        const bucket = bucketArg(args)
+        const maxRows = Math.max(
+          1,
+          Math.min(Number((args as { maxRows?: unknown }).maxRows ?? 100) || 100, 1000),
+        )
+        spend()
+        const configs = await send<{
+          InventoryConfigurationList?: {
+            Id?: string
+            IsEnabled?: boolean
+            Destination?: {
+              S3BucketDestination?: { Bucket?: string; Prefix?: string; Format?: string }
+            }
+            Schedule?: { Frequency?: string }
+          }[]
+        }>(new ListBucketInventoryConfigurationsCommand({ Bucket: bucket }))
+        const inventoryConfig = (configs.InventoryConfigurationList ?? []).find(
+          (item) => item.IsEnabled,
+        )
+        const destination = inventoryConfig?.Destination?.S3BucketDestination
+        const destinationBucket = destination?.Bucket?.replace(/^arn:aws:s3:::/, '')
+        if (!inventoryConfig || !destinationBucket)
+          return {
+            rows: [],
+            format: null,
+            manifestAt: null,
+            truncated: false,
+            note: 'No enabled inventory configuration.',
+          }
+        const prefix = destination?.Prefix ?? ''
+        if (destinationBucket) assertInScope(config, destinationBucket)
+        const listed = await send<{
+          Contents?: { Key?: string; LastModified?: Date; Size?: number }[]
+        }>(new ListObjectsV2Command({ Bucket: destinationBucket, Prefix: prefix, MaxKeys: 1000 }))
+        const objects = (listed.Contents ?? []).filter((item) => item.Key)
+        const fileSize = (key: string) => objects.find((item) => item.Key === key)?.Size ?? 0
+        const manifestKey = objects
+          .filter((item) => item.Key?.endsWith('/manifest.json') || item.Key === 'manifest.json')
+          .sort(
+            (a, b) => (b.LastModified?.getTime() ?? 0) - (a.LastModified?.getTime() ?? 0),
+          )[0]?.Key
+        if (!manifestKey)
+          return {
+            rows: [],
+            format: destination?.Format ?? null,
+            manifestAt: null,
+            truncated: false,
+            note: 'The inventory has no manifest yet.',
+          }
+        const manifestResponse = await send<{ Body?: { transformToString(): Promise<string> } }>(
+          new GetObjectCommand({ Bucket: destinationBucket, Key: manifestKey }),
+        )
+        const manifestText =
+          (await manifestResponse.Body?.transformToString())?.slice(0, 2_000_000) ?? ''
+        let manifest: {
+          creationTimestamp?: string
+          fileFormat?: string
+          files?: { key: string }[]
+          sourceBucket?: string
+        } = {}
+        try {
+          manifest = JSON.parse(manifestText) as typeof manifest
+        } catch {
+          return {
+            rows: [],
+            format: destination?.Format ?? null,
+            manifestAt: null,
+            truncated: false,
+            note: 'The manifest is not valid JSON.',
+          }
+        }
+        const format = (manifest.fileFormat ?? destination?.Format ?? '').toUpperCase()
+        const file = manifest.files?.[0]?.key
+        if (!file)
+          return {
+            rows: [],
+            format,
+            manifestAt: manifest.creationTimestamp ?? null,
+            truncated: false,
+            note: 'The manifest lists no inventory files.',
+          }
+        if (format && !['CSV', 'PARQUET'].includes(format))
+          return {
+            rows: [],
+            format,
+            manifestAt: manifest.creationTimestamp ?? null,
+            truncated: false,
+            note: `Inventory format ${format} is not readable.`,
+          }
+        if (format === 'CSV' && fileSize(file) > 32 * 1024 * 1024)
+          return {
+            rows: [],
+            format,
+            manifestAt: manifest.creationTimestamp ?? null,
+            truncated: false,
+            note: 'The first CSV inventory file is larger than 32 MiB; open it in the analysis tool instead.',
+          }
+        if (format === 'PARQUET' && fileSize(file) > 16 * 1024 * 1024)
+          return {
+            rows: [],
+            format,
+            manifestAt: manifest.creationTimestamp ?? null,
+            truncated: false,
+            note: 'The first Parquet inventory file is larger than 16 MiB; open it in the analysis tool instead.',
+          }
+        const dataResponse = await send<{ Body?: { transformToByteArray(): Promise<Uint8Array> } }>(
+          new GetObjectCommand({
+            Bucket: destinationBucket,
+            Key: file,
+            ...(format === 'PARQUET' || fileSize(file) > 8 * 1024 * 1024
+              ? {}
+              : { Range: 'bytes=0-8388607' }),
+          }),
+        )
+        let bytes = (await dataResponse.Body?.transformToByteArray()) ?? new Uint8Array()
+        let rows: Record<string, unknown>[] = []
+        if (format === 'PARQUET') {
+          try {
+            const fileBuffer = {
+              byteLength: bytes.length,
+              slice: async (start: number, end: number) =>
+                bytes.buffer.slice(start, end) as ArrayBuffer,
+            }
+            const parsed = (await parquetReadObjects({ file: fileBuffer })) as Record<
+              string,
+              unknown
+            >[]
+            rows = parsed.slice(0, maxRows)
+          } catch {
+            return {
+              rows: [],
+              format,
+              manifestAt: manifest.creationTimestamp ?? null,
+              truncated: false,
+              note: 'The Parquet inventory file could not be parsed.',
+            }
+          }
+        } else {
+          if (file.endsWith('.gz') || (bytes[0] === 0x1f && bytes[1] === 0x8b))
+            bytes = gunzipSync(bytes, { maxOutputLength: 32 * 1024 * 1024 })
+          const text = Buffer.from(bytes).toString('utf8').slice(0, 2_000_000)
+          try {
+            rows = parseCsv(text, {
+              columns: true,
+              bom: true,
+              skip_empty_lines: true,
+              relax_column_count: true,
+            }) as Record<string, string>[]
+          } catch {
+            return {
+              rows: [],
+              format,
+              manifestAt: manifest.creationTimestamp ?? null,
+              truncated: false,
+              note: 'The inventory CSV could not be parsed.',
+            }
+          }
+        }
+        const normalized = rows.slice(0, maxRows).map((row) => {
+          const key = String(row.key ?? row.Key ?? '')
+          return {
+            bucket: String(row.bucket ?? manifest.sourceBucket ?? bucket),
+            key,
+            prefix: key.includes('/') ? `${key.split('/')[0]}/` : '(root)',
+            size: Number(row.size ?? row.object_size ?? 0),
+            storage_class: String(row.storage_class ?? row.storageClass ?? ''),
+            last_modified: String(row.last_modified_date ?? row.lastModified ?? ''),
+          }
+        })
+        return {
+          rows: normalized,
+          format,
+          manifestAt: manifest.creationTimestamp ?? null,
+          truncated: rows.length > maxRows || Boolean(manifest.files && manifest.files.length > 1),
+          note: `${rows.length} row(s) read from ${file}; inventory covers objects not listed by ListObjects.${
+            fileSize(file) > bytes.length ? ' Only the first part of the file was read.' : ''
+          }`,
+        }
+      },
+    },
+    {
       name: 'estate',
       description: 'What the agent remembers: buckets with their last reading, and Issues.',
       execute: async () => {
@@ -447,6 +751,17 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
       const { config, client } = await run.provider(args.provider_id)
       const usage = { calls: 0, listed: 0 }
       const touched = new Set<string>()
+      const aws = deps.providers.isAws(config)
+      let accountFacts: import('../s3/account').AccountFacts | null = null
+      const account = async () => {
+        if (!aws) return UNREAD_ACCOUNT
+        accountFacts ??= await readAccount(
+          deps.providers.sts(config),
+          deps.providers.control(config),
+          run.signal,
+        )
+        return accountFacts
+      }
       const sandbox = new CodemodeSandbox({
         tools: primitives({
           deps,
@@ -454,8 +769,11 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
           client,
           signal: run.signal,
           regional: run.regional,
+          account,
           usage,
           touched,
+          conversationId: run.conversationId,
+          datasets: new Map(),
         }),
         timeoutMs,
         memoryLimitBytes: QUERY_BUDGET.memoryBytes,
@@ -506,6 +824,7 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
         note: `${table.rows.length} row${table.rows.length === 1 ? '' : 's'} · ${usage.calls} call${usage.calls === 1 ? '' : 's'}`,
         view: {
           kind: 'query' as const,
+          providerId: config.id,
           title: args.title.slice(0, 120),
           code: args.code.slice(0, QUERY_BUDGET.codeChars),
           rows: table,

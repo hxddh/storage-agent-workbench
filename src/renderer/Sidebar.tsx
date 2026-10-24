@@ -1,5 +1,5 @@
 import type { SearchHit, TaskSummary } from '@shared/contract'
-import { MoreHorizontal, Plus, Search, Settings2, X } from 'lucide-react'
+import { MoreHorizontal, Pin, PinOff, Plus, Search, Settings2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { dict } from './i18n'
 
@@ -15,6 +15,20 @@ function Snippet({ text, query }: { text: string; query: string }) {
   )
 }
 
+function relative(iso: string, lang: 'en' | 'zh'): string {
+  const seconds = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
+  if (lang === 'zh') {
+    if (seconds < 60) return '刚刚'
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`
+    if (seconds < 86_400) return `${Math.floor(seconds / 3600)} 小时前`
+    return `${Math.floor(seconds / 86_400)} 天前`
+  }
+  if (seconds < 60) return 'now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h`
+  return `${Math.floor(seconds / 86_400)}d`
+}
+
 function TaskRow({
   task,
   active,
@@ -22,6 +36,7 @@ function TaskRow({
   onOpen,
   onRename,
   onDelete,
+  onPin,
 }: {
   task: TaskSummary
   active: boolean
@@ -29,6 +44,7 @@ function TaskRow({
   onOpen: () => void
   onRename: (title: string) => void
   onDelete: () => void
+  onPin: () => void
 }) {
   const t = dict(lang)
   const [editing, setEditing] = useState(false)
@@ -75,8 +91,9 @@ function TaskRow({
           }}
           type="button"
         >
-          {task.state !== 'ready' && <span className={`dot ${task.state}`} />}
+          <span className={`dot ${task.state}`} aria-hidden="true" />
           <span className="title">{task.title}</span>
+          <span className="task-time">{relative(task.updatedAt, lang)}</span>
         </button>
       )}
       <button
@@ -111,6 +128,16 @@ function TaskRow({
             </button>
             <button
               type="button"
+              onClick={() => {
+                setMenu(false)
+                onPin()
+              }}
+            >
+              {task.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+              {task.pinned ? t.unpin : t.pin}
+            </button>
+            <button
+              type="button"
               className="danger"
               onClick={() => {
                 if (!confirming) {
@@ -141,6 +168,7 @@ export function Sidebar({
   onSettings,
   onRename,
   onDelete,
+  onPin,
   searchSignal = 0,
 }: {
   searchSignal?: number
@@ -153,6 +181,7 @@ export function Sidebar({
   onSettings: () => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
+  onPin: (id: string, pinned: boolean) => void
 }) {
   const t = dict(lang)
   const [query, setQuery] = useState('')
@@ -203,6 +232,18 @@ export function Sidebar({
   const clear = () => {
     setQuery('')
     input.current?.blur()
+  }
+
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+  const grouped = {
+    pinned: tasks.filter((task) => task.pinned),
+    today: tasks.filter(
+      (task) => !task.pinned && Date.parse(task.updatedAt) >= startOfToday.getTime(),
+    ),
+    earlier: tasks.filter(
+      (task) => !task.pinned && Date.parse(task.updatedAt) < startOfToday.getTime(),
+    ),
   }
 
   const choose = (hit: SearchHit) => {
@@ -282,17 +323,59 @@ export function Sidebar({
             ))
           )
         ) : (
-          tasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              active={task.id === activeId}
-              lang={lang}
-              onOpen={() => onOpen(task.id)}
-              onRename={(title) => onRename(task.id, title)}
-              onDelete={() => onDelete(task.id)}
-            />
-          ))
+          <>
+            {grouped.pinned.length > 0 && (
+              <>
+                <p className="task-group">{t.pinned}</p>
+                {grouped.pinned.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    active={task.id === activeId}
+                    lang={lang}
+                    onOpen={() => onOpen(task.id)}
+                    onRename={(title) => onRename(task.id, title)}
+                    onDelete={() => onDelete(task.id)}
+                    onPin={() => onPin(task.id, !task.pinned)}
+                  />
+                ))}
+              </>
+            )}
+            {grouped.today.length > 0 && (
+              <>
+                <p className="task-group">{t.today}</p>
+                {grouped.today.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    active={task.id === activeId}
+                    lang={lang}
+                    onOpen={() => onOpen(task.id)}
+                    onRename={(title) => onRename(task.id, title)}
+                    onDelete={() => onDelete(task.id)}
+                    onPin={() => onPin(task.id, !task.pinned)}
+                  />
+                ))}
+              </>
+            )}
+            {grouped.earlier.length > 0 && (
+              <>
+                <p className="task-group">{t.earlier}</p>
+                {grouped.earlier.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    active={task.id === activeId}
+                    lang={lang}
+                    onOpen={() => onOpen(task.id)}
+                    onRename={(title) => onRename(task.id, title)}
+                    onDelete={() => onDelete(task.id)}
+                    onPin={() => onPin(task.id, !task.pinned)}
+                  />
+                ))}
+              </>
+            )}
+          </>
         )}
       </div>
       <div className="sidebar-foot">

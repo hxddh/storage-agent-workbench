@@ -6,7 +6,7 @@ import {
   TASK_LINK_PREFIX,
   type TaskSummary,
 } from '@shared/contract'
-import { app, BrowserWindow, Menu, Notification, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, crashReporter, Menu, Notification, nativeTheme, shell } from 'electron'
 import { App } from './app'
 import { registerIpc } from './ipc'
 import type { RunOutcome } from './runtime/harness'
@@ -30,6 +30,9 @@ function openLink(url: string | undefined): void {
   mainWindow.focus()
   broadcast({ type: 'open', taskId })
 }
+
+// Crash dumps stay on disk; nothing is uploaded. A packaged build can export them.
+crashReporter.start({ uploadToServer: false, compress: true })
 
 app.on('open-url', (event, url) => {
   event.preventDefault()
@@ -62,14 +65,21 @@ function notifySettled(task: TaskSummary, outcome: RunOutcome): void {
   if (outcome === 'stopped' || !service.settings.get().notify) return
   if (mainWindow?.isFocused() || !Notification.isSupported()) return
   const words = NOTICE[service.settings.get().language] ?? NOTICE.en
-  const notification = new Notification({ title: task.title, body: words[outcome], silent: false })
-  notification.on('click', () => {
+  const notification = new Notification({
+    title: task.title,
+    body: words[outcome],
+    silent: false,
+    actions: [{ type: 'button', text: 'Open' }],
+  })
+  const open = () => {
     if (!mainWindow) return
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
     broadcast({ type: 'open', taskId: task.id })
-  })
+  }
+  notification.on('click', open)
+  notification.on('action', open)
   notification.show()
 }
 
@@ -121,6 +131,11 @@ function buildMenu(): void {
           label: 'Stop',
           accelerator: 'CmdOrCtrl+.',
           click: () => sendCommand('stop'),
+        },
+        {
+          label: 'Re-verify task',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => sendCommand('reverify'),
         },
         ...(isMac
           ? []
@@ -179,6 +194,11 @@ async function createWindow(): Promise<void> {
     backgroundColor: '#f7f6f3',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 16 },
+    ...(process.platform === 'darwin'
+      ? { vibrancy: 'sidebar' as const, visualEffectState: 'followWindow' as const }
+      : process.platform === 'win32'
+        ? { backgroundMaterial: 'mica' as const }
+        : {}),
     webPreferences: {
       preload: join(here, '../preload/index.cjs'),
       contextIsolation: true,

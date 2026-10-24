@@ -18,8 +18,15 @@ function addTable(names: Set<string>, rows: (string | number | null)[][] | undef
 }
 
 /** Names a tool result shows: targets, bucket and key columns, Issue buckets, accounts. */
-export function namesInView(view: ToolView | null, target: string, names: Set<string>): void {
-  if (target) names.add(target)
+export function namesInView(
+  view: ToolView | null,
+  target: string,
+  names: Set<string>,
+  tool?: string,
+): void {
+  // A query's `target` is the model's own title, not a storage name; grounding
+  // it would let the model certify a name it invented.
+  if (target && tool !== 'query') names.add(target)
   if (!view) return
   switch (view.kind) {
     case 'survey':
@@ -43,10 +50,6 @@ export function namesInView(view: ToolView | null, target: string, names: Set<st
       break
     case 'object':
       for (const [, value] of view.facts) if (NAME.test(value)) names.add(value)
-      break
-    case 'analyze':
-      names.add(view.dataset)
-      addTable(names, view.rows.rows)
       break
     case 'probe':
       names.add(view.endpoint)
@@ -75,7 +78,7 @@ export function knownNames(entries: readonly UiEntry[]): Set<string> {
   const names = new Set<string>()
   for (const entry of entries) {
     if (entry.kind === 'tool' && entry.status === 'done')
-      namesInView(entry.view, entry.target, names)
+      namesInView(entry.view, entry.target, names, entry.name)
     if (entry.kind === 'user') {
       for (const file of entry.attachments) names.add(file.name)
     }
@@ -118,7 +121,9 @@ export function exposureInView(view: ToolView | null, exposure: Map<string, bool
   if (view.kind === 'survey') fromTable(view.buckets)
   else if (view.kind === 'estate') fromTable(view.buckets)
   else if (view.kind === 'config' && (view.aspect ?? 'security') === 'security') {
-    if (view.findings.some((finding) => finding.code === 'public_exposure'))
+    if (view.exposure === 'public') exposure.set(view.bucket, true)
+    else if (view.exposure === 'not public') exposure.set(view.bucket, false)
+    else if (view.findings.some((finding) => finding.code === 'public_exposure'))
       exposure.set(view.bucket, true)
   }
 }
@@ -146,10 +151,13 @@ export function contradicted(verdict: string, exposure: ReadonlyMap<string, bool
     const names = [...sentence.matchAll(/`([^`\n]{1,256})`/g)].map((m) => m[1]!.trim())
     const known = names.filter((name) => exposure.has(name))
     if (names.length !== 1 || known.length !== 1) continue
-    const match = PUBLIC.exec(sentence)
+    // Look for the claim in the prose, not inside the backticked name: a bucket
+    // called `demo-public` must not make "is no longer public" a public claim.
+    const prose = sentence.replace(/`[^`\n]*`/g, 'name')
+    const match = PUBLIC.exec(prose)
     if (!match) continue
     // Negation counts only just before the claim: "has no encryption but is public" is a public claim.
-    const claimsPublic = !NEGATION.test(sentence.slice(Math.max(0, match.index - 32), match.index))
+    const claimsPublic = !NEGATION.test(prose.slice(Math.max(0, match.index - 32), match.index))
     const name = known[0]!
     if (claimsPublic !== exposure.get(name)) out.add(name)
   }

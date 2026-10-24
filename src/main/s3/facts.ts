@@ -78,7 +78,7 @@ export interface BucketFacts {
   aws: boolean
   head: ReadStatus
   versioning: Dim<{ enabled: boolean; suspended: boolean }>
-  encryption: Dim<{ algorithm: string | null }>
+  encryption: Dim<{ algorithm: string | null; keyArn: string | null }>
   lifecycle: Dim<{
     rules: number
     abortMpu: boolean
@@ -190,7 +190,12 @@ export async function readBucket(
       ? dim(
           c<{
             ServerSideEncryptionConfiguration?: {
-              Rules?: { ApplyServerSideEncryptionByDefault?: { SSEAlgorithm?: string } }[]
+              Rules?: {
+                ApplyServerSideEncryptionByDefault?: {
+                  SSEAlgorithm?: string
+                  KMSMasterKeyID?: string
+                }
+              }[]
             }
           }>(new GetBucketEncryptionCommand({ Bucket: bucket })),
           (data) => {
@@ -198,6 +203,7 @@ export async function readBucket(
             if (!rules.length) return null
             return {
               algorithm: rules[0]?.ApplyServerSideEncryptionByDefault?.SSEAlgorithm ?? null,
+              keyArn: rules[0]?.ApplyServerSideEncryptionByDefault?.KMSMasterKeyID ?? null,
             }
           },
         )

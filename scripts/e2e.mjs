@@ -9,8 +9,10 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron } from 'playwright-core'
+import { createRequire } from 'node:module'
 
 const root = new URL('..', import.meta.url).pathname
+const require = createRequire(import.meta.url)
 execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' })
 const dataDir = mkdtempSync(join(tmpdir(), 'sa-e2e-'))
 const s3Port = 9110
@@ -42,7 +44,7 @@ const app = await electron.launch({
 })
 const page = await app.firstWindow()
 page.on('console', (message) => console.log('[renderer]', message.type(), message.text()))
-page.on('pageerror', (error) => console.log('[pageerror]', error.message))
+page.on('pageerror', (error) => console.log('[pageerror]', error.stack ?? error.message))
 
 const fail = async (message) => {
   await page.waitForTimeout(350)
@@ -58,9 +60,12 @@ const fail = async (message) => {
 try {
   await page.waitForTimeout(1200)
   await page.getByRole('button', { name: 'Set up a model' }).first().click()
-  await page.locator('#modelId').fill('fake-model')
   await page.locator('#baseUrl').fill(`http://127.0.0.1:${modelPort}/v1`)
   await page.locator('#apiKey').fill('test-key')
+  await page.getByRole('button', { name: 'Fetch models' }).click()
+  await page.waitForSelector('select[aria-label="Models"]', { timeout: 5_000 })
+  await page.locator('select[aria-label="Models"]').selectOption('fake-model')
+  console.log('MODEL LIST OK')
   await page.getByRole('button', { name: 'Save', exact: true }).first().click()
   await page.waitForTimeout(600)
   await page.getByRole('button', { name: 'Test', exact: true }).click()
@@ -83,6 +88,9 @@ try {
   if (accounts < 1) await fail('account was not saved')
 
   await page.getByRole('button', { name: 'Close' }).click()
+  await page.waitForSelector('.home-account', { timeout: 5_000 })
+  console.log('HOME OVERVIEW OK')
+
   await page.locator('.composer textarea').fill('Which buckets are public?')
   await page.keyboard.press('Enter')
 
@@ -101,8 +109,54 @@ try {
   await page.locator('.section-head').click()
   await page.waitForSelector('.data-section table', { timeout: 5_000 })
   console.log('EVIDENCE OK')
+  await page.waitForTimeout(200)
+  await page.evaluate(readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8'))
+  const axe = await page.evaluate(async () => {
+    const runner = window.axe
+    return runner.run(document, { resultTypes: ['violations'] })
+  })
+  const severe = axe.violations.filter(
+    (violation) => violation.impact === 'serious' || violation.impact === 'critical',
+  )
+  console.log('A11Y:', axe.violations.length, 'violations;', severe.length, 'serious')
+  for (const violation of severe)
+    console.log(
+      'A11Y NODE:',
+      violation.id,
+      violation.nodes.map((node) => `${node.target.join(' ')} :: ${node.html}`).join(' | '),
+    )
+  if (severe.length) {
+    await fail(
+      `accessibility: ${severe.map((v) => `${v.id} (${v.nodes.length})`).join(', ')}`,
+    )
+  }
   await page.waitForTimeout(350)
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-answer.png') })
+
+  // @ points at a remembered bucket without typing its name.
+  await page.locator('.composer textarea').fill('@demo')
+  await page.waitForSelector('.ref-picker .ref-row', { timeout: 5_000 })
+  await page.locator('.ref-row', { hasText: 'demo-public' }).first().click()
+  await page.waitForSelector('.context-chip', { timeout: 5_000 })
+  console.log('CONTEXT PICKER OK')
+  await page.locator('.context-chip button').click()
+  await page.locator('.composer textarea').fill('')
+
+  // Re-verify is model-free: it re-reads the buckets this task touched.
+  await page.locator('.brief').hover()
+  await page.getByRole('button', { name: 'Re-verify' }).click()
+  await page.waitForSelector('.reverify-section', { timeout: 30_000 })
+  const reverify = await page.locator('.reverify-section').innerText()
+  console.log('REVERIFY:', reverify.replace(/\s+/g, ' ').slice(0, 160))
+
+  // Access paths: policy, ACL, identity, key and analyzer grants in one chain.
+  await page.locator('.composer textarea').fill('Who can read demo-public?')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.access-chain .access-row', { timeout: 60_000 })
+  const access = await page.locator('.access-chain').innerText()
+  console.log('ACCESS OK:', access.replace(/\s+/g, ' ').slice(0, 180))
+  await page.locator('.access-chain').scrollIntoViewIfNeeded()
+  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-access.png') })
 
   // Accepting a risk is the user's call; it folds the finding and survives a reload.
   const encryption = page.locator('.finding-row', { hasText: 'No default encryption' }).first()
@@ -119,6 +173,9 @@ try {
   await page.waitForSelector('.fold.ok .fold-head', { timeout: 10_000 })
   const fixed = await page.locator('.fold.ok .fold-head').innerText()
   console.log('VERIFY OK:', fixed)
+  await page.waitForSelector('.changes-section .change-row', { timeout: 5_000 })
+  const change = await page.locator('.changes-section').innerText()
+  console.log('CHANGES OK:', change.replace(/\s+/g, ' ').slice(0, 160))
   if (await page.locator('.finding-row', { hasText: 'publicly accessible' }).count())
     await fail('a fixed finding is still on the page')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-verified.png') })

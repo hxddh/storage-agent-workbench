@@ -5,11 +5,23 @@ import {
   freshRun,
   groundingCorrection,
   MAX_TOOL_ROUNDS,
+  maxRounds,
+  tierFor,
 } from './agent'
 
 function state(known: string[] = []): AgentState {
-  return { digest: '', language: 'en', runs: new Map([['c', freshRun(known)]]) }
+  return { digest: '', language: 'en', tier: 'mid', runs: new Map([['c', freshRun(known)]]) }
 }
+
+describe('model tiers', () => {
+  it('gives a small context model fewer rounds', () => {
+    expect(tierFor(32_000)).toBe('small')
+    expect(tierFor(128_000)).toBe('mid')
+    expect(tierFor(400_000)).toBe('large')
+    expect(maxRounds('small')).toBeLessThan(MAX_TOOL_ROUNDS)
+    expect(maxRounds('large')).toBeGreaterThan(MAX_TOOL_ROUNDS)
+  })
+})
 
 describe('run guardrails', () => {
   it('blocks a repeated storage read, whatever the key order', () => {

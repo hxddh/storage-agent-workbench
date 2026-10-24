@@ -9,6 +9,7 @@
 import type { ConversationView, EntryRecord } from '@earendil-works/pi-durable'
 import type {
   AttachmentRef,
+  ContextRef,
   Live,
   LiveTool,
   NoticeCode,
@@ -49,7 +50,6 @@ const TOOL_NAMES = new Set<ToolName>([
   'probe',
   'estate',
   'fix',
-  'analyze',
   'note',
   'query',
 ])
@@ -85,13 +85,16 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
     const id = String(entry.id)
     const message = entry.model?.[0] as ModelMessage | undefined
     if (entry.kind === 'sa.user') {
-      const data = entry.data as { text?: string; attachments?: AttachmentRef[] } | undefined
+      const data = entry.data as
+        | { text?: string; attachments?: AttachmentRef[]; context?: ContextRef[] }
+        | undefined
       out.push({
         id,
         kind: 'user',
         at: iso(message?.timestamp),
         text: data?.text ?? '',
         attachments: data?.attachments ?? [],
+        ...(data?.context?.length ? { context: data.context } : {}),
       })
       continue
     }
@@ -151,6 +154,12 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
     }
     if (entry.kind === 'pi.compaction') {
       out.push({ id, kind: 'compaction', at: '', text: 'Earlier steps were compacted.' })
+      continue
+    }
+    if (entry.kind === 'sa.reverify') {
+      const data = entry.data as import('@shared/contract').ReverifyReport | undefined
+      if (data)
+        out.push({ id, kind: 'reverify', at: iso(message?.timestamp) || data.at, report: data })
       continue
     }
     if (entry.kind === 'sa.notice') {

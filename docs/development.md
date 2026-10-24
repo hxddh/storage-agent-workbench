@@ -16,6 +16,10 @@ npm run typecheck    # tsconfig.node.json + tsconfig.web.json
 npm run lint         # Biome
 npm test             # Vitest
 npm run build        # out/{main,preload,renderer}
+npm run budget       # initial renderer bundle under 500 KiB
+xvfb-run -a npm run perf  # cold start to composer under 1 s
+npm run audit        # production dependency audit
+npm run sbom         # CycloneDX SBOM
 npm run dist:dir     # unpacked app in release/
 npm run dist         # installers for the current OS
 ```
@@ -24,18 +28,19 @@ npm run dist         # installers for the current OS
 
 - **Vitest** covers what must not drift: local policy evaluation, exposure, the
   twelve rules and their tri-state evaluation, the account rule, TLS policy
-  detection, the Issue lifecycle (accepted, gone, recurred), the v5 migration,
+  detection, the Issue lifecycle (accepted, gone, recurred), the schema migrations,
   code mode (sandbox, scope, budgets, timeout), demo storage, generated fixes and impact, log
   normalization and IP masking, CSV/Parquet import, the aggregate whitelist,
   the search index and its escaping, the entry → UI projection, the brief's
   current-state folding, verdict grounding, the run guardrails, redaction and
-  the tool floor, and the brief in jsdom.
+  the tool floor, and the brief in jsdom, provider capabilities, posture diffs, permission diagnosis, model windows, access paths and batch fixes.
 - **Domain tests** (`src/main/domain.test.ts`) run the real AWS SDK and the
   real tools over HTTP against `scripts/fake-s3.mjs` profiles — AWS, an
   S3-compatible store without policy status, a denied ACL, a condition-narrowed
   policy, CORS `*`, versioning — into a real SQLite estate.
 - **Compatibility** (`src/main/compat.test.ts`) runs survey against moto, an
-  independent AWS emulator, for exposure and the account-wide block. It runs
+  independent AWS emulator, for exposure, the account-wide block and access
+  reads where the emulator supports them. It runs
   only with `STORAGE_AGENT_AWS_ENDPOINT`; the `compat` CI job starts
   `moto_server`:
 
@@ -49,7 +54,9 @@ npm run dist         # installers for the current OS
   see the running row, open the evidence, accept a risk, apply a fix outside
   the app and verify it, get a grounding correction, ask for a fix, stop a run,
   continue it, search and open a hit, answer a question with code mode, walk
-  findings by keyboard, and open the demo account.
+  findings by keyboard, pick a bucket with `@`, re-verify without a model,
+  export evidence, run axe with zero serious violations, and open the demo
+  account.
 - **Eval** (`scripts/eval.mjs`) runs scenarios against a real model in the real
   window and scores findings, grounding, honesty about blind reads, memory
   first, verify-after-fix, code mode for open questions (largest prefix),
@@ -57,7 +64,7 @@ npm run dist         # installers for the current OS
   the fake model (CI runs it); the `Eval` workflow runs it with a real model on
   demand.
 - **`scripts/shots.mjs`** captures the states that matter under
-  `.amp/in/artifacts`.
+  `.amp/in/artifacts`; `scripts/budget.mjs` enforces the first-paint budget.
 
 Run the E2E headless:
 
@@ -94,6 +101,8 @@ Outputs: `release/linux-unpacked`, `.AppImage`, `.deb`, `.dmg`, `.zip`, `.exe`.
 - Search indexes text only: titles, requests, findings and the current verdict,
   not attachments or object names.
 - No import of data from the previous major version; the database starts empty.
-- The live eval needs a model key; it is not part of CI.
-- The account-level public access block (S3 Control) is not read; exposure
-  details say so.
+- The live eval needs a model key; it is a release gate for a human, not part of
+  pull-request CI.
+- Real-model scoring and signed/notarized installers need external
+  credentials; the repository cannot fabricate them. Everything else is
+  exercised locally.

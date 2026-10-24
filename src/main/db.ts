@@ -3,11 +3,12 @@ import { join } from 'node:path'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 
-export const HOST_SCHEMA_VERSION = 5
+export const HOST_SCHEMA_VERSION = 9
 
 export interface ProviderRow {
   id: string
   name: string
+  kind: string
   endpoint: string
   region: string
   force_path_style: number
@@ -75,6 +76,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS providers (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'aws',
   endpoint TEXT NOT NULL,
   region TEXT NOT NULL,
   force_path_style INTEGER NOT NULL DEFAULT 0,
@@ -141,7 +143,16 @@ CREATE TABLE IF NOT EXISTS task_meta (
   conversation_id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS posture_changes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider_id TEXT NOT NULL,
+  bucket TEXT NOT NULL,
+  at TEXT NOT NULL,
+  changes_json TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS datasets (
@@ -210,6 +221,30 @@ export class AppDb {
       if (!columns.some((c) => c.name === 'account_at'))
         await raw.exec('ALTER TABLE providers ADD COLUMN account_at TEXT')
     }
+    if (version < 6) {
+      // 20.0: search rows gained the source entry id, and old tasks need the
+      // current finding/verdict projection. Clearing rebuilds every task once.
+      await raw.exec('DELETE FROM search_docs')
+    }
+    if (version < 7) {
+      const columns = await raw.all<{ name: string }>('PRAGMA table_info(providers)')
+      if (!columns.some((column) => column.name === 'kind'))
+        await raw.exec("ALTER TABLE providers ADD COLUMN kind TEXT NOT NULL DEFAULT 'aws'")
+    }
+    if (version < 8) {
+      const columns = await raw.all<{ name: string }>('PRAGMA table_info(task_meta)')
+      if (!columns.some((column) => column.name === 'pinned'))
+        await raw.exec('ALTER TABLE task_meta ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
+    }
+    if (version < 9) {
+      await raw.exec(`CREATE TABLE IF NOT EXISTS posture_changes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_id TEXT NOT NULL,
+        bucket TEXT NOT NULL,
+        at TEXT NOT NULL,
+        changes_json TEXT NOT NULL
+      )`)
+    }
     if (version < HOST_SCHEMA_VERSION) {
       await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
     }
@@ -228,16 +263,17 @@ export class AppDb {
 
   async upsertProvider(row: ProviderRow): Promise<void> {
     await this.raw.run(
-      `INSERT INTO providers (id, name, endpoint, region, force_path_style, access_key_id,
+      `INSERT INTO providers (id, name, kind, endpoint, region, force_path_style, access_key_id,
          secret_ref, session_ref, scope_json, created_at, auth, profile)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-         name = excluded.name, endpoint = excluded.endpoint, region = excluded.region,
+         name = excluded.name, kind = excluded.kind, endpoint = excluded.endpoint, region = excluded.region,
          force_path_style = excluded.force_path_style, access_key_id = excluded.access_key_id,
          secret_ref = excluded.secret_ref, session_ref = excluded.session_ref,
          scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile`,
       row.id,
       row.name,
+      row.kind,
       row.endpoint,
       row.region,
       row.force_path_style,
@@ -272,6 +308,7 @@ export class AppDb {
     await this.raw.run('DELETE FROM providers WHERE id = ?', id)
     await this.raw.run('DELETE FROM buckets WHERE provider_id = ?', id)
     await this.raw.run('DELETE FROM issues WHERE provider_id = ?', id)
+    await this.raw.run('DELETE FROM posture_changes WHERE provider_id = ?', id)
   }
 
   // -- buckets --------------------------------------------------------------
@@ -311,6 +348,43 @@ export class AppDb {
         name,
       )
     }
+  }
+
+  async insertChanges(
+    providerId: string,
+    bucket: string,
+    changes: import('@shared/contract').PostureChange[],
+  ): Promise<void> {
+    if (!changes.length) return
+    await this.raw.run(
+      'INSERT INTO posture_changes (provider_id, bucket, at, changes_json) VALUES (?, ?, ?, ?)',
+      providerId,
+      bucket,
+      changes[0]!.at,
+      JSON.stringify(changes),
+    )
+  }
+
+  async listChanges(
+    providerId: string,
+    since?: string | null,
+  ): Promise<import('@shared/contract').PostureChange[]> {
+    const rows = await this.raw.all<{ changes_json: string; at: string }>(
+      since
+        ? 'SELECT changes_json, at FROM posture_changes WHERE provider_id = ? AND at >= ? ORDER BY at DESC LIMIT 200'
+        : 'SELECT changes_json, at FROM posture_changes WHERE provider_id = ? ORDER BY at DESC LIMIT 200',
+      ...(since ? [providerId, since] : [providerId]),
+    )
+    const out: import('@shared/contract').PostureChange[] = []
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.changes_json) as import('@shared/contract').PostureChange[]
+        if (Array.isArray(parsed)) out.push(...parsed)
+      } catch {
+        // A damaged historical row is not a reason to fail the current reading.
+      }
+    }
+    return out.slice(0, 200)
   }
 
   async listBuckets(providerId: string): Promise<BucketRow[]> {
@@ -640,16 +714,25 @@ export class AppDb {
     )
   }
 
+  async setPinned(conversationId: string, pinned: boolean): Promise<void> {
+    await this.raw.run(
+      'UPDATE task_meta SET pinned = ? WHERE conversation_id = ?',
+      pinned ? 1 : 0,
+      conversationId,
+    )
+  }
+
   async listTaskMeta(): Promise<
     {
       conversation_id: string
       title: string
       created_at: string
       updated_at: string
+      pinned: number
     }[]
   > {
     return this.raw.all(
-      'SELECT conversation_id, title, created_at, updated_at FROM task_meta ORDER BY updated_at DESC LIMIT 500',
+      'SELECT conversation_id, title, created_at, updated_at, pinned FROM task_meta ORDER BY pinned DESC, updated_at DESC LIMIT 500',
     )
   }
 
@@ -659,11 +742,12 @@ export class AppDb {
         title: string
         created_at: string
         updated_at: string
+        pinned: number
       }
     | undefined
   > {
     return this.raw.get(
-      'SELECT conversation_id, title, created_at, updated_at FROM task_meta WHERE conversation_id = ?',
+      'SELECT conversation_id, title, created_at, updated_at, pinned FROM task_meta WHERE conversation_id = ?',
       conversationId,
     )
   }

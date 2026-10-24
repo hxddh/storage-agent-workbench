@@ -64,7 +64,7 @@ describe('schema', () => {
     `)
     const db = await AppDb.open(raw)
     const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(5)
+    expect(version?.user_version).toBe(9)
     expect((await db.getProvider('p'))?.auth).toBe('keys')
     expect((await db.getIssue('i'))?.detail).toBeNull()
   })

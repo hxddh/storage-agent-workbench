@@ -7,6 +7,8 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { CloudTrailClient } from '@aws-sdk/client-cloudtrail'
+import { CreateKeyCommand, DescribeKeyCommand, KMSClient } from '@aws-sdk/client-kms'
 import {
   CreateBucketCommand,
   PutBucketAclCommand,
@@ -22,7 +24,9 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { AppDb } from './db'
 import { Estate } from './estate/estate'
 import { emulatorControl, Providers } from './providers'
+import { attribute } from './s3/changes'
 import type { Vault } from './security/vault'
+import { configTool } from './tools/config'
 import { surveyTool } from './tools/survey'
 
 const endpoint = process.env.STORAGE_AGENT_AWS_ENDPOINT
@@ -80,6 +84,7 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     const providers = new Providers(db, vault)
     await providers.save({
       name: 'moto',
+      kind: 'aws',
       endpoint: endpoint!,
       region: 'us-east-1',
       forcePathStyle: true,
@@ -116,6 +121,30 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     expect(publicOf.get('c-public-acl')).toBe('public')
     expect(publicOf.get('c-narrowed')).toBe('no')
     expect(publicOf.get('c-locked')).toBe('no')
+  })
+
+  it('reads access policy paths and tolerates an unavailable analyzer', async () => {
+    const result = await configTool(deps).execute(
+      { bucket: 'c-public-policy', aspect: 'access' } as never,
+      { conversationId: 'c', output: () => undefined, details: async () => undefined } as never,
+      {} as never,
+    )
+    const details = result.details as unknown as ToolDetails
+    if (details.view?.kind !== 'config') throw new Error('expected a config view')
+    expect(details.view.access?.some((item) => item.source === 'policy')).toBe(true)
+    expect(details.view.access?.some((item) => item.public)).toBe(true)
+  })
+
+  it('reads KMS metadata and CloudTrail event history', async () => {
+    const kms = new KMSClient({ region: 'us-east-1', endpoint, credentials })
+    const created = await kms.send(new CreateKeyCommand({ Description: 'compat' }))
+    const keyId = created.KeyMetadata?.KeyId
+    expect(keyId).toBeTruthy()
+    const described = await kms.send(new DescribeKeyCommand({ KeyId: keyId }))
+    expect(described.KeyMetadata?.KeyId).toBe(keyId)
+    const trail = new CloudTrailClient({ region: 'us-east-1', endpoint, credentials })
+    const attribution = await attribute(trail, 'c-public-policy')
+    expect(['ok', 'denied', 'unsupported', 'error']).toContain(attribution.status)
   })
 
   it('reads the account-wide block, and lets it cancel exposure', async () => {

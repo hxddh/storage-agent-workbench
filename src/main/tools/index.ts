@@ -1,5 +1,4 @@
 import type { ToolRegistration } from '@earendil-works/pi-durable'
-import { analyzeTool } from './analyze'
 import { bucketTools } from './browse'
 import { configTool } from './config'
 import { estateTools } from './estate'
@@ -15,7 +14,6 @@ export function createTools(deps: ToolDeps): ToolRegistration[] {
     configTool(deps),
     probeTool(deps),
     ...estateTools(deps),
-    analyzeTool(deps),
     queryTool(deps),
   ] as ToolRegistration[]
 }

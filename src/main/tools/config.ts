@@ -1,21 +1,24 @@
 import { aspectsOf, decide, reviewFindings } from '../estate/rules'
+import { readAccess } from '../s3/access'
+import { readAccount, UNREAD_ACCOUNT } from '../s3/account'
 import { readBucket, rememberable } from '../s3/facts'
+import { accessPermissionGaps, permissionGaps } from '../s3/permissions'
 import { agentTool, assertInScope, bucketParam, providerParam, type ToolDeps, Type } from './policy'
 
-const ASPECTS = ['security', 'lifecycle', 'observability'] as const
+const ASPECTS = ['security', 'lifecycle', 'observability', 'access'] as const
 
 export function configTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'config',
     description:
-      'Review one bucket’s configuration read-only in depth and decide its Issues: exposure (policy, ACL, public access block), CORS, encryption, lifecycle and cleanup, or logging and tags.',
+      'Review one bucket read-only in depth: exposure (policy, ACL, public access block), CORS, encryption, lifecycle and cleanup, logging and tags, or access (who can reach it, from bucket policy, ACL, IAM, KMS and Access Analyzer).',
     parameters: Type.Object({
       provider_id: providerParam,
       bucket: bucketParam,
       aspect: Type.Optional(
         Type.Union(
           ASPECTS.map((aspect) => Type.Literal(aspect)),
-          { description: 'security (default), lifecycle, or observability.' },
+          { description: 'security (default), lifecycle, observability, or access.' },
         ),
       ),
     }),
@@ -26,13 +29,71 @@ export function configTool(deps: ToolDeps) {
       assertInScope(config, args.bucket)
       const aspect = (args.aspect ?? 'security') as (typeof ASPECTS)[number]
       run.progress(`Reading ${aspect}`)
+      const aws = deps.providers.isAws(config)
+      const account =
+        (aspect === 'security' || aspect === 'access') && aws
+          ? await readAccount(
+              deps.providers.sts(config),
+              deps.providers.control(config),
+              run.signal,
+            )
+          : UNREAD_ACCOUNT
       const facts = await readBucket(client, args.bucket, {
-        aspects: new Set([aspect]),
+        aspects: new Set([aspect === 'access' ? 'security' : aspect]),
         signal: run.signal,
         regional: run.regional,
         defaultRegion: config.region,
+        aws,
+        account,
       })
       if (facts.head === 'missing') throw new Error(`Bucket '${args.bucket}' does not exist.`)
+
+      if (aspect === 'access') {
+        const access = await readAccess({
+          bucket: args.bucket,
+          facts,
+          aws,
+          iam: aws && config.caps.iam ? deps.providers.iam(config) : undefined,
+          kms: aws && config.caps.kms ? deps.providers.kms(config, facts.region) : undefined,
+          analyzer:
+            aws && config.caps.accessAnalyzer
+              ? deps.providers.accessAnalyzer(config, facts.region)
+              : undefined,
+          signal: run.signal,
+        })
+        const lines = access.paths.length
+          ? access.paths
+              .slice(0, 20)
+              .map(
+                (item) =>
+                  `${item.source}: ${item.principal} — ${item.actions.join(', ')}${
+                    item.condition ? ` (${item.condition})` : ''
+                  }${item.note ? ` · ${item.note}` : ''}`,
+              )
+          : ['No policy, ACL, identity or key grant was readable for this bucket.']
+        for (const item of access.blind)
+          lines.push(`${item.source} could not be read (${item.status}); access is not complete.`)
+        return {
+          model: lines.join('\n'),
+          note: `${access.paths.length} access path${access.paths.length === 1 ? '' : 's'}${
+            access.blind.length ? ' · partly blind' : ''
+          }`,
+          view: {
+            kind: 'config' as const,
+            bucket: args.bucket,
+            providerId: config.id,
+            aspect: 'access' as const,
+            findings: [],
+            access: access.paths,
+            accessBlind: access.blind,
+            permissions: [
+              ...permissionGaps(facts),
+              ...accessPermissionGaps(args.bucket, access.blind),
+            ],
+            observations: [],
+          },
+        }
+      }
 
       // Only the rules this aspect can see are applied; the others keep their state.
       const wanted = new Set(aspectsOf(aspect))
@@ -54,6 +115,9 @@ export function configTool(deps: ToolDeps) {
       )
 
       const { findings, passed } = reviewFindings(facts, aspect, deps.lang())
+      const issues = (await deps.estate.issueRows(config.id, deps.lang(), 100)).filter(
+        (issue) => issue.bucket === args.bucket,
+      )
       const problems = findings.filter((finding) => finding.severity !== 'blind')
       const blind = findings.filter((finding) => finding.severity === 'blind')
       const lines = problems.length
@@ -74,8 +138,20 @@ export function configTool(deps: ToolDeps) {
           bucket: args.bucket,
           providerId: config.id,
           aspect,
+          ...(aspect === 'security'
+            ? {
+                exposure:
+                  facts.exposure.verdict === null
+                    ? ('unknown' as const)
+                    : facts.exposure.verdict
+                      ? ('public' as const)
+                      : ('not public' as const),
+              }
+            : {}),
           findings,
+          issues,
           observations,
+          permissions: permissionGaps(facts),
         },
       }
     },
@@ -105,6 +181,7 @@ const REMEMBERED: Record<(typeof ASPECTS)[number], string[]> = {
     'lifecycle_noncurrent',
   ],
   observability: ['region', 'logging_status'],
+  access: ['region', 'publicly_exposed', 'encryption_status', 'policy_status', 'acl_status'],
 }
 
 function pick(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {

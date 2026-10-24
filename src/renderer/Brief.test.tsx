@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { IssueRow, TaskView, UiEntry } from '@shared/contract'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Brief } from './Brief'
 
@@ -26,6 +26,7 @@ function view(entries: UiEntry[], extra: Partial<TaskView> = {}): TaskView {
       state: 'ready',
       createdAt: '',
       updatedAt: '',
+      pinned: false,
     },
     entries,
     live: null,
@@ -95,6 +96,8 @@ describe('the brief', () => {
         onOlder={() => undefined}
         onRetry={() => undefined}
         onContinue={() => undefined}
+        onAsk={() => undefined}
+        onReverify={async () => undefined}
       />,
     )
     expect(screen.getByText('Bucket is publicly accessible')).toBeTruthy()
@@ -112,6 +115,8 @@ describe('the brief', () => {
         onOlder={() => undefined}
         onRetry={() => undefined}
         onContinue={() => undefined}
+        onAsk={() => undefined}
+        onReverify={async () => undefined}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Accept risk' }))
@@ -124,12 +129,14 @@ describe('the brief', () => {
         onOlder={() => undefined}
         onRetry={() => undefined}
         onContinue={() => undefined}
+        onAsk={() => undefined}
+        onReverify={async () => undefined}
       />,
     )
     expect(screen.getByRole('button', { name: /1 accepted/ })).toBeTruthy()
   })
 
-  it('marks a name the checks never showed', () => {
+  it('marks a name the checks never showed', async () => {
     render(
       <Brief
         view={view([
@@ -141,9 +148,13 @@ describe('the brief', () => {
         onOlder={() => undefined}
         onRetry={() => undefined}
         onContinue={() => undefined}
+        onAsk={() => undefined}
+        onReverify={async () => undefined}
       />,
     )
-    expect(document.querySelector('.verdict code.ungrounded')?.textContent).toBe('ghost')
+    await waitFor(() =>
+      expect(document.querySelector('.verdict code.ungrounded')?.textContent).toBe('ghost'),
+    )
     expect(screen.getByText('Not every name in this answer appears in a check.')).toBeTruthy()
   })
 
@@ -168,6 +179,8 @@ describe('the brief', () => {
         onOlder={() => undefined}
         onRetry={() => undefined}
         onContinue={onContinue}
+        onAsk={() => undefined}
+        onReverify={async () => undefined}
       />,
     )
     expect(screen.getByText('已停止。已读取的内容会保留。')).toBeTruthy()

@@ -1,8 +1,8 @@
 import type { Table } from '@shared/contract'
 import { generateFix, impactPreview } from '../estate/fixes'
-import { BY_CODE, ruleTitle } from '../estate/rules'
+import { ACCOUNT_SCOPE, BY_CODE, ruleTitle } from '../estate/rules'
 import { redact } from '../security/redact'
-import { agentTool, assertInScope, bucketParam, providerParam, type ToolDeps, Type } from './policy'
+import { agentTool, assertInScope, providerParam, type ToolDeps, Type } from './policy'
 
 function dim(value: unknown): string {
   return value === 'available'
@@ -126,50 +126,97 @@ export function estateTools(deps: ToolDeps) {
     agentTool(deps, {
       name: 'fix',
       description:
-        'Generate the fix text for one Open Issue: an AWS CLI command, a Terraform resource and the API document, plus an impact preview from what the estate already knows. Read-only; the user applies it.',
+        'Generate the fix text for Open Issues: an AWS CLI command, a Terraform resource and the API document, plus an impact preview from what the estate already knows. Omit bucket and code for every open issue, or set either to narrow the batch. Read-only; the user applies it.',
       parameters: Type.Object({
         provider_id: providerParam,
-        bucket: bucketParam,
-        code: Type.String({
-          description: `Issue code, one of: ${[...BY_CODE.keys()].join(', ')}.`,
-        }),
+        bucket: Type.Optional(
+          Type.String({ description: 'Bucket name; omit for every open issue.' }),
+        ),
+        code: Type.Optional(
+          Type.String({
+            description: `Issue code, one of: ${[...BY_CODE.keys()].join(', ')}. Omit for every open issue.`,
+          }),
+        ),
       }),
-      timeoutMs: 20_000,
-      target: (args) => args.bucket,
+      timeoutMs: 30_000,
+      target: (args) => args.bucket ?? args.code ?? 'all issues',
       run: async (args, _run) => {
         const config = await deps.providers.resolve(args.provider_id)
-        assertInScope(config, args.bucket)
-        const issue = await deps.db.findIssue(config.id, args.bucket, args.code)
-        if (!issue || issue.status === 'resolved')
+        const issues = (
+          await deps.db.listIssues({ providerId: config.id, status: 'open', limit: 500 })
+        )
+          .filter((issue) => !args.bucket || issue.bucket === args.bucket)
+          .filter((issue) => !args.code || issue.code === args.code)
+        if (!issues.length)
           throw new Error(
-            `No open Issue '${args.code}' on ${args.bucket}. Survey or review it first.`,
+            `No open Issue${args.code ? ` '${args.code}'` : ''}${args.bucket ? ` on ${args.bucket}` : ''}. Survey or review it first.`,
           )
-        const rule = BY_CODE.get(args.code)
-        if (!rule) throw new Error(`Unknown Issue code: ${args.code}`)
-        const fix = generateFix(rule, args.bucket, config.endpoint || null, config.region || null)
-        if (!fix) {
-          throw new Error(
-            `No safe generated fix exists for '${args.code}' — it depends on intent (policy principals or CORS origins) the rule cannot know.`,
+        const generated: {
+          bucket: string
+          code: string
+          formats: import('@shared/contract').FixFormat[]
+          impact: import('@shared/contract').Impact
+          notes: string[]
+          severity: string
+          title: string
+        }[] = []
+        for (const issue of issues.slice(0, 20)) {
+          if (
+            issue.code !== 'account_public_access_block_missing' ||
+            issue.bucket !== ACCOUNT_SCOPE
           )
+            assertInScope(config, issue.bucket)
+          const rule = BY_CODE.get(issue.code)
+          if (!rule) continue
+          const fix = generateFix(
+            rule,
+            issue.bucket,
+            config.endpoint || null,
+            config.region || null,
+          )
+          if (!fix) continue
+          const posture = await deps.estate.postureOf(config.id, issue.bucket)
+          generated.push({
+            bucket: issue.bucket,
+            code: issue.code,
+            formats: fix.formats,
+            impact: impactPreview(rule, posture, posture?.lifecycle_status === 'available'),
+            notes: fix.notes,
+            severity: issue.severity,
+            title: ruleTitle(rule, deps.lang()),
+          })
         }
-        const posture = await deps.estate.postureOf(config.id, args.bucket)
-        const impact = impactPreview(rule, posture, posture?.lifecycle_status === 'available')
+        if (!generated.length)
+          throw new Error(
+            'No safe generated fix exists for these issues; they depend on intent the rule cannot know.',
+          )
+        const first = generated[0]!
+        const lines = generated.flatMap((item) => [
+          `${item.severity} ${item.title} on ${item.bucket || 'the account'}.`,
+          item.formats[0]?.text ?? '',
+          ...item.notes.map((note) => `note: ${note}`),
+          `Impact: ${item.impact.verdict}. ${item.impact.reasons.join(' ')}`,
+        ])
         return {
-          model: [
-            `${issue.severity} ${ruleTitle(rule, deps.lang())} on ${args.bucket}.`,
-            fix.formats[0]?.text ?? '',
-            ...fix.notes.map((note) => `note: ${note}`),
-            `Impact: ${impact.verdict}. ${impact.reasons.join(' ')}`,
-            ...(impact.gap ? [`Cannot tell: ${impact.gap}`] : []),
-          ].join('\n'),
-          note: impact.verdict,
+          model: lines.join('\n'),
+          note: generated.length === 1 ? first.impact.verdict : `${generated.length} fixes`,
           view: {
             kind: 'fix' as const,
             providerId: config.id,
-            bucket: args.bucket,
-            code: args.code,
-            formats: fix.formats,
-            impact,
+            bucket: first.bucket,
+            code: first.code,
+            formats: first.formats,
+            impact: first.impact,
+            ...(generated.length > 1
+              ? {
+                  batch: generated.slice(1).map((item) => ({
+                    bucket: item.bucket,
+                    code: item.code,
+                    formats: item.formats,
+                    impact: item.impact,
+                  })),
+                }
+              : {}),
           },
         }
       },

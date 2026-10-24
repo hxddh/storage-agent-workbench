@@ -1,9 +1,16 @@
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
-import type { AccountInput, AppSettings, ModelInput, ThinkingLevel } from '@shared/contract'
-import { dialog, ipcMain, nativeTheme, shell } from 'electron'
+import type {
+  AccountInput,
+  AppSettings,
+  ContextRef,
+  ModelInput,
+  ThinkingLevel,
+} from '@shared/contract'
+import { BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import type { App } from './app'
 import { detectLocalModels } from './local-models'
+import { contextFor, listModels } from './model-catalog'
 import { awsProfiles } from './providers'
 
 const PROVIDERS = new Set(['openai', 'anthropic', 'compatible'])
@@ -20,17 +27,27 @@ export function registerIpc(app: App): void {
     app.harness.older(id, before),
   )
 
-  ipcMain.handle('agent:createTask', async (_event, text: string, tokens: string[]) => {
-    const id = await app.harness.newTask(text)
-    const files = await app.staging.consume(tokens, id, app.uploadsFor(id))
-    await app.harness.submit(id, text, files)
-    return app.harness.openTask(id)
-  })
+  ipcMain.handle(
+    'agent:createTask',
+    async (_event, text: string, tokens: string[], context?: ContextRef[]) => {
+      const id = await app.harness.newTask(text)
+      const files = await app.staging.consume(tokens, id, app.uploadsFor(id))
+      await app.harness.submit(id, text, files, context)
+      return app.harness.openTask(id)
+    },
+  )
 
-  ipcMain.handle('agent:send', async (_event, taskId: string, text: string, tokens: string[]) => {
-    const files = await app.staging.consume(tokens, taskId, app.uploadsFor(taskId))
-    await app.harness.submit(taskId, text, files)
-  })
+  ipcMain.handle(
+    'agent:send',
+    async (_event, taskId: string, text: string, tokens: string[], context?: ContextRef[]) => {
+      const files = await app.staging.consume(tokens, taskId, app.uploadsFor(taskId))
+      await app.harness.submit(taskId, text, files, context)
+    },
+  )
+
+  ipcMain.handle('agent:estateRefs', (_event, query: string) =>
+    app.harness.estateRefs(String(query ?? '').slice(0, 120)),
+  )
 
   ipcMain.handle('agent:steer', (_event, taskId: string, text: string) =>
     app.harness.steer(taskId, text),
@@ -39,17 +56,21 @@ export function registerIpc(app: App): void {
   ipcMain.handle('agent:renameTask', (_event, id: string, title: string) =>
     app.harness.rename(id, title),
   )
+  ipcMain.handle('agent:pinTask', (_event, id: string, pinned: boolean) =>
+    app.harness.pin(String(id), Boolean(pinned)),
+  )
   ipcMain.handle('agent:deleteTask', (_event, id: string) => app.harness.deleteTask(id))
   ipcMain.handle('agent:retryTask', (_event, id: string) => app.harness.retry(id))
   ipcMain.handle('agent:continueTask', (_event, id: string) => app.harness.continueTask(id))
+  ipcMain.handle('agent:reverifyTask', (_event, id: string) => app.harness.reverify(id))
   ipcMain.handle('agent:search', (_event, query: string) => app.harness.search(query))
 
   ipcMain.handle(
     'agent:saveText',
-    async (_event, input: { name: string; content: string; kind: 'markdown' | 'csv' }) => {
+    async (_event, input: { name: string; content: string; kind: 'markdown' | 'csv' | 'json' }) => {
       if (typeof input?.content !== 'string' || input.content.length > 10 * 1024 * 1024)
         return false
-      const extension = input.kind === 'csv' ? 'csv' : 'md'
+      const extension = input.kind === 'csv' ? 'csv' : input.kind === 'json' ? 'json' : 'md'
       const result = await dialog.showSaveDialog({
         title: 'Save',
         defaultPath: input.name.endsWith(`.${extension}`)
@@ -58,7 +79,9 @@ export function registerIpc(app: App): void {
         filters: [
           input.kind === 'csv'
             ? { name: 'CSV', extensions: ['csv'] }
-            : { name: 'Markdown', extensions: ['md'] },
+            : input.kind === 'json'
+              ? { name: 'JSON', extensions: ['json'] }
+              : { name: 'Markdown', extensions: ['md'] },
         ],
       })
       if (result.canceled || !result.filePath) return false
@@ -66,6 +89,20 @@ export function registerIpc(app: App): void {
       return true
     },
   )
+
+  ipcMain.handle('agent:exportPdf', async () => {
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    if (!window) return false
+    const result = await dialog.showSaveDialog(window, {
+      title: 'Save PDF',
+      defaultPath: 'storage-agent-brief.pdf',
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })
+    if (result.canceled || !result.filePath) return false
+    const pdf = await window.webContents.printToPDF({ printBackground: true })
+    await writeFile(result.filePath, pdf)
+    return true
+  })
 
   ipcMain.handle('agent:pickFiles', async () => {
     const result = await dialog.showOpenDialog({
@@ -139,8 +176,8 @@ export function registerIpc(app: App): void {
       contextWindow:
         input.contextWindow && input.contextWindow > 0
           ? Math.min(Math.round(input.contextWindow), 10_000_000)
-          : 128_000,
-      thinking: input.thinking && THINKING.has(input.thinking) ? input.thinking : 'off',
+          : contextFor(modelId),
+      thinking: input.thinking && THINKING.has(input.thinking) ? input.thinking : 'medium',
       keyRef,
     })
     app.applyModel()
@@ -153,11 +190,30 @@ export function registerIpc(app: App): void {
 
   ipcMain.handle('agent:testModel', () => app.testModel())
 
+  ipcMain.handle(
+    'agent:listModels',
+    (
+      _event,
+      input: { provider: 'openai' | 'anthropic' | 'compatible'; baseUrl: string; apiKey?: string },
+    ) => {
+      if (!PROVIDERS.has(input?.provider)) throw new Error('Unknown model provider.')
+      const stored = app.settings.get().model
+      const key = input.apiKey?.trim() || (stored ? app.vault.open(stored.keyRef) : '')
+      return listModels({
+        provider: input.provider,
+        baseUrl: String(input.baseUrl ?? ''),
+        apiKey: key,
+      })
+    },
+  )
+
   ipcMain.handle('agent:saveSettings', async (_event, patch: Partial<AppSettings>) => {
     app.settings.patch(patch)
     if (patch.language) app.harness.setLanguage(patch.language)
     if (patch.theme) nativeTheme.themeSource = patch.theme
   })
+
+  ipcMain.handle('agent:markHomeSeen', () => app.markHomeSeen())
 
   ipcMain.handle('agent:notes', () => app.harness.notes())
 

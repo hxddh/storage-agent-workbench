@@ -29,3 +29,6 @@ test-results/
 .idea/
 .vscode/
 *.swp
+
+# ---- Generated SBOM ----
+sbom.json

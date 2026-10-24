@@ -8,7 +8,7 @@ Electron main                            Renderer (sandboxed)
   ipc.ts      the only IPC surface   ⇄    Sidebar / Brief / Composer
   preload     contextBridge, CJS           Settings
   pi-durable  harness, tasks, entries
-  tools       ten read-only tools
+  tools       ten read-only tools; datasets are query primitives
   estate      rules, issues, fixes
   s3          one reading per bucket
   updater     GitHub releases
@@ -68,8 +68,11 @@ lifecycle, observability) and returns typed facts, each with its read status.
 `readBucket()` reads the bucket's region first and switches to that region's
 client when the account spans regions; every client follows region redirects.
 `s3/policy.ts` evaluates the policy document locally, including whether it
-denies plain HTTP. On AWS, `s3/account.ts` reads the account-wide block and
-`s3/metrics.ts` reads CloudWatch capacity; both feed the same facts. `estate/rules.ts` decides
+denies plain HTTP. On AWS, `s3/account.ts` reads the account-wide block, `s3/metrics.ts` reads CloudWatch
+capacity, `s3/changes.ts` diffs the last remembered posture and asks CloudTrail,
+`s3/access.ts` reads policy/ACL/IAM/KMS/Access Analyzer grants, and
+`s3/permissions.ts` turns an access-denied read into the missing action. They
+all feed the same facts. `estate/rules.ts` decides
 the twelve rules (eleven per bucket, one per account) from facts by code; `survey` and `config` both apply the same
 decisions to the estate and attach the observations (`bucket, code, verdict`)
 to their view, which is how the brief knows a finding was proved fixed.
@@ -80,7 +83,8 @@ to their view, which is how the brief knows a finding was proved fixed.
 |---|---|
 | `main/db.ts` | schema, migrations (`user_version`), typed queries |
 | `main/providers.ts` | accounts (keys or AWS profile), regional S3 clients, profile list, connection test |
-| `main/settings.ts` | `settings.json` (language, theme, notify, model, last task) |
+| `main/settings.ts` | `settings.json` (language, theme, notify, stale days, model, last task, last seen) |
+| `main/model-catalog.ts` | provider model list and context-window inference |
 | `main/updater.ts` | `electron-updater` against GitHub releases, packaged builds only |
 | `main/security/vault.ts` | `safeStorage` or AES-256-GCM fallback |
 | `main/security/redact.ts` | credential-shaped text removal, bounding |
@@ -94,7 +98,12 @@ to their view, which is how the brief knows a finding was proved fixed.
 | `main/s3/policy.ts` | local policy evaluation, TLS enforcement |
 | `main/s3/account.ts` | account-wide public access block (STS, S3 Control) |
 | `main/s3/metrics.ts` | CloudWatch capacity, storage class mix, list-price estimate |
-| `main/tools/query.ts` | code mode: read-only primitives in a QuickJS sandbox, budgets |
+| `main/s3/access.ts` | policy/ACL/IAM/KMS/Access Analyzer access paths |
+| `main/s3/changes.ts` | posture diff and CloudTrail attribution |
+| `main/s3/capabilities.ts` | provider capability matrix |
+| `main/s3/permissions.ts` | read status → missing IAM action; read policy |
+| `main/model-catalog.ts` | model list and context-window inference |
+| `main/tools/query.ts` | code mode: read-only primitives, datasets, inventory, budgets |
 | `main/demo/*` | demo storage answered in process through an SDK request handler |
 | `main/local-models.ts` | Ollama and LM Studio detection on localhost |
 | `main/estate/rules.ts` | twelve rules over facts, Security Hub controls, review findings |
@@ -124,6 +133,6 @@ to their view, which is how the brief knows a finding was proved fixed.
 
 ## Deliberate absences
 
-No event-sourcing layer, no second queue, no SSE, no report generator, no trace
-export, no MCP bridge, no skills loader, no subagents, no approval UI, no
-background watch. pi owns the durable loop; the product owns storage semantics.
+No event-sourcing layer, no second queue, no SSE, no report generator, no MCP
+bridge, no skills loader, no subagents, no approval UI, no background watch, no
+second window, no dashboard. pi owns the durable loop; the product owns storage semantics.

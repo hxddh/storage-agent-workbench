@@ -3,6 +3,7 @@ import type {
   BriefData,
   BriefFinding,
   BriefFix,
+  BriefFollowUp,
   Brief as BriefModel,
   BriefNotice,
 } from '@shared/brief'
@@ -19,7 +20,7 @@ import {
 import {
   Activity,
   ArrowDownToLine,
-  BarChart3,
+  AtSign,
   ChevronRight,
   Code2,
   Copy,
@@ -27,18 +28,29 @@ import {
   FileText,
   Link2,
   List,
+  MoreHorizontal,
   Radar,
   Shield,
   StickyNote,
   TriangleAlert,
   Wrench,
 } from 'lucide-react'
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
-import { ChartView, FixView, humanBytes, TableView, ToolViewBody } from './Views'
+import { AccessChain, ChartView, FixView, humanBytes, TableView, ToolViewBody } from './Views'
+
+// Markdown is most of the renderer bundle and is only needed once an answer streams.
+const Markdown = lazy(() => import('./Markdown'))
 
 const ICONS: Record<ToolName, typeof Radar> = {
   survey: Radar,
@@ -49,7 +61,6 @@ const ICONS: Record<ToolName, typeof Radar> = {
   probe: Activity,
   estate: StickyNote,
   fix: Wrench,
-  analyze: BarChart3,
   note: StickyNote,
   query: Code2,
 }
@@ -77,6 +88,53 @@ function ago(iso: string, t: Dict): string | null {
   if (seconds < 3600) return fill(t.minutesAgo, { n: Math.floor(seconds / 60) })
   if (seconds < 86_400) return fill(t.hoursAgo, { n: Math.floor(seconds / 3600) })
   return fill(t.daysAgo, { n: Math.floor(seconds / 86_400) })
+}
+
+function followUpText(question: BriefFollowUp, t: Dict): string {
+  const bucket = question.bucket
+  switch (question.code) {
+    case 'access':
+      return t.followAccess(bucket)
+    case 'principals':
+      return t.followPrincipals(bucket)
+    case 'tls':
+      return t.followTls(bucket)
+    case 'acl':
+      return t.followAcl(bucket)
+    case 'key':
+      return t.followKey(bucket)
+    case 'block':
+      return t.followBlock(bucket)
+    case 'logs':
+      return t.followLogs(bucket)
+    case 'cleanup':
+      return t.followCleanup(bucket)
+    case 'cors':
+      return t.followCors(bucket)
+    case 'changes':
+      return t.followChanges
+    case 'permissions':
+      return t.followPermissions
+    default:
+      return t.followBreakdown
+  }
+}
+
+const FIELD_ZH: Record<string, string> = {
+  'public exposure': '公开访问',
+  encryption: '加密',
+  'public access block': '阻止公共访问',
+  'bucket policy': '存储桶策略',
+  ACL: 'ACL',
+  CORS: 'CORS',
+  'access logging': '访问日志',
+  versioning: '版本控制',
+  lifecycle: '生命周期',
+  'object ownership': '对象所有权',
+}
+
+function changeField(field: string, lang: Lang): string {
+  return lang === 'zh' ? (FIELD_ZH[field] ?? field) : field
 }
 
 function severityLabel(finding: BriefFinding, t: Dict): string {
@@ -152,7 +210,6 @@ function briefMarkdown(title: string, brief: BriefModel, t: Dict, lang: Lang): s
     else if (view.kind === 'survey') parts.push(`## ${t.buckets}`, tableMarkdown(view.buckets))
     else if (view.kind === 'estate' && view.buckets)
       parts.push(`## ${t.buckets} (${t.remembered})`, tableMarkdown(view.buckets))
-    else if (view.kind === 'analyze') parts.push(`## ${view.dataset}`, tableMarkdown(view.rows))
     else if (view.kind === 'buckets' || view.kind === 'objects')
       parts.push(`## ${t.dataTitle}`, tableMarkdown(view.rows))
     else if (view.kind === 'object')
@@ -183,6 +240,7 @@ function FindingRow({
   onOpen,
   onAccept,
   tagMemory = true,
+  staleDays = 7,
 }: {
   finding: BriefFinding
   t: Dict
@@ -190,13 +248,27 @@ function FindingRow({
   onAccept?: () => void
   /** False when every finding is memory and the meta line already says so. */
   tagMemory?: boolean
+  staleDays?: number
 }) {
   const when = finding.source === 'memory' && tagMemory ? ago(finding.readAt, t) : null
+  const stale =
+    finding.source === 'memory' &&
+    Number.isFinite(Date.parse(finding.readAt)) &&
+    Date.now() - Date.parse(finding.readAt) > staleDays * 86_400_000
   return (
     <div
       className="finding-row"
       data-finding-key={finding.key}
       data-source-entry={finding.sourceId}
+      draggable
+      onDragStart={(event) => {
+        const text = `- **${finding.bucket || 'account'}** — ${finding.title}${
+          finding.detail ? `: ${finding.detail}` : ''
+        }${finding.control ? ` (${finding.control})` : ''}`
+        event.dataTransfer.setData('text/markdown', text)
+        event.dataTransfer.setData('text/plain', text)
+        event.dataTransfer.effectAllowed = 'copy'
+      }}
     >
       <button className="finding-main" type="button" onClick={onOpen}>
         <span className={`sev ${finding.severity}`} aria-hidden="true" />
@@ -210,6 +282,7 @@ function FindingRow({
             {finding.source === 'memory' && tagMemory && (
               <span className="memory-tag">
                 {when ? fill(t.rememberedAgo, { when }) : t.remembered}
+                {stale ? ` · ${t.possiblyStale}` : ''}
               </span>
             )}
             {finding.detail ? ` · ${finding.detail}` : ''}
@@ -283,14 +356,6 @@ function DataSection({ data, t }: { data: BriefData; t: Dict }) {
       />
     )
   }
-  if (view.kind === 'analyze') {
-    return (
-      <>
-        {view.chart && <ChartView chart={view.chart} />}
-        <TableView table={view.rows} name={view.dataset} empty={t.noRows} t={t} limit={10} />
-      </>
-    )
-  }
   if (view.kind === 'buckets' || view.kind === 'objects') {
     return (
       <TableView
@@ -301,6 +366,9 @@ function DataSection({ data, t }: { data: BriefData; t: Dict }) {
         limit={10}
       />
     )
+  }
+  if (view.kind === 'config' && view.access) {
+    return <AccessChain paths={view.access} blind={view.accessBlind} t={t} />
   }
   if (view.kind === 'object') {
     if (view.facts.length === 0) return <p className="view-empty">{t.noRows}</p>
@@ -340,11 +408,14 @@ function dataSummary(data: BriefData, t: Dict): string {
     ].join(' · ')
   if (view.kind === 'estate')
     return `${t.memoryData} · ${bucketCount(view.buckets?.rows.length ?? 0, t)}`
-  if (view.kind === 'analyze') return view.dataset
   if (view.kind === 'buckets' || view.kind === 'objects')
     return `${view.rows.rows.length} ${t.rows}`
   if (view.kind === 'object')
     return view.facts.find(([key]) => key.toLowerCase() === 'key')?.[1] ?? ''
+  if (view.kind === 'config') {
+    const count = view.access?.length ?? 0
+    return `${count} ${count === 1 ? t.accessPathOne : t.accessPaths}${view.accessBlind?.length ? ` · ${t.blindShort}` : ''}`
+  }
   return ''
 }
 
@@ -459,6 +530,9 @@ export function Brief({
   onOlder,
   onRetry,
   onContinue,
+  onAsk,
+  onReverify,
+  staleDays = 7,
 }: {
   view: TaskView
   lang: Lang
@@ -466,6 +540,9 @@ export function Brief({
   onOlder: () => void
   onRetry: () => void
   onContinue: () => void
+  onAsk: (text: string) => void
+  onReverify: () => Promise<void>
+  staleDays?: number
 }) {
   const t = dict(lang)
   const brief = useMemo(
@@ -479,8 +556,20 @@ export function Brief({
   const [dataOpen, setDataOpen] = useState<boolean | null>(null)
   const [copied, setCopied] = useState(false)
   const [linked, setLinked] = useState(false)
+  const [reverifying, setReverifying] = useState(false)
+  const [more, setMore] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const focused = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!more) return
+    const close = () => setMore(false)
+    const timer = setTimeout(() => window.addEventListener('click', close, { once: true }), 0)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('click', close)
+    }
+  }, [more])
 
   useEffect(() => {
     setOpenChecks(Boolean(view.live))
@@ -515,7 +604,8 @@ export function Brief({
       return
     }
     if (focusId.startsWith('f:')) {
-      const key = focusId.slice(2)
+      const rest = focusId.slice(2)
+      const key = rest.slice(rest.indexOf(':') + 1)
       if (brief.findings.findIndex((finding) => finding.key === key) >= FINDINGS_SHOWN)
         setAllFindings(true)
       setTimeout(
@@ -545,11 +635,22 @@ export function Brief({
   const pending = brief.coverage.reduce((n, item) => n + item.pending, 0)
   const unread = new Set(brief.coverage.flatMap((item) => [...item.denied, ...item.unknown])).size
   const gone = brief.coverage.flatMap((item) => item.gone)
+  const permissions = [
+    ...new Map(
+      brief.checks
+        .flatMap((check) =>
+          check.view?.kind === 'survey' || check.view?.kind === 'config'
+            ? (check.view.permissions ?? [])
+            : [],
+        )
+        .map((gap) => [`${gap.bucket}:${gap.action}`, gap]),
+    ).values(),
+  ].slice(0, 12)
   const checked = brief.lastReadAt ? ago(brief.lastReadAt, t) : null
   const title = view.task.title
   const hasContent = Boolean(brief.verdict || brief.findings.length || brief.checks.length)
   const answered = brief.findings.length > 0 || brief.accepted.length > 0
-  const dataExpanded = dataOpen ?? !answered
+  const dataExpanded = dataOpen ?? (!answered || brief.data?.view.kind === 'config')
   const ungrounded = new Set(brief.verdict?.ungrounded ?? [])
   const contradicted = new Set(brief.verdict?.contradicted ?? [])
   const shownIssues = brief.findings.length + brief.accepted.length
@@ -558,6 +659,60 @@ export function Brief({
     [...brief.findings, ...brief.accepted, ...brief.resolved].find(
       (finding) => finding.bucket === fix.view.bucket && finding.code === fix.view.code,
     )?.title ?? fix.view.code.replace(/_/g, ' ')
+
+  const reverify = async () => {
+    setReverifying(true)
+    try {
+      await onReverify()
+    } finally {
+      setReverifying(false)
+    }
+  }
+
+  const exportEvidence = () => {
+    const evidence = {
+      generatedAt: new Date().toISOString(),
+      task: { id: view.task.id, title },
+      verdict: brief.verdict,
+      findings: brief.findings.map((finding) => ({
+        bucket: finding.bucket,
+        code: finding.code,
+        title: finding.title,
+        severity: finding.severity,
+        control: finding.control,
+        detail: finding.detail,
+        readAt: finding.readAt,
+        source: finding.source,
+        status: finding.status,
+      })),
+      accepted: brief.accepted.map((finding) => ({
+        bucket: finding.bucket,
+        code: finding.code,
+        title: finding.title,
+        acceptedAt: finding.readAt,
+      })),
+      checks: brief.checks.map((check) => ({
+        id: check.id,
+        tool: check.name,
+        target: check.target,
+        status: check.status,
+        note: check.note,
+        at: check.at,
+        ms: check.ms,
+        view: check.view,
+      })),
+      coverage: brief.coverage,
+      blind: brief.blind,
+      undecided: brief.undecided,
+      changes: brief.changes,
+      reverify: brief.reverify,
+    }
+    void window.agent.saveText({
+      name: safeFileName(`${title}-evidence`, 'json'),
+      content: JSON.stringify(evidence, null, 2),
+      kind: 'json',
+    })
+  }
 
   const copy = async () => {
     if (await copyText(markdown())) {
@@ -610,19 +765,6 @@ export function Brief({
               <button
                 className="text-action"
                 type="button"
-                onClick={async () => {
-                  if (await copyText(`${TASK_LINK_PREFIX}${view.task.id}`)) {
-                    setLinked(true)
-                    setTimeout(() => setLinked(false), 1500)
-                  }
-                }}
-              >
-                <Link2 size={12} aria-hidden="true" />
-                {linked ? t.copied : t.copyLink}
-              </button>
-              <button
-                className="text-action"
-                type="button"
                 onClick={() =>
                   void window.agent.saveText({
                     name: safeFileName(title, 'md'),
@@ -634,9 +776,70 @@ export function Brief({
                 <ArrowDownToLine size={12} aria-hidden="true" />
                 {t.saveBrief}
               </button>
+              <button
+                className="text-action"
+                type="button"
+                disabled={reverifying}
+                onClick={() => void reverify()}
+              >
+                {reverifying ? t.reverifying : t.reverify}
+              </button>
+              <div className="brief-more">
+                <button
+                  className="text-action"
+                  type="button"
+                  aria-label={t.moreActions}
+                  aria-expanded={more}
+                  onClick={() => setMore((value) => !value)}
+                >
+                  <MoreHorizontal size={13} aria-hidden="true" />
+                </button>
+                {more && (
+                  <div className="mini-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={async () => {
+                        setMore(false)
+                        if (await copyText(`${TASK_LINK_PREFIX}${view.task.id}`)) {
+                          setLinked(true)
+                          setTimeout(() => setLinked(false), 1500)
+                        }
+                      }}
+                    >
+                      <Link2 size={13} aria-hidden="true" />
+                      {linked ? t.copied : t.copyLink}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMore(false)
+                        exportEvidence()
+                      }}
+                    >
+                      {t.exportEvidence}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMore(false)
+                        void window.agent.exportPdf()
+                      }}
+                    >
+                      {t.savePdf}
+                    </button>
+                  </div>
+                )}
+              </div>
             </span>
           )}
         </div>
+
+        {live && brief.questions.length > 0 && (
+          <p className="live-request">{brief.questions.at(-1)?.text}</p>
+        )}
 
         <div aria-live="polite" aria-atomic="false">
           {brief.verdict && (
@@ -647,30 +850,32 @@ export function Brief({
               data-verdict
               title={brief.verdict.stale && live ? t.staleVerdict : undefined}
             >
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  code: ({ children, className }) => {
-                    const text = String(children ?? '').trim()
-                    const missing = !className && ungrounded.has(text)
-                    const wrong = !className && contradicted.has(text)
-                    return (
-                      <code
-                        className={
-                          [className, missing || wrong ? 'ungrounded' : '']
-                            .filter(Boolean)
-                            .join(' ') || undefined
-                        }
-                        title={missing ? t.ungroundedHint : wrong ? t.contradictedHint : undefined}
-                      >
-                        {children}
-                      </code>
-                    )
-                  },
-                }}
-              >
-                {brief.verdict.text}
-              </ReactMarkdown>
+              <Suspense fallback={<p>{brief.verdict.text}</p>}>
+                <Markdown
+                  text={brief.verdict.text}
+                  components={{
+                    code: ({ children, className }) => {
+                      const text = String(children ?? '').trim()
+                      const missing = !className && ungrounded.has(text)
+                      const wrong = !className && contradicted.has(text)
+                      return (
+                        <code
+                          className={
+                            [className, missing || wrong ? 'ungrounded' : '']
+                              .filter(Boolean)
+                              .join(' ') || undefined
+                          }
+                          title={
+                            missing ? t.ungroundedHint : wrong ? t.contradictedHint : undefined
+                          }
+                        >
+                          {children}
+                        </code>
+                      )
+                    },
+                  }}
+                />
+              </Suspense>
             </div>
           )}
           {ungrounded.size > 0 && !brief.verdict?.streaming && (
@@ -723,6 +928,7 @@ export function Brief({
                   onOpen={() => revealCheck(finding.sourceId)}
                   onAccept={accept(finding)}
                   tagMemory={!allMemory}
+                  staleDays={staleDays}
                 />
               ))}
             </div>
@@ -757,6 +963,7 @@ export function Brief({
                     t={t}
                     onOpen={() => revealCheck(finding.sourceId)}
                     onAccept={accept(finding)}
+                    staleDays={staleDays}
                   />
                 ))}
               </Fold>
@@ -780,37 +987,141 @@ export function Brief({
           </section>
         )}
 
-        {(unread > 0 || pending > 0 || brief.blind.length > 0 || gone.length > 0) && !live && (
-          <section className="brief-section blind-section" aria-label={t.openQuestions}>
-            {unread > 0 && (
-              <p className="blind">
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                {fill(t.blind, { n: unread })}
-              </p>
-            )}
-            {pending > 0 && (
-              <p className="blind">
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                {fill(t.pendingBuckets, { n: pending })}
-              </p>
-            )}
-            {brief.blind.map((item) => (
-              <p className="blind" key={item.key}>
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                <span className="mono">{item.bucket}</span> · {item.title}
-              </p>
-            ))}
-            {gone.length > 0 && (
-              <p className="quiet">{fill(t.goneBuckets, { names: gone.join(', ') })}</p>
+        {!live && brief.reverify && (
+          <section className="brief-section reverify-section" aria-label={t.reverifyTitle}>
+            <h2>{t.reverifyTitle}</h2>
+            <p className="quiet">
+              {fill(brief.reverify.checked === 1 ? t.reverifyCheckedOne : t.reverifyChecked, {
+                n: brief.reverify.checked,
+                changed: brief.reverify.changes.length,
+              })}{' '}
+              · {new Date(brief.reverify.at).toLocaleString()}
+            </p>
+            {brief.reverify.changes.length === 0 ? (
+              <p className="clean">{t.reverifyNoChange}</p>
+            ) : (
+              <div className="change-list">
+                {brief.reverify.changes.slice(0, 20).map((change) => (
+                  <div className="change-row" key={`${change.bucket}:${change.code}`}>
+                    <span className="change-bucket mono">{change.bucket}</span>
+                    <span className="change-field">{change.title}</span>
+                    <span className="change-before">
+                      {change.before === 'open'
+                        ? t.stateOpen
+                        : change.before === 'clear'
+                          ? t.stateClear
+                          : t.stateUndecided}
+                    </span>
+                    <span className="change-arrow" aria-hidden="true">
+                      →
+                    </span>
+                    <span className="change-after">
+                      {change.after === 'open'
+                        ? t.stateOpen
+                        : change.after === 'clear'
+                          ? t.stateClear
+                          : t.stateUndecided}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
           </section>
         )}
 
-        {!answered && brief.coverage.length > 0 && unread === 0 && pending === 0 && !live && (
-          <section className="brief-section">
-            <p className="clean">{t.noFindingsClean}</p>
+        {!live && brief.changes.length > 0 && (
+          <section className="brief-section changes-section" aria-label={t.changesTitle}>
+            <h2>{t.changesTitle}</h2>
+            <div className="change-list">
+              {brief.changes.slice(0, 12).map((change, index) => (
+                <div className="change-row" key={`${change.bucket}:${change.field}:${index}`}>
+                  <span className="change-bucket mono">{change.bucket}</span>
+                  <span className="change-field">{changeField(change.field, lang)}</span>
+                  <span className="change-before">{change.before}</span>
+                  <span className="change-arrow" aria-hidden="true">
+                    →
+                  </span>
+                  <span className="change-after">{change.after}</span>
+                </div>
+              ))}
+            </div>
+            {brief.attribution && (
+              <p className="quiet">
+                {brief.attribution.events.length
+                  ? brief.attribution.events
+                      .map(
+                        (event) =>
+                          `${event.event} · ${event.actor} · ${new Date(event.at).toLocaleString()}`,
+                      )
+                      .join('  ·  ')
+                  : `${t.attributionUnavailable} (${brief.attribution.status}).`}
+              </p>
+            )}
           </section>
         )}
+
+        {(unread > 0 ||
+          pending > 0 ||
+          permissions.length > 0 ||
+          brief.blind.length > 0 ||
+          brief.undecided.length > 0 ||
+          gone.length > 0) &&
+          !live && (
+            <section className="brief-section blind-section" aria-label={t.openQuestions}>
+              {unread > 0 && (
+                <p className="blind">
+                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                  {fill(t.blind, { n: unread })}
+                </p>
+              )}
+              {pending > 0 && (
+                <p className="blind">
+                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                  {fill(t.pendingBuckets, { n: pending })}
+                </p>
+              )}
+              {brief.undecided.map((item) => (
+                <p className="blind" key={item.code}>
+                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                  {fill(t.undecidedRule, {
+                    n: item.count,
+                    title: item.title,
+                    buckets: item.buckets.slice(0, 6).join(', '),
+                  })}
+                  {item.count > item.buckets.length && item.buckets.length === 20 ? ' …' : ''}
+                </p>
+              ))}
+              {brief.blind.map((item) => (
+                <p className="blind" key={item.key}>
+                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                  <span className="mono">{item.bucket}</span> · {item.title}
+                </p>
+              ))}
+              {permissions.map((gap) => (
+                <p className="blind permission-gap" key={`${gap.bucket}:${gap.action}`}>
+                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                  <span className="mono">{gap.bucket}</span> · {gap.item} ·{' '}
+                  <code>{gap.action}</code>
+                </p>
+              ))}
+              {gone.length > 0 && (
+                <p className="quiet">{fill(t.goneBuckets, { names: gone.join(', ') })}</p>
+              )}
+            </section>
+          )}
+
+        {!answered &&
+          brief.coverage.length > 0 &&
+          unread === 0 &&
+          pending === 0 &&
+          permissions.length === 0 &&
+          brief.undecided.length === 0 &&
+          brief.blind.length === 0 &&
+          !live && (
+            <section className="brief-section">
+              <p className="clean">{t.noFindingsClean}</p>
+            </section>
+          )}
 
         <FixSection fixes={brief.fixes} titleOf={ruleTitle} t={t} />
 
@@ -822,7 +1133,9 @@ export function Brief({
               aria-expanded={dataExpanded}
               onClick={() => setDataOpen(!dataExpanded)}
             >
-              <span className="section-title">{t.dataTitle}</span>
+              <span className="section-title">
+                {brief.data.view.kind === 'config' ? t.accessTitle : t.dataTitle}
+              </span>
               <span className="section-target">{dataSummary(brief.data, t)}</span>
               <ChevronRight size={13} className={`chev ${dataExpanded ? 'open' : ''}`} />
             </button>
@@ -859,7 +1172,25 @@ export function Brief({
           </section>
         )}
 
-        {brief.questions.length > 0 && (
+        {!live && brief.followUps.length > 0 && (
+          <section className="follow-ups" aria-label={t.followUps}>
+            {brief.followUps.map((question) => {
+              const text = followUpText(question, t)
+              return (
+                <button
+                  className="follow-up"
+                  key={question.id}
+                  type="button"
+                  onClick={() => onAsk(text)}
+                >
+                  {text}
+                </button>
+              )
+            })}
+          </section>
+        )}
+
+        {!live && brief.questions.length > 0 && (
           <section className="questions-section">
             <button
               className="questions-head"
@@ -882,8 +1213,17 @@ export function Brief({
                 {brief.questions.map((question) => (
                   <div className="question" key={question.id} data-entry-id={question.id}>
                     <p>{question.text}</p>
-                    {question.attachments.length > 0 && (
+                    {(question.attachments.length > 0 || (question.context?.length ?? 0) > 0) && (
                       <div className="files">
+                        {question.context?.map((item) => (
+                          <span
+                            className="file-chip context-chip"
+                            key={`${item.providerId}:${item.label}`}
+                          >
+                            <AtSign size={11} aria-hidden="true" />
+                            {item.label}
+                          </span>
+                        ))}
                         {question.attachments.map((file) => (
                           <span className="file-chip" key={file.name}>
                             <FileText size={11} aria-hidden="true" />

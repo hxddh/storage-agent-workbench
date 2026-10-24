@@ -2,12 +2,12 @@ import type {
   Account,
   AccountInput,
   Bootstrap,
+  CatalogModel,
   Lang,
   LocalModel,
   ModelProvider,
   NoteRow,
   Theme,
-  ThinkingLevel,
 } from '@shared/contract'
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -16,10 +16,9 @@ import { useFocusTrap } from './lib/focus'
 
 type Provider = ModelProvider
 
-const THINKING: ThinkingLevel[] = ['off', 'low', 'medium', 'high']
-
 const EMPTY_ACCOUNT: AccountInput = {
   name: '',
+  kind: 'auto',
   endpoint: '',
   region: 'us-east-1',
   forcePathStyle: false,
@@ -42,6 +41,18 @@ export function Settings({
 }) {
   const lang = boot.settings.language
   const t = dict(lang)
+  const kindLabel = (kind: Account['kind']) =>
+    kind === 'aws'
+      ? t.kind_aws
+      : kind === 'r2'
+        ? t.kind_r2
+        : kind === 'minio'
+          ? t.kind_minio
+          : kind === 'aliyun'
+            ? t.kind_aliyun
+            : kind === 'gcs'
+              ? t.kind_gcs
+              : t.kind_other
   const [provider, setProvider] = useState<Provider>(
     (boot.model?.provider as Provider) ?? 'compatible',
   )
@@ -49,7 +60,9 @@ export function Settings({
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState(boot.model?.baseUrl ?? '')
   const [contextWindow, setContextWindow] = useState(boot.model?.contextWindow ?? 128_000)
-  const [thinking, setThinking] = useState<ThinkingLevel>(boot.model?.thinking ?? 'off')
+  const [models, setModels] = useState<CatalogModel[]>([])
+  const [modelsBusy, setModelsBusy] = useState(false)
+  const [modelDetail, setModelDetail] = useState('')
   const [profiles, setProfiles] = useState<string[]>([])
   const [localModels, setLocalModels] = useState<LocalModel[]>([])
   const [modelStatus, setModelStatus] = useState<{ ok: boolean; detail: string } | null>(null)
@@ -99,15 +112,35 @@ export function Settings({
         apiKey: apiKey || undefined,
         baseUrl,
         contextWindow,
-        thinking,
+        thinking: 'medium',
       })
       setApiKey('')
-      setModelStatus({ ok: true, detail: 'Saved' })
+      setModelStatus({ ok: true, detail: t.saved })
       await onChanged()
     } catch (error) {
       setModelStatus({ ok: false, detail: error instanceof Error ? error.message : String(error) })
     } finally {
       setModelBusy(false)
+    }
+  }
+
+  const fetchModels = async () => {
+    setModelsBusy(true)
+    setModelDetail('')
+    try {
+      const result = await window.agent.listModels({ provider, baseUrl, apiKey })
+      setModels(result.models)
+      setModelDetail(
+        result.models.length ? `${result.models.length} ${t.modelsFound}` : t.noModelsFound,
+      )
+      if (!modelId && result.models[0]) {
+        setModelId(result.models[0].id)
+        if (result.models[0].contextWindow) setContextWindow(result.models[0].contextWindow)
+      }
+    } catch (error) {
+      setModelDetail(error instanceof Error ? error.message : String(error))
+    } finally {
+      setModelsBusy(false)
     }
   }
 
@@ -131,7 +164,7 @@ export function Settings({
       await onChanged()
       const fresh = await window.agent.bootstrap()
       setAccounts(fresh.accounts)
-      setAccountStatus({ ok: true, detail: 'Saved' })
+      setAccountStatus({ ok: true, detail: t.saved })
     } catch (error) {
       setAccountStatus({
         ok: false,
@@ -152,6 +185,7 @@ export function Settings({
     setForm({
       id: account.id,
       name: account.name,
+      kind: account.kind,
       endpoint: account.endpoint,
       region: account.region,
       forcePathStyle: account.forcePathStyle,
@@ -178,6 +212,11 @@ export function Settings({
 
   const setNotify = async (notify: boolean) => {
     await window.agent.saveSettings({ notify })
+    await onChanged()
+  }
+
+  const setStaleDays = async (staleDays: number) => {
+    await window.agent.saveSettings({ staleDays })
     await onChanged()
   }
 
@@ -221,7 +260,10 @@ export function Settings({
               <select
                 id="provider"
                 value={provider}
-                onChange={(event) => setProvider(event.target.value as Provider)}
+                onChange={(event) => {
+                  setProvider(event.target.value as Provider)
+                  setModels([])
+                }}
               >
                 <option value="openai">{t.providerOpenAI}</option>
                 <option value="anthropic">{t.providerAnthropic}</option>
@@ -230,12 +272,41 @@ export function Settings({
             </div>
             <div className="field">
               <label htmlFor="modelId">{t.modelId}</label>
-              <input
-                id="modelId"
-                value={modelId}
-                placeholder={provider === 'anthropic' ? 'claude-sonnet-5' : 'gpt-6-sol'}
-                onChange={(event) => setModelId(event.target.value)}
-              />
+              <div className="model-pick">
+                <input
+                  id="modelId"
+                  value={modelId}
+                  placeholder={provider === 'anthropic' ? 'claude-sonnet-5' : 'gpt-6-sol'}
+                  onChange={(event) => setModelId(event.target.value)}
+                />
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={modelsBusy}
+                  onClick={() => void fetchModels()}
+                >
+                  {modelsBusy ? t.fetching : t.fetchModels}
+                </button>
+              </div>
+              {models.length > 0 && (
+                <select
+                  aria-label={t.models}
+                  value={modelId}
+                  onChange={(event) => {
+                    const next = event.target.value
+                    setModelId(next)
+                    const found = models.find((model) => model.id === next)
+                    if (found?.contextWindow) setContextWindow(found.contextWindow)
+                  }}
+                >
+                  {models.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.id}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {modelDetail && <span className="hint">{modelDetail}</span>}
             </div>
             <div className="field">
               <label htmlFor="baseUrl">
@@ -266,39 +337,7 @@ export function Settings({
               />
               <span className="hint">{t.keySaved}</span>
             </div>
-            <div className="field">
-              <label htmlFor="contextWindow">{t.contextWindow}</label>
-              <input
-                id="contextWindow"
-                type="number"
-                min={4096}
-                step={1024}
-                value={contextWindow}
-                onChange={(event) => setContextWindow(Number(event.target.value))}
-              />
-            </div>
-            <div className="field">
-              <span className="field-label">{t.thinkingLevel}</span>
-              <div className="segmented">
-                {THINKING.map((level) => (
-                  <button
-                    key={level}
-                    className={thinking === level ? 'active' : ''}
-                    type="button"
-                    onClick={() => setThinking(level)}
-                  >
-                    {level === 'off'
-                      ? t.thinkingOff
-                      : level === 'low'
-                        ? t.thinkingLow
-                        : level === 'medium'
-                          ? t.thinkingMedium
-                          : t.thinkingHigh}
-                  </button>
-                ))}
-              </div>
-              <span className="hint">{t.thinkingHint}</span>
-            </div>
+            <p className="hint">{t.thinkingAuto}</p>
             <div className="account-actions">
               <button
                 className="btn primary"
@@ -333,7 +372,7 @@ export function Settings({
                   <div>
                     <div className="account-name">{account.name}</div>
                     <div className="account-meta">
-                      {account.endpoint || 'AWS'}
+                      {kindLabel(account.kind)} · {account.endpoint || 'AWS'}
                       {account.auth === 'profile' && account.profile
                         ? ` · ${t.profile} ${account.profile}`
                         : account.accessKeyMasked
@@ -392,6 +431,25 @@ export function Settings({
                     placeholder="https://s3.example.com"
                     onChange={(event) => setForm({ ...form, endpoint: event.target.value })}
                   />
+                </div>
+                <div className="field">
+                  <label htmlFor="accKind">{t.providerKind}</label>
+                  <select
+                    id="accKind"
+                    value={form.kind ?? 'auto'}
+                    onChange={(event) =>
+                      setForm({ ...form, kind: event.target.value as AccountInput['kind'] })
+                    }
+                  >
+                    <option value="auto">{t.kind_auto}</option>
+                    <option value="aws">{t.kind_aws}</option>
+                    <option value="r2">{t.kind_r2}</option>
+                    <option value="minio">{t.kind_minio}</option>
+                    <option value="aliyun">{t.kind_aliyun}</option>
+                    <option value="gcs">{t.kind_gcs}</option>
+                    <option value="other">{t.kind_other}</option>
+                  </select>
+                  <span className="hint">{t.providerKindHint}</span>
                 </div>
                 <div className="field">
                   <label htmlFor="accRegion">{t.region}</label>
@@ -549,6 +607,20 @@ export function Settings({
           <section className="section">
             <h3>{t.memory}</h3>
             <p className="hint">{t.memoryHint}</p>
+            <div className="field">
+              <label htmlFor="staleDays">{t.staleAfter}</label>
+              <select
+                id="staleDays"
+                value={boot.settings.staleDays}
+                onChange={(event) => void setStaleDays(Number(event.target.value))}
+              >
+                {[1, 3, 7, 14, 30, 90].map((days) => (
+                  <option key={days} value={days}>
+                    {fill(t.staleDays, { n: days })}
+                  </option>
+                ))}
+              </select>
+            </div>
             {notes.length === 0 ? (
               <p className="hint">{t.noMemory}</p>
             ) : (
@@ -615,6 +687,7 @@ export function Settings({
             </label>
           </section>
 
+          <p className="hint whats-new">{t.whatsNew}</p>
           <p className="hint version-line">
             Storage Agent {boot.version}
             {boot.update.state === 'downloading' &&

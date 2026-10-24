@@ -18,7 +18,7 @@ Defined in `src/renderer/styles.css`. No component uses a raw colour.
 | `--line` | `#e6e2da` | `#2c2a27` |
 | `--accent` | `#3b6ef5` | `#6f95ff` |
 | `--danger` | `#b4423a` | `#e0766c` |
-| `--warn` | `#9a6b1f` | `#d0a25c` |
+| `--warn` | `#8a5d14` | `#d0a25c` |
 | `--ok` | `#2f7d5c` | `#63b08c` |
 
 Every text colour clears WCAG AA on every surface it appears on. `--ink-3` is
@@ -27,7 +27,7 @@ the quietest text that still does: 5.0:1 on `--bg-sunken` in light, 4.9:1 on
 
 ## Type
 
-System UI. 20px for the Home heading, 16px for the verdict, 15px for body and
+System UI. 26px for the Home heading, 16px for the verdict, 15px for body and
 prose, 13px for UI and finding titles, 12px for meta and section labels, 11px
 only for durations. Line height 1.6–1.7 for prose, 1.45 for rows. Prose is
 capped at 66 characters. Mono is used for bucket names, keys and generated text.
@@ -51,11 +51,19 @@ rules because they are data surfaces, not cards.
   edge as the brief.
 - Below 860px the sidebar becomes an overlay; the composer stays.
 
+## Home
+
+A quiet account summary, not a dashboard: one heading, account lines with the
+last read and unresolved risk, a change line and at most three rule-derived
+questions. The composer is in the same place as in a task. No cards, charts or
+large illustration.
+
 ## The brief
 
 Top to bottom: a 12px meta line (`checked 2m ago · 5 findings`) with Copy and
-Save revealed on hover; the verdict; notices; findings; the fix; one data
-section; the checks receipt; the questions disclosure.
+Save revealed on hover; the verdict; notices; findings; changes; the fix; one
+data section (including access paths); the checks receipt; rule-derived next
+checks; the questions disclosure.
 
 Findings use a severity dot, a 14px title and a 12px meta line. There is no
 severity pill. Clicking a finding scrolls to its check and flashes it; **Accept
@@ -65,7 +73,8 @@ the meta line says it once. Accepted risks and what the task fixed are one-line
 folds; the fixed fold is the one place `--ok` colours a label. Data and Checks
 are disclosures; their headers are 12px labels, not buttons that look like
 buttons. A backticked name the checks never showed gets a dashed `--warn`
-border and one quiet line under the verdict.
+underline and one quiet line under the verdict. Names in the verdict are plain
+text, not boxed code chips.
 
 A code-mode result shows its rows as a table or a bar chart, then the script
 and its output folded under them in monospace. Byte columns render as human
@@ -75,7 +84,9 @@ Keyboard: `j`/`k` move between findings, `Enter` opens a finding's check, `a`
 accepts the focused risk. The page has one visually hidden `h1`.
 
 Dropping a file anywhere shows a dashed accent border on the composer and one
-centred line; nothing else on the page moves.
+centred line; nothing else on the page moves. `@` opens one quiet picker above
+the composer; selected names become chips. Home is an account summary with no
+cards; the composer is in the same position there and in a task.
 
 ## Motion
 

@@ -25,9 +25,13 @@ import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
 import type {
   AppEvent,
   AttachmentRef,
+  ContextRef,
+  EstateRef,
   IssueRow,
   NoteRow,
   NoticeCode,
+  ReverifyChange,
+  ReverifyReport,
   SearchHit,
   TaskSummary,
   TaskView,
@@ -36,11 +40,14 @@ import type {
 import { knownExposure, knownNames } from '@shared/grounding'
 import type { AppDb } from '../db'
 import type { Estate } from '../estate/estate'
+import { BY_CODE, decide, ruleTitle } from '../estate/rules'
 import type { Providers } from '../providers'
+import { readAccount, UNREAD_ACCOUNT } from '../s3/account'
+import { readBucket } from '../s3/facts'
 import type { Vault } from '../security/vault'
 import type { Settings } from '../settings'
 import type { ToolDeps } from '../tools/policy'
-import { type AgentState, createAgent, freshRun, MAX_TOOL_ROUNDS, refreshDigest } from './agent'
+import { type AgentState, createAgent, freshRun, maxRounds, refreshDigest, tierFor } from './agent'
 import { installModel, type ModelRef } from './model'
 import { deriveTitle, LiveTracker, mapEntries, usageOf } from './project'
 import { searchDocsFor, searchTasks } from './search'
@@ -98,6 +105,7 @@ export class AgentHarness {
     const state: AgentState = {
       digest: '',
       language: deps.settings.get().language,
+      tier: 'mid',
       runs: new Map(),
     }
     const tools: ToolDeps = {
@@ -122,6 +130,8 @@ export class AgentHarness {
     )
     const instance = new AgentHarness(deps, harness, state, tools)
     instance.applyModel()
+    // A run may start immediately after the window appears; the digest must be
+    // in the prompt, not still loading. It is one small query.
     await refreshDigest(tools, state)
     instance.watchGraph()
     void instance.backfillSearch()
@@ -148,6 +158,7 @@ export class AgentHarness {
     }
     try {
       this.modelRef = installModel(this.deps.models, stored, this.deps.vault)
+      this.state.tier = tierFor(stored.contextWindow)
     } catch {
       this.modelRef = null
     }
@@ -175,13 +186,110 @@ export class AgentHarness {
     await conversation?.waitForIdle(CONTEXT)
   }
 
-  async submit(taskId: string, text: string, attachments: AttachmentRef[]): Promise<void> {
+  async submit(
+    taskId: string,
+    text: string,
+    attachments: AttachmentRef[],
+    context: ContextRef[] = [],
+  ): Promise<void> {
     const conversation = await this.require(taskId)
+    const focus = await this.sanitizeContext(context)
     await this.deps.db.touchTask(taskId)
     await this.run(conversation, {
-      content: withAttachments(text, attachments),
-      entry: { kind: 'sa.user', data: { text, attachments } },
+      content: withAttachments(text, attachments, focus),
+      entry: {
+        kind: 'sa.user',
+        data: { text, attachments, ...(focus.length ? { context: focus } : {}) },
+      },
     })
+  }
+
+  /** Names the user pointed at, checked against the estate and the account scope. */
+  async sanitizeContext(context: ContextRef[]): Promise<ContextRef[]> {
+    if (!Array.isArray(context) || context.length === 0) return []
+    const accounts = await this.deps.providers.list()
+    const out: ContextRef[] = []
+    for (const raw of context.slice(0, 8)) {
+      if (!raw || typeof raw !== 'object') continue
+      const account = accounts.find((item) => item.id === raw.providerId)
+      if (!account) continue
+      if (raw.kind === 'account') {
+        out.push({ kind: 'account', providerId: account.id, label: account.name })
+        continue
+      }
+      const bucket = typeof raw.bucket === 'string' ? raw.bucket : ''
+      if (!bucket || (account.scope.buckets.length && !account.scope.buckets.includes(bucket)))
+        continue
+      const known = (await this.deps.db.listBuckets(account.id)).some((row) => row.name === bucket)
+      if (!known) continue
+      if (raw.kind === 'issue') {
+        const issueId = typeof raw.issueId === 'string' ? raw.issueId : ''
+        const issue = issueId ? await this.deps.db.getIssue(issueId) : undefined
+        if (!issue || issue.provider_id !== account.id) continue
+        out.push({
+          kind: 'issue',
+          providerId: account.id,
+          label: `${issue.bucket || account.name} · ${issue.code.replace(/_/g, ' ')}`.slice(0, 120),
+          bucket,
+          issueId,
+        })
+      } else {
+        out.push({ kind: 'bucket', providerId: account.id, label: bucket, bucket })
+      }
+    }
+    return out
+  }
+
+  async estateRefs(query: string): Promise<EstateRef[]> {
+    const accounts = await this.deps.providers.list()
+    const term = query.trim().toLowerCase()
+    const refs: EstateRef[] = []
+    for (const account of accounts) {
+      if (!term || account.name.toLowerCase().includes(term))
+        refs.push({
+          id: `a:${account.id}`,
+          kind: 'account',
+          providerId: account.id,
+          label: account.name,
+          detail: account.endpoint || 'AWS',
+        })
+      const buckets = (await this.deps.db.listBuckets(account.id))
+        .filter((row) => !term || row.name.toLowerCase().includes(term))
+        .slice(0, 12)
+      for (const bucket of buckets)
+        refs.push({
+          id: `b:${account.id}:${bucket.name}`,
+          kind: 'bucket',
+          providerId: account.id,
+          label: bucket.name,
+          bucket: bucket.name,
+          detail: account.name,
+        })
+      const issues = (
+        await this.deps.db.listIssues({
+          providerId: account.id,
+          status: 'open',
+          limit: 40,
+        })
+      ).filter(
+        (issue) =>
+          !term ||
+          issue.bucket.toLowerCase().includes(term) ||
+          issue.code.toLowerCase().includes(term),
+      )
+      for (const issue of issues.slice(0, 6))
+        refs.push({
+          id: `i:${issue.id}`,
+          kind: 'issue',
+          providerId: account.id,
+          label: `${issue.bucket || account.name} · ${issue.code.replace(/_/g, ' ')}`,
+          bucket: issue.bucket,
+          issueId: issue.id,
+          detail: issue.severity,
+        })
+      if (refs.length >= 24) break
+    }
+    return refs.slice(0, 24)
   }
 
   async steer(taskId: string, text: string): Promise<void> {
@@ -214,8 +322,11 @@ export class AgentHarness {
       .find((entry) => entry.kind === 'user')
     if (last?.kind !== 'user') throw new Error('There is nothing to retry.')
     await this.run(conversation, {
-      content: withAttachments(last.text, last.attachments),
-      entry: { kind: 'sa.user', data: { text: last.text, attachments: last.attachments } },
+      content: withAttachments(last.text, last.attachments, last.context ?? []),
+      entry: {
+        kind: 'sa.user',
+        data: { text: last.text, attachments: last.attachments, context: last.context ?? [] },
+      },
     })
   }
 
@@ -226,6 +337,111 @@ export class AgentHarness {
       content: 'Continue from where you stopped. Do not repeat calls that already finished.',
       entry: { kind: 'sa.continue' },
     })
+  }
+
+  /**
+   * Re-read the buckets this task touched, without a model. It replays the
+   * read-only configuration reading, not the model's prose: the report says
+   * which conclusions changed and which stayed blind.
+   */
+  async reverify(taskId: string): Promise<ReverifyReport> {
+    const conversation = await this.require(taskId)
+    const entries = await this.entries(conversation)
+    const wanted = new Map<string, Set<string>>()
+    for (const entry of entries) {
+      if (entry.kind !== 'tool' || !entry.view) continue
+      const view = entry.view
+      const add = (providerId: string, names: Iterable<string>) => {
+        const set = wanted.get(providerId) ?? new Set<string>()
+        for (const name of names) set.add(name)
+        wanted.set(providerId, set)
+      }
+      if (view.kind === 'survey' && view.providerId)
+        add(
+          view.providerId,
+          view.buckets.rows.map((row) => String(row[0] ?? '')),
+        )
+      else if (view.kind === 'config' && view.providerId) add(view.providerId, [view.bucket])
+      else if (view.kind === 'estate' && view.providerId && view.buckets)
+        add(
+          view.providerId,
+          view.buckets.rows.map((row) => String(row[0] ?? '')),
+        )
+      else if (view.kind === 'query' && view.providerId && view.buckets)
+        add(view.providerId, view.buckets)
+    }
+    if (!wanted.size) throw new Error('This task has no storage reading to re-verify.')
+    const at = new Date().toISOString()
+    const signal = AbortSignal.timeout(120_000)
+    const changes: ReverifyChange[] = []
+    let checked = 0
+    let skipped = 0
+    let opened = 0
+    let resolved = 0
+    let undecided = 0
+    for (const [providerId, buckets] of wanted) {
+      const config = await this.deps.providers.config(providerId).catch(() => null)
+      if (!config) continue
+      const aws = this.deps.providers.isAws(config)
+      const account = aws
+        ? await readAccount(
+            this.deps.providers.sts(config),
+            this.deps.providers.control(config),
+            signal,
+          )
+        : UNREAD_ACCOUNT
+      for (const bucket of [...buckets].filter(Boolean).slice(0, 50)) {
+        if (config.scope.buckets.length && !config.scope.buckets.includes(bucket)) {
+          skipped += 1
+          continue
+        }
+        let facts: Awaited<ReturnType<typeof readBucket>>
+        try {
+          facts = await readBucket(this.deps.providers.client(config), bucket, {
+            aspects: new Set(['security', 'lifecycle']),
+            signal,
+            regional: this.deps.providers.regional(config),
+            defaultRegion: config.region,
+            aws,
+            account,
+          })
+        } catch {
+          skipped += 1
+          continue
+        }
+        checked += 1
+        const decisions = decide(facts, this.deps.settings.get().language)
+        const beforeIssues = new Map<string, Awaited<ReturnType<AppDb['findIssue']>>>()
+        for (const code of Object.keys(decisions))
+          beforeIssues.set(code, await this.deps.db.findIssue(config.id, bucket, code))
+        const applied = await this.deps.estate.apply(config.id, bucket, decisions, taskId)
+        opened += applied.delta.opened
+        resolved += applied.delta.resolved
+        for (const [code, decision] of Object.entries(decisions)) {
+          const rule = BY_CODE.get(code)
+          if (!rule) continue
+          const before = beforeIssues.get(code)
+          const previous: ReverifyChange['before'] =
+            before?.status === 'open' ? 'open' : before?.status === 'accepted' ? 'clear' : 'clear'
+          const after: ReverifyChange['after'] =
+            decision.verdict === null ? 'undecided' : decision.verdict ? 'open' : 'clear'
+          if (after === 'undecided') undecided += 1
+          if (previous !== after)
+            changes.push({
+              bucket,
+              code,
+              title: ruleTitle(rule, this.deps.settings.get().language),
+              before: previous,
+              after,
+            })
+        }
+      }
+    }
+    const report: ReverifyReport = { at, checked, skipped, changes, opened, resolved, undecided }
+    await conversation
+      .submit({ type: 'write', entry: { kind: 'sa.reverify', data: report as never } }, CONTEXT)
+      .catch(() => undefined)
+    return report
   }
 
   async acceptIssue(id: string, accepted: boolean): Promise<void> {
@@ -254,6 +470,11 @@ export class AgentHarness {
   async deleteNote(id: string): Promise<void> {
     await this.deps.db.deleteNote(id)
     await this.refreshEstateDigest()
+  }
+
+  async pin(taskId: string, pinned: boolean): Promise<void> {
+    await this.deps.db.setPinned(taskId, Boolean(pinned))
+    await this.refreshTaskList()
   }
 
   async rename(taskId: string, title: string): Promise<void> {
@@ -294,6 +515,7 @@ export class AgentHarness {
       state: this.stateOf(row.conversation_id),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      pinned: row.pinned === 1,
     }))
   }
 
@@ -309,7 +531,8 @@ export class AgentHarness {
       if (this.active) this.active.entries = entries
       let start = Math.max(0, entries.length - INITIAL_ENTRIES)
       if (focus) {
-        const index = entries.findIndex((entry) => entry.id === focus)
+        const source = focus.startsWith('f:') ? focus.slice(2).split(':')[0] : focus
+        const index = entries.findIndex((entry) => entry.id === source || entry.id === focus)
         if (index >= 0) start = Math.max(0, index - 20)
       }
       const slice = entries.slice(start)
@@ -320,6 +543,7 @@ export class AgentHarness {
           state: this.stateOf(taskId),
           createdAt: meta.created_at,
           updatedAt: meta.updated_at,
+          pinned: meta.pinned === 1,
         },
         entries: slice,
         live: this.live.map(state.value, taskId),
@@ -403,7 +627,7 @@ export class AgentHarness {
       )
     } finally {
       if (outcome === 'failed') this.failed.add(taskId)
-      if ((this.state.runs.get(taskId)?.rounds ?? 0) >= MAX_TOOL_ROUNDS)
+      if ((this.state.runs.get(taskId)?.rounds ?? 0) >= maxRounds(this.state.tier))
         await this.notice(conversation, 'budget', 'warn')
       this.state.runs.delete(taskId)
       await this.deps.db.touchTask(taskId)
@@ -419,6 +643,7 @@ export class AgentHarness {
             state: this.stateOf(taskId),
             createdAt: meta.created_at,
             updatedAt: meta.updated_at,
+            pinned: meta.pinned === 1,
           },
           outcome,
         )
@@ -568,6 +793,7 @@ export class AgentHarness {
           state: this.stateOf(taskId),
           createdAt: meta.created_at,
           updatedAt: meta.updated_at,
+          pinned: meta.pinned === 1,
         },
       })
     })
@@ -578,10 +804,24 @@ export class AgentHarness {
   }
 }
 
-function withAttachments(text: string, attachments: readonly AttachmentRef[]): string {
-  return attachments.length
-    ? `${text}\n\n[attached files: ${attachments.map((file) => file.name).join(', ')}]`
-    : text
+function withAttachments(
+  text: string,
+  attachments: readonly AttachmentRef[],
+  context: readonly ContextRef[] = [],
+): string {
+  const parts = [text]
+  if (attachments.length)
+    parts.push(`[attached files: ${attachments.map((file) => file.name).join(', ')}]`)
+  if (context.length)
+    parts.push(
+      `<untrusted-data source="user-context">\n[Focused names; focus only, not authorization]\n${context
+        .map(
+          (item) =>
+            `${item.kind}: ${item.label}${item.bucket && item.kind !== 'account' ? ` (${item.bucket})` : ''}`,
+        )
+        .join('\n')}\n</untrusted-data>`,
+    )
+  return parts.join('\n\n')
 }
 
 export function harnessDirs(dataDir: string): HarnessDirs {

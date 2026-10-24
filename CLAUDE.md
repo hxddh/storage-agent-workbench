@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for Storage Agent 19.0.0. Read
+> Implementation contract for Storage Agent 20.0.0. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes are history.
@@ -57,18 +57,21 @@ The invariant:
 - `src/main/runtime/project.ts` — entry → UI mapping, live state, usage.
 - `src/main/runtime/search.ts` — sidebar search and the index rows.
 - `src/main/runtime/agent.ts` — the one extension: prompt sections, tools, hooks.
-- `src/main/tools/*` — eleven tools through `agentTool()`, which owns scope,
+- `src/main/tools/*` — ten tools through `agentTool()`, which owns scope,
   bounds, timeout, audit, redaction, status and the envelope.
 - `src/main/s3/facts.ts` — the one reading of a bucket; `s3/policy.ts`
   evaluates a policy document locally; `s3/account.ts` reads the account-wide
-  block; `s3/metrics.ts` reads CloudWatch capacity and prices it.
+  block; `s3/metrics.ts` reads CloudWatch capacity and prices it;
+  `s3/access.ts` reads policy/ACL/IAM/KMS/Analyzer grants;
+  `s3/changes.ts` diffs posture and asks CloudTrail; `s3/capabilities.ts` is the
+  provider matrix; `s3/permissions.ts` maps a denied read to an IAM action.
 - `src/main/estate/*` — eleven bucket rules and one account rule over facts,
-  Issue lifecycle, fixes.
+  Issue lifecycle, fixes (twelve rules total).
 - `src/main/tools/query.ts` — read-only code mode.
 - `src/main/demo/*` — the fake S3 responder; demo storage answers it in
   process (no port), the E2E server puts HTTP around it.
 - `src/main/analysis/*` — CSV/TSV/JSONL/Parquet import and whitelisted
-  aggregates over a per-dataset SQLite file.
+  aggregates, reached through the `query` dataset primitives.
 
 pi-durable owns the durable loop. Do not reimplement it: no event store, no
 second queue, no SSE, no HTTP server. `viewState()`/`watch()` are the stream.
@@ -91,7 +94,7 @@ changes are append-only migrations in `db.ts`, gated by `user_version` (head
 `search_docs` is a derived index (title search reads `task_meta` directly). It
 is rebuilt for a conversation when that conversation settles, and backfilled at
 startup for tasks without rows. It stores the request, the current verdict
-(`entry_id = 'verdict'`) and one row per finding (`f:<key>`).
+(`entry_id = 'verdict'`) and one row per finding (`f:<source entry>:<key>`).
 
 Deleting a task purges `task_meta`, `search_docs`, its pi conversation, entries,
 tasks, submissions, documents and revisions, datasets, audit rows and
@@ -99,12 +102,13 @@ tasks, submissions, documents and revisions, datasets, audit rows and
 
 ## Agent
 
-One extension, eleven tools: `survey`, `buckets`, `objects`, `object`,
-`config`, `probe`, `estate`, `fix`, `analyze`, `note`, `query`. `query` exists
-because questions over many objects or buckets (largest prefixes, data
-untouched for a year, buckets by size) cannot be carried to the model by a
-fixed tool without flooding its context or adding one tool per question.
-Adding a twelfth requires saying why `query` cannot do the job.
+One extension, ten tools: `survey`, `buckets`, `objects`, `object`, `config`,
+`probe`, `estate`, `fix`, `note`, `query`. `query` exists because questions over
+many objects or buckets (largest prefixes, data untouched for a year, buckets by
+size) cannot be carried to the model by a fixed tool without flooding its
+context or adding one tool per question. It also imports attached logs and
+inventories through `dataset` / `aggregate`; there is no separate analyze tool.
+Adding an eleventh requires saying why `query` cannot do the job.
 
 Prompt sections: identity, today, method, answer format, method cards, estate
 digest, language. The model writes only the verdict: at most two sentences, no
@@ -154,7 +158,8 @@ component. Secondary text clears WCAG AA on every surface.
 ## Commands
 
 `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run build`
-· `npm run dist:dir` · `xvfb-run -a node scripts/e2e.mjs`
+· `npm run budget` · `npm run audit` · `npm run sbom` · `npm run dist:dir` ·
+`xvfb-run -a node scripts/e2e.mjs`
 · `xvfb-run -a node scripts/eval.mjs --smoke` (or with `EVAL_*` for a real model)
 · `STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 npx vitest run src/main/compat.test.ts`
 (with `moto_server -p 5055` running)

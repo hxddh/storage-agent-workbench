@@ -21,6 +21,8 @@ import type {
   IssueRow,
   NoticeCode,
   Observation,
+  PostureChange,
+  ReverifyReport,
   Severity,
   ToolName,
   ToolStatus,
@@ -101,7 +103,17 @@ export interface BriefBlind {
   key: string
   bucket: string
   title: string
+  /** The review that found it; a different aspect does not clear it. */
+  aspect: 'security' | 'lifecycle' | 'observability' | 'access'
   sourceId: string
+}
+
+export interface BriefUndecided {
+  code: string
+  title: string
+  /** Up to 20 bucket names; `count` is the full number. */
+  buckets: string[]
+  count: number
 }
 
 export interface BriefQuestion {
@@ -109,6 +121,26 @@ export interface BriefQuestion {
   text: string
   at: string
   attachments: AttachmentRef[]
+  context?: import('./contract').ContextRef[]
+}
+
+/** A deterministic next question, derived from a finding's rule, never from the model. */
+export interface BriefFollowUp {
+  id: string
+  code:
+    | 'access'
+    | 'principals'
+    | 'tls'
+    | 'acl'
+    | 'key'
+    | 'block'
+    | 'logs'
+    | 'cleanup'
+    | 'cors'
+    | 'changes'
+    | 'permissions'
+    | 'breakdown'
+  bucket: string
 }
 
 export interface BriefNotice {
@@ -136,11 +168,19 @@ export interface Brief {
   /** Findings this task saw open and then proved fixed. */
   resolved: BriefFinding[]
   blind: BriefBlind[]
+  undecided: BriefUndecided[]
   data: BriefData | null
   fixes: BriefFix[]
   checks: BriefCheck[]
   coverage: BriefCoverage[]
   questions: BriefQuestion[]
+  followUps: BriefFollowUp[]
+  changes: PostureChange[]
+  reverify: ReverifyReport | null
+  attribution: {
+    status: 'ok' | 'denied' | 'unsupported' | 'error'
+    events: { at: string; event: string; actor: string }[]
+  } | null
   notices: BriefNotice[]
   /** Sum of the current turn's tool durations; null while it has none. */
   durationMs: number | null
@@ -171,8 +211,8 @@ const DATA_KINDS = new Set<ToolView['kind']>([
   'buckets',
   'objects',
   'object',
-  'analyze',
   'estate',
+  'config',
 ])
 const STORAGE_READS = new Set<ToolName>([
   'survey',
@@ -286,6 +326,7 @@ function reviewFinding(
   bucket: string,
   provider: string | null,
   check: BriefCheck,
+  issue?: IssueRow,
 ): BriefFinding {
   const code = finding.code ?? finding.title.toLowerCase()
   return {
@@ -296,9 +337,9 @@ function reviewFinding(
     title: finding.title,
     detail: finding.detail || null,
     severity: finding.severity === 'ok' || finding.severity === 'blind' ? 'low' : finding.severity,
-    control: null,
-    issueId: null,
-    status: 'open',
+    control: issue?.control ?? null,
+    issueId: issue?.id ?? null,
+    status: issue?.status === 'accepted' ? 'accepted' : 'open',
     source: 'read',
     readAt: check.at,
     recurred: 0,
@@ -314,7 +355,14 @@ function applyObservations(set: FindingSet, observations: Observation[] | undefi
   }
 }
 
-function fold(set: FindingSet, blind: Map<string, BriefBlind>, check: BriefCheck): void {
+type UndecidedAccumulator = Map<string, { code: string; title: string; buckets: Set<string> }>
+
+function fold(
+  set: FindingSet,
+  blind: Map<string, BriefBlind>,
+  undecided: UndecidedAccumulator,
+  check: BriefCheck,
+): void {
   const view = check.view
   if (!view) return
   if (view.kind === 'survey') {
@@ -326,9 +374,19 @@ function fold(set: FindingSet, blind: Map<string, BriefBlind>, check: BriefCheck
     if (view.issueTotal === undefined || open >= view.issueTotal)
       set.replaceIssues(provider, null, new Set(view.issues.map((issue) => issue.id)))
     const read = new Set(view.buckets.rows.map((row) => String(row[0])))
+    if (view.accountRead) read.add('')
     for (const issue of view.issues)
       set.set(issueFinding(issue, check, read.has(issue.bucket) ? 'read' : 'memory'))
-    for (const key of [...blind.keys()]) if (read.has(blind.get(key)!.bucket)) blind.delete(key)
+    for (const item of view.undecided ?? []) {
+      const existing = undecided.get(item.code)
+      if (existing) existing.buckets.add(item.bucket)
+      else
+        undecided.set(item.code, {
+          code: item.code,
+          title: item.title,
+          buckets: new Set([item.bucket]),
+        })
+    }
     return
   }
   if (view.kind === 'estate') {
@@ -340,18 +398,73 @@ function fold(set: FindingSet, blind: Map<string, BriefBlind>, check: BriefCheck
   if (view.kind === 'config') {
     const provider = view.providerId ?? null
     applyObservations(set, view.observations)
-    for (const key of [...blind.keys()])
-      if (blind.get(key)!.bucket === view.bucket) blind.delete(key)
+    const aspect = view.aspect ?? 'security'
+    for (const key of [...blind.keys()]) {
+      const item = blind.get(key)!
+      if (item.bucket === view.bucket && item.aspect === aspect) blind.delete(key)
+    }
     for (const finding of view.findings) {
       if (finding.severity === 'ok') continue
       if (finding.severity === 'blind') {
-        const key = `${view.bucket}:${finding.code ?? finding.title}`
-        blind.set(key, { key, bucket: view.bucket, title: finding.title, sourceId: check.id })
+        const key = `${view.bucket}:${aspect}:${finding.code ?? finding.title}`
+        blind.set(key, {
+          key,
+          bucket: view.bucket,
+          title: finding.title,
+          aspect,
+          sourceId: check.id,
+        })
         continue
       }
-      set.set(reviewFinding(finding, view.bucket, provider, check))
+      const issue = view.issues?.find(
+        (item) => item.bucket === view.bucket && item.code === finding.code,
+      )
+      set.set(reviewFinding(finding, view.bucket, provider, check, issue))
     }
   }
+}
+
+/**
+ * Next questions come from rule codes, not the model: the same finding always
+ * offers the same check, and the list never claims anything the page does not show.
+ */
+export function followUpsFor(
+  findings: BriefFinding[],
+  data: BriefData | null,
+  blind: number,
+): BriefFollowUp[] {
+  const questions: BriefFollowUp[] = []
+  const byCode: Record<string, BriefFollowUp['code']> = {
+    public_exposure: 'access',
+    wildcard_principal: 'principals',
+    insecure_transport: 'tls',
+    acls_enabled: 'acl',
+    no_default_encryption: 'key',
+    public_access_block_missing: 'block',
+    account_public_access_block_missing: 'block',
+    access_logging_off: 'logs',
+    no_abort_mpu: 'cleanup',
+    noncurrent_never_expire: 'cleanup',
+    large_standard_only: 'cleanup',
+    no_expiration: 'cleanup',
+    no_transition: 'cleanup',
+    no_tags: 'cleanup',
+    cors_all_origins: 'cors',
+  }
+  for (const finding of findings) {
+    const code = byCode[finding.code]
+    if (!code) continue
+    if (questions.some((item) => item.code === code && item.bucket === finding.bucket)) continue
+    questions.push({ id: `q:${code}:${finding.bucket}`, code, bucket: finding.bucket })
+    if (questions.length >= 3) return questions
+  }
+  if (questions.length < 3 && blind > 0)
+    questions.push({ id: 'q:permissions', code: 'permissions', bucket: '' })
+  if (questions.length < 3 && data?.view.kind === 'survey')
+    questions.push({ id: 'q:changes', code: 'changes', bucket: '' })
+  if (questions.length < 3 && (data?.view.kind === 'query' || data?.view.kind === 'buckets'))
+    questions.push({ id: 'q:breakdown', code: 'breakdown', bucket: '' })
+  return questions.slice(0, 3)
 }
 
 export function buildBrief(
@@ -368,6 +481,7 @@ export function buildBrief(
   let lastQuestionIndex = -1
   const pending: { index: number; notice: BriefNotice }[] = []
 
+  let reverify: ReverifyReport | null = null
   entries.forEach((entry, index) => {
     if (entry.at) lastAt = later(lastAt, entry.at)
     if (entry.kind === 'user') {
@@ -376,6 +490,7 @@ export function buildBrief(
         text: entry.text,
         at: entry.at,
         attachments: entry.attachments,
+        ...(entry.context?.length ? { context: entry.context } : {}),
       })
       boundary = index
       lastQuestionIndex = index
@@ -394,6 +509,8 @@ export function buildBrief(
         at: entry.at,
         view: entry.view,
       })
+    } else if (entry.kind === 'reverify') {
+      reverify = entry.report
     } else if (entry.kind === 'notice') {
       pending.push({
         index,
@@ -425,16 +542,23 @@ export function buildBrief(
 
   const set = new FindingSet()
   const blind = new Map<string, BriefBlind>()
+  const undecided: UndecidedAccumulator = new Map()
   const fixes = new Map<string, BriefFix>()
   const coverage = new Map<string, BriefCoverage>()
   let data: BriefData | null = null
+  let changes: PostureChange[] = []
+  let attribution: Brief['attribution'] = null
   let lastReadAt: string | null = null
   for (const check of checks) {
     if (check.status !== 'done' || !check.view) continue
-    fold(set, blind, check)
+    fold(set, blind, undecided, check)
     if (STORAGE_READS.has(check.name) && check.at) lastReadAt = later(lastReadAt, check.at)
     const view = check.view
-    if (DATA_KINDS.has(view.kind) && !(view.kind === 'estate' && !view.buckets?.rows.length)) {
+    if (
+      DATA_KINDS.has(view.kind) &&
+      !(view.kind === 'estate' && !view.buckets?.rows.length) &&
+      !(view.kind === 'config' && !view.access)
+    ) {
       data = {
         key: check.id,
         kind: view.kind,
@@ -449,8 +573,27 @@ export function buildBrief(
       const key = `${view.bucket}|${view.code}`
       fixes.delete(key)
       fixes.set(key, { key, sourceId: check.id, view, at: check.at })
+      for (const item of view.batch ?? []) {
+        const batchKey = `${item.bucket}|${item.code}`
+        fixes.delete(batchKey)
+        fixes.set(batchKey, {
+          key: batchKey,
+          sourceId: check.id,
+          view: {
+            ...view,
+            bucket: item.bucket,
+            code: item.code,
+            formats: item.formats,
+            impact: item.impact,
+            batch: undefined,
+          },
+          at: check.at,
+        })
+      }
     }
     if (view.kind === 'survey') {
+      changes = view.postureChanges ?? []
+      attribution = view.attribution ?? null
       coverage.set(view.providerId ?? view.provider, {
         provider: view.provider,
         accountBlock: view.account?.pab ?? null,
@@ -525,11 +668,23 @@ export function buildBrief(
     accepted,
     resolved: [...set.resolved.values()],
     blind: [...blind.values()],
+    undecided: [...undecided.values()]
+      .map((item) => ({
+        code: item.code,
+        title: item.title,
+        buckets: [...item.buckets].slice(0, 20),
+        count: item.buckets.size,
+      }))
+      .sort((a, b) => b.count - a.count || a.title.localeCompare(b.title)),
     data,
     fixes: shownFixes,
     checks,
     coverage: [...coverage.values()],
     questions,
+    followUps: followUpsFor(findings, data, blind.size + undecided.size),
+    changes,
+    reverify,
+    attribution,
     notices,
     durationMs,
     lastReadAt,
@@ -547,7 +702,9 @@ export function briefSearchText(
   const docs: { entryId: string; kind: string; text: string; at: string }[] = []
   for (const finding of [...brief.findings, ...brief.accepted]) {
     docs.push({
-      entryId: `f:${finding.key}`,
+      // The source check id travels with the finding so a search hit can load
+      // the entry even when it is older than the window's first page.
+      entryId: `f:${finding.sourceId}:${finding.key}`,
       kind: 'finding',
       text: [finding.bucket, finding.title, finding.detail].filter(Boolean).join(' · '),
       at: finding.at,

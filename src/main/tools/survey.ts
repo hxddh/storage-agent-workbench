@@ -1,9 +1,18 @@
 import { ListBucketsCommand } from '@aws-sdk/client-s3'
-import type { Observation, Table } from '@shared/contract'
-import { ACCOUNT_SCOPE, decide, decideAccount, undecidedRules } from '../estate/rules'
+import type { Observation, PostureChange, Table } from '@shared/contract'
+import {
+  ACCOUNT_SCOPE,
+  BY_CODE,
+  decide,
+  decideAccount,
+  ruleTitle,
+  undecidedRules,
+} from '../estate/rules'
 import { type AccountFacts, readAccount, rememberAccount, UNREAD_ACCOUNT } from '../s3/account'
+import { attribute, diffPosture } from '../s3/changes'
 import { type BucketFacts, readBucket, rememberable } from '../s3/facts'
 import { type Capacity, formatBytes, readCapacity } from '../s3/metrics'
+import { permissionGaps } from '../s3/permissions'
 import { isAbort } from '../s3/status'
 import { agentTool, limitParam, providerParam, type ToolDeps, Type } from './policy'
 
@@ -66,6 +75,15 @@ export function surveyTool(deps: ToolDeps) {
         config.scope.buckets.length === 0 || config.scope.buckets.includes(name)
 
       const remembered = await deps.db.listBuckets(config.id)
+      const previousPosture = new Map<string, Record<string, unknown>>()
+      for (const row of remembered) {
+        if (!row.posture_json) continue
+        try {
+          previousPosture.set(row.name, JSON.parse(row.posture_json) as Record<string, unknown>)
+        } catch {
+          // Ignore a damaged historical row; the next reading replaces it.
+        }
+      }
       const readAt = new Map(remembered.map((row) => [row.name, row.posture_at ?? '']))
       const regionOf = new Map<string, string>()
       for (const row of remembered) if (row.region) regionOf.set(row.name, row.region)
@@ -147,6 +165,7 @@ export function surveyTool(deps: ToolDeps) {
       run.progress(`0 of ${selected.length} buckets`)
 
       const read: BucketFacts[] = []
+      const postureChanges: PostureChange[] = []
       const undecided = new Map<string, string[]>()
       const missing: string[] = []
       let next = 0
@@ -186,6 +205,17 @@ export function surveyTool(deps: ToolDeps) {
             continue
           }
           read.push(facts)
+          const changeAt = new Date().toISOString()
+          const changes = diffPosture(
+            bucket,
+            previousPosture.get(bucket) ?? null,
+            rememberable(facts),
+            changeAt,
+          )
+          if (changes.length) {
+            postureChanges.push(...changes)
+            await deps.db.insertChanges(config.id, bucket, changes)
+          }
           await deps.db.upsertBucket(config.id, bucket, rememberable(facts), facts.region)
           const applied = await deps.estate.apply(
             config.id,
@@ -218,7 +248,41 @@ export function surveyTool(deps: ToolDeps) {
         observations.push(...result.observations)
       }
 
+      let attribution:
+        | {
+            status: 'ok' | 'denied' | 'unsupported' | 'error'
+            events: { at: string; event: string; actor: string }[]
+          }
+        | undefined
+      if (aws && postureChanges.length) {
+        const buckets = [...new Set(postureChanges.map((change) => change.bucket))].slice(0, 6)
+        const looked = await Promise.all(
+          buckets.map((bucket) =>
+            attribute(
+              deps.providers.cloudTrail(config, config.region || 'us-east-1'),
+              bucket,
+              run.signal,
+            ),
+          ),
+        )
+        const rank = { ok: 0, unsupported: 1, denied: 2, error: 3 } as const
+        attribution = {
+          status: looked.reduce<'ok' | 'denied' | 'unsupported' | 'error'>(
+            (worst, item) => (rank[item.status] > rank[worst] ? item.status : worst),
+            'ok',
+          ),
+          events: looked.flatMap((item) => item.events).slice(0, 6),
+        }
+      }
+
       const issues = await deps.estate.issueRows(config.id, deps.lang(), VIEW_ISSUES)
+      const undecidedRows = [...undecided.entries()].flatMap(([bucket, codes]) =>
+        codes.map((code) => ({
+          bucket,
+          code,
+          title: BY_CODE.has(code) ? ruleTitle(BY_CODE.get(code)!, deps.lang()) : code,
+        })),
+      )
       const issueTotal = await deps.db.countOpenIssues(config.id)
       read.sort((a, b) => a.bucket.localeCompare(b.bucket))
       const withCapacity = read.some((facts) => facts.capacity)
@@ -318,6 +382,21 @@ export function surveyTool(deps: ToolDeps) {
       if (refused.length)
         lines.push(`${refused.length} bucket(s) are outside this account's scope.`)
       if (gone.length) lines.push(`No longer listed: ${gone.join(', ')}.`)
+      if (postureChanges.length)
+        lines.push(
+          `Changed since the last reading: ${postureChanges
+            .slice(0, 8)
+            .map((change) => `${change.bucket} ${change.field} ${change.before} → ${change.after}`)
+            .join('; ')}.${
+            attribution
+              ? attribution.events.length
+                ? ` CloudTrail: ${attribution.events
+                    .map((event) => `${event.event} by ${event.actor} at ${event.at}`)
+                    .join('; ')}.`
+                : ` CloudTrail attribution: ${attribution.status}.`
+              : ''
+          }`,
+        )
 
       return {
         model: lines.join('\n'),
@@ -332,9 +411,26 @@ export function surveyTool(deps: ToolDeps) {
           buckets: table,
           issues,
           issueTotal,
+          undecided: undecidedRows,
+          permissions: [
+            ...read.flatMap((facts) => permissionGaps(facts)),
+            ...(aws && account.pab.status === 'access_denied'
+              ? [
+                  {
+                    bucket: '',
+                    item: 'account public access block',
+                    action: 's3:GetAccountPublicAccessBlock',
+                  },
+                ]
+              : []),
+          ],
           observations,
           account: { pab: accountPab },
+          accountRead:
+            aws && (account.pab.status === 'available' || account.pab.status === 'not_configured'),
           capacity: totals,
+          postureChanges: postureChanges.slice(0, 80),
+          ...(attribution ? { attribution } : {}),
           coverage: {
             visible: visible.length,
             processed: read.length,

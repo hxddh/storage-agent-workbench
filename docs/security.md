@@ -29,20 +29,28 @@
    SQLite file; the model receives only aggregates and bounded samples.
 7. **Audit.** Every tool call writes `audit(tool, target, outcome, conversation)`.
    A refused scope call is recorded as `refused`, a stopped one as `stopped`.
+   A re-verification replays only read tools; it never asks the model and never
+   writes storage.
 8. **Status is structured.** A call's status is written by `agentTool()` into
    `details`; nothing parses result text, which a bucket name or an error body
    could forge.
-10. **Code mode.** `query` scripts run in a QuickJS VM in a worker thread with
+9. **Code mode.** `query` scripts run in a QuickJS VM in a worker thread with
    no network, filesystem, process, timers or modules, and with model access
-   off. The six primitives check the account scope on every bucket, call only
-   List, Head and configuration reads, and count against budgets of 2,000
-   calls, 500,000 listed items, 120 seconds and 256 MiB. Returned rows are
-   redacted before the model or the window sees them.
-11. **Account id.** The account-wide block needs the account id (STS); it is
+   off. The nine primitives check the account scope on every bucket, call only
+   List, Head, configuration, inventory and dataset reads, and count against
+   budgets of 2,000 calls, 500,000 listed items, 120 seconds and 256 MiB.
+   Returned rows are redacted before the model or the window sees them.
+10. **Access paths.** Policy and ACL evaluation is local. IAM simulation, KMS
+    key policy and Access Analyzer are bounded, AWS-only reads; a denied read is
+    a blind spot. Scope is checked before the inventory destination is read.
+11. **Evidence.** The JSON pack contains redacted views, finding controls and
+    read timestamps; it is written only through the user's save dialog.
+    Re-verify never calls a write API.
+12. **Account id.** The account-wide block needs the account id (STS); it is
    passed to S3 Control and dropped. Fixes use `<account-id>`.
-12. **Demo storage** answers in process through an SDK request handler: no
+13. **Demo storage** answers in process through an SDK request handler: no
    port is opened and nothing leaves the machine.
-9. **Dropped files.** The preload turns a dropped or pasted `File` into a path
+14. **Dropped files.** The preload turns a dropped or pasted `File` into a path
    with `webUtils.getPathForFile`, which yields nothing for a file the page
    constructed; the main process accepts only absolute paths to regular files
    up to 4 GiB.
@@ -67,7 +75,8 @@
 - **Updates** come from this repository's GitHub releases through
   `electron-updater`, in packaged builds only. Unsigned macOS builds cannot
   update themselves; the release workflow signs and notarizes when its secrets
-  are configured.
+  are configured. Signing is a release requirement, not something the app can
+  prove from inside the build.
 
 ## Not claimed
 

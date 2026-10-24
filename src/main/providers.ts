@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { AccessAnalyzerClient } from '@aws-sdk/client-accessanalyzer'
+import { CloudTrailClient } from '@aws-sdk/client-cloudtrail'
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch'
+import { IAMClient } from '@aws-sdk/client-iam'
+import { KMSClient } from '@aws-sdk/client-kms'
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3'
 import { S3ControlClient } from '@aws-sdk/client-s3-control'
 import { STSClient } from '@aws-sdk/client-sts'
@@ -10,6 +14,7 @@ import { fromIni } from '@aws-sdk/credential-provider-ini'
 import type { Account, AccountInput } from '@shared/contract'
 import type { AppDb, ProviderRow } from './db'
 import { DEMO_ENDPOINT, demoHandler } from './demo/storage'
+import { capabilitiesOf, detectProviderKind, type ProviderCapabilities } from './s3/capabilities'
 import { maskKey } from './security/redact'
 import type { Vault } from './security/vault'
 
@@ -20,6 +25,8 @@ export type Credentials =
 export interface ProviderConfig {
   id: string
   name: string
+  kind: import('./s3/capabilities').ProviderKind
+  caps: ProviderCapabilities
   endpoint: string
   region: string
   forcePathStyle: boolean
@@ -91,7 +98,16 @@ export function emulatorControl(
 
 export class Providers {
   private readonly clients = new Map<string, S3Client>()
-  private readonly services = new Map<string, STSClient | S3ControlClient | CloudWatchClient>()
+  private readonly services = new Map<
+    string,
+    | STSClient
+    | S3ControlClient
+    | CloudWatchClient
+    | IAMClient
+    | KMSClient
+    | AccessAnalyzerClient
+    | CloudTrailClient
+  >()
 
   constructor(
     private readonly db: AppDb,
@@ -103,6 +119,8 @@ export class Providers {
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
+      kind: (row.kind || detectProviderKind(row.endpoint)) as Account['kind'],
+      caps: capabilitiesOf(row.kind || detectProviderKind(row.endpoint)),
       endpoint: row.endpoint,
       region: row.region,
       forcePathStyle: row.force_path_style === 1,
@@ -140,6 +158,11 @@ export class Providers {
     const existing = input.id ? await this.db.getProvider(input.id) : undefined
     const id = existing?.id ?? randomUUID()
     const auth = input.auth === 'profile' ? 'profile' : 'keys'
+    const kinds = new Set(['aws', 'r2', 'minio', 'aliyun', 'gcs', 'other'])
+    const kind =
+      !input.kind || input.kind === 'auto' || !kinds.has(input.kind)
+        ? detectProviderKind(input.endpoint.trim())
+        : input.kind
     let secretRef = ''
     let sessionRef: string | null = null
     let accessKeyId: string | null = null
@@ -163,6 +186,7 @@ export class Providers {
     await this.db.upsertProvider({
       id,
       name: input.name.trim() || 'Storage',
+      kind,
       endpoint: input.endpoint.trim(),
       region: input.region.trim() || 'us-east-1',
       force_path_style: input.forcePathStyle ? 1 : 0,
@@ -186,6 +210,7 @@ export class Providers {
     if (existing) return existing
     return this.save({
       name: 'Demo storage',
+      kind: 'aws',
       endpoint: DEMO_ENDPOINT,
       region: 'us-east-1',
       forcePathStyle: true,
@@ -240,7 +265,8 @@ export class Providers {
 
   /** An AWS account: the account-wide and CloudWatch reads apply. */
   isAws(provider: ProviderConfig): boolean {
-    return !provider.endpoint || (Boolean(AWS_EMULATOR) && provider.endpoint === AWS_EMULATOR)
+    // The provider kind is the explicit answer; the demo endpoint only imitates AWS.
+    return provider.kind === 'aws' && provider.endpoint !== DEMO_ENDPOINT
   }
 
   private credentialsOf(provider: ProviderConfig) {
@@ -255,7 +281,16 @@ export class Providers {
         }
   }
 
-  private service<T extends STSClient | S3ControlClient | CloudWatchClient>(
+  private service<
+    T extends
+      | STSClient
+      | S3ControlClient
+      | CloudWatchClient
+      | IAMClient
+      | KMSClient
+      | AccessAnalyzerClient
+      | CloudTrailClient,
+  >(
     provider: ProviderConfig,
     kind: string,
     region: string,
@@ -290,6 +325,22 @@ export class Providers {
     return this.service(provider, 'cloudwatch', region, (o) => new CloudWatchClient(o))
   }
 
+  iam(provider: ProviderConfig): IAMClient {
+    return this.service(provider, 'iam', 'us-east-1', (o) => new IAMClient(o))
+  }
+
+  kms(provider: ProviderConfig, region: string): KMSClient {
+    return this.service(provider, 'kms', region, (o) => new KMSClient(o))
+  }
+
+  accessAnalyzer(provider: ProviderConfig, region: string): AccessAnalyzerClient {
+    return this.service(provider, 'accessanalyzer', region, (o) => new AccessAnalyzerClient(o))
+  }
+
+  cloudTrail(provider: ProviderConfig, region: string): CloudTrailClient {
+    return this.service(provider, 'cloudtrail', region, (o) => new CloudTrailClient(o))
+  }
+
   /** The regional client factory a reading uses; a custom endpoint has one region. */
   regional(provider: ProviderConfig): ((region: string) => S3Client) | undefined {
     if (provider.endpoint) return undefined
@@ -311,6 +362,8 @@ export class Providers {
     return {
       id: row.id,
       name: row.name,
+      kind: (row.kind || detectProviderKind(row.endpoint)) as Account['kind'],
+      caps: capabilitiesOf(row.kind || detectProviderKind(row.endpoint)),
       endpoint: row.endpoint,
       region: row.region,
       forcePathStyle: row.force_path_style === 1,

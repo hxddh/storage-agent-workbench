@@ -1,7 +1,14 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
-import type { AppEvent, Bootstrap, TaskSummary, UpdateState } from '@shared/contract'
+import type {
+  AppEvent,
+  Bootstrap,
+  EstateOverview,
+  OverviewSuggestion,
+  TaskSummary,
+  UpdateState,
+} from '@shared/contract'
 import { app } from 'electron'
 import { AppDb } from './db'
 import { Estate } from './estate/estate'
@@ -96,9 +103,71 @@ export class App {
           }
         : null,
       settings: this.settings.public(),
+      overview: await this.overview(),
       update: this.update,
       lastTaskId: lastTaskId && tasks.some((task) => task.id === lastTaskId) ? lastTaskId : null,
     }
+  }
+
+  markHomeSeen(): void {
+    this.settings.markSeen()
+  }
+
+  /** A quiet account summary: no dashboard, no chart, no per-bucket table. */
+  async overview(): Promise<EstateOverview> {
+    const accounts = await this.providers.list()
+    const seen = this.settings.get().lastSeenAt
+    const summary = []
+    const suggestions: OverviewSuggestion[] = []
+    let lastRead: string | null = null
+    let changesSince = 0
+    for (const account of accounts) {
+      const buckets = await this.db.listBuckets(account.id)
+      const read = buckets.map((row) => row.posture_at).filter((at): at is string => Boolean(at))
+      const newest = read.sort().at(-1) ?? null
+      if (newest && (!lastRead || newest > lastRead)) lastRead = newest
+      const issues = await this.db.listIssues({
+        providerId: account.id,
+        status: 'open',
+        limit: 1000,
+      })
+      const high = issues.filter((issue) => issue.severity === 'high')
+      summary.push({
+        id: account.id,
+        name: account.name,
+        kind: account.kind,
+        buckets: buckets.length,
+        lastRead: newest,
+        openHigh: high.length,
+        openTotal: issues.length,
+      })
+      if (buckets.length === 0 && issues.length === 0) {
+        suggestions.push({ code: 'survey', bucket: '' })
+        suggestions.push({ code: 'public', bucket: '' })
+      }
+      for (const issue of issues) {
+        if (seen && issue.opened_at > seen) changesSince += 1
+        if (suggestions.length >= 3) continue
+        if (!issue.bucket) continue
+        const code =
+          issue.code === 'public_exposure'
+            ? 'access'
+            : issue.code === 'insecure_transport'
+              ? 'tls'
+              : issue.code === 'no_default_encryption'
+                ? 'key'
+                : issue.code === 'large_standard_only' ||
+                    issue.code === 'no_abort_mpu' ||
+                    issue.code === 'noncurrent_never_expire'
+                  ? 'cleanup'
+                  : 'principals'
+        if (suggestions.some((item) => item.code === code)) continue
+        suggestions.push({ code, bucket: issue.bucket })
+      }
+    }
+    if (suggestions.length < 3) suggestions.push({ code: 'changes', bucket: '' })
+    if (suggestions.length < 3) suggestions.push({ code: 'permissions', bucket: '' })
+    return { accounts: summary, lastRead, changesSince, suggestions: suggestions.slice(0, 3) }
   }
 
   async testModel(): Promise<{ ok: boolean; detail: string }> {

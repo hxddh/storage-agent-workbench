@@ -5,18 +5,24 @@ const api: AgentApi = {
   bootstrap: () => ipcRenderer.invoke('agent:bootstrap'),
   openTask: (id, focus) => ipcRenderer.invoke('agent:openTask', id, focus),
   older: (taskId, before) => ipcRenderer.invoke('agent:older', taskId, before),
-  createTask: (text, attachments) => ipcRenderer.invoke('agent:createTask', text, attachments),
-  send: (taskId, text, attachments) => ipcRenderer.invoke('agent:send', taskId, text, attachments),
+  createTask: (text, attachments, context) =>
+    ipcRenderer.invoke('agent:createTask', text, attachments, context),
+  send: (taskId, text, attachments, context) =>
+    ipcRenderer.invoke('agent:send', taskId, text, attachments, context),
+  estateRefs: (query) => ipcRenderer.invoke('agent:estateRefs', query),
   steer: (taskId, text) => ipcRenderer.invoke('agent:steer', taskId, text),
   stop: (taskId) => ipcRenderer.invoke('agent:stop', taskId),
   renameTask: (taskId, title) => ipcRenderer.invoke('agent:renameTask', taskId, title),
+  pinTask: (taskId, pinned) => ipcRenderer.invoke('agent:pinTask', taskId, pinned),
   deleteTask: (taskId) => ipcRenderer.invoke('agent:deleteTask', taskId),
   retryTask: (taskId) => ipcRenderer.invoke('agent:retryTask', taskId),
   continueTask: (taskId) => ipcRenderer.invoke('agent:continueTask', taskId),
+  reverifyTask: (taskId) => ipcRenderer.invoke('agent:reverifyTask', taskId),
   search: (query) => ipcRenderer.invoke('agent:search', query),
   notes: () => ipcRenderer.invoke('agent:notes'),
   deleteNote: (id) => ipcRenderer.invoke('agent:deleteNote', id),
   saveText: (input) => ipcRenderer.invoke('agent:saveText', input),
+  exportPdf: () => ipcRenderer.invoke('agent:exportPdf'),
   pickFiles: () => ipcRenderer.invoke('agent:pickFiles'),
   // Only a real dropped or pasted file has a path; a File the page constructs has none.
   stageFiles: (files) =>
@@ -33,9 +39,11 @@ const api: AgentApi = {
   deleteAccount: (id) => ipcRenderer.invoke('agent:deleteAccount', id),
   testAccount: (id) => ipcRenderer.invoke('agent:testAccount', id),
   saveModel: (input) => ipcRenderer.invoke('agent:saveModel', input),
+  listModels: (input) => ipcRenderer.invoke('agent:listModels', input),
   clearModel: () => ipcRenderer.invoke('agent:clearModel'),
   testModel: () => ipcRenderer.invoke('agent:testModel'),
   saveSettings: (patch) => ipcRenderer.invoke('agent:saveSettings', patch),
+  markHomeSeen: () => ipcRenderer.invoke('agent:markHomeSeen'),
   openExternal: (url) => ipcRenderer.invoke('agent:openExternal', url),
   onEvent: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, value: AppEvent) => listener(value)

@@ -30,15 +30,28 @@ writes, deletes or changes anything in storage.
   tags, ACL and a bounded text preview.
 - Generates fixes as text — AWS CLI, Terraform and the API document — with an
   impact preview built only from what the estate already knows.
-- Analyzes an attached access log or object inventory (CSV, TSV, JSONL, Parquet)
-  and answers whitelisted aggregates. Raw rows never reach the model.
+- Reads access paths: bucket policy and ACL locally, bounded IAM simulation,
+  KMS key policy and Access Analyzer findings. A blind read is named, not
+  turned into an empty grant list.
+- Compares each survey with the last remembered posture and, on AWS, asks
+  CloudTrail who changed it. A denied lookup leaves the actor unknown.
+- Re-verifies a task without a model: it re-reads the buckets the task touched
+  and reports what changed. Findings, controls, timestamps and redacted views
+  export as an evidence pack; the brief saves as PDF.
+- Imports an attached access log or S3 Inventory through code mode (`dataset`,
+  `aggregate`, `inventory`); raw rows never reach the model.
 - Shows each tool call where it happens, with real progress, and keeps it as
   the receipt behind every finding; every table can be copied as CSV or saved,
   the whole brief as Markdown. Every bucket the answer names is checked against
   what the tools returned, and so is every claim that a bucket is or is not
   public.
 - Starts without setup: demo storage answers in process, and models already
-  running on this machine (Ollama, LM Studio) are one click away.
+  running on this machine (Ollama, LM Studio) are one click away. Home is a
+  quiet account summary, not a dashboard. `@` points at a remembered account,
+  bucket or issue; the names are focus, not authorization.
+- Sets the model in one step: fetch the provider's models, infer the context
+  window and leave reasoning automatic. A small model gets shorter method
+  cards and a smaller tool budget.
 - Searches task titles, questions, findings and the current answer with ⌘K;
   failed or stopped runs offer Retry or Continue.
 
@@ -53,7 +66,7 @@ model and the accounts.
 ┌──────────────────────────── Electron ────────────────────────────┐
 │  renderer (React)                    main                        │
 │  tasks · brief · composer     ⇄ IPC ⇄  pi-durable harness        │
-│                                        ├ 11 read-only tools      │
+│                                        ├ 10 read-only tools      │
 │                                        ├ estate (rules/issues)   │
 │                                        └ pi-ai → model           │
 │                              one SQLite: pi_* + host tables      │
@@ -81,6 +94,10 @@ npm run typecheck
 npm run lint
 npm test
 npm run build
+npm run budget       # first-paint bundle under 500 KiB
+xvfb-run -a npm run perf  # cold start under 1 s
+npm run audit
+npm run sbom
 npm run dist:dir     # unpacked app under release/
 ```
 
@@ -107,9 +124,10 @@ stored, shown or sent. See [docs/security.md](docs/security.md).
 Twelve rules are not a compliance scanner: they are the checks a reading can
 decide without guessing intent.
 
-No message editing or version trees, no Evidence side pane, no report or trace
-export, no MCP bridge, no user skills, no standing instructions, no subagents,
-no background watch, no S3 log download (attach the log instead), and no import
-of the previous app's data.
+No message editing or version trees, no Evidence side pane, no MCP bridge, no
+user skills, no standing instructions, no subagents, no background watch, no S3
+log download (attach the log instead), no write/apply action, no dashboard, no
+second window and no import of the previous app's data. A fix is text the user
+applies.
 
 License: Apache-2.0.

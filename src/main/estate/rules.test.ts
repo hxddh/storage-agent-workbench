@@ -17,7 +17,7 @@ function facts(overrides: Partial<BucketFacts> = {}): BucketFacts {
     aws: true,
     head: 'available',
     versioning: { status: 'available', value: { enabled: false, suspended: false } },
-    encryption: { status: 'available', value: { algorithm: 'AES256' } },
+    encryption: { status: 'available', value: { algorithm: 'AES256', keyArn: null } },
     lifecycle: {
       status: 'available',
       value: {
@@ -81,6 +81,34 @@ describe('policy evaluation', () => {
       }),
     )
     expect(facts).toMatchObject({ wildcardPrincipal: true, conditional: true, publicRead: false })
+  })
+
+  it('does not let a wildcard condition value hide public access', () => {
+    const anyIp = evaluatePolicy(
+      policy({
+        Effect: 'Allow',
+        Principal: '*',
+        Action: 's3:GetObject',
+        Condition: { IpAddress: { 'aws:SourceIp': '0.0.0.0/0' } },
+      }),
+    )
+    expect(anyIp.publicRead).toBe(true)
+    const anyOrg = evaluatePolicy(
+      policy({
+        Effect: 'Allow',
+        Principal: '*',
+        Action: 's3:GetObject',
+        Condition: { StringLike: { 'aws:PrincipalOrgID': '*' } },
+      }),
+    )
+    expect(anyOrg.publicRead).toBe(true)
+  })
+
+  it('counts a public destructive bucket action as public write', () => {
+    expect(
+      evaluatePolicy(policy({ Effect: 'Allow', Principal: '*', Action: 's3:DeleteBucket' }))
+        .publicWrite,
+    ).toBe(true)
   })
 
   it('keeps a non-restricting condition public', () => {

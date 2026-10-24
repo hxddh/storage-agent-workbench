@@ -6,7 +6,7 @@ import type { ToolDetails, ToolName, ToolView } from '@shared/contract'
 import type { AppDb } from '../db'
 import type { Estate } from '../estate/estate'
 import type { ProviderConfig, Providers } from '../providers'
-import { bound, redact } from '../security/redact'
+import { bound, redact, redactView } from '../security/redact'
 
 export interface ToolDeps {
   db: AppDb
@@ -114,7 +114,7 @@ export function agentTool<T extends TSchema>(
         const details: ToolDetails = {
           target: redact(result.target ?? target),
           note: result.note ? redact(result.note) : null,
-          view: result.view,
+          view: redactView(result.view) as ToolView,
           ms: Date.now() - started,
           status: 'done',
         }

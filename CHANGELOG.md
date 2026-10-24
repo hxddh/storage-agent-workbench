@@ -1,5 +1,69 @@
 # Changelog
 
+## 20.0.0
+
+From answering a question to keeping an account legible. The window stays one
+task, one brief and one composer; the agent gains the reads and receipts that
+make a conclusion checkable.
+
+### Added
+
+- **Re-verify, without a model.** The task re-reads the buckets it touched and
+  writes a report of what changed. No prose is regenerated; blind reads stay
+  blind and are counted.
+- **Evidence pack.** Findings, controls, read timestamps, the redacted tool
+  views and the re-verification report export as JSON in one action.
+- **Access paths.** `config` aspect `access` reads the bucket policy and ACL
+  locally, simulates bounded IAM identities, reads a KMS key policy when the
+  bucket uses SSE-KMS, and attaches Access Analyzer findings. A denied read is
+  a blind spot, not an empty grant list.
+- **Changes and attribution.** A survey compares its reading with the last
+  remembered posture, records the differences, and asks CloudTrail who made
+  them. A denied lookup is reported as unknown, never as nobody.
+- **S3 Inventory.** Code mode reads the latest inventory manifest and a bounded
+  page of CSV or Parquet rows, for buckets ListObjects cannot enumerate cheaply.
+- **Batch fixes.** Omit bucket and code to generate one fix per open issue class;
+  the page still shows each change as text the user applies.
+- **Provider capability matrix.** AWS, R2, MinIO, Aliyun OSS, GCS interop and a
+  generic S3-compatible provider each declare which account, IAM, KMS,
+  CloudTrail, inventory and policy-status reads exist.
+- **Permission diagnosis.** An access-denied read names the exact IAM action it
+  needs; a provider capability gap does not pretend to be a missing permission.
+- **Model setup in one step.** Fetch the provider's models, infer the context
+  window, and leave reasoning on automatic. No hand-typed context window.
+- **Model tiers.** Small, mid and large context models get different prompt
+  detail and tool-round budgets.
+- **A home that is an estate summary.** Accounts, last read, unresolved risk,
+  changes since the last visit and three questions derived from open issues.
+- **Pinned tasks, Today/Earlier groups, relative times and a state dot.**
+- **`@` context.** Point at a remembered account, bucket or issue; the names
+  travel with the request as focus, never as authorization.
+- **Rule-derived next checks.** Two or three questions come from finding codes,
+  not from the model, and clicking one asks it.
+- **Freshness.** Remembered findings older than a configurable number of days
+  are marked possibly stale.
+- **More native.** macOS vibrancy, Windows Mica, notification Open action,
+  drag a finding out as Markdown, and Save PDF.
+- **Dependency audit, SBOM, bundle budget and axe in CI.**
+- **Analysis belongs to code mode.** The separate file-analysis tool is gone:
+  `dataset` and `aggregate` are query primitives, so the product has ten tools.
+
+### Changed
+
+- Schema head 9: provider kind, pinned tasks and posture changes.
+- The brief's inline names are text, not code chips; the activity line is still
+  a receipt, and the composer remains in one position.
+- The first paint ships only Home, the sidebar and the composer; Markdown,
+  Brief and Settings load on demand. Initial JavaScript is under 500 KiB.
+- Re-verification and evidence export are quiet actions on the brief, not a
+  second screen.
+
+### Removed
+
+- `analyze` as a tool (moved into `query`).
+- Hand-entered context-window and thinking controls.
+- The separate `home`/`empty` visual language.
+
 ## 19.0.0
 
 From a checker to an agent that can answer the question asked. Same product —

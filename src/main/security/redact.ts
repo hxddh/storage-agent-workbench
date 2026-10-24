@@ -39,6 +39,21 @@ export function redactDeep(value: unknown, depth = 0): unknown {
   return null
 }
 
+/** Walk a tool view and redact every string without dropping rows or columns. */
+export function redactView(value: unknown, depth = 0): unknown {
+  if (depth > 8) return null
+  if (typeof value === 'string') return redact(value)
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+  if (Array.isArray(value)) return value.map((item) => redactView(item, depth + 1))
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(value as Record<string, unknown>))
+      out[key] = redactView(item, depth + 1)
+    return out
+  }
+  return null
+}
+
 /** Keep a tool result bounded for the model. */
 export function bound(text: string, max = 24_000): string {
   if (text.length <= max) return text

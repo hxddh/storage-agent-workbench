@@ -1,12 +1,14 @@
-import type { AppEvent, Bootstrap, TaskSummary, TaskView } from '@shared/contract'
+import type { AppEvent, Bootstrap, ContextRef, TaskSummary, TaskView } from '@shared/contract'
 import { Menu } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Brief } from './Brief'
 import { Composer } from './Composer'
+import { Home } from './Home'
 import { dict } from './i18n'
 
-// Settings is a sheet most launches never open; it loads on first use.
+// Settings is a sheet most launches never open; the brief and its Markdown
+// bundle load when a task opens. Home and the composer are the first paint.
 const Settings = lazy(() => import('./Settings').then((module) => ({ default: module.Settings })))
+const Brief = lazy(() => import('./Brief').then((module) => ({ default: module.Brief })))
 
 import { Sidebar } from './Sidebar'
 
@@ -28,6 +30,7 @@ export function App() {
   const [fatal, setFatal] = useState(false)
   const [searchSignal, setSearchSignal] = useState(0)
   const restored = useRef(false)
+  const seenHome = useRef(false)
 
   const lang = boot?.settings.language ?? 'en'
   const t = useMemo(() => dict(lang), [lang])
@@ -102,7 +105,8 @@ export function App() {
   const newTask = useCallback(() => {
     setView(null)
     setSidebarOpen(false)
-  }, [])
+    void refresh()
+  }, [refresh])
 
   const viewRef = useRef(view)
   viewRef.current = view
@@ -119,6 +123,10 @@ export function App() {
       if (command === 'stop') {
         const current = viewRef.current
         if (current?.live) void window.agent.stop(current.task.id)
+      }
+      if (command === 'reverify') {
+        const current = viewRef.current
+        if (current && !current.live) void window.agent.reverifyTask(current.task.id)
       }
     })
   }, [newTask])
@@ -150,11 +158,11 @@ export function App() {
     if (boot.lastTaskId) void openTaskRef.current(boot.lastTaskId).catch(() => undefined)
   }, [boot])
 
-  const submit = async (text: string, tokens: string[]) => {
+  const submit = async (text: string, tokens: string[], context: ContextRef[] = []) => {
     if (view) {
-      await window.agent.send(view.task.id, text, tokens)
+      await window.agent.send(view.task.id, text, tokens, context)
     } else {
-      const created = await window.agent.createTask(text, tokens)
+      const created = await window.agent.createTask(text, tokens, context)
       setView(created)
       void refresh()
     }
@@ -190,12 +198,16 @@ export function App() {
     void refresh()
   }
 
+  useEffect(() => {
+    if (!boot || view || seenHome.current) return
+    if (!restored.current && boot.lastTaskId) return
+    seenHome.current = true
+    void window.agent.markHomeSeen()
+  }, [boot, view])
+
   if (fatal) {
     return <div className="fatal">{t.fatal}</div>
   }
-
-  const hasModel = Boolean(boot?.model)
-  const hasAccount = (boot?.accounts.length ?? 0) > 0
 
   return (
     <div className="app">
@@ -210,6 +222,7 @@ export function App() {
         onSettings={() => setSettingsOpen(true)}
         onRename={(id, title) => void rename(id, title)}
         onDelete={(id) => void remove(id)}
+        onPin={(id, pinned) => void window.agent.pinTask(id, pinned)}
         searchSignal={searchSignal}
       />
       <main className="main">
@@ -226,47 +239,36 @@ export function App() {
               </button>
               <span className="task-title">{view.task.title}</span>
             </div>
-            <Brief
-              key={view.task.id}
-              view={view}
-              lang={lang}
-              focusId={focusId}
-              onOlder={() => void older()}
-              onRetry={() => void window.agent.retryTask(view.task.id)}
-              onContinue={() => void window.agent.continueTask(view.task.id)}
-            />
+            <Suspense fallback={null}>
+              <Brief
+                key={view.task.id}
+                view={view}
+                lang={lang}
+                focusId={focusId}
+                onOlder={() => void older()}
+                onRetry={() => void window.agent.retryTask(view.task.id)}
+                onContinue={() => void window.agent.continueTask(view.task.id)}
+                onAsk={(text) => void submit(text, [], [])}
+                onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
+                staleDays={boot?.settings.staleDays ?? 7}
+              />
+            </Suspense>
           </>
-        ) : (
-          <div className="empty">
-            <h1>{t.emptyTitle}</h1>
-            {hasModel && hasAccount ? (
-              <p>{t.emptyHint}</p>
-            ) : (
-              <div className="setup">
-                <button className="btn" type="button" onClick={() => setSettingsOpen(true)}>
-                  {!hasModel ? t.setModel : t.addAccount}
-                </button>
-                {hasModel && !hasAccount && (
-                  <button
-                    className="btn ghost"
-                    type="button"
-                    title={t.demoHint}
-                    onClick={async () => {
-                      await window.agent.addDemoAccount()
-                      await refresh()
-                    }}
-                  >
-                    {t.tryDemo}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+        ) : boot ? (
+          <Home
+            boot={boot}
+            onSend={(text) => void submit(text, [], [])}
+            onSetup={() => setSettingsOpen(true)}
+            onTryDemo={async () => {
+              await window.agent.addDemoAccount()
+              await refresh()
+            }}
+          />
+        ) : null}
         <Composer
           lang={lang}
           modelLabel={boot?.model?.modelId ?? null}
-          hasModel={hasModel}
+          hasModel={Boolean(boot?.model)}
           live={view?.live ?? null}
           onSend={submit}
           onSteer={steer}

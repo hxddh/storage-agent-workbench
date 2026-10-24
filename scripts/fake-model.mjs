@@ -26,6 +26,9 @@ function plan(body) {
     if (ask.includes('applied')) {
       return { tool: call('call_verify_1', 'survey', { buckets: ['demo-public'] }) }
     }
+    if (ask.includes('who can read')) {
+      return { tool: call('call_access_1', 'config', { bucket: 'demo-public', aspect: 'access' }) }
+    }
     if (ask.includes('largest')) {
       return {
         tool: call('call_query_1', 'query', {
@@ -42,11 +45,21 @@ function plan(body) {
     }
     return { tool: call('call_survey_1', 'survey', {}) }
   }
-  if (toolMessages.length === 1 && ask.includes('public') && !ask.includes('fix') && !ask.includes('issue') && !ask.includes('largest')) {
+  if (
+    toolMessages.length === 1 &&
+    ask.includes('public') &&
+    !ask.includes('who can read') &&
+    !ask.includes('fix') &&
+    !ask.includes('issue') &&
+    !ask.includes('largest')
+  ) {
     return { tool: call('call_config_1', 'config', { bucket: 'demo-public', aspect: 'security' }) }
   }
   if (ask.includes('applied')) {
     return { text: '`demo-public` is no longer public; the fix took.' }
+  }
+  if (ask.includes('who can read')) {
+    return { text: 'The public bucket policy is the anonymous grant on `demo-public`.' }
   }
   if (ask.includes('largest')) {
     return { text: '`reports/` holds everything in `demo-public`.' }
@@ -75,6 +88,11 @@ function chunk(res, payload) {
 }
 
 const server = createServer((req, res) => {
+  if (req.method === 'GET' && req.url?.includes('/models')) {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ data: [{ id: 'fake-model' }] }))
+    return
+  }
   if (req.method !== 'POST' || !req.url?.includes('/chat/completions')) {
     res.writeHead(404, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ error: { message: 'not found' } }))

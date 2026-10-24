@@ -16,7 +16,9 @@ brief.
    not a wizard. A downloaded update shows one line there.
 
 The composer is docked at the foot of the window on every screen, including
-Home. Home is an empty task: one heading, one hint when setup is missing.
+Home. Home is a quiet estate summary: account names, the last read, unresolved
+risk, changes since the last visit and at most three questions derived from open
+issues. It is not a dashboard and has no charts or cards.
 
 ## A task
 
@@ -58,7 +60,7 @@ contradict the tools.
 - **Not read** — buckets whose exposure stayed undecided, buckets a stopped
   survey did not reach, and review blind spots.
 - **Data** — the latest tabular result: bucket posture, an object list, object
-  facts, or an analysis table and chart. Up to ten rows, then `N more`. It is
+  facts, or a query table and chart. Up to ten rows, then `N more`. It is
   open by default when there are no findings, because then it is the answer; a
   findings page keeps it folded.
 - **Fix** — the generated formats, the impact verdict and its reasons; the
@@ -69,9 +71,46 @@ contradict the tools.
   duration, folded to a receipt with the run's time and tokens. This is the
   evidence chain, not a debug pane: views already on the page do not open again
   here, and calls the harness refused to repeat are not listed.
+- **Changes** — when a survey differs from the last remembered posture, the
+  changed fields are shown with before/after. On AWS CloudTrail names the actor;
+  a denied lookup says the actor is unknown.
+- **Re-verification** — a model-free replay of the buckets the task read. It
+  reports which conclusions changed and which stayed blind, with a timestamp.
+- **Evidence pack / PDF** — findings with their control, read time and redacted
+  reading export as JSON; the page can also be saved as PDF.
 - **Questions** — the requests behind the page, folded into one line.
 
-There are no suggestions, next steps, follow-up chips or chat bubbles.
+There are no chat bubbles and no model-written next steps. Two or three quiet
+next checks are derived from finding codes by the window; clicking one asks it.
+They are not a claim about storage.
+
+## Pointing at the estate
+
+Type `@` in the composer to choose a remembered account, bucket or issue. The
+names become chips and travel with the request as focus. Focus is not
+authorization: the provider's bucket/prefix scope remains the only security
+boundary, and the request is validated against the estate before it is sent.
+
+## Access, changes and inventory
+
+`config` aspect `access` answers who can reach a bucket: bucket policy and ACL
+locally, bounded IAM identity simulation, the KMS key policy for SSE-KMS, and
+Access Analyzer findings. A blind read is named; it is not an empty grant list.
+
+A survey diffs its reading against the last remembered posture. On AWS it asks
+CloudTrail who changed the bucket. The page shows the difference and the actor,
+or says the actor is unknown.
+
+When a bucket publishes S3 Inventory, code mode reads the latest manifest and a
+bounded page of CSV or Parquet rows. This is how the agent answers questions
+about buckets with hundreds of millions of objects without paging them.
+
+## Model fit
+
+The provider reports its models in Settings; the context window is inferred and
+reasoning is automatic. Small context models get shorter method cards and a
+14-round budget; mid and large models get 24 and 32. The answer format does not
+change.
 
 ## Honesty
 
@@ -153,7 +192,8 @@ linked as `storage-agent://task/<id>`; the link opens it.
 ## Fixes
 
 `fix` generates the AWS CLI command, a Terraform resource and the API document,
-targeting the account's endpoint and region. The bucket name must match
+targeting the account's endpoint and region. Omit bucket and code to generate
+one fix per open issue class; each is still text the user applies. The bucket name must match
 `[A-Za-z0-9][A-Za-z0-9._-]{0,254}`; anything else has no safe fix. The impact
 preview uses the recorded posture and says what it cannot tell. Storage Agent
 never applies a fix.

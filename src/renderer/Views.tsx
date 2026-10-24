@@ -119,6 +119,56 @@ export function TableView({
   )
 }
 
+function actionLabel(action: string): string {
+  const value = action.toLowerCase()
+  if (value.includes('decrypt')) return 'decrypt'
+  if (value.includes('getobject')) return 'read'
+  if (value.includes('listbucket')) return 'list'
+  if (value.includes('putobject') || value.includes('deleteobject')) return 'write'
+  if (value.includes('put') || value.includes('delete')) return 'change'
+  return action.replace(/^s3:/, '')
+}
+
+export function AccessChain({
+  paths,
+  blind,
+  t,
+}: {
+  paths: NonNullable<Extract<ToolView, { kind: 'config' }>['access']>
+  blind?: { source: string; status: string }[]
+  t: Dict
+}) {
+  if (paths.length === 0 && !blind?.length) return <p className="view-empty">{t.noAccess}</p>
+  return (
+    <div className="access-chain">
+      {paths.map((item, index) => (
+        <div className="access-row" key={`${item.source}:${item.principal}:${index}`}>
+          <span className={`access-source ${item.source}`}>
+            {item.source === 'access-analyzer' ? 'analyzer' : item.source}
+          </span>
+          <span className="access-principal" title={item.condition ?? undefined}>
+            {item.principal}
+          </span>
+          <span className="access-arrow" aria-hidden="true">
+            →
+          </span>
+          <span className="access-actions">
+            {[...new Set(item.actions.map(actionLabel))].join(' / ')}
+          </span>
+          {item.public && <span className="access-public">{t.public}</span>}
+          {item.note && <span className="access-note">{item.note}</span>}
+        </div>
+      ))}
+      {blind?.map((item) => (
+        <p className="blind" key={item.source}>
+          <TriangleAlert size={12} strokeWidth={1.7} aria-hidden="true" />
+          {item.source} · {item.status}
+        </p>
+      ))}
+    </div>
+  )
+}
+
 function Issues({ issues, t }: { issues: IssueRow[]; t: Dict }) {
   if (issues.length === 0) return <p className="view-sub">{t.noIssues}</p>
   return (
@@ -282,6 +332,7 @@ export function ToolViewBody({
     )
   }
   if (view.kind === 'config') {
+    if (view.access) return <AccessChain paths={view.access} blind={view.accessBlind} t={t} />
     if (view.findings.length === 0) return <p className="view-empty">{t.noFindings}</p>
     return (
       <div className="findings">
@@ -346,23 +397,6 @@ export function ToolViewBody({
   if (view.kind === 'fix') {
     return <FixView formats={view.formats} impact={view.impact} t={t} />
   }
-  if (view.kind === 'analyze') {
-    return (
-      <div>
-        <div className="view-head">
-          <span className="view-title">{view.dataset}</span>
-          {view.note && <span className="view-sub">{view.note}</span>}
-        </div>
-        {view.chart && <ChartView chart={view.chart} />}
-        <TableView
-          table={view.rows}
-          name={`${view.dataset.split('.')[0] ?? 'analysis'}-${view.dataset.split('.').pop() ?? 'csv'}`}
-          empty={t.noRows}
-          t={t}
-        />
-      </div>
-    )
-  }
   if (view.kind === 'query') {
     return (
       <div>
@@ -377,5 +411,6 @@ export function ToolViewBody({
       </div>
     )
   }
-  return <p className="impact-note">{view.text}</p>
+
+  return null
 }
