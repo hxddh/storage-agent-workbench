@@ -2,14 +2,16 @@
 
 ## Application tables (`storage-agent.db`)
 
-`user_version` is the schema version (head **3**); migrations are append-only in
+`user_version` is the schema version (head **4**); migrations are append-only in
 `main/db.ts`. Version 3 dropped the unused `watch` table and `task_meta.origin`.
+Version 4 added account auth kinds, bucket region and disappearance, Issue
+evidence and the accepted state.
 
 | Table | Columns (essential) |
 |---|---|
-| `providers` | `id`, `name`, `endpoint`, `region`, `force_path_style`, `access_key_id`, `secret_ref`, `session_ref`, `scope_json`, `created_at` |
-| `buckets` | `provider_id`, `name`, `posture_json`, `posture_at`, `first_seen`, `last_seen` |
-| `issues` | `id`, `provider_id`, `bucket`, `code`, `severity`, `status`, `opened_at`, `resolved_at`, `last_seen_at`, `recurred` |
+| `providers` | `id`, `name`, `endpoint`, `region`, `force_path_style`, `auth` (`keys`/`profile`), `profile`, `access_key_id`, `secret_ref`, `session_ref`, `scope_json`, `created_at` |
+| `buckets` | `provider_id`, `name`, `posture_json`, `posture_at`, `region`, `first_seen`, `last_seen`, `gone_at` |
+| `issues` | `id`, `provider_id`, `bucket`, `code`, `severity`, `status` (`open`/`resolved`/`accepted`), `detail`, `opened_at`, `resolved_at`, `accepted_at`, `last_seen_at`, `recurred` |
 | `issue_events` | `id`, `issue_id`, `conversation_id`, `kind`, `at`, `detail_json` |
 | `notes` | `id`, `scope`, `ref`, `text`, `author`, `created_at` |
 | `audit` | `id`, `conversation_id`, `tool`, `target`, `outcome`, `at` |
@@ -23,9 +25,15 @@ startup. It stores the request text, the current verdict (`entry_id =
 findings from one tool call stay distinct). Deleting a task deletes its rows.
 Nothing else reads it.
 
-`secret_ref` and `session_ref` are vault references (ciphertext), never plaintext.
+`secret_ref` and `session_ref` are vault references (ciphertext), never plaintext;
+a profile account stores an empty `secret_ref` and only the profile name.
 `posture_json` stores status enums and booleans only — no policy document, no
-account id, no ARN beyond a destination bucket name.
+account id, no ARN. `issues.detail` is a short phrase from the rule ("Off:
+RestrictPublicBuckets"), never a document. `issue_events.kind` is `opened`,
+`resolved`, `recurred`, `gone`, `accepted` or `reopened`.
+
+A bucket with `gone_at` is left out of every listing and the digest; seeing it
+again clears the mark.
 
 ## pi tables
 
@@ -37,11 +45,15 @@ Entry kinds the window understands:
 
 | Kind | Meaning |
 |---|---|
-| `sa.user` | a Direction; data `{ text, attachments }` |
+| `sa.user` | a request; data `{ text, attachments }` |
+| `sa.continue` | the user resumed a stopped run; a boundary, not a question |
+| `pi.user` | the harness's own message to the model (a grounding correction); not shown |
 | `pi.assistant` | model output; the text is projected, `model` is not sent |
-| `pi.tool-result` | a tool result; `details` is `{ target, note, view, ms }` |
+| `pi.tool-result` | a tool result; `details` is `{ target, note, view, ms, status }` |
 | `pi.compaction` | compaction divider |
-| `sa.notice` | an app notice; data `{ text, tone, action? }` |
+| `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window |
+
+pi's `pi.usage` document is read for the task's token receipt.
 
 ## Datasets
 

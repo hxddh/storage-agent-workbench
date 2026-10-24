@@ -37,7 +37,7 @@ export function configTool(deps: ToolDeps) {
       // Only the rules this aspect can see are applied; the others keep their state.
       const wanted = new Set(aspectsOf(aspect))
       const decisions = Object.fromEntries(
-        Object.entries(decide(facts)).filter(([code]) => wanted.has(code)),
+        Object.entries(decide(facts, deps.lang())).filter(([code]) => wanted.has(code)),
       )
       const { observations } = await deps.estate.apply(
         config.id,

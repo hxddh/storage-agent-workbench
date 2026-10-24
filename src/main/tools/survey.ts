@@ -109,7 +109,7 @@ export function surveyTool(deps: ToolDeps) {
           const applied = await deps.estate.apply(
             config.id,
             bucket,
-            decide(facts),
+            decide(facts, deps.lang()),
             run.conversationId,
           )
           observations.push(...applied.observations)

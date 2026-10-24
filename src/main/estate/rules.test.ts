@@ -187,4 +187,11 @@ describe('rules', () => {
       'Not supported by the provider: CORS',
     )
   })
+
+  it('words its evidence in the user language', () => {
+    const f = facts({
+      pab: { status: 'available', value: { ...PRIVATE_PAB, blockPublicAcls: false } },
+    })
+    expect(decide(f, 'zh').public_access_block_missing?.detail).toBe('未开启：BlockPublicAcls')
+  })
 })

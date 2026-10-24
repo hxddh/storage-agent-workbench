@@ -9,13 +9,18 @@ writes, deletes or changes anything in storage.
 
 ## What it does
 
-- Surveys an account and records each bucket's exposure, encryption, lifecycle
-  and public-access posture.
-- Opens deterministic Issues from seven rules: public exposure, wildcard
-  principal, CORS `*`, no default encryption, missing public-access block,
-  no incomplete-multipart cleanup, noncurrent versions never expiring.
-- Reviews one bucket's configuration and reports findings, or says a provider
-  does not implement the API instead of pretending it is clean.
+- Surveys an account: reads every bucket's policy, ACL, public access block,
+  CORS, encryption and lifecycle once, remembers each bucket as it is read, and
+  decides seven deterministic rules — public exposure, wildcard principal,
+  CORS `*`, no default encryption, incomplete public access block, no
+  incomplete-multipart cleanup, noncurrent versions never expiring.
+- Evaluates bucket policies locally, so an S3-compatible store without AWS's
+  policy-status API can still be proved public — or proved narrowed by a
+  network or organization condition.
+- Says a question is open when a read was denied or unsupported, instead of
+  pretending it is clean, and shows the blind spot on the page.
+- After you apply a fix, re-reads just that bucket and shows what the task
+  proved fixed. A risk you accept folds away until a reading proves it gone.
 - Lists objects, versions and incomplete uploads; inspects one object's metadata,
   tags, ACL and a bounded text preview.
 - Generates fixes as text — AWS CLI, Terraform and the API document — with an
@@ -24,7 +29,8 @@ writes, deletes or changes anything in storage.
   and answers whitelisted aggregates. Raw rows never reach the model.
 - Shows each tool call where it happens, with real progress, and keeps it as
   the receipt behind every finding; every table can be copied as CSV or saved,
-  the whole brief as Markdown.
+  the whole brief as Markdown. Every bucket the answer names is checked against
+  what the tools returned.
 - Searches task titles, questions, findings and the current answer with ⌘K;
   failed or stopped runs offer Retry or Continue.
 
@@ -49,8 +55,11 @@ model and the accounts.
 - **Electron 45 + TypeScript + React 19**, no sidecar, no localhost HTTP.
 - **pi-durable 1.4** for the durable agent loop: storage, resume, steering,
   abort, compaction and tool tasks.
-- **pi-ai 1.4** for model access: OpenAI, Anthropic and any OpenAI-compatible
-  endpoint (Ollama, LM Studio, vLLM, OpenRouter).
+- **pi-ai 1.4** for model access: OpenAI (Responses API, reasoning effort),
+  Anthropic (thinking) and any OpenAI-compatible endpoint (Ollama, LM Studio,
+  vLLM, OpenRouter). Prompt caching where the provider supports it.
+- **Accounts** by sealed access keys or by AWS profile — SSO,
+  `credential_process` and assume-role resolve through the AWS SDK.
 - **One SQLite database** through Node's built-in `node:sqlite`; pi's tables are
   prefixed `pi_`. Each imported dataset is a separate SQLite file.
 - **No native addons.** Nothing to rebuild, nothing to sign beyond the app.
@@ -67,18 +76,20 @@ npm run build
 npm run dist:dir     # unpacked app under release/
 ```
 
-End-to-end against a fake S3 and a fake OpenAI-compatible model:
+End-to-end against a fake S3 and a fake OpenAI-compatible model, and the agent
+eval against a real model:
 
 ```bash
 xvfb-run -a node scripts/e2e.mjs
 xvfb-run -a node scripts/shots.mjs   # screenshots under .amp/in/artifacts
+EVAL_PROVIDER=anthropic EVAL_MODEL=… EVAL_API_KEY=… xvfb-run -a node scripts/eval.mjs
 ```
 
 ## Security
 
 Secrets live in the OS keychain through Electron `safeStorage`, or — when no
 keyring is available — in a local AES-256-GCM file with a 0600 key. SQLite holds
-only ciphertext. Every tool is read-only. A provider's bucket scope is enforced
+only ciphertext; a profile account holds only the profile name. Every tool is read-only. A provider's bucket scope is enforced
 server-side before any call. Tool output reaches the model inside an
 `<untrusted-data>` envelope, and credentials are redacted before anything is
 stored, shown or sent. See [docs/security.md](docs/security.md).
@@ -86,7 +97,8 @@ stored, shown or sent. See [docs/security.md](docs/security.md).
 ## Deliberate omissions
 
 No message editing or version trees, no Evidence side pane, no report or trace
-export, no MCP bridge, no user skills, no standing instructions, no S3 log
-download (attach the log instead), and no import of the previous app's data.
+export, no MCP bridge, no user skills, no standing instructions, no subagents,
+no background watch, no S3 log download (attach the log instead), and no import
+of the previous app's data.
 
 License: Apache-2.0.
