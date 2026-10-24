@@ -180,6 +180,10 @@ export interface Brief {
   attribution: {
     status: 'ok' | 'denied' | 'unsupported' | 'error'
     events: { at: string; event: string; actor: string }[]
+    from?: string
+    to?: string
+    days?: number
+    truncated?: boolean
   } | null
   notices: BriefNotice[]
   /** Sum of the current turn's tool durations; null while it has none. */

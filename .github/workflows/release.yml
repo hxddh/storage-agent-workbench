@@ -1,13 +1,13 @@
 name: Release
 
-# Tag a commit (`git tag v20.0.0 && git push origin v18.0.0`) or run this
+# Tag a commit (`git tag v21.0.0 && git push origin v21.0.0`) or run this
 # workflow manually. Builds installers on macOS, Linux and Windows and attaches
 # them, with the update feeds (latest*.yml), to one GitHub release.
 #
-# Signing is used when its secrets exist: CSC_LINK / CSC_KEY_PASSWORD (macOS
-# Developer ID, .p12), APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
-# (notarization) and WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD (Windows). Without
-# them the bundles are unsigned, and macOS builds cannot update themselves.
+# Signing is required: CSC_LINK / CSC_KEY_PASSWORD (macOS Developer ID, .p12),
+# APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID (notarization) and
+# WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD (Windows). The signing job fails before
+# build when any are missing.
 on:
   push:
     tags:
@@ -15,15 +15,72 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to release (e.g. v20.0.0)"
+        description: "Existing tag to release (e.g. v21.0.0)"
         required: true
 
 permissions:
   contents: write
 
 jobs:
+  eval:
+    name: Real-model evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Evaluate primary model
+        run: xvfb-run -a node scripts/eval.mjs --runs 2
+        env:
+          EVAL_PROVIDER: ${{ vars.EVAL_PROVIDER || 'anthropic' }}
+          EVAL_MODEL: ${{ vars.EVAL_MODEL_PRIMARY }}
+          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+      - name: Keep primary report
+        run: cp .amp/in/artifacts/eval-report.md eval-primary.md
+      - name: Evaluate secondary model
+        run: xvfb-run -a node scripts/eval.mjs --runs 2
+        env:
+          EVAL_PROVIDER: ${{ vars.EVAL_PROVIDER || 'anthropic' }}
+          EVAL_MODEL: ${{ vars.EVAL_MODEL_SECONDARY }}
+          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-reports
+          path: |
+            eval-primary.md
+            .amp/in/artifacts/eval-report.md
+
+  signing:
+    name: Require code signing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse an unsigned release
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          missing=
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "Signed and notarized installers are required; missing:$missing" >&2
+            exit 1
+          fi
+
   build:
     name: Build ${{ matrix.os }}
+    needs: [eval, signing]
     strategy:
       fail-fast: false
       matrix:
@@ -79,6 +136,18 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: eval-reports
+          path: eval-reports
+      - name: Build release notes from the eval reports
+        run: |
+          {
+            echo "## Real-model evaluation"
+            cat eval-reports/eval-primary.md
+            echo
+            cat eval-reports/eval-report.md
+          } > release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -88,6 +157,7 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          body_path: release-notes.md
           # download-artifact keeps each bundle's release/ directory; do not
           # flatten it into the top level or the installers are skipped.
           files: |

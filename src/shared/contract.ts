@@ -88,14 +88,16 @@ export interface ReverifyChange {
   bucket: string
   code: string
   title: string
-  before: 'open' | 'clear' | 'undecided'
-  after: 'open' | 'clear' | 'undecided'
+  before: 'open' | 'accepted' | 'clear' | 'undecided'
+  after: 'open' | 'accepted' | 'clear' | 'undecided'
 }
 
 export interface ReverifyReport {
   at: string
   checked: number
   skipped: number
+  /** The task touched more than the per-run replay budget. */
+  truncated?: boolean
   changes: ReverifyChange[]
   opened: number
   resolved: number
@@ -117,12 +119,21 @@ export interface PostureChange {
 }
 
 export interface AccessPath {
-  source: 'policy' | 'acl' | 'iam' | 'kms' | 'access-analyzer'
+  source: 'policy' | 'acl' | 'iam' | 'trust' | 'kms' | 'access-analyzer'
   principal: string
   actions: string[]
   condition: string | null
   public: boolean
   note: string | null
+}
+
+/** How much of the effective-access question a reading actually covered. */
+export interface AccessCoverage {
+  principals: number
+  evaluated: number
+  undecided: number
+  truncated: boolean
+  sources: string[]
 }
 
 export interface FixFormat {
@@ -180,6 +191,10 @@ export type ToolView =
       attribution?: {
         status: 'ok' | 'denied' | 'unsupported' | 'error'
         events: { at: string; event: string; actor: string }[]
+        from?: string
+        to?: string
+        days?: number
+        truncated?: boolean
       }
     }
   | { kind: 'buckets'; rows: Table }
@@ -197,6 +212,7 @@ export type ToolView =
       /** Who can reach the bucket, from policy, ACL, IAM, KMS and Access Analyzer. */
       access?: AccessPath[]
       accessBlind?: { source: string; status: string }[]
+      accessCoverage?: AccessCoverage
       exposure?: 'public' | 'not public' | 'unknown'
       findings: ConfigFinding[]
       /** Issues this review opened or kept, so a finding can be accepted. */

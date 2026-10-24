@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for Storage Agent 20.0.0. Read
+> Implementation contract for Storage Agent 21.0.0. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes are history.
@@ -62,9 +62,10 @@ The invariant:
 - `src/main/s3/facts.ts` — the one reading of a bucket; `s3/policy.ts`
   evaluates a policy document locally; `s3/account.ts` reads the account-wide
   block; `s3/metrics.ts` reads CloudWatch capacity and prices it;
-  `s3/access.ts` reads policy/ACL/IAM/KMS/Analyzer grants;
-  `s3/changes.ts` diffs posture and asks CloudTrail; `s3/capabilities.ts` is the
-  provider matrix; `s3/permissions.ts` maps a denied read to an IAM action.
+  `s3/access.ts` reads policy/ACL/IAM/KMS/Access Analyzer and SCP grants with
+  coverage; `s3/changes.ts` diffs posture and queries CloudTrail's 90-day window;
+  `s3/capabilities.ts` is the provider matrix; `s3/permissions.ts` maps a denied
+  read to an IAM action.
 - `src/main/estate/*` — eleven bucket rules and one account rule over facts,
   Issue lifecycle, fixes (twelve rules total).
 - `src/main/tools/query.ts` — read-only code mode.
@@ -89,7 +90,7 @@ a complete listing no longer shows gets `gone_at` and its Issues resolve as
 `gone`. Capacity (bytes, objects, monthly estimate, growth) is remembered in
 each bucket's posture; the account posture in `providers.account_json`. Schema
 changes are append-only migrations in `db.ts`, gated by `user_version` (head
-**5**).
+**10**).
 
 `search_docs` is a derived index (title search reads `task_meta` directly). It
 is rebuilt for a conversation when that conversation settles, and backfilled at

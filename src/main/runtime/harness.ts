@@ -40,10 +40,12 @@ import type {
 import { knownExposure, knownNames } from '@shared/grounding'
 import type { AppDb } from '../db'
 import type { Estate } from '../estate/estate'
-import { BY_CODE, decide, ruleTitle } from '../estate/rules'
+import { aspectsOf, BY_CODE, decide, ruleTitle } from '../estate/rules'
 import type { Providers } from '../providers'
+import { readAccess } from '../s3/access'
 import { readAccount, UNREAD_ACCOUNT } from '../s3/account'
 import { readBucket } from '../s3/facts'
+import { escapeTags } from '../security/redact'
 import type { Vault } from '../security/vault'
 import type { Settings } from '../settings'
 import type { ToolDeps } from '../tools/policy'
@@ -347,28 +349,37 @@ export class AgentHarness {
   async reverify(taskId: string): Promise<ReverifyReport> {
     const conversation = await this.require(taskId)
     const entries = await this.entries(conversation)
-    const wanted = new Map<string, Set<string>>()
+    type ReplayAspect = 'security' | 'lifecycle' | 'observability' | 'access'
+    const wanted = new Map<string, Map<string, Set<ReplayAspect>>>()
+    const add = (providerId: string, names: Iterable<string>, aspects: Iterable<ReplayAspect>) => {
+      const buckets = wanted.get(providerId) ?? new Map<string, Set<ReplayAspect>>()
+      for (const name of names) {
+        if (!name) continue
+        const set = buckets.get(name) ?? new Set<ReplayAspect>()
+        for (const aspect of aspects) set.add(aspect)
+        buckets.set(name, set)
+      }
+      wanted.set(providerId, buckets)
+    }
     for (const entry of entries) {
       if (entry.kind !== 'tool' || !entry.view) continue
       const view = entry.view
-      const add = (providerId: string, names: Iterable<string>) => {
-        const set = wanted.get(providerId) ?? new Set<string>()
-        for (const name of names) set.add(name)
-        wanted.set(providerId, set)
-      }
       if (view.kind === 'survey' && view.providerId)
         add(
           view.providerId,
           view.buckets.rows.map((row) => String(row[0] ?? '')),
+          ['security', 'lifecycle'],
         )
-      else if (view.kind === 'config' && view.providerId) add(view.providerId, [view.bucket])
+      else if (view.kind === 'config' && view.providerId)
+        add(view.providerId, [view.bucket], [view.aspect ?? 'security'])
       else if (view.kind === 'estate' && view.providerId && view.buckets)
         add(
           view.providerId,
           view.buckets.rows.map((row) => String(row[0] ?? '')),
+          ['security', 'lifecycle'],
         )
       else if (view.kind === 'query' && view.providerId && view.buckets)
-        add(view.providerId, view.buckets)
+        add(view.providerId, view.buckets, ['security', 'lifecycle'])
     }
     if (!wanted.size) throw new Error('This task has no storage reading to re-verify.')
     const at = new Date().toISOString()
@@ -379,9 +390,13 @@ export class AgentHarness {
     let opened = 0
     let resolved = 0
     let undecided = 0
+    let truncated = false
     for (const [providerId, buckets] of wanted) {
       const config = await this.deps.providers.config(providerId).catch(() => null)
-      if (!config) continue
+      if (!config) {
+        skipped += buckets.size
+        continue
+      }
       const aws = this.deps.providers.isAws(config)
       const account = aws
         ? await readAccount(
@@ -390,15 +405,28 @@ export class AgentHarness {
             signal,
           )
         : UNREAD_ACCOUNT
-      for (const bucket of [...buckets].filter(Boolean).slice(0, 50)) {
+      const entriesForProvider = [...buckets.entries()]
+      if (entriesForProvider.length > 50) {
+        truncated = true
+        skipped += entriesForProvider.length - 50
+      }
+      for (const [bucket, aspects] of entriesForProvider.slice(0, 50)) {
         if (config.scope.buckets.length && !config.scope.buckets.includes(bucket)) {
           skipped += 1
           continue
         }
+        const readAspects = new Set(
+          [...aspects].filter(
+            (aspect): aspect is 'security' | 'lifecycle' | 'observability' => aspect !== 'access',
+          ),
+        )
+        // `access` needs the security facts (policy/ACL/PAB) even when the task
+        // only asked who can reach the bucket.
+        if (readAspects.size === 0) readAspects.add('security')
         let facts: Awaited<ReturnType<typeof readBucket>>
         try {
           facts = await readBucket(this.deps.providers.client(config), bucket, {
-            aspects: new Set(['security', 'lifecycle']),
+            aspects: readAspects,
             signal,
             regional: this.deps.providers.regional(config),
             defaultRegion: config.region,
@@ -409,22 +437,61 @@ export class AgentHarness {
           skipped += 1
           continue
         }
-        checked += 1
-        const decisions = decide(facts, this.deps.settings.get().language)
+        const wantedCodes = new Set(
+          [...aspects].flatMap((aspect) => (aspect === 'access' ? [] : aspectsOf(aspect))),
+        )
+        const decisions = Object.fromEntries(
+          Object.entries(decide(facts, this.deps.settings.get().language)).filter(([code]) =>
+            wantedCodes.has(code),
+          ),
+        )
         const beforeIssues = new Map<string, Awaited<ReturnType<AppDb['findIssue']>>>()
         for (const code of Object.keys(decisions))
           beforeIssues.set(code, await this.deps.db.findIssue(config.id, bucket, code))
         const applied = await this.deps.estate.apply(config.id, bucket, decisions, taskId)
         opened += applied.delta.opened
         resolved += applied.delta.resolved
+        if (aspects.has('access')) {
+          try {
+            await readAccess({
+              bucket,
+              facts,
+              aws,
+              iam: aws && config.caps.iam ? this.deps.providers.iam(config) : undefined,
+              kms:
+                aws && config.caps.kms && facts.encryption.value?.keyArn
+                  ? this.deps.providers.kms(config, facts.region)
+                  : undefined,
+              analyzer:
+                aws && config.caps.accessAnalyzer
+                  ? this.deps.providers.accessAnalyzer(config, facts.region)
+                  : undefined,
+              organizations: aws ? this.deps.providers.organizations(config) : undefined,
+              signal,
+            })
+          } catch {
+            skipped += 1
+          }
+        }
+        checked += 1
         for (const [code, decision] of Object.entries(decisions)) {
           const rule = BY_CODE.get(code)
           if (!rule) continue
           const before = beforeIssues.get(code)
           const previous: ReverifyChange['before'] =
-            before?.status === 'open' ? 'open' : before?.status === 'accepted' ? 'clear' : 'clear'
+            before?.status === 'open'
+              ? 'open'
+              : before?.status === 'accepted'
+                ? 'accepted'
+                : 'clear'
           const after: ReverifyChange['after'] =
-            decision.verdict === null ? 'undecided' : decision.verdict ? 'open' : 'clear'
+            decision.verdict === null
+              ? 'undecided'
+              : decision.verdict
+                ? before?.status === 'accepted'
+                  ? 'accepted'
+                  : 'open'
+                : 'clear'
           if (after === 'undecided') undecided += 1
           if (previous !== after)
             changes.push({
@@ -437,7 +504,16 @@ export class AgentHarness {
         }
       }
     }
-    const report: ReverifyReport = { at, checked, skipped, changes, opened, resolved, undecided }
+    const report: ReverifyReport = {
+      at,
+      checked,
+      skipped,
+      ...(truncated ? { truncated } : {}),
+      changes,
+      opened,
+      resolved,
+      undecided,
+    }
     await conversation
       .submit({ type: 'write', entry: { kind: 'sa.reverify', data: report as never } }, CONTEXT)
       .catch(() => undefined)
@@ -814,12 +890,14 @@ function withAttachments(
     parts.push(`[attached files: ${attachments.map((file) => file.name).join(', ')}]`)
   if (context.length)
     parts.push(
-      `<untrusted-data source="user-context">\n[Focused names; focus only, not authorization]\n${context
-        .map(
-          (item) =>
-            `${item.kind}: ${item.label}${item.bucket && item.kind !== 'account' ? ` (${item.bucket})` : ''}`,
-        )
-        .join('\n')}\n</untrusted-data>`,
+      `<untrusted-data source="user-context">\n[Focused names; focus only, not authorization]\n${escapeTags(
+        context
+          .map(
+            (item) =>
+              `${item.kind}: ${item.label}${item.bucket && item.kind !== 'account' ? ` (${item.bucket})` : ''}`,
+          )
+          .join('\n'),
+      )}\n</untrusted-data>`,
     )
   return parts.join('\n\n')
 }

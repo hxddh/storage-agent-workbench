@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { aggregate, countRows, preview } from './aggregate'
 import { maskIp, normalizeTimestamp } from './formats'
-import { importDataset } from './import'
+import { importDataset, importInventoryFiles } from './import'
 
 function temp(): string {
   return mkdtempSync(join(tmpdir(), 'sa-test-'))
@@ -51,6 +51,42 @@ describe('inventory import and aggregation', () => {
     const sum = aggregate(db, 'inventory', { metric: 'total_size' })
     expect(sum.value).toBe(400)
     expect(preview(db, 'inventory', 2).rows).toHaveLength(2)
+  })
+
+  it('imports every file of one inventory report into one dataset', async () => {
+    const dir = temp()
+    const first = join(dir, 'part-1.csv')
+    const second = join(dir, 'part-2.csv')
+    const header = '"bucket","key","size","storage_class","last_modified_date"\n'
+    writeFileSync(first, `${header}"demo","a.bin",100,"STANDARD","2026-01-01"\n`)
+    writeFileSync(second, `${header}"demo","b.bin",200,"GLACIER","2026-01-02"\n`)
+    const db = join(dir, 'all.sqlite')
+    const result = await importInventoryFiles({
+      files: [first, second],
+      destPath: db,
+      fallbackBucket: 'demo',
+    })
+    expect(result.rows).toBe(2)
+    expect(countRows(db, 'inventory')).toBe(2)
+  })
+
+  it('keeps a multi-file import inside its row budget', async () => {
+    const dir = temp()
+    const files = [1, 2, 3].map((n) => {
+      const file = join(dir, `part-${n}.csv`)
+      writeFileSync(file, `"bucket","key","size"\n"demo","${n}.bin",${n}\n`)
+      return file
+    })
+    const db = join(dir, 'limited.sqlite')
+    const result = await importInventoryFiles({
+      files,
+      destPath: db,
+      fallbackBucket: 'demo',
+      maxRows: 2,
+    })
+    expect(result.rows).toBe(2)
+    expect(result.truncated).toBe(true)
+    expect(countRows(db, 'inventory')).toBe(2)
   })
 
   it('counts requests by status from a CSV log', async () => {

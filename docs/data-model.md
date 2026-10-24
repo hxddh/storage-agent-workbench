@@ -2,10 +2,10 @@
 
 ## Application tables (`storage-agent.db`)
 
-`user_version` is the schema version (head **9**); migrations are append-only in
+`user_version` is the schema version (head **10**); migrations are append-only in
 `main/db.ts`. Version 6 cleared the derived search index once. Version 7 added
 the provider kind; version 8 added `task_meta.pinned`; version 9 added
-`posture_changes`. Version 4 added account auth kinds, bucket region and
+`posture_changes`; version 10 repaired legacy provider kinds. Version 4 added account auth kinds, bucket region and
 disappearance, Issue evidence and the accepted state. Version 5 added the
 account posture (`providers.account_json`, `account_at`).
 

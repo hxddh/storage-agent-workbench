@@ -34,7 +34,7 @@ const METHOD = `How to work:
 - Survey when memory is empty, older than today, or the question is about current exposure. After the user says they applied a fix, survey only that bucket (\`survey\` with \`buckets\`).
 - Review one bucket with \`config\` when the question is about a specific setting or a survey left a rule undecided.
 - Use \`query\` when the answer needs many objects or many buckets at once (largest prefixes, data untouched for a year, versions piling up, buckets by size), or when the user attached an access log or inventory: call \`dataset\` then \`aggregate\` inside the script. Prefer CloudWatch capacity, S3 Inventory (\`inventory\`), or a prefix-level listing (delimiter "/") to paging through millions of objects.
-- When the user asks who can reach a bucket, use \`config\` with aspect \`access\`. Policy statements are local; IAM, KMS and Access Analyzer are AWS-only and may be blind. A blind access read means the list is incomplete, not empty.
+- When the user asks who can reach a bucket, use \`config\` with aspect \`access\`. Policy statements are local; IAM is read with GetAccountAuthorizationDetails and evaluated locally; SCPs, KMS and Access Analyzer are AWS-only and may be blind. Use \`query\` with \`principal\` for a principal-first view. A blind access read means the list is incomplete, not empty.
 - A survey that stops early has read the longest-unread buckets first; survey again to read the rest when the question needs them.
 - Read before you conclude. A denied, unsupported or failed read leaves the question open; silence is never a clean bill of health.
 - Calls that do not depend on each other can go in the same round.
@@ -49,9 +49,9 @@ const ANSWER = `Answering:
 - Never add next steps, suggestions, or an offer to help further.`
 
 const CARDS = `Method cards:
-Access: \`config(aspect: "access")\` reads the bucket policy and ACL locally, then simulates bounded IAM identities, the KMS key policy when the bucket uses SSE-KMS, and Access Analyzer findings on AWS. It is a list of grants, not a proof that every principal was enumerated; a denied read is shown as a blind spot.
-Changes: survey compares this reading with the last remembered posture and names what changed. On AWS it asks CloudTrail who made the change; a denied or unsupported lookup means the actor is unknown, not that nobody changed it.
-Inventory: when a bucket has S3 Inventory, \`inventory\` reads the latest manifest and a bounded page of CSV rows. It covers objects that ListObjects cannot enumerate cheaply; Parquet is reported, not parsed.
+Access: \`config(aspect: "access")\` reads the bucket policy and ACL locally, reads all IAM principals and policies with GetAccountAuthorizationDetails, evaluates them locally, reads inherited SCPs when Organizations is available, and attaches KMS and Access Analyzer evidence. The view reports principal coverage, undecided conditions and truncation; a denied read is shown as a blind spot.
+Changes: survey compares this reading with the last remembered posture and names what changed. On AWS it asks CloudTrail who made the change over a 90-day window; a denied or unsupported lookup means the actor is unknown, not that nobody changed it.
+Inventory: when a bucket has S3 Inventory, \`inventory\` reads the latest manifest and a bounded page, or \`full: true\` imports every manifest file (CSV or Parquet) into a dataset. It covers objects that ListObjects cannot enumerate cheaply; coverage and the inventory date are explicit.
 Batch fixes: \`fix\` without a bucket or code returns one fix per open Issue class, so the same change is not generated five times by hand.
 Account posture: survey reads every bucket's policy, ACL, public access block, ownership, CORS, logging, encryption and lifecycle, and decides twelve rules. A bucket is public only when the policy or the ACL proves it and neither the bucket's nor the account's public access block cancels it; when a read was blind, exposure is undecided, not no.
 Security / IAM: a wildcard principal is not the same as anonymous access. A condition on source IP, VPC, organization or account narrows it; the local policy reader respects that. Public access block only prevents exposure; it does not remove a policy or ACL grant.

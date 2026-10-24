@@ -22,6 +22,7 @@ import type { Vault } from './security/vault'
 import { configTool } from './tools/config'
 import { estateTools } from './tools/estate'
 import type { ToolDeps } from './tools/policy'
+import { probeTool } from './tools/probe'
 import { surveyTool } from './tools/survey'
 
 const BUCKETS: Record<string, FakeBucket> = {
@@ -215,6 +216,34 @@ describe('tools over the estate', () => {
       scope: { buckets: ['cors-open'] },
     })
     const { details, isError } = await run(configTool(deps), { bucket: 'aws-public' })
+    expect(isError).toBe(true)
+    expect(details.status).toBe('refused')
+    await deps.providers.save({
+      id: providerId,
+      name: 'Fake',
+      endpoint: fake.endpoint,
+      region: 'us-east-1',
+      forcePathStyle: true,
+      auth: 'keys',
+      scope: { buckets: [] },
+    })
+  })
+
+  it('refuses a probe bucket outside the account scope', async () => {
+    await deps.providers.save({
+      id: providerId,
+      name: 'Fake',
+      endpoint: fake.endpoint,
+      region: 'us-east-1',
+      forcePathStyle: true,
+      auth: 'keys',
+      scope: { buckets: ['cors-open'] },
+    })
+    const { details, isError } = await run(probeTool(deps), {
+      provider_id: providerId,
+      bucket: 'aws-public',
+      check: 'location',
+    })
     expect(isError).toBe(true)
     expect(details.status).toBe('refused')
     await deps.providers.save({

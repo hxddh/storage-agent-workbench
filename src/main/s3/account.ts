@@ -11,6 +11,8 @@ import { classify, isAbort, type ReadStatus } from './status'
 
 export interface AccountFacts {
   pab: Dim<PublicAccessBlock>
+  /** Used for the account block and SCP lookup; never remembered or serialized. */
+  accountId?: string
 }
 
 export const UNREAD_ACCOUNT: AccountFacts = { pab: { status: 'unread', value: null } }
@@ -34,7 +36,7 @@ export async function readAccount(
       abortSignal: signal,
     })
     const cfg = response.PublicAccessBlockConfiguration
-    if (!cfg) return { pab: { status: 'not_configured', value: null } }
+    if (!cfg) return { pab: { status: 'not_configured', value: null }, accountId }
     return {
       pab: {
         status: 'available',
@@ -45,13 +47,14 @@ export async function readAccount(
           restrictPublicBuckets: Boolean(cfg.RestrictPublicBuckets),
         },
       },
+      accountId,
     }
   } catch (error) {
     if (isAbort(error)) throw error
     const name = (error as { name?: string })?.name
     const status: ReadStatus =
       name === 'NoSuchPublicAccessBlockConfiguration' ? 'not_configured' : classify(error)
-    return { pab: { status, value: null } }
+    return { pab: { status, value: null }, accountId }
   }
 }
 

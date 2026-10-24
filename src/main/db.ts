@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
+import { detectProviderKind } from './s3/capabilities'
 
-export const HOST_SCHEMA_VERSION = 9
+export const HOST_SCHEMA_VERSION = 10
 
 export interface ProviderRow {
   id: string
@@ -245,6 +246,22 @@ export class AppDb {
         changes_json TEXT NOT NULL
       )`)
     }
+    if (version < 10) {
+      // 21.0: v7 added `kind` with an AWS default, which mislabelled every
+      // existing R2/MinIO/Aliyun/other endpoint as AWS during an upgrade.
+      // Endpoints are the only evidence those rows carry; infer once, without
+      // touching real AWS endpoints (empty or *.amazonaws.com).
+      const rows = await raw.all<{ id: string; endpoint: string; kind: string }>(
+        'SELECT id, endpoint, kind FROM providers',
+      )
+      for (const row of rows) {
+        if (row.kind !== 'aws' || !row.endpoint) continue
+        const lower = row.endpoint.toLowerCase()
+        const inferred = lower.includes('amazonaws.com') ? 'aws' : detectProviderKind(row.endpoint)
+        if (inferred !== row.kind)
+          await raw.run('UPDATE providers SET kind = ? WHERE id = ?', inferred, row.id)
+      }
+    }
     if (version < HOST_SCHEMA_VERSION) {
       await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
     }
@@ -300,6 +317,23 @@ export class AppDb {
     const row = await this.raw.get<{ n: number }>(
       "SELECT count(*) AS n FROM issues WHERE provider_id = ? AND status = 'open'",
       providerId,
+    )
+    return row?.n ?? 0
+  }
+
+  async countOpenHigh(providerId: string): Promise<number> {
+    const row = await this.raw.get<{ n: number }>(
+      "SELECT count(*) AS n FROM issues WHERE provider_id = ? AND status = 'open' AND severity = 'high'",
+      providerId,
+    )
+    return row?.n ?? 0
+  }
+
+  async countOpenedSince(providerId: string, since: string): Promise<number> {
+    const row = await this.raw.get<{ n: number }>(
+      "SELECT count(*) AS n FROM issues WHERE provider_id = ? AND status = 'open' AND opened_at > ?",
+      providerId,
+      since,
     )
     return row?.n ?? 0
   }
@@ -851,7 +885,7 @@ export class AppDb {
   async insertDataset(row: Omit<DatasetRecord, 'created_at'>): Promise<DatasetRecord> {
     const record: DatasetRecord = { ...row, created_at: new Date().toISOString() }
     await this.raw.run(
-      'INSERT INTO datasets (id, conversation_id, kind, path, rows, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO datasets (id, conversation_id, kind, path, rows, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       record.id,
       record.conversation_id,
       record.kind,

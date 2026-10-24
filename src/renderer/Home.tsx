@@ -1,6 +1,7 @@
-import type { Bootstrap, OverviewSuggestion } from '@shared/contract'
+import type { Bootstrap, LocalModel, OverviewSuggestion } from '@shared/contract'
 import { ArrowUpRight, Sparkles } from 'lucide-react'
-import { dict } from './i18n'
+import { useEffect, useState } from 'react'
+import { dict, fill } from './i18n'
 
 function ago(iso: string | null, lang: 'en' | 'zh'): string {
   if (!iso) return lang === 'zh' ? '尚未读取' : 'not read yet'
@@ -33,17 +34,53 @@ export function Home({
   onSend,
   onSetup,
   onTryDemo,
+  onUseLocal,
 }: {
   boot: Bootstrap
   onSend: (text: string) => void
   onSetup: () => void
   onTryDemo: () => void
+  onUseLocal: (model: LocalModel) => Promise<void>
 }) {
   const lang = boot.settings.language
   const t = dict(lang)
   const overview = boot.overview
   const hasModel = Boolean(boot.model)
   const hasAccount = boot.accounts.length > 0
+  const [local, setLocal] = useState<LocalModel[]>([])
+  const [starting, setStarting] = useState<string | null>(null)
+  const [localError, setLocalError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (hasModel) return
+    // Let the first paint and the composer become usable before probing two
+    // local ports; a slow local server must not compete with startup.
+    let live = true
+    const timer = setTimeout(() => {
+      void window.agent
+        .localModels()
+        .then((models) => {
+          if (live) setLocal(models)
+        })
+        .catch(() => undefined)
+    }, 180)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [hasModel])
+
+  const startLocal = async (model: LocalModel) => {
+    setStarting(model.modelId)
+    setLocalError(null)
+    try {
+      await onUseLocal(model)
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setStarting(null)
+    }
+  }
 
   return (
     <div className="home">
@@ -74,11 +111,29 @@ export function Home({
             )}
           </div>
         ) : (
-          <p className="home-lede">{t.homeNoEstate}</p>
+          <p className="home-lede">{hasModel ? t.homeNoEstate : t.homeNoModel}</p>
         )}
 
         {!hasModel || !hasAccount ? (
           <div className="home-setup">
+            {!hasModel && local.length > 0 && (
+              <div className="home-local">
+                <span className="home-local-label">{t.localModels}</span>
+                {local.map((model) => (
+                  <button
+                    className="home-prompt"
+                    key={`${model.source}:${model.modelId}`}
+                    type="button"
+                    disabled={starting !== null}
+                    onClick={() => void startLocal(model)}
+                  >
+                    <Sparkles size={12} strokeWidth={1.7} aria-hidden="true" />
+                    <span>{fill(t.useLocal, { model: model.modelId })}</span>
+                    <span className="hint">{model.source}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <button className="btn primary" type="button" onClick={onSetup}>
               {!hasModel ? t.setModel : t.addAccount}
             </button>
@@ -87,7 +142,8 @@ export function Home({
                 {t.tryDemo}
               </button>
             )}
-            <span className="hint">{hasModel ? t.demoHint : t.homeModelHint}</span>
+            {localError && <p className="brief-error">{localError}</p>}
+            <span className="hint home-setup-hint">{hasModel ? t.demoHint : t.homeModelHint}</span>
           </div>
         ) : (
           <div className="home-prompts">

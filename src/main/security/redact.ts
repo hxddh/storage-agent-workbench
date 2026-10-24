@@ -54,6 +54,15 @@ export function redactView(value: unknown, depth = 0): unknown {
   return null
 }
 
+/**
+ * Make stored data safe inside an XML-like envelope. The tags around tool output
+ * are the model's only structural boundary; a bucket tag or object metadata
+ * value containing `</untrusted-data>` must not be able to close it.
+ */
+export function escapeTags(text: string): string {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
 /** Keep a tool result bounded for the model. */
 export function bound(text: string, max = 24_000): string {
   if (text.length <= max) return text

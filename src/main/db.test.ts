@@ -64,9 +64,24 @@ describe('schema', () => {
     `)
     const db = await AppDb.open(raw)
     const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(9)
+    expect(version?.user_version).toBe(10)
     expect((await db.getProvider('p'))?.auth).toBe('keys')
     expect((await db.getIssue('i'))?.detail).toBeNull()
+  })
+
+  it('infers the kind of a provider added before the kind column existed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sa-mig-kind-'))
+    const raw = await openNodeSqliteDatabase(join(dir, 'old.sqlite'))
+    await raw.exec(`
+      CREATE TABLE providers (id TEXT PRIMARY KEY, name TEXT NOT NULL, endpoint TEXT NOT NULL,
+        region TEXT NOT NULL, force_path_style INTEGER NOT NULL DEFAULT 0, access_key_id TEXT,
+        secret_ref TEXT NOT NULL, session_ref TEXT, scope_json TEXT NOT NULL DEFAULT '{"buckets":[]}',
+        created_at TEXT NOT NULL);
+      INSERT INTO providers VALUES ('r2', 'R2', 'https://account.r2.cloudflarestorage.com', 'auto', 1, 'AKIA', 'ref', NULL, '{"buckets":[]}', '2026');
+      PRAGMA user_version = 6;
+    `)
+    const db = await AppDb.open(raw)
+    expect((await db.getProvider('r2'))?.kind).toBe('r2')
   })
 })
 

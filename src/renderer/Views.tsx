@@ -1,4 +1,5 @@
 import type {
+  AccessCoverage,
   Chart,
   ConfigFinding,
   FixFormat,
@@ -132,15 +133,42 @@ function actionLabel(action: string): string {
 export function AccessChain({
   paths,
   blind,
+  coverage,
   t,
 }: {
   paths: NonNullable<Extract<ToolView, { kind: 'config' }>['access']>
   blind?: { source: string; status: string }[]
+  coverage?: AccessCoverage
   t: Dict
 }) {
-  if (paths.length === 0 && !blind?.length) return <p className="view-empty">{t.noAccess}</p>
+  if (paths.length === 0 && !blind?.length)
+    return (
+      <div>
+        {coverage && (
+          <p className="view-sub">
+            {t.accessCoverage(
+              coverage.evaluated,
+              coverage.principals,
+              coverage.undecided,
+              coverage.truncated,
+            )}
+          </p>
+        )}
+        <p className="view-empty">{t.noAccess}</p>
+      </div>
+    )
   return (
     <div className="access-chain">
+      {coverage && (
+        <p className="view-sub">
+          {t.accessCoverage(
+            coverage.evaluated,
+            coverage.principals,
+            coverage.undecided,
+            coverage.truncated,
+          )}
+        </p>
+      )}
       {paths.map((item, index) => (
         <div className="access-row" key={`${item.source}:${item.principal}:${index}`}>
           <span className={`access-source ${item.source}`}>
@@ -332,7 +360,15 @@ export function ToolViewBody({
     )
   }
   if (view.kind === 'config') {
-    if (view.access) return <AccessChain paths={view.access} blind={view.accessBlind} t={t} />
+    if (view.access)
+      return (
+        <AccessChain
+          paths={view.access}
+          blind={view.accessBlind}
+          coverage={view.accessCoverage}
+          t={t}
+        />
+      )
     if (view.findings.length === 0) return <p className="view-empty">{t.noFindings}</p>
     return (
       <div className="findings">

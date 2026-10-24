@@ -1,5 +1,56 @@
 # Changelog
 
+## 21.0.0
+
+A version about completeness and proof. Access is no longer a sample, CloudTrail
+has a stated window, Inventory can cover its whole manifest, and a first run can
+start from a local model and demo storage.
+
+### Added
+
+- **Access coverage.** `access` reads all IAM users, groups, roles, managed and
+  inline policies, trust policies and permission boundaries with paginated
+  `GetAccountAuthorizationDetails`, evaluates them locally, and reports
+  `evaluated / total`, undecided conditions and truncation.
+- **SCP awareness.** Organizations policies are read from the account, its OUs
+  and root when permissions allow; otherwise SCPs are a named blind spot.
+- **`principal()` code mode.** Ask which buckets a principal reaches, or which
+  principals reach one bucket.
+- **Full Inventory.** `inventory({full: true})` imports every file in the latest
+  manifest into a local dataset; `aggregate` queries it. CSV and Parquet are
+  supported; coverage is explicit.
+- **90-day CloudTrail.** The attribution window is shown, event lookup paginates,
+  and an empty successful lookup says “no matching management event” instead of
+  “unavailable”.
+- **First run.** Home lists running local models, can add demo storage and ask
+  the first survey without a key. A first run without a model no longer offers
+  a demo button that cannot yet answer.
+- **Access tests and coverage UI.** Policy/ACL/IAM trust and truncation are
+  covered; the brief shows principal coverage and unread sources.
+
+### Changed
+
+- Provider kind migration v10 repairs legacy R2/MinIO/Aliyun/other accounts that
+  v7 had labelled AWS.
+- Re-verification replays the aspects the task actually read, preserves accepted
+  issues, marks truncation, and surfaces errors.
+- Model settings infer context and thinking from the chosen model; blank keys
+  are not reused across providers.
+- Findings are grouped by bucket; the home and brief columns align with the
+  composer; Settings uses the wider reading column; the data summary is no
+  longer monospaced; stray sidebar gaps are removed.
+- `untrusted-data` boundaries escape stored `<`/`>` so object metadata cannot
+  close them.
+- Visual regression uses a diff mask, so unchanged pixels no longer count as
+  hot regions.
+
+### Release
+
+- Real-model Eval is a release job; two model reports are attached to the release.
+- Signing is required; the release fails before build when certificates or
+  notarization secrets are missing. macOS notarization is enabled explicitly.
+- Visual regression adds per-region hot-tile checks.
+
 ## 20.0.0
 
 From answering a question to keeping an account legible. The window stays one

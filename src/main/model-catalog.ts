@@ -2,7 +2,7 @@
  * Model setup should be one step: pick a provider, paste a key, choose from the
  * models it reports. Context windows are inferred, never typed by hand.
  */
-import type { ModelProvider } from '@shared/contract'
+import type { ModelProvider, ThinkingLevel } from '@shared/contract'
 
 export interface CatalogModel {
   id: string
@@ -33,6 +33,22 @@ export function contextFor(modelId: string): number {
   if (KNOWN[clean]) return KNOWN[clean]
   for (const [name, window] of Object.entries(KNOWN)) if (clean.startsWith(name)) return window
   return 128_000
+}
+
+/**
+ * The "automatic" thinking choice. A model that is known to expose a reasoning
+ * mode gets medium; an old or custom/local model gets off, because sending a
+ * reasoning parameter it does not understand is worse than not reasoning.
+ */
+export function thinkingFor(modelId: string, provider: ModelProvider): ThinkingLevel {
+  const id = modelId.trim().toLowerCase()
+  if (
+    /^(gpt-[56]|o[134]-|o[134]$|claude-(opus|sonnet|haiku|fable)-5)/.test(id) ||
+    (provider === 'anthropic' && /^claude-/.test(id) && /-(5|4\.5)/.test(id)) ||
+    /(^|[/-])(deepseek|qwen|glm|kimi|grok)[-/]/.test(id)
+  )
+    return 'medium'
+  return 'off'
 }
 
 function base(provider: ModelProvider, baseUrl: string): string {

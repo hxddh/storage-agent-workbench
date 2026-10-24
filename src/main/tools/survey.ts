@@ -252,6 +252,10 @@ export function surveyTool(deps: ToolDeps) {
         | {
             status: 'ok' | 'denied' | 'unsupported' | 'error'
             events: { at: string; event: string; actor: string }[]
+            from: string
+            to: string
+            days: number
+            truncated: boolean
           }
         | undefined
       if (aws && postureChanges.length) {
@@ -266,12 +270,17 @@ export function surveyTool(deps: ToolDeps) {
           ),
         )
         const rank = { ok: 0, unsupported: 1, denied: 2, error: 3 } as const
+        const first = looked[0]
         attribution = {
           status: looked.reduce<'ok' | 'denied' | 'unsupported' | 'error'>(
             (worst, item) => (rank[item.status] > rank[worst] ? item.status : worst),
             'ok',
           ),
-          events: looked.flatMap((item) => item.events).slice(0, 6),
+          events: looked.flatMap((item) => item.events).slice(0, 20),
+          from: first?.from ?? '',
+          to: first?.to ?? '',
+          days: first?.days ?? 90,
+          truncated: looked.some((item) => item.truncated),
         }
       }
 
@@ -390,10 +399,12 @@ export function surveyTool(deps: ToolDeps) {
             .join('; ')}.${
             attribution
               ? attribution.events.length
-                ? ` CloudTrail: ${attribution.events
+                ? ` CloudTrail (${attribution.days} days${attribution.truncated ? ', truncated' : ''}): ${attribution.events
                     .map((event) => `${event.event} by ${event.actor} at ${event.at}`)
                     .join('; ')}.`
-                : ` CloudTrail attribution: ${attribution.status}.`
+                : attribution.status === 'ok'
+                  ? ` CloudTrail: no matching management event in the last ${attribution.days} days${attribution.truncated ? ' (truncated)' : ''}.`
+                  : ` CloudTrail attribution: ${attribution.status} (${attribution.days}-day window).`
               : ''
           }`,
         )

@@ -70,9 +70,9 @@ client when the account spans regions; every client follows region redirects.
 `s3/policy.ts` evaluates the policy document locally, including whether it
 denies plain HTTP. On AWS, `s3/account.ts` reads the account-wide block, `s3/metrics.ts` reads CloudWatch
 capacity, `s3/changes.ts` diffs the last remembered posture and asks CloudTrail,
-`s3/access.ts` reads policy/ACL/IAM/KMS/Access Analyzer grants, and
-`s3/permissions.ts` turns an access-denied read into the missing action. They
-all feed the same facts. `estate/rules.ts` decides
+`s3/access.ts` reads policy/ACL/IAM/KMS/Access Analyzer and SCP grants with a
+coverage count; `s3/permissions.ts` turns an access-denied read into the missing
+action. They all feed the same facts. `estate/rules.ts` decides
 the twelve rules (eleven per bucket, one per account) from facts by code; `survey` and `config` both apply the same
 decisions to the estate and attach the observations (`bucket, code, verdict`)
 to their view, which is how the brief knows a finding was proved fixed.
@@ -98,8 +98,8 @@ to their view, which is how the brief knows a finding was proved fixed.
 | `main/s3/policy.ts` | local policy evaluation, TLS enforcement |
 | `main/s3/account.ts` | account-wide public access block (STS, S3 Control) |
 | `main/s3/metrics.ts` | CloudWatch capacity, storage class mix, list-price estimate |
-| `main/s3/access.ts` | policy/ACL/IAM/KMS/Access Analyzer access paths |
-| `main/s3/changes.ts` | posture diff and CloudTrail attribution |
+| `main/s3/access.ts` | policy/ACL/IAM/KMS/Access Analyzer/SCP access paths with coverage |
+| `main/s3/changes.ts` | posture diff and paginated 90-day CloudTrail attribution |
 | `main/s3/capabilities.ts` | provider capability matrix |
 | `main/s3/permissions.ts` | read status → missing IAM action; read policy |
 | `main/model-catalog.ts` | model list and context-window inference |

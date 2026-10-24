@@ -1,5 +1,6 @@
+import type { CloudTrailClient } from '@aws-sdk/client-cloudtrail'
 import { describe, expect, it } from 'vitest'
-import { diffPosture } from './changes'
+import { attribute, diffPosture } from './changes'
 
 describe('posture changes', () => {
   it('reports a real difference and ignores an unchanged field', () => {
@@ -36,5 +37,42 @@ describe('posture changes', () => {
       before: 'available',
       after: 'access_denied',
     })
+  })
+
+  it('pages through CloudTrail and records the 90-day window', async () => {
+    const inputs: Record<string, unknown>[] = []
+    let page = 0
+    const client = {
+      send: async (command: { input: Record<string, unknown> }) => {
+        inputs.push(command.input)
+        page += 1
+        return page === 1
+          ? {
+              Events: [
+                {
+                  EventName: 'PutBucketPolicy',
+                  EventTime: new Date('2026-10-20T10:00:00Z'),
+                  Username: 'alice',
+                },
+              ],
+              NextToken: 'next',
+            }
+          : {
+              Events: [
+                {
+                  EventName: 'PutBucketAcl',
+                  EventTime: new Date('2026-10-19T10:00:00Z'),
+                  Username: 'bob',
+                },
+              ],
+            }
+      },
+    } as unknown as CloudTrailClient
+    const result = await attribute(client, 'demo')
+    expect(inputs).toHaveLength(2)
+    expect(inputs[0]?.StartTime).toBeInstanceOf(Date)
+    expect(result.events).toHaveLength(2)
+    expect(result.days).toBe(90)
+    expect(result.truncated).toBe(false)
   })
 })

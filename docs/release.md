@@ -23,15 +23,15 @@ GitHub release.
 These are release requirements, not CI suggestions:
 
 - macOS: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
-  `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`. Without them the app is
-  unsigned, Gatekeeper warns, and macOS cannot install updates.
+  `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
 - Windows: `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`.
 - A signed build needs the certificate available to the runner; the app cannot
   prove a signature from inside itself.
 
-If the secrets are absent, the workflow still produces artifacts for local
-testing, but the release is not distribution-ready. Do not describe it as
-signed.
+The release workflow has a `Require code signing` job that fails before build
+when any of these secrets is missing. The real-model eval job also runs before
+build and its reports become part of the release notes. There is no unsigned
+distribution path.
 
 ## Update path
 

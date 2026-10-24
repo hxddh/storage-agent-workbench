@@ -331,7 +331,8 @@ button {
 .brief {
   max-width: 720px;
   margin: 0 auto;
-  padding: 18px 32px 52px;
+  /* Keep the reading column on the same optical edge as the composer text. */
+  padding: 18px 16px 96px;
 }
 
 /* ---------- empty ---------- */
@@ -516,6 +517,11 @@ button {
   letter-spacing: 0;
   color: var(--ink-2);
 }
+.section-target.data-count {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-3);
+}
 .section-more {
   align-self: flex-start;
 }
@@ -523,6 +529,20 @@ button {
 .findings-list {
   display: flex;
   flex-direction: column;
+}
+.finding-group {
+  display: flex;
+  flex-direction: column;
+}
+.finding-group-title {
+  margin: 10px 0 2px;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.finding-group:first-child .finding-group-title {
+  margin-top: 0;
 }
 .finding-row {
   display: flex;
@@ -627,6 +647,11 @@ button {
   margin: 0;
   font-size: 12.5px;
   color: var(--ink-3);
+}
+.brief-error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--danger);
 }
 .verdict.stale {
   opacity: 0.55;
@@ -1328,6 +1353,10 @@ pre.code {
 .composer textarea::placeholder {
   color: var(--ink-3);
 }
+.composer textarea:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
 
 .composer-foot {
   display: flex;
@@ -1410,7 +1439,7 @@ pre.code {
   -webkit-app-region: drag;
 }
 .sheet-head-inner {
-  max-width: 640px;
+  max-width: 720px;
   height: 100%;
   margin: 0 auto;
   padding: 0 24px;
@@ -1434,7 +1463,7 @@ pre.code {
   overflow-y: auto;
 }
 .sheet-inner {
-  max-width: 640px;
+  max-width: 720px;
   margin: 0 auto;
   padding: 28px 24px 80px;
   display: flex;
@@ -1877,7 +1906,7 @@ pre.code {
 .home-inner {
   width: 100%;
   max-width: 720px;
-  padding: clamp(64px, 16vh, 160px) 32px 32px;
+  padding: clamp(48px, 10vh, 120px) 16px 32px;
 }
 .home h1 {
   margin: 0 0 24px;
@@ -1925,6 +1954,24 @@ pre.code {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
+}
+.home-setup-hint {
+  flex-basis: 100%;
+  margin-top: -2px;
+}
+.home-local {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  width: 100%;
+}
+.home-local-label {
+  width: 100%;
+  color: var(--ink-3);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .home-prompts {
   display: flex;
@@ -2083,6 +2130,9 @@ pre.code {
 .access-source.kms {
   color: var(--ok);
 }
+.access-source.trust {
+  color: var(--warn);
+}
 .access-principal {
   min-width: 0;
   overflow: hidden;
@@ -2218,8 +2268,7 @@ pre.code {
   color: var(--ink-2);
 }
 .task-row-wrap {
-  content-visibility: auto;
-  contain-intrinsic-size: 32px;
+  min-height: 30px;
 }
 
 @media print {

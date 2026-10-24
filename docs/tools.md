@@ -12,7 +12,7 @@ envelope, and attaches a typed `view` and a `status` (`done`, `failed`,
 | `buckets` | `provider_id?` | names | name + created |
 | `objects` | `bucket`, `prefix?`, `kind?` (`keys`/`versions`/`uploads`), `limit?` (≤200) | count | key table |
 | `object` | `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`) | facts | fact list, bounded text preview |
-| `config` | `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules proved clean; for `access`, grants and their source | finding list, observations, access chain |
+| `config` | `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules proved clean; for `access`, grants, their source and principal coverage | finding list, observations, access chain and coverage |
 | `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`) | check outcomes | check list |
 | `estate` | `provider_id?`, `bucket?`, `notes?` | remembered buckets with their age, Issues with evidence, notes | bucket table, Issues, notes |
 | `fix` | `bucket?`, `code?` (omit for every open issue) | one set of CLI/notes/impact per issue class | CLI/Terraform/API tabs, impact, batch folds |
@@ -22,7 +22,7 @@ envelope, and attaches a typed `view` and a `status` (`done`, `failed`,
 ## Code mode (`query`)
 
 The script runs in a QuickJS sandbox (`@earendil-works/pi-codemode`): no
-`fetch`, `require`, `process`, timers or modules. Its only capabilities are nine
+`fetch`, `require`, `process`, timers or modules. Its only capabilities are ten
 read-only primitives, all scoped to the account:
 
 | Primitive | Reads |
@@ -33,14 +33,17 @@ read-only primitives, all scoped to the account:
 | `config({bucket, aspect?})` | the same reading `config` uses, as statuses and proved rule codes |
 | `capacity({bucket})` | CloudWatch storage metrics (AWS only) |
 | `estate()` | remembered buckets and open Issues |
-| `inventory({bucket})` | latest S3 Inventory manifest and bounded CSV/Parquet rows |
+| `principal({bucket?, principal?, limit?})` | effective access for a bucket, or the remembered/visible buckets a principal reaches, with coverage |
+| `inventory({bucket, maxRows?, full?})` | latest S3 Inventory manifest and bounded rows; `full` imports all manifest files into a dataset |
 | `dataset({file, kind?})` / `aggregate({...})` | import an attached log/inventory and run a whitelisted aggregate |
 
 Budget per script: 2,000 calls, 500,000 listed items, 120 seconds, 256 MiB.
 The returned rows (at most 500 on the page, 40 to the model) are redacted; the
 script and the buckets it read are kept in the view as evidence. `inventory`
-reads at most a page of the latest manifest; Parquet up to 16 MiB and CSV up to
-8 MiB are bounded, and a larger file is reported rather than loaded whole.
+without `full` reads a bounded page of the latest manifest; Parquet up to 16 MiB
+and CSV up to 8 MiB are bounded. With `full: true`, every file in the manifest is
+imported into a local dataset (up to 2,000,000 rows), and `aggregate` is the
+only way to query it. Coverage and truncation are returned with the import.
 
 ## Rules the tools enforce
 
@@ -64,8 +67,11 @@ reads at most a page of the latest manifest; Parquet up to 16 MiB and CSV up to
 - `note` is capped at 1,000 characters and 500 notes; it is redacted and
   recorded as `author=agent`.
 - `survey` opens and resolves Issues through `estate`, never through prose.
-- `access` is evidence, not an authorization decision: a blind IAM/KMS/Analyzer
-  read is shown; a provider that lacks a concept is not called missing.
+- `access` is evidence, not an authorization decision: IAM is read with
+  `GetAccountAuthorizationDetails` and evaluated locally; SCPs are read through
+  Organizations when available; conditions, unread policies and truncation are
+  shown in the coverage line. A provider that lacks a concept is not called
+  missing.
 
 ## Not available
 

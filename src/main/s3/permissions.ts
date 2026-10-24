@@ -45,13 +45,18 @@ export function permissionGaps(facts: BucketFacts, access = false): PermissionGa
     gaps.push({
       bucket: facts.bucket,
       item: 'identity policies',
-      action: 'iam:SimulatePrincipalPolicy',
+      action: 'iam:GetAccountAuthorizationDetails',
     })
     gaps.push({ bucket: facts.bucket, item: 'key policy', action: 'kms:GetKeyPolicy' })
     gaps.push({
       bucket: facts.bucket,
       item: 'Access Analyzer',
       action: 'access-analyzer:ListFindings',
+    })
+    gaps.push({
+      bucket: facts.bucket,
+      item: 'service control policies',
+      action: 'organizations:ListPoliciesForTarget',
     })
   }
   return gaps.slice(0, 16)
@@ -62,7 +67,9 @@ export function accessPermissionGaps(
   blind: { source: string; status: string }[],
 ): PermissionGap[] {
   const action: Record<string, string> = {
-    iam: 'iam:SimulatePrincipalPolicy',
+    iam: 'iam:GetAccountAuthorizationDetails',
+    scp: 'organizations:DescribePolicy',
+    'scp-parents': 'organizations:ListParents',
     kms: 'kms:GetKeyPolicy',
     'access-analyzer': 'access-analyzer:ListFindings',
   }
@@ -112,9 +119,10 @@ export const READ_POLICY = {
         'cloudwatch:GetMetricData',
         'cloudwatch:ListMetrics',
         'cloudtrail:LookupEvents',
-        'iam:ListUsers',
-        'iam:ListRoles',
-        'iam:SimulatePrincipalPolicy',
+        'iam:GetAccountAuthorizationDetails',
+        'organizations:ListParents',
+        'organizations:ListPoliciesForTarget',
+        'organizations:DescribePolicy',
         'kms:DescribeKey',
         'kms:GetKeyPolicy',
         'access-analyzer:ListAnalyzers',

@@ -6,7 +6,7 @@ import type { ToolDetails, ToolName, ToolView } from '@shared/contract'
 import type { AppDb } from '../db'
 import type { Estate } from '../estate/estate'
 import type { ProviderConfig, Providers } from '../providers'
-import { bound, redact, redactView } from '../security/redact'
+import { bound, escapeTags, redact, redactView } from '../security/redact'
 
 export interface ToolDeps {
   db: AppDb
@@ -41,7 +41,7 @@ export function assertInScope(provider: ProviderConfig, bucket: string): void {
 }
 
 export function envelope(text: string): string {
-  return `<untrusted-data source="storage">\n${redact(text)}\n</untrusted-data>`
+  return `<untrusted-data source="storage">\n${escapeTags(redact(text))}\n</untrusted-data>`
 }
 
 export interface ToolDefinition<T extends TSchema> {

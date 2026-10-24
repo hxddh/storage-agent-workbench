@@ -1,4 +1,11 @@
-import type { AppEvent, Bootstrap, ContextRef, TaskSummary, TaskView } from '@shared/contract'
+import type {
+  AppEvent,
+  Bootstrap,
+  ContextRef,
+  LocalModel,
+  TaskSummary,
+  TaskView,
+} from '@shared/contract'
 import { Menu } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Composer } from './Composer'
@@ -168,6 +175,22 @@ export function App() {
     }
   }
 
+  const startLocal = async (model: LocalModel) => {
+    await window.agent.saveModel({
+      provider: 'compatible',
+      modelId: model.modelId,
+      baseUrl: model.baseUrl,
+      apiKey: 'local',
+    })
+    if (!boot?.accounts.length) {
+      await window.agent.addDemoAccount()
+      await refresh()
+      await submit('Survey this account.', [], [])
+    } else {
+      await refresh()
+    }
+  }
+
   const steer = async (text: string) => {
     if (!view) return
     await window.agent.steer(view.task.id, text)
@@ -263,6 +286,7 @@ export function App() {
               await window.agent.addDemoAccount()
               await refresh()
             }}
+            onUseLocal={startLocal}
           />
         ) : null}
         <Composer

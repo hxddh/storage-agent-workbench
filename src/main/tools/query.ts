@@ -11,7 +11,9 @@
  */
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import {
   GetObjectCommand,
@@ -28,9 +30,10 @@ import type { Chart, Table } from '@shared/contract'
 import { parse as parseCsv } from 'csv-parse/sync'
 import { parquetReadObjects } from 'hyparquet'
 import { AggregationError, aggregate, type DatasetKind, preview } from '../analysis/aggregate'
-import { datasetBytes, importDataset } from '../analysis/import'
+import { datasetBytes, importDataset, importInventoryFiles } from '../analysis/import'
 import { decide } from '../estate/rules'
 import type { ProviderConfig } from '../providers'
+import { readAccess } from '../s3/access'
 import { readAccount, UNREAD_ACCOUNT } from '../s3/account'
 import { readBucket } from '../s3/facts'
 import { readCapacity } from '../s3/metrics'
@@ -55,7 +58,8 @@ export const QUERY_API = `Primitives (all read-only, all async, all scoped to th
   config({bucket, aspect?: "security"|"lifecycle"|"observability"}): {exposure, statuses, issues}   // issues: rule codes the reading proves
   capacity({bucket}): {bytes, objects, byClass, growthBytes, monthlyUsd} | null   // AWS CloudWatch only
   estate(): {buckets: {name, readAt, posture}[], issues: {bucket, code, severity, status}[]}
-  inventory({bucket, maxRows?}): {rows, format, manifestAt, truncated, note}   // latest S3 Inventory CSV; Parquet is reported, not parsed
+  principal({bucket?, principal?, limit?}): {bucket?, paths, coverage}   // effective access for one bucket, or remembered buckets a principal reaches
+  inventory({bucket, maxRows?, full?}): {file, rows, format, manifestAt, truncated, note}   // one manifest page, or full?: import every manifest file into a local dataset for aggregate()
   dataset({file, kind?}): {file, kind, rows, columns}   // import one attached access log or inventory
   aggregate({file, metric, groupBy?, filters?, limit?}): {rows}
 Call them as tools.list({...}) etc. dataset and aggregate are the only way to read an attached file; raw rows never reach you. Return an array of flat rows (objects with string/number/boolean values), or {rows, chart: {label: "<column>", value: "<numeric column>"}}. text("…") adds a line of output.
@@ -549,10 +553,26 @@ function primitives(ctx: Context): CodemodeTool[] {
           }
         const prefix = destination?.Prefix ?? ''
         if (destinationBucket) assertInScope(config, destinationBucket)
-        const listed = await send<{
-          Contents?: { Key?: string; LastModified?: Date; Size?: number }[]
-        }>(new ListObjectsV2Command({ Bucket: destinationBucket, Prefix: prefix, MaxKeys: 1000 }))
-        const objects = (listed.Contents ?? []).filter((item) => item.Key)
+        const objects: { Key?: string; LastModified?: Date; Size?: number }[] = []
+        let listingToken: string | undefined
+        let listingTruncated = false
+        for (let page = 0; page < 10; page += 1) {
+          const listed = await send<{
+            Contents?: { Key?: string; LastModified?: Date; Size?: number }[]
+            NextContinuationToken?: string
+          }>(
+            new ListObjectsV2Command({
+              Bucket: destinationBucket,
+              Prefix: prefix,
+              MaxKeys: 1000,
+              ContinuationToken: listingToken,
+            }),
+          )
+          objects.push(...(listed.Contents ?? []))
+          listingToken = listed.NextContinuationToken
+          if (!listingToken) break
+          if (page === 9) listingTruncated = true
+        }
         const fileSize = (key: string) => objects.find((item) => item.Key === key)?.Size ?? 0
         const manifestKey = objects
           .filter((item) => item.Key?.endsWith('/manifest.json') || item.Key === 'manifest.json')
@@ -607,6 +627,67 @@ function primitives(ctx: Context): CodemodeTool[] {
             truncated: false,
             note: `Inventory format ${format} is not readable.`,
           }
+        if ((args as { full?: unknown }).full === true) {
+          const keys = (manifest.files ?? []).flatMap((item) => (item.key ? [item.key] : []))
+          const selected = keys.slice(0, 1000)
+          let truncated = keys.length > selected.length
+          let totalBytes = 0
+          const dir = await mkdtemp(join(tmpdir(), 'sa-inventory-'))
+          try {
+            const files: string[] = []
+            for (const [index, key] of selected.entries()) {
+              const response = await send<{
+                Body?: { transformToByteArray(): Promise<Uint8Array> }
+              }>(new GetObjectCommand({ Bucket: destinationBucket, Key: key }))
+              const bytes = (await response.Body?.transformToByteArray()) ?? new Uint8Array()
+              totalBytes += bytes.length
+              if (bytes.length > 128 * 1024 * 1024 || totalBytes > 512 * 1024 * 1024) {
+                truncated = true
+                break
+              }
+              const local = join(dir, `${index}-${basename(key) || 'inventory'}`)
+              await writeFile(local, bytes)
+              files.push(local)
+            }
+            const id = createHash('sha1')
+              .update(
+                `${ctx.conversationId}:${bucket}:${manifest.creationTimestamp ?? ''}:${selected.length}`,
+              )
+              .digest('hex')
+              .slice(0, 16)
+            const datasetPath = join(deps.datasetsDir(ctx.conversationId), `${id}.sqlite`)
+            const imported = await importInventoryFiles({
+              files,
+              destPath: datasetPath,
+              fallbackBucket: bucket,
+            })
+            const datasetKey = `inventory:${bucket}`
+            ctx.datasets.set(datasetKey, {
+              kind: 'inventory',
+              path: datasetPath,
+              rows: imported.rows,
+            })
+            await deps.db.insertDataset({
+              id,
+              conversation_id: ctx.conversationId,
+              kind: 'inventory',
+              path: datasetPath,
+              rows: imported.rows,
+              bytes: datasetBytes(datasetPath),
+            })
+            return {
+              file: datasetKey,
+              rows: imported.rows,
+              format,
+              manifestAt: manifest.creationTimestamp ?? null,
+              truncated: truncated || imported.truncated || listingTruncated,
+              columns: imported.columns,
+              note: `${files.length} inventory file(s), ${imported.rows} row(s) imported from ${manifest.creationTimestamp ?? 'the latest manifest'}.${truncated || imported.truncated || listingTruncated ? ' Coverage is partial.' : ''} Use aggregate({file: '${datasetKey}', ...}).`,
+            }
+          } finally {
+            await rm(dir, { recursive: true, force: true }).catch(() => undefined)
+          }
+        }
         if (format === 'CSV' && fileSize(file) > 32 * 1024 * 1024)
           return {
             rows: [],
@@ -691,10 +772,91 @@ function primitives(ctx: Context): CodemodeTool[] {
           rows: normalized,
           format,
           manifestAt: manifest.creationTimestamp ?? null,
-          truncated: rows.length > maxRows || Boolean(manifest.files && manifest.files.length > 1),
+          truncated:
+            rows.length > maxRows ||
+            Boolean(manifest.files && manifest.files.length > 1) ||
+            listingTruncated,
           note: `${rows.length} row(s) read from ${file}; inventory covers objects not listed by ListObjects.${
             fileSize(file) > bytes.length ? ' Only the first part of the file was read.' : ''
           }`,
+        }
+      },
+    },
+    {
+      name: 'principal',
+      description:
+        'Who can reach a bucket (effective access), or — when no bucket is named — which remembered buckets a principal apparently reaches. Conditions and unread sources are reported, never treated as clean.',
+      execute: async (args) => {
+        const a = args as { bucket?: unknown; principal?: unknown; limit?: unknown }
+        const wanted = String(a.principal ?? '')
+          .trim()
+          .toLowerCase()
+        const limit = Math.max(1, Math.min(Number(a.limit ?? 10) || 10, 20))
+        const readOne = async (bucket: string) => {
+          const name = bucketArg({ bucket })
+          spend()
+          const facts = await readBucket(client, name, {
+            aspects: new Set(['security']),
+            signal: ctx.signal,
+            regional: ctx.regional,
+            defaultRegion: config.region,
+            aws,
+            account: (await ctx.account?.()) ?? UNREAD_ACCOUNT,
+          })
+          const access = await readAccess({
+            bucket: name,
+            facts,
+            aws,
+            iam: aws && config.caps.iam ? deps.providers.iam(config) : undefined,
+            kms:
+              aws && config.caps.kms && facts.encryption.value?.keyArn
+                ? deps.providers.kms(config, facts.region)
+                : undefined,
+            analyzer:
+              aws && config.caps.accessAnalyzer
+                ? deps.providers.accessAnalyzer(config, facts.region)
+                : undefined,
+            organizations: aws ? deps.providers.organizations(config) : undefined,
+            signal: ctx.signal,
+          })
+          return {
+            bucket: name,
+            paths: access.paths.filter(
+              (item) => !wanted || item.principal.toLowerCase().includes(wanted),
+            ),
+            coverage: access.coverage,
+            blind: access.blind,
+          }
+        }
+        if (a.bucket) return readOne(String(a.bucket))
+        spend()
+        const listed = await send<{ Buckets?: { Name?: string }[] }>(new ListBucketsCommand({}))
+        const visible = (listed.Buckets ?? []).flatMap((bucket) =>
+          bucket.Name &&
+          (config.scope.buckets.length === 0 || config.scope.buckets.includes(bucket.Name))
+            ? [bucket.Name]
+            : [],
+        )
+        const allRemembered = visible.length
+          ? visible
+          : (await deps.db.listBuckets(config.id))
+              .map((row) => row.name)
+              .filter(
+                (bucket) =>
+                  config.scope.buckets.length === 0 || config.scope.buckets.includes(bucket),
+              )
+        const remembered = allRemembered.slice(0, limit)
+        const results = []
+        for (const bucket of remembered) results.push(await readOne(bucket))
+        return {
+          buckets: results,
+          coverage: {
+            principals: results.reduce((n, item) => n + item.coverage.principals, 0),
+            evaluated: results.reduce((n, item) => n + item.coverage.evaluated, 0),
+            undecided: results.reduce((n, item) => n + item.coverage.undecided, 0),
+            truncated: remembered.length < allRemembered.length,
+            sources: [...new Set(results.flatMap((item) => item.coverage.sources))],
+          },
         }
       },
     },

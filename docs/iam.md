@@ -51,9 +51,10 @@ blind spot instead of a clean result.
         "cloudwatch:GetMetricData",
         "cloudwatch:ListMetrics",
         "cloudtrail:LookupEvents",
-        "iam:ListUsers",
-        "iam:ListRoles",
-        "iam:SimulatePrincipalPolicy",
+        "iam:GetAccountAuthorizationDetails",
+        "organizations:ListParents",
+        "organizations:ListPoliciesForTarget",
+        "organizations:DescribePolicy",
         "kms:DescribeKey",
         "kms:GetKeyPolicy",
         "access-analyzer:ListAnalyzers",
@@ -75,7 +76,8 @@ blind spot instead of a clean result.
 | `s3:GetAccountPublicAccessBlock` | the account-wide block, S3.1 | account block is unknown, never assumed off |
 | `cloudwatch:*` | size, objects and storage-class mix | capacity is unavailable, not zero |
 | `cloudtrail:LookupEvents` | who changed a bucket | the change is shown with the actor unknown |
-| `iam:ListUsers`, `iam:ListRoles`, `iam:SimulatePrincipalPolicy` | identity grants in an access path | IAM is a blind spot; policy and ACL grants still show |
+| `iam:GetAccountAuthorizationDetails` | identity, group, managed-policy, boundary and trust evaluation | IAM is a blind spot; policy and ACL grants still show |
+| `organizations:ListParents`, `organizations:ListPoliciesForTarget`, `organizations:DescribePolicy` | SCPs inherited from the account, OUs and root | SCPs are a blind spot; identity grants still show |
 | `kms:DescribeKey`, `kms:GetKeyPolicy` | the key policy for SSE-KMS | the key policy is a blind spot |
 | `access-analyzer:*` | Access Analyzer findings | findings are unavailable; local policy reading still runs |
 

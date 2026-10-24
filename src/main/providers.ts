@@ -7,6 +7,7 @@ import { CloudTrailClient } from '@aws-sdk/client-cloudtrail'
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch'
 import { IAMClient } from '@aws-sdk/client-iam'
 import { KMSClient } from '@aws-sdk/client-kms'
+import { OrganizationsClient } from '@aws-sdk/client-organizations'
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3'
 import { S3ControlClient } from '@aws-sdk/client-s3-control'
 import { STSClient } from '@aws-sdk/client-sts'
@@ -107,6 +108,7 @@ export class Providers {
     | KMSClient
     | AccessAnalyzerClient
     | CloudTrailClient
+    | OrganizationsClient
   >()
 
   constructor(
@@ -243,7 +245,9 @@ export class Providers {
    */
   client(provider: ProviderConfig, region?: string): S3Client {
     const target = region || provider.region || 'us-east-1'
-    const key = `${provider.id}:${target}`
+    // Addressing is part of the client identity: probe deliberately builds the
+    // same account/region twice with different path-style settings.
+    const key = `${provider.id}:${target}:${provider.forcePathStyle ? 'path' : 'virtual'}`
     const cached = this.clients.get(key)
     if (cached) return cached
     const credentials = this.credentialsOf(provider)
@@ -327,6 +331,10 @@ export class Providers {
 
   iam(provider: ProviderConfig): IAMClient {
     return this.service(provider, 'iam', 'us-east-1', (o) => new IAMClient(o))
+  }
+
+  organizations(provider: ProviderConfig): OrganizationsClient {
+    return this.service(provider, 'organizations', 'us-east-1', (o) => new OrganizationsClient(o))
   }
 
   kms(provider: ProviderConfig, region: string): KMSClient {

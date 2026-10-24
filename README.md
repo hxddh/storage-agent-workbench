@@ -30,16 +30,20 @@ writes, deletes or changes anything in storage.
   tags, ACL and a bounded text preview.
 - Generates fixes as text — AWS CLI, Terraform and the API document — with an
   impact preview built only from what the estate already knows.
-- Reads access paths: bucket policy and ACL locally, bounded IAM simulation,
-  KMS key policy and Access Analyzer findings. A blind read is named, not
-  turned into an empty grant list.
+- Reads access paths: bucket policy and ACL locally, all IAM principals and
+  policies with `GetAccountAuthorizationDetails`, inherited SCPs, KMS key
+  policy and Access Analyzer findings. Coverage, undecided conditions and
+  truncation are shown; a blind read is named, never turned into an empty grant
+  list.
 - Compares each survey with the last remembered posture and, on AWS, asks
-  CloudTrail who changed it. A denied lookup leaves the actor unknown.
+  CloudTrail who changed it over a stated 90-day window. A denied lookup leaves
+  the actor unknown.
 - Re-verifies a task without a model: it re-reads the buckets the task touched
   and reports what changed. Findings, controls, timestamps and redacted views
   export as an evidence pack; the brief saves as PDF.
 - Imports an attached access log or S3 Inventory through code mode (`dataset`,
-  `aggregate`, `inventory`); raw rows never reach the model.
+  `aggregate`, `inventory`, `principal`); a full inventory can be imported file
+  by file, and raw rows never reach the model.
 - Shows each tool call where it happens, with real progress, and keeps it as
   the receipt behind every finding; every table can be copied as CSV or saved,
   the whole brief as Markdown. Every bucket the answer names is checked against
@@ -49,9 +53,9 @@ writes, deletes or changes anything in storage.
   running on this machine (Ollama, LM Studio) are one click away. Home is a
   quiet account summary, not a dashboard. `@` points at a remembered account,
   bucket or issue; the names are focus, not authorization.
-- Sets the model in one step: fetch the provider's models, infer the context
-  window and leave reasoning automatic. A small model gets shorter method
-  cards and a smaller tool budget.
+- Sets the model in one step: paste a key and the provider's models are fetched,
+  the context window is inferred and reasoning is automatic. A small model gets
+  shorter method cards and a smaller tool budget.
 - Searches task titles, questions, findings and the current answer with ⌘K;
   failed or stopped runs offer Retry or Continue.
 

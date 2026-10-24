@@ -59,7 +59,11 @@ export function Settings({
   const [modelId, setModelId] = useState(boot.model?.modelId ?? '')
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState(boot.model?.baseUrl ?? '')
-  const [contextWindow, setContextWindow] = useState(boot.model?.contextWindow ?? 128_000)
+  // null means "infer on save"; never keep a previous model's window when the
+  // user changes the id by hand.
+  const [contextWindow, setContextWindow] = useState<number | null>(
+    boot.model?.contextWindow ?? null,
+  )
   const [models, setModels] = useState<CatalogModel[]>([])
   const [modelsBusy, setModelsBusy] = useState(false)
   const [modelDetail, setModelDetail] = useState('')
@@ -111,8 +115,7 @@ export function Settings({
         modelId,
         apiKey: apiKey || undefined,
         baseUrl,
-        contextWindow,
-        thinking: 'medium',
+        ...(contextWindow ? { contextWindow } : {}),
       })
       setApiKey('')
       setModelStatus({ ok: true, detail: t.saved })
@@ -143,6 +146,41 @@ export function Settings({
       setModelsBusy(false)
     }
   }
+
+  // A pasted key is enough; the model list arrives without a second button
+  // click. Debounced so typing or pasting does not fan out requests. The
+  // request is inline so this effect does not depend on a function identity.
+  useEffect(() => {
+    const key = apiKey.trim()
+    if (!key) return
+    let live = true
+    const timer = setTimeout(() => {
+      setModelsBusy(true)
+      setModelDetail('')
+      void window.agent
+        .listModels({ provider, baseUrl, apiKey: key })
+        .then((result) => {
+          if (!live) return
+          setModels(result.models)
+          setModelDetail(
+            result.models.length ? `${result.models.length} ${t.modelsFound}` : t.noModelsFound,
+          )
+          const first = result.models[0]
+          setModelId((current) => current || first?.id || current)
+          if (first?.contextWindow) setContextWindow((current) => current ?? first.contextWindow)
+        })
+        .catch((error) => {
+          if (live) setModelDetail(error instanceof Error ? error.message : String(error))
+        })
+        .finally(() => {
+          if (live) setModelsBusy(false)
+        })
+    }, 650)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [apiKey, provider, baseUrl, t.modelsFound, t.noModelsFound])
 
   const testModel = async () => {
     setModelBusy(true)
@@ -263,6 +301,7 @@ export function Settings({
                 onChange={(event) => {
                   setProvider(event.target.value as Provider)
                   setModels([])
+                  setContextWindow(null)
                 }}
               >
                 <option value="openai">{t.providerOpenAI}</option>
@@ -277,7 +316,10 @@ export function Settings({
                   id="modelId"
                   value={modelId}
                   placeholder={provider === 'anthropic' ? 'claude-sonnet-5' : 'gpt-6-sol'}
-                  onChange={(event) => setModelId(event.target.value)}
+                  onChange={(event) => {
+                    setModelId(event.target.value)
+                    setContextWindow(null)
+                  }}
                 />
                 <button
                   className="btn"
@@ -296,7 +338,7 @@ export function Settings({
                     const next = event.target.value
                     setModelId(next)
                     const found = models.find((model) => model.id === next)
-                    if (found?.contextWindow) setContextWindow(found.contextWindow)
+                    setContextWindow(found?.contextWindow ?? null)
                   }}
                 >
                   {models.map((model) => (

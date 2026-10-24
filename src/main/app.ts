@@ -121,33 +121,42 @@ export class App {
     const suggestions: OverviewSuggestion[] = []
     let lastRead: string | null = null
     let changesSince = 0
+    const suggest = (item: OverviewSuggestion) => {
+      if (
+        suggestions.some(
+          (existing) => existing.code === item.code && existing.bucket === item.bucket,
+        )
+      )
+        return
+      if (suggestions.length < 3) suggestions.push(item)
+    }
     for (const account of accounts) {
       const buckets = await this.db.listBuckets(account.id)
       const read = buckets.map((row) => row.posture_at).filter((at): at is string => Boolean(at))
       const newest = read.sort().at(-1) ?? null
       if (newest && (!lastRead || newest > lastRead)) lastRead = newest
-      const issues = await this.db.listIssues({
-        providerId: account.id,
-        status: 'open',
-        limit: 1000,
-      })
-      const high = issues.filter((issue) => issue.severity === 'high')
+      const openTotal = await this.db.countOpenIssues(account.id)
+      const openHigh = await this.db.countOpenHigh(account.id)
+      if (seen) changesSince += await this.db.countOpenedSince(account.id, seen)
       summary.push({
         id: account.id,
         name: account.name,
         kind: account.kind,
         buckets: buckets.length,
         lastRead: newest,
-        openHigh: high.length,
-        openTotal: issues.length,
+        openHigh,
+        openTotal,
       })
-      if (buckets.length === 0 && issues.length === 0) {
-        suggestions.push({ code: 'survey', bucket: '' })
-        suggestions.push({ code: 'public', bucket: '' })
+      if (buckets.length === 0 && openTotal === 0) {
+        suggest({ code: 'survey', bucket: '' })
+        suggest({ code: 'public', bucket: '' })
       }
+      const issues = await this.db.listIssues({
+        providerId: account.id,
+        status: 'open',
+        limit: 100,
+      })
       for (const issue of issues) {
-        if (seen && issue.opened_at > seen) changesSince += 1
-        if (suggestions.length >= 3) continue
         if (!issue.bucket) continue
         const code =
           issue.code === 'public_exposure'
@@ -161,12 +170,10 @@ export class App {
                     issue.code === 'noncurrent_never_expire'
                   ? 'cleanup'
                   : 'principals'
-        if (suggestions.some((item) => item.code === code)) continue
-        suggestions.push({ code, bucket: issue.bucket })
+        suggest({ code, bucket: issue.bucket })
       }
     }
-    if (suggestions.length < 3) suggestions.push({ code: 'changes', bucket: '' })
-    if (suggestions.length < 3) suggestions.push({ code: 'permissions', bucket: '' })
+    if (suggestions.length < 3) suggest({ code: 'changes', bucket: '' })
     return { accounts: summary, lastRead, changesSince, suggestions: suggestions.slice(0, 3) }
   }
 

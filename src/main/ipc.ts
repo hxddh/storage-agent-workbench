@@ -10,7 +10,7 @@ import type {
 import { BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import type { App } from './app'
 import { detectLocalModels } from './local-models'
-import { contextFor, listModels } from './model-catalog'
+import { contextFor, listModels, thinkingFor } from './model-catalog'
 import { awsProfiles } from './providers'
 
 const PROVIDERS = new Set(['openai', 'anthropic', 'compatible'])
@@ -167,7 +167,10 @@ export function registerIpc(app: App): void {
     const modelId = input.modelId?.trim()
     if (!modelId) throw new Error('A model id is required.')
     const existing = app.settings.get().model
-    const keyRef = input.apiKey?.trim() ? app.vault.seal(input.apiKey.trim()) : existing?.keyRef
+    const key = input.apiKey?.trim()
+    if (!key && existing && existing.provider !== input.provider)
+      throw new Error('Enter an API key for this model provider.')
+    const keyRef = key ? app.vault.seal(key) : existing?.keyRef
     if (!keyRef) throw new Error('An API key is required.')
     app.settings.setModel({
       provider: input.provider,
@@ -177,7 +180,10 @@ export function registerIpc(app: App): void {
         input.contextWindow && input.contextWindow > 0
           ? Math.min(Math.round(input.contextWindow), 10_000_000)
           : contextFor(modelId),
-      thinking: input.thinking && THINKING.has(input.thinking) ? input.thinking : 'medium',
+      thinking:
+        input.thinking && THINKING.has(input.thinking)
+          ? input.thinking
+          : thinkingFor(modelId, input.provider),
       keyRef,
     })
     app.applyModel()

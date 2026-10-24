@@ -1,7 +1,7 @@
 import { HeadBucketCommand, ListBucketsCommand } from '@aws-sdk/client-s3'
 import type { ProbeCheck } from '@shared/contract'
 import { describe } from '../providers'
-import { agentTool, providerParam, type ToolDeps, Type } from './policy'
+import { agentTool, assertInScope, providerParam, type ToolDeps, Type } from './policy'
 
 export function probeTool(deps: ToolDeps) {
   return agentTool(deps, {
@@ -30,6 +30,9 @@ export function probeTool(deps: ToolDeps) {
     target: (args) => args.bucket ?? 'endpoint',
     run: async (args, run) => {
       const { config, client } = await run.provider(args.provider_id)
+      // A probe that names a bucket is a storage read and must obey the account
+      // scope before any request leaves the process.
+      if (args.bucket) assertInScope(config, args.bucket)
       const endpoint = config.endpoint || `https://s3.${config.region}.amazonaws.com`
       const checks: ProbeCheck[] = []
       const wanted = args.check ? [args.check] : (['reach', 'tls', 'latency'] as const)

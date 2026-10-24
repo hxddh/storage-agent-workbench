@@ -93,17 +93,21 @@ boundary, and the request is validated against the estate before it is sent.
 
 ## Access, changes and inventory
 
-`config` aspect `access` answers who can reach a bucket: bucket policy and ACL
-locally, bounded IAM identity simulation, the KMS key policy for SSE-KMS, and
-Access Analyzer findings. A blind read is named; it is not an empty grant list.
+`config` aspect `access` answers who can reach a bucket. IAM users, groups and
+roles are read once with `GetAccountAuthorizationDetails` and evaluated locally,
+including managed/inline policies, boundaries and trust policies; SCPs are read
+from Organizations when permissions allow. The page shows `evaluated / total`,
+undecided conditions and truncation, so a partial answer never looks complete.
 
 A survey diffs its reading against the last remembered posture. On AWS it asks
-CloudTrail who changed the bucket. The page shows the difference and the actor,
-or says the actor is unknown.
+CloudTrail who changed the bucket over a stated 90-day window and pages through
+matching events. The page shows the difference and the actor, or says no matching
+management event was found; an unreadable lookup remains unknown.
 
-When a bucket publishes S3 Inventory, code mode reads the latest manifest and a
-bounded page of CSV or Parquet rows. This is how the agent answers questions
-about buckets with hundreds of millions of objects without paging them.
+When a bucket publishes S3 Inventory, code mode can read the latest manifest and
+a bounded page, or `full: true` imports every manifest file (CSV or Parquet)
+into a local dataset for `aggregate`. The page states the inventory date and row
+coverage; a partial manifest is never described as the whole bucket.
 
 ## Model fit
 

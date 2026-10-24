@@ -71,42 +71,74 @@ export interface Attribution {
   actor: string
 }
 
+export const CLOUDTRAIL_DAYS = 90
+const MAX_EVENT_PAGES = 20
+
+export interface AttributionResult {
+  events: Attribution[]
+  status: 'ok' | 'denied' | 'unsupported' | 'error'
+  from: string
+  to: string
+  days: number
+  truncated: boolean
+}
+
 export async function attribute(
   client: CloudTrailClient,
   bucket: string,
   signal?: AbortSignal,
-): Promise<{ events: Attribution[]; status: 'ok' | 'denied' | 'unsupported' | 'error' }> {
+): Promise<AttributionResult> {
+  const to = new Date()
+  const from = new Date(to.getTime() - CLOUDTRAIL_DAYS * 86_400_000)
   try {
-    const response = await client.send(
-      new LookupEventsCommand({
-        LookupAttributes: [{ AttributeKey: 'ResourceName', AttributeValue: bucket }],
-        StartTime: new Date(Date.now() - 7 * 86_400_000),
-        MaxResults: 20,
-      }),
-      { abortSignal: signal },
-    )
-    const events = (response.Events ?? [])
-      .filter((event) => MUTATIONS.includes(event.EventName ?? ''))
-      .slice(0, 3)
-      .map((event) => ({
-        at: event.EventTime ? new Date(event.EventTime).toISOString() : '',
-        event: event.EventName ?? 'change',
-        actor:
-          event.Username ??
-          (event.CloudTrailEvent
-            ? (() => {
-                try {
-                  const parsed = JSON.parse(event.CloudTrailEvent) as {
-                    userIdentity?: { arn?: string; userName?: string }
+    const found: Attribution[] = []
+    let nextToken: string | undefined
+    let truncated = false
+    for (let page = 0; page < MAX_EVENT_PAGES; page += 1) {
+      const response = await client.send(
+        new LookupEventsCommand({
+          LookupAttributes: [{ AttributeKey: 'ResourceName', AttributeValue: bucket }],
+          StartTime: from,
+          EndTime: to,
+          MaxResults: 50,
+          NextToken: nextToken,
+        }),
+        { abortSignal: signal },
+      )
+      for (const event of response.Events ?? []) {
+        if (!MUTATIONS.includes(event.EventName ?? '')) continue
+        found.push({
+          at: event.EventTime ? new Date(event.EventTime).toISOString() : '',
+          event: event.EventName ?? 'change',
+          actor:
+            event.Username ??
+            (event.CloudTrailEvent
+              ? (() => {
+                  try {
+                    const parsed = JSON.parse(event.CloudTrailEvent) as {
+                      userIdentity?: { arn?: string; userName?: string }
+                    }
+                    return parsed.userIdentity?.arn ?? parsed.userIdentity?.userName ?? 'unknown'
+                  } catch {
+                    return 'unknown'
                   }
-                  return parsed.userIdentity?.arn ?? parsed.userIdentity?.userName ?? 'unknown'
-                } catch {
-                  return 'unknown'
-                }
-              })()
-            : 'unknown'),
-      }))
-    return { events, status: 'ok' }
+                })()
+              : 'unknown'),
+        })
+      }
+      nextToken = response.NextToken
+      if (!nextToken) break
+      if (page === MAX_EVENT_PAGES - 1) truncated = true
+    }
+    found.sort((a, b) => b.at.localeCompare(a.at))
+    return {
+      events: found.slice(0, 20),
+      status: 'ok',
+      from: from.toISOString(),
+      to: to.toISOString(),
+      days: CLOUDTRAIL_DAYS,
+      truncated: truncated || found.length > 20,
+    }
   } catch (error) {
     return {
       events: [],
@@ -116,6 +148,10 @@ export async function attribute(
           : classify(error) === 'access_denied'
             ? 'denied'
             : 'error',
+      from: from.toISOString(),
+      to: to.toISOString(),
+      days: CLOUDTRAIL_DAYS,
+      truncated: false,
     }
   }
 }

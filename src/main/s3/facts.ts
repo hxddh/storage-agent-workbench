@@ -91,7 +91,19 @@ export interface BucketFacts {
   policyStatus: Dim<{ isPublic: boolean }>
   pab: Dim<PublicAccessBlock>
   ownership: Dim<{ mode: string | null }>
-  acl: Dim<{ allUsers: boolean; authenticatedUsers: boolean; write: boolean }>
+  acl: Dim<{
+    allUsers: boolean
+    authenticatedUsers: boolean
+    /** Any public grant includes READ or FULL_CONTROL. */
+    read: boolean
+    /** Any public grant includes WRITE or FULL_CONTROL. */
+    write: boolean
+    /** Per-principal permissions, when the provider reported them. */
+    allUsersRead?: boolean
+    allUsersWrite?: boolean
+    authenticatedUsersRead?: boolean
+    authenticatedUsersWrite?: boolean
+  }>
   cors: Dim<{ rules: number; allOrigins: boolean }>
   logging: Dim<{ enabled: boolean }>
   tagging: Dim<{ count: number }>
@@ -369,12 +381,19 @@ export async function readBucket(
           const open = grants.filter(
             (grant) => grant.Grantee?.URI === ALL_USERS || grant.Grantee?.URI === AUTH_USERS,
           )
+          const hasPermission = (grant: { Permission?: string }, permission: string) =>
+            grant.Permission === permission || grant.Permission === 'FULL_CONTROL'
+          const allUsers = open.filter((grant) => grant.Grantee?.URI === ALL_USERS)
+          const authenticated = open.filter((grant) => grant.Grantee?.URI === AUTH_USERS)
           return {
-            allUsers: open.some((grant) => grant.Grantee?.URI === ALL_USERS),
-            authenticatedUsers: open.some((grant) => grant.Grantee?.URI === AUTH_USERS),
-            write: open.some(
-              (grant) => grant.Permission === 'WRITE' || grant.Permission === 'FULL_CONTROL',
-            ),
+            allUsers: allUsers.length > 0,
+            authenticatedUsers: authenticated.length > 0,
+            read: open.some((grant) => hasPermission(grant, 'READ')),
+            write: open.some((grant) => hasPermission(grant, 'WRITE')),
+            allUsersRead: allUsers.some((grant) => hasPermission(grant, 'READ')),
+            allUsersWrite: allUsers.some((grant) => hasPermission(grant, 'WRITE')),
+            authenticatedUsersRead: authenticated.some((grant) => hasPermission(grant, 'READ')),
+            authenticatedUsersWrite: authenticated.some((grant) => hasPermission(grant, 'WRITE')),
           }
         },
       )
@@ -382,7 +401,7 @@ export async function readBucket(
       if (acl.status === 'not_configured')
         acl = {
           status: 'available',
-          value: { allUsers: false, authenticatedUsers: false, write: false },
+          value: { allUsers: false, authenticatedUsers: false, read: false, write: false },
         }
     }
   }

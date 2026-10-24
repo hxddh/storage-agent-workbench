@@ -137,6 +137,16 @@ function changeField(field: string, lang: Lang): string {
   return lang === 'zh' ? (FIELD_ZH[field] ?? field) : field
 }
 
+function stateLabel(value: 'open' | 'accepted' | 'clear' | 'undecided', t: Dict): string {
+  return value === 'open'
+    ? t.stateOpen
+    : value === 'accepted'
+      ? t.stateAccepted
+      : value === 'clear'
+        ? t.stateClear
+        : t.stateUndecided
+}
+
 function severityLabel(finding: BriefFinding, t: Dict): string {
   return finding.severity === 'high'
     ? t.severityHigh
@@ -557,6 +567,7 @@ export function Brief({
   const [copied, setCopied] = useState(false)
   const [linked, setLinked] = useState(false)
   const [reverifying, setReverifying] = useState(false)
+  const [reverifyError, setReverifyError] = useState<string | null>(null)
   const [more, setMore] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const focused = useRef<string | null>(null)
@@ -627,6 +638,18 @@ export function Brief({
 
   const live = Boolean(view.live)
   const visibleFindings = allFindings ? brief.findings : brief.findings.slice(0, FINDINGS_SHOWN)
+  const findingGroups = [
+    ...new Map(
+      visibleFindings.map((finding) => [
+        finding.bucket || '',
+        { bucket: finding.bucket, items: [] as BriefFinding[] },
+      ]),
+    ).values(),
+  ]
+  for (const finding of visibleFindings) {
+    const group = findingGroups.find((item) => item.bucket === finding.bucket)
+    group?.items.push(finding)
+  }
   const allMemory =
     brief.findings.length > 0 && brief.findings.every((finding) => finding.source === 'memory')
   const rememberedAt = allMemory
@@ -662,8 +685,11 @@ export function Brief({
 
   const reverify = async () => {
     setReverifying(true)
+    setReverifyError(null)
     try {
       await onReverify()
+    } catch (error) {
+      setReverifyError(error instanceof Error ? error.message : String(error))
     } finally {
       setReverifying(false)
     }
@@ -920,16 +946,23 @@ export function Brief({
           <section className="brief-section" aria-label={t.findingsTitle}>
             {brief.findings.length > 0 && <h2>{t.findingsTitle}</h2>}
             <div className="findings-list">
-              {visibleFindings.map((finding) => (
-                <FindingRow
-                  key={finding.key}
-                  finding={finding}
-                  t={t}
-                  onOpen={() => revealCheck(finding.sourceId)}
-                  onAccept={accept(finding)}
-                  tagMemory={!allMemory}
-                  staleDays={staleDays}
-                />
+              {findingGroups.map((group) => (
+                <div className="finding-group" key={group.bucket || 'account'}>
+                  {findingGroups.length > 1 && (
+                    <p className="finding-group-title mono">{group.bucket || t.accountWide}</p>
+                  )}
+                  {group.items.map((finding) => (
+                    <FindingRow
+                      key={finding.key}
+                      finding={finding}
+                      t={t}
+                      onOpen={() => revealCheck(finding.sourceId)}
+                      onAccept={accept(finding)}
+                      tagMemory={!allMemory}
+                      staleDays={staleDays}
+                    />
+                  ))}
+                </div>
               ))}
             </div>
             {brief.findings.length > FINDINGS_SHOWN && (
@@ -987,6 +1020,11 @@ export function Brief({
           </section>
         )}
 
+        {reverifyError && (
+          <p className="brief-error">
+            {t.reverifyFailed}: {reverifyError}
+          </p>
+        )}
         {!live && brief.reverify && (
           <section className="brief-section reverify-section" aria-label={t.reverifyTitle}>
             <h2>{t.reverifyTitle}</h2>
@@ -997,6 +1035,10 @@ export function Brief({
               })}{' '}
               · {new Date(brief.reverify.at).toLocaleString()}
             </p>
+            {brief.reverify.skipped > 0 && (
+              <p className="quiet">{fill(t.reverifySkipped, { n: brief.reverify.skipped })}</p>
+            )}
+            {brief.reverify.truncated && <p className="quiet">{t.reverifyTruncated}</p>}
             {brief.reverify.changes.length === 0 ? (
               <p className="clean">{t.reverifyNoChange}</p>
             ) : (
@@ -1005,23 +1047,11 @@ export function Brief({
                   <div className="change-row" key={`${change.bucket}:${change.code}`}>
                     <span className="change-bucket mono">{change.bucket}</span>
                     <span className="change-field">{change.title}</span>
-                    <span className="change-before">
-                      {change.before === 'open'
-                        ? t.stateOpen
-                        : change.before === 'clear'
-                          ? t.stateClear
-                          : t.stateUndecided}
-                    </span>
+                    <span className="change-before">{stateLabel(change.before, t)}</span>
                     <span className="change-arrow" aria-hidden="true">
                       →
                     </span>
-                    <span className="change-after">
-                      {change.after === 'open'
-                        ? t.stateOpen
-                        : change.after === 'clear'
-                          ? t.stateClear
-                          : t.stateUndecided}
-                    </span>
+                    <span className="change-after">{stateLabel(change.after, t)}</span>
                   </div>
                 ))}
               </div>
@@ -1048,13 +1078,19 @@ export function Brief({
             {brief.attribution && (
               <p className="quiet">
                 {brief.attribution.events.length
-                  ? brief.attribution.events
+                  ? `${fill(t.attributionWindow, { days: brief.attribution.days ?? 90 })} · ${brief.attribution.events
                       .map(
                         (event) =>
                           `${event.event} · ${event.actor} · ${new Date(event.at).toLocaleString()}`,
                       )
-                      .join('  ·  ')
-                  : `${t.attributionUnavailable} (${brief.attribution.status}).`}
+                      .join('  ·  ')}`
+                  : brief.attribution.status === 'ok'
+                    ? fill(t.attributionNone, { days: brief.attribution.days ?? 90 })
+                    : `${t.attributionUnavailable} (${brief.attribution.status}, ${brief.attribution.days ?? 90}d).`}
+                {brief.attribution.events.length && brief.attribution.status !== 'ok'
+                  ? ` · ${t.attributionUnavailable} (${brief.attribution.status})`
+                  : ''}
+                {brief.attribution.truncated ? ` · ${t.attributionTruncated}` : ''}
               </p>
             )}
           </section>
@@ -1136,7 +1172,7 @@ export function Brief({
               <span className="section-title">
                 {brief.data.view.kind === 'config' ? t.accessTitle : t.dataTitle}
               </span>
-              <span className="section-target">{dataSummary(brief.data, t)}</span>
+              <span className="section-target data-count">{dataSummary(brief.data, t)}</span>
               <ChevronRight size={13} className={`chev ${dataExpanded ? 'open' : ''}`} />
             </button>
             {dataExpanded && <DataSection data={brief.data} t={t} />}

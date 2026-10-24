@@ -75,10 +75,9 @@ xvfb-run -a node scripts/e2e.mjs
 ## Packaging
 
 `electron-builder` reads the `build` block in `package.json`. There are no
-native addons, so no rebuild step is required. The release workflow signs and
-notarizes when `CSC_LINK`, `APPLE_ID` and the related secrets exist; otherwise
-the app is unsigned, macOS asks for confirmation on first open, Windows
-SmartScreen warns, and macOS cannot update itself. `latest*.yml` feeds are
+native addons, so no rebuild step is required. The release workflow requires
+`CSC_LINK`, `APPLE_ID` and the related secrets, signs and notarizes the macOS
+bundle, and fails before the build when any are missing. `latest*.yml` feeds are
 attached to every release for `electron-updater`.
 
 Outputs: `release/linux-unpacked`, `.AppImage`, `.deb`, `.dmg`, `.zip`, `.exe`.

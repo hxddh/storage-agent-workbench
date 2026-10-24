@@ -153,7 +153,7 @@ describe('exposure', () => {
       ownership: { status: 'available', value: { mode: 'ObjectWriter' } },
       acl: {
         status: 'available',
-        value: { allUsers: true, authenticatedUsers: false, write: false },
+        value: { allUsers: true, authenticatedUsers: false, read: true, write: false },
       },
     })
     expect(f.exposure.verdict).toBe(false)

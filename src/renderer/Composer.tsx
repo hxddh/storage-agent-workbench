@@ -118,18 +118,28 @@ export function Composer({
 
   const send = async () => {
     const value = text.trim()
-    if (busy || (!value && files.length === 0)) return
+    if (!hasModel || busy) return
+    if (live) {
+      // A steer is text; files and @refs belong to the next user turn and must
+      // not be silently discarded.
+      if (!value) return
+      setBusy(true)
+      try {
+        await onSteer(value)
+        setText('')
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+    if (!value && files.length === 0) return
     setBusy(true)
     try {
-      if (live) {
-        await onSteer(value)
-      } else {
-        await onSend(
-          value,
-          files.map((file) => file.token),
-          context,
-        )
-      }
+      await onSend(
+        value,
+        files.map((file) => file.token),
+        context,
+      )
       setText('')
       setFiles([])
       setContext([])
@@ -187,8 +197,9 @@ export function Composer({
         <textarea
           ref={ref}
           value={text}
-          placeholder={t.placeholder}
+          placeholder={hasModel ? t.placeholder : t.emptyNoModel}
           rows={1}
+          disabled={!hasModel}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onChange={(event) => {
@@ -210,6 +221,10 @@ export function Composer({
             }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault()
+              if (picker !== null && refs[0]) {
+                pick(refs[0])
+                return
+              }
               void send()
             }
           }}
@@ -241,6 +256,7 @@ export function Composer({
             className="icon-btn"
             type="button"
             aria-label={t.attach}
+            disabled={Boolean(live) || !hasModel}
             onClick={() => void attach()}
           >
             <Paperclip size={15} strokeWidth={1.7} />
@@ -250,6 +266,7 @@ export function Composer({
             type="button"
             aria-label={t.attachContext}
             title={t.attachContext}
+            disabled={Boolean(live) || !hasModel}
             onClick={() => {
               setPicker('')
               ref.current?.focus()
@@ -258,7 +275,7 @@ export function Composer({
             <AtSign size={15} strokeWidth={1.7} />
           </button>
           <button className="model-chip" type="button" onClick={onOpenSettings}>
-            <span>{hasModel ? (modelLabel ?? 'Model') : 'Model'}</span>
+            <span>{hasModel ? (modelLabel ?? 'Model') : t.setModel}</span>
             <ChevronDown size={11} />
           </button>
           <span className="spacer" />
@@ -289,7 +306,7 @@ export function Composer({
               className="send"
               type="button"
               aria-label={t.send}
-              disabled={busy || (!text.trim() && files.length === 0)}
+              disabled={!hasModel || busy || (!text.trim() && files.length === 0)}
               onClick={() => void send()}
             >
               <ArrowUp size={15} strokeWidth={2} />

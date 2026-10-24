@@ -22,9 +22,10 @@
    shown or sent to the model — including tool targets, progress lines and
    error notes.
 5. **Envelope.** Every tool result the model sees is wrapped in
-   `<untrusted-data source="storage">…</untrusted-data>` and bounded. Bucket
-   names, object keys and log lines can contain hostile text; the envelope tells
-   the model it is data.
+   `<untrusted-data source="storage">…</untrusted-data>` and bounded. Stored
+   `<` and `>` are escaped before wrapping, so an object tag, metadata value or
+   error message cannot close the envelope. Bucket names, object keys and log
+   lines can contain hostile text; the envelope tells the model it is data.
 6. **No model-facing raw rows.** Logs and inventories are parsed into a local
    SQLite file; the model receives only aggregates and bounded samples.
 7. **Audit.** Every tool call writes `audit(tool, target, outcome, conversation)`.
@@ -36,13 +37,16 @@
    could forge.
 9. **Code mode.** `query` scripts run in a QuickJS VM in a worker thread with
    no network, filesystem, process, timers or modules, and with model access
-   off. The nine primitives check the account scope on every bucket, call only
+   off. The ten primitives check the account scope on every bucket, call only
    List, Head, configuration, inventory and dataset reads, and count against
    budgets of 2,000 calls, 500,000 listed items, 120 seconds and 256 MiB.
    Returned rows are redacted before the model or the window sees them.
-10. **Access paths.** Policy and ACL evaluation is local. IAM simulation, KMS
-    key policy and Access Analyzer are bounded, AWS-only reads; a denied read is
-    a blind spot. Scope is checked before the inventory destination is read.
+10. **Access paths.** Policy and ACL evaluation is local. All IAM principals and
+    policies are read through `GetAccountAuthorizationDetails` and evaluated
+    locally; SCPs are read from the account/OU/root chain when Organizations
+    permits; KMS and Access Analyzer are bounded AWS reads. A denied read is a
+    blind spot, and coverage is shown. Scope is checked before the inventory
+    destination is read.
 11. **Evidence.** The JSON pack contains redacted views, finding controls and
     read timestamps; it is written only through the user's save dialog.
     Re-verify never calls a write API.

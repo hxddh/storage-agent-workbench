@@ -8,6 +8,7 @@ export type ReadStatus =
   | 'skipped_acls_disabled'
   | 'missing'
   | 'unread'
+  | 'truncated'
 
 const NOT_CONFIGURED = new Set([
   'NoSuchLifecycleConfiguration',
@@ -77,7 +78,8 @@ export function blind(status: ReadStatus): boolean {
     status === 'error' ||
     status === 'provider_unsupported' ||
     status === 'region_mismatch' ||
-    status === 'missing'
+    status === 'missing' ||
+    status === 'truncated'
   )
 }
 

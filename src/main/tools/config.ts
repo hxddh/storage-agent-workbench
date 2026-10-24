@@ -59,6 +59,7 @@ export function configTool(deps: ToolDeps) {
             aws && config.caps.accessAnalyzer
               ? deps.providers.accessAnalyzer(config, facts.region)
               : undefined,
+          organizations: aws ? deps.providers.organizations(config) : undefined,
           signal: run.signal,
         })
         const lines = access.paths.length
@@ -73,11 +74,14 @@ export function configTool(deps: ToolDeps) {
           : ['No policy, ACL, identity or key grant was readable for this bucket.']
         for (const item of access.blind)
           lines.push(`${item.source} could not be read (${item.status}); access is not complete.`)
+        lines.push(
+          `Coverage: ${access.coverage.evaluated}/${access.coverage.principals} principal(s) evaluated; ${access.coverage.undecided} undecided; ${access.coverage.truncated ? 'truncated' : 'not truncated'}.`,
+        )
         return {
           model: lines.join('\n'),
           note: `${access.paths.length} access path${access.paths.length === 1 ? '' : 's'}${
             access.blind.length ? ' · partly blind' : ''
-          }`,
+          }${access.coverage.undecided ? ` · ${access.coverage.undecided} undecided` : ''}`,
           view: {
             kind: 'config' as const,
             bucket: args.bucket,
@@ -86,6 +90,7 @@ export function configTool(deps: ToolDeps) {
             findings: [],
             access: access.paths,
             accessBlind: access.blind,
+            accessCoverage: access.coverage,
             permissions: [
               ...permissionGaps(facts),
               ...accessPermissionGaps(args.bucket, access.blind),
