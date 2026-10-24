@@ -182,4 +182,26 @@ describe('entry projection', () => {
     ])
     expect(out).toHaveLength(0)
   })
+
+  it('leaves out a call the harness blocked', () => {
+    const out = entries([
+      {
+        id: 'e13',
+        kind: 'pi.tool-result',
+        model: [
+          {
+            role: 'toolResult',
+            toolCallId: 'x',
+            toolName: 'survey',
+            isError: true,
+            content: [
+              { type: 'text', text: 'This exact call already ran in this task. Use its result.' },
+            ],
+            timestamp: 1,
+          },
+        ],
+      },
+    ])
+    expect(out).toHaveLength(0)
+  })
 })

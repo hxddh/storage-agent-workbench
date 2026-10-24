@@ -1,0 +1,293 @@
+/**
+ * Agent evaluation: a real model drives the real window against fake S3
+ * profiles, and each run is scored on what the product promises — findings
+ * that match the storage, a grounded verdict, honesty about blind reads,
+ * memory before surveys, and few calls.
+ *
+ *   EVAL_PROVIDER=anthropic EVAL_MODEL=claude-sonnet-5-5 EVAL_API_KEY=… \
+ *     xvfb-run -a node scripts/eval.mjs [--only name] [--runs 3]
+ *
+ *   xvfb-run -a node scripts/eval.mjs --smoke    # plumbing check with the fake model
+ *
+ * Writes .amp/in/artifacts/eval-report.md and eval-report.json. Exits non-zero
+ * when a scenario's must-pass checks fail (never in --smoke, which only proves
+ * the harness runs).
+ */
+import { execFileSync, spawn } from 'node:child_process'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { _electron as electron } from 'playwright-core'
+import { startFakeS3 } from './fake-s3.mjs'
+
+const root = new URL('..', import.meta.url).pathname
+const args = process.argv.slice(2)
+const smoke = args.includes('--smoke')
+const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null
+const runs = Number(args.includes('--runs') ? args[args.indexOf('--runs') + 1] : 1)
+const artifacts = join(root, '.amp/in/artifacts')
+mkdirSync(artifacts, { recursive: true })
+
+const model = smoke
+  ? { provider: 'compatible', id: 'fake-model', key: 'test', baseUrl: 'http://127.0.0.1:9230/v1', thinking: 'off' }
+  : {
+      provider: process.env.EVAL_PROVIDER ?? 'compatible',
+      id: process.env.EVAL_MODEL ?? '',
+      key: process.env.EVAL_API_KEY ?? '',
+      baseUrl: process.env.EVAL_BASE_URL ?? '',
+      thinking: process.env.EVAL_THINKING ?? 'off',
+    }
+if (!model.id || !model.key) {
+  console.error('Set EVAL_MODEL and EVAL_API_KEY (and EVAL_PROVIDER, EVAL_BASE_URL), or pass --smoke.')
+  process.exit(2)
+}
+
+const HONEST = /(could not|couldn't|can't|cannot|unknown|undecided|open|unable|not (be )?(read|decided|determined)|无法|未能|未知|不确定)/i
+const CLEAN_CLAIM = /(no (bucket|buckets) (is|are) public|nothing is public|all buckets are private|没有.*公开)/i
+
+/** Each scenario: the storage, the questions in order, and what a good run looks like. */
+const SCENARIOS = [
+  {
+    name: 'public-aws',
+    buckets: { 'web-assets': { public: true }, 'ledger-private': { encryption: true, blocked: true, lifecycle: 'abort' } },
+    turns: [{ ask: 'Which of my buckets are public?' }],
+    expect: {
+      findings: [['web-assets', 'Bucket is publicly accessible']],
+      absent: [['ledger-private', 'Bucket is publicly accessible']],
+      mentions: ['web-assets'],
+      maxCalls: 6,
+    },
+  },
+  {
+    name: 'compat-local-policy',
+    buckets: { 'media-cdn': { compat: true, public: true, encryption: true }, backups: { compat: true, encryption: true } },
+    turns: [{ ask: 'Is anything exposed publicly on this storage?' }],
+    expect: {
+      findings: [['media-cdn', 'Bucket is publicly accessible']],
+      absent: [['backups', 'Bucket is publicly accessible']],
+      mentions: ['media-cdn'],
+      maxCalls: 6,
+    },
+  },
+  {
+    name: 'blind-acl',
+    buckets: { 'finance-exports': { aclDenied: true, encryption: true, blocked: true } },
+    turns: [{ ask: 'Are any of my buckets public?' }],
+    expect: {
+      absent: [['finance-exports', 'Bucket is publicly accessible']],
+      honest: true,
+      blindShown: true,
+      maxCalls: 6,
+    },
+  },
+  {
+    name: 'narrowed-policy',
+    buckets: { 'vpc-only': { conditional: true, encryption: true } },
+    turns: [{ ask: 'Does any bucket allow anonymous access?' }],
+    expect: {
+      findings: [['vpc-only', 'Bucket policy allows a wildcard principal']],
+      absent: [['vpc-only', 'Bucket is publicly accessible']],
+      maxCalls: 6,
+    },
+  },
+  {
+    name: 'verify-after-fix',
+    buckets: { 'web-assets': { public: true, encryption: true }, 'logs-archive': { encryption: true, blocked: true, lifecycle: 'abort' } },
+    turns: [
+      { ask: 'Which buckets are public?' },
+      { fix: 'web-assets', ask: 'I applied the fix to web-assets. Is it closed now?' },
+    ],
+    expect: {
+      resolvedFold: true,
+      absent: [['web-assets', 'Bucket is publicly accessible']],
+      lastTurnMaxCalls: 3,
+      mentions: ['web-assets'],
+    },
+  },
+  {
+    name: 'memory-first',
+    buckets: { 'web-assets': { public: true }, 'logs-archive': { encryption: true, blocked: true } },
+    turns: [{ ask: 'Survey my account.' }, { newTask: true, ask: 'What did you find last time?' }],
+    expect: { firstCall: 'Recalled memory', lastTurnMaxCalls: 2 },
+  },
+  {
+    name: 'fix-text',
+    buckets: { 'web-assets': { public: true, encryption: true } },
+    turns: [{ ask: 'Make web-assets private. Give me the exact change.' }],
+    expect: { fixShown: true, mentions: ['web-assets'], maxCalls: 6 },
+  },
+]
+
+async function configure(page, s3) {
+  await page.getByRole('button', { name: 'Set up a model' }).first().click()
+  await page.locator('#provider').selectOption(model.provider)
+  await page.locator('#modelId').fill(model.id)
+  if (model.baseUrl) await page.locator('#baseUrl').fill(model.baseUrl)
+  await page.locator('#apiKey').fill(model.key)
+  if (model.thinking !== 'off') {
+    const label = { low: 'Low', medium: 'Medium', high: 'High' }[model.thinking]
+    await page.getByRole('button', { name: label, exact: true }).first().click()
+  }
+  await page.getByRole('button', { name: 'Save', exact: true }).first().click()
+  await page.waitForTimeout(500)
+  await page.locator('#accName').fill('Eval')
+  await page.locator('#accEndpoint').fill(s3.endpoint)
+  await page.locator('#accRegion').fill('us-east-1')
+  await page.locator('#accKey').fill('AKIAEVALEVALEVALEVAL')
+  await page.locator('#accSecret').fill('eval-secret')
+  await page.getByLabel('Path-style addressing').check()
+  await page.locator('.account').last().getByRole('button', { name: 'Save', exact: true }).click()
+  await page.waitForTimeout(600)
+  await page.getByRole('button', { name: 'Close' }).click()
+}
+
+async function ask(page, text) {
+  await page.locator('.composer textarea').fill(text)
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.composer .send.stop', { timeout: 20_000 }).catch(() => undefined)
+  await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 240_000 })
+  await page.waitForTimeout(400)
+}
+
+async function readBrief(page) {
+  return page.evaluate(() => {
+    const text = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
+    // Fold every disclosure so the checks are in the DOM.
+    const checksHead = document.querySelector('.checks-head')
+    if (checksHead?.getAttribute('aria-expanded') === 'false') checksHead.click()
+    return {
+      verdict: text(document.querySelector('.verdict')),
+      ungrounded: [...document.querySelectorAll('.verdict code.ungrounded')].map(text),
+      findings: [...document.querySelectorAll('.findings-list .finding-row')].map((row) => ({
+        title: text(row.querySelector('.finding-title')),
+        bucket: text(row.querySelector('.finding-meta .mono')),
+      })),
+      resolvedFold: Boolean(document.querySelector('.fold.ok')),
+      blindShown: Boolean(document.querySelector('.blind-section')),
+      fixShown: Boolean(document.querySelector('.brief-section .tabs')),
+      receipt: text(document.querySelector('.checks-head [role=status]')),
+    }
+  })
+}
+
+async function checks(page) {
+  await page.evaluate(() => {
+    const head = document.querySelector('.checks-head')
+    if (head?.getAttribute('aria-expanded') === 'false') head.click()
+  })
+  await page.waitForTimeout(100)
+  return page.$$eval('.check-row', (rows) =>
+    rows.map((row) => ({
+      verb: row.querySelector('.verb')?.textContent ?? '',
+      status: [...row.classList].find((name) => name !== 'check-row') ?? '',
+    })),
+  )
+}
+
+function score(scenario, brief, allChecks, lastTurnChecks, elapsedMs) {
+  const e = scenario.expect
+  const results = []
+  const check = (name, pass, must = true) => results.push({ name, pass, must })
+  const has = (bucket, title) => brief.findings.some((f) => f.bucket === bucket && f.title === title)
+  for (const [bucket, title] of e.findings ?? []) check(`finding: ${title} on ${bucket}`, has(bucket, title))
+  for (const [bucket, title] of e.absent ?? []) check(`no finding: ${title} on ${bucket}`, !has(bucket, title))
+  for (const name of e.mentions ?? []) check(`verdict names ${name}`, brief.verdict.includes(name), false)
+  check('verdict grounded', brief.ungrounded.length === 0)
+  check('verdict at most two sentences', (brief.verdict.match(/[.!?。！？](\s|$)/g) ?? []).length <= 2, false)
+  if (e.honest) {
+    check('verdict says the question is open', HONEST.test(brief.verdict))
+    check('verdict never claims clean', !CLEAN_CLAIM.test(brief.verdict))
+  }
+  if (e.blindShown) check('brief shows the blind spot', brief.blindShown)
+  if (e.resolvedFold) check('brief shows what was fixed', brief.resolvedFold)
+  if (e.fixShown) check('brief shows the fix', brief.fixShown)
+  if (e.firstCall) check(`first call is ${e.firstCall}`, lastTurnChecks[0]?.verb === e.firstCall)
+  if (e.maxCalls) check(`at most ${e.maxCalls} calls`, allChecks.length <= e.maxCalls, false)
+  if (e.lastTurnMaxCalls)
+    check(`last turn at most ${e.lastTurnMaxCalls} calls`, lastTurnChecks.length <= e.lastTurnMaxCalls, false)
+  check('no failed calls', !allChecks.some((c) => c.status === 'failed'), false)
+  return { results, elapsedMs }
+}
+
+async function runScenario(scenario) {
+  const s3 = await startFakeS3({ buckets: structuredClone(scenario.buckets) })
+  const dataDir = mkdtempSync(join(tmpdir(), `sa-eval-${scenario.name}-`))
+  const app = await electron.launch({
+    args: ['.', '--no-sandbox'],
+    cwd: root,
+    env: { ...process.env, STORAGE_AGENT_DATA_DIR: dataDir, STORAGE_AGENT_NO_UPDATE: '1' },
+  })
+  const page = await app.firstWindow()
+  const started = Date.now()
+  try {
+    await page.waitForTimeout(1000)
+    await configure(page, s3)
+    let before = 0
+    let lastTurn = []
+    for (const turn of scenario.turns) {
+      if (turn.fix) await fetch(`${s3.endpoint}/__fake/fix?bucket=${turn.fix}`, { method: 'POST' })
+      if (turn.newTask) {
+        await page.getByRole('button', { name: 'New task' }).click()
+        before = 0
+      }
+      await ask(page, turn.ask)
+      const now = await checks(page)
+      lastTurn = now.slice(before)
+      before = now.length
+    }
+    const brief = await readBrief(page)
+    const all = await checks(page)
+    await page.screenshot({ path: join(artifacts, `eval-${scenario.name}.png`) })
+    return { scenario: scenario.name, brief, ...score(scenario, brief, all, lastTurn, Date.now() - started) }
+  } catch (error) {
+    await page.screenshot({ path: join(artifacts, `eval-${scenario.name}-error.png`) }).catch(() => undefined)
+    return {
+      scenario: scenario.name,
+      error: error instanceof Error ? error.message.split('\n')[0] : String(error),
+      results: [{ name: 'run completed', pass: false, must: true }],
+      elapsedMs: Date.now() - started,
+    }
+  } finally {
+    await app.close().catch(() => undefined)
+    s3.server.close()
+  }
+}
+
+execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' })
+const fakeModel = smoke
+  ? spawn(process.execPath, [join(root, 'scripts/fake-model.mjs'), '9230'], { stdio: 'ignore' })
+  : null
+if (fakeModel) await new Promise((resolve) => setTimeout(resolve, 500))
+
+const chosen = SCENARIOS.filter((s) => (smoke ? s.name === 'public-aws' : !only || s.name === only))
+const report = []
+for (const scenario of chosen) {
+  for (let attempt = 0; attempt < runs; attempt += 1) {
+    const result = await runScenario(scenario)
+    report.push(result)
+    const passed = result.results.filter((r) => r.pass).length
+    console.log(`${result.scenario}${runs > 1 ? ` #${attempt + 1}` : ''}: ${passed}/${result.results.length}${result.error ? ` (${result.error})` : ''}`)
+  }
+}
+fakeModel?.kill()
+
+const total = report.flatMap((r) => r.results)
+const must = total.filter((r) => r.must)
+const lines = [
+  `# Storage Agent eval — ${model.provider}/${model.id}${model.thinking !== 'off' ? ` (thinking ${model.thinking})` : ''}`,
+  '',
+  `${new Date().toISOString()} · ${report.length} run(s) · ${total.filter((r) => r.pass).length}/${total.length} checks · must-pass ${must.filter((r) => r.pass).length}/${must.length}${smoke ? ' · smoke (fake model)' : ''}`,
+  '',
+]
+for (const run of report) {
+  lines.push(`## ${run.scenario} — ${(run.elapsedMs / 1000).toFixed(1)} s${run.brief?.receipt ? ` · ${run.brief.receipt}` : ''}`)
+  if (run.error) lines.push('', `Error: ${run.error}`)
+  if (run.brief?.verdict) lines.push('', `> ${run.brief.verdict}`)
+  lines.push('')
+  for (const result of run.results) lines.push(`- ${result.pass ? '✓' : '✗'} ${result.name}${result.must ? '' : ' (soft)'}`)
+  lines.push('')
+}
+writeFileSync(join(artifacts, 'eval-report.md'), lines.join('\n'))
+writeFileSync(join(artifacts, 'eval-report.json'), JSON.stringify({ model: { ...model, key: undefined }, report }, null, 2))
+console.log(`Report: ${join(artifacts, 'eval-report.md')}`)
+process.exit(!smoke && must.some((r) => !r.pass) ? 1 : 0)

@@ -83,6 +83,41 @@ function signature(name: string, args: unknown): string {
   return `${name}:${JSON.stringify(sort(args ?? {}))}`
 }
 
+/** Why a call may not run, or undefined. The step cap and repeated storage reads. */
+export function blockReason(
+  state: AgentState,
+  conversationId: string,
+  name: string,
+  args: unknown,
+): string | undefined {
+  const current = run(state, conversationId)
+  if (current.rounds >= MAX_TOOL_ROUNDS) {
+    return 'Step budget reached. Answer now with the evidence you already have.'
+  }
+  // Storage reads repeat exactly; memory (`estate`, `fix`) changes as the task reads.
+  if (MEMORY_TOOLS.has(name)) return undefined
+  const key = signature(name, args)
+  if (current.calls.has(key)) {
+    return 'This exact call already ran in this task. Use its result; nothing has changed in read-only storage since.'
+  }
+  current.calls.add(key)
+  return undefined
+}
+
+/** The one correction an ungrounded verdict gets, or undefined. */
+export function groundingCorrection(
+  state: AgentState,
+  conversationId: string,
+  verdict: string,
+): string | undefined {
+  const current = run(state, conversationId)
+  if (current.corrected || current.known.size === 0) return undefined
+  const missing = ungrounded(verdict, current.known)
+  if (!missing.length) return undefined
+  current.corrected = true
+  return `Your verdict names ${missing.map((name) => `\`${name}\``).join(', ')}, which no tool result in this task shows. Rewrite the verdict naming only what the tools returned, or read it first.`
+}
+
 export function createAgent(deps: ToolDeps, state: AgentState, tools?: ToolRegistration[]) {
   const registry = tools ?? createTools(deps)
 
@@ -112,36 +147,17 @@ export function createAgent(deps: ToolDeps, state: AgentState, tools?: ToolRegis
           run(state, String(api.conversationId)).rounds += 1
         },
         onYield: (answer, api) => {
-          const current = run(state, String(api.conversationId))
-          if (current.corrected || current.known.size === 0) return undefined
           const text = answer.content
             .map((part) => (part.type === 'text' ? part.text : ''))
             .join('')
-          const missing = ungrounded(text, current.known)
-          if (!missing.length) return undefined
-          current.corrected = true
-          return {
-            continue: `Your verdict names ${missing.map((name) => `\`${name}\``).join(', ')}, which no tool result in this task shows. Rewrite the verdict naming only what the tools returned, or read it first.`,
-          }
+          const correction = groundingCorrection(state, String(api.conversationId), text)
+          return correction ? { continue: correction } : undefined
         },
       }),
       hook(ToolTask, {
         beforeTool: (call, api) => {
-          const current = run(state, String(api.conversationId))
-          if (current.rounds >= MAX_TOOL_ROUNDS) {
-            return { block: 'Step budget reached. Answer now with the evidence you already have.' }
-          }
-          // Storage reads repeat exactly; memory (`estate`, `fix`) changes as the task reads.
-          if (MEMORY_TOOLS.has(call.name)) return undefined
-          const key = signature(call.name, call.arguments)
-          if (current.calls.has(key)) {
-            return {
-              block:
-                'This exact call already ran in this task. Use its result; nothing has changed in read-only storage since.',
-            }
-          }
-          current.calls.add(key)
-          return undefined
+          const reason = blockReason(state, String(api.conversationId), call.name, call.arguments)
+          return reason ? { block: reason } : undefined
         },
         afterTool: (_call, result, api) => {
           const details = (result as { details?: ToolDetails }).details

@@ -40,7 +40,7 @@ import type { Providers } from '../providers'
 import type { Vault } from '../security/vault'
 import type { Settings } from '../settings'
 import type { ToolDeps } from '../tools/policy'
-import { type AgentState, createAgent, freshRun, refreshDigest } from './agent'
+import { type AgentState, createAgent, freshRun, MAX_TOOL_ROUNDS, refreshDigest } from './agent'
 import { installModel, type ModelRef } from './model'
 import { deriveTitle, LiveTracker, mapEntries, usageOf } from './project'
 import { searchDocsFor, searchTasks } from './search'
@@ -402,6 +402,8 @@ export class AgentHarness {
       )
     } finally {
       if (outcome === 'failed') this.failed.add(taskId)
+      if ((this.state.runs.get(taskId)?.rounds ?? 0) >= MAX_TOOL_ROUNDS)
+        await this.notice(conversation, 'budget', 'warn')
       this.state.runs.delete(taskId)
       await this.deps.db.touchTask(taskId)
       await this.refreshTaskList()

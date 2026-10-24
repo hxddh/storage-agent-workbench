@@ -44,3 +44,70 @@ describe('search index', () => {
     expect(await db.searchDocs('second')).toHaveLength(0)
   })
 })
+
+describe('schema', () => {
+  it('migrates a 17.x database to head 4 without losing rows', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sa-mig-'))
+    const raw = await openNodeSqliteDatabase(join(dir, 'old.sqlite'))
+    await raw.exec(`
+      CREATE TABLE providers (id TEXT PRIMARY KEY, name TEXT NOT NULL, endpoint TEXT NOT NULL,
+        region TEXT NOT NULL, force_path_style INTEGER NOT NULL DEFAULT 0, access_key_id TEXT,
+        secret_ref TEXT NOT NULL, session_ref TEXT, scope_json TEXT NOT NULL DEFAULT '{"buckets":[]}',
+        created_at TEXT NOT NULL);
+      INSERT INTO providers VALUES ('p', 'Old', '', 'us-east-1', 0, 'AKIA', 'ref', NULL, '{"buckets":[]}', '2026');
+      CREATE TABLE issues (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, bucket TEXT NOT NULL,
+        code TEXT NOT NULL, severity TEXT NOT NULL, status TEXT NOT NULL, opened_at TEXT NOT NULL,
+        resolved_at TEXT, last_seen_at TEXT NOT NULL, recurred INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (provider_id, bucket, code));
+      INSERT INTO issues VALUES ('i', 'p', 'b', 'public_exposure', 'high', 'open', '2026', NULL, '2026', 0);
+      PRAGMA user_version = 3;
+    `)
+    const db = await AppDb.open(raw)
+    const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
+    expect(version?.user_version).toBe(4)
+    expect((await db.getProvider('p'))?.auth).toBe('keys')
+    expect((await db.getIssue('i'))?.detail).toBeNull()
+  })
+})
+
+describe('issue lifecycle', () => {
+  const observe = (db: AppDb, observed: boolean, detail?: string) =>
+    db.upsertIssue({
+      providerId: 'p',
+      bucket: 'b',
+      code: 'cors_all_origins',
+      severity: 'medium',
+      observed,
+      detail,
+      conversationId: null,
+    })
+
+  it('opens, keeps its evidence, accepts, and only a clean reading ends acceptance', async () => {
+    const db = await open()
+    const opened = await observe(db, true, "A CORS rule allows origin '*'")
+    expect(opened.event).toBe('opened')
+    expect(opened.issue?.detail).toBe("A CORS rule allows origin '*'")
+    await db.setAccepted(opened.issue!.id, true)
+    expect((await observe(db, true)).issue?.status).toBe('accepted')
+    expect((await observe(db, false)).event).toBe('resolved')
+    const back = await observe(db, true)
+    expect(back.event).toBe('recurred')
+    expect(back.issue?.status).toBe('open')
+  })
+
+  it('never lets acceptance reopen a resolved Issue', async () => {
+    const db = await open()
+    const opened = await observe(db, true)
+    await observe(db, false)
+    expect((await db.setAccepted(opened.issue!.id, true))?.status).toBe('resolved')
+  })
+
+  it('hides a bucket that is gone and brings it back when it is seen again', async () => {
+    const db = await open()
+    await db.upsertBucket('p', 'b', {})
+    await db.markGone('p', ['b'])
+    expect(await db.countBuckets('p')).toBe(0)
+    await db.upsertBucket('p', 'b', {})
+    expect(await db.countBuckets('p')).toBe(1)
+  })
+})
