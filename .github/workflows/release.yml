@@ -88,4 +88,8 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
-          files: artifacts/*
+          # download-artifact keeps each bundle's release/ directory; do not
+          # flatten it into the top level or the installers are skipped.
+          files: |
+            artifacts/sbom.json
+            artifacts/release/*
