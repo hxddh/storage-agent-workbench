@@ -57,7 +57,7 @@ The invariant:
 - `src/main/runtime/project.ts` — entry → UI mapping, live state, usage.
 - `src/main/runtime/search.ts` — sidebar search and the index rows.
 - `src/main/runtime/agent.ts` — the one extension: prompt sections, tools, hooks.
-- `src/main/tools/*` — ten tools through `agentTool()`, which owns scope,
+- `src/main/tools/*` — eleven tools through `agentTool()`, which owns scope,
   bounds, timeout, audit, redaction, status and the envelope.
 - `src/main/s3/facts.ts` — the one reading of a bucket; `s3/policy.ts`
   evaluates a policy document locally; `s3/account.ts` reads the account-wide
