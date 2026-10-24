@@ -40,7 +40,7 @@ npm run dist         # installers for the current OS
   `moto_server`:
 
   ```bash
-  pip install 'moto[server]==5.1.4' && moto_server -p 5055 &
+  pip install 'moto[server]==5.2.4' && moto_server -p 5055 &
   STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 npx vitest run src/main/compat.test.ts
   ```
 - **Playwright + Electron** (`scripts/e2e.mjs`) drives the real window against
