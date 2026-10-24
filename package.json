@@ -135,7 +135,8 @@
           "storage-agent"
         ]
       }
-    ]
+    ],
+    "artifactName": "storage-agent-${version}-${os}-${arch}.${ext}"
   },
   "author": {
     "name": "Storage Agent",
