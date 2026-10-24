@@ -38,7 +38,14 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Package
-        run: npx electron-builder --publish never
+        shell: bash
+        # An empty secret arrives as an empty string, which electron-builder
+        # reads as a certificate path; unset what is not configured.
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!name}" ] || unset "$name"
+          done
+          npx electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' && 'true' || 'false' }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
