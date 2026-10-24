@@ -1,5 +1,11 @@
 # Changelog
 
+## 16.0.1
+
+Secondary text now meets WCAG AA in both themes. `--ink-3`, used for
+durations, Copy / Save as and account meta, measured 3.15:1 on the light
+background and 3.8:1 in dark; both now clear 4.5:1 with headroom.
+
 ## 16.0.0
 
 The interaction release. No new tools, no new storage capability.
