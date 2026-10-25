@@ -6,8 +6,7 @@ the agent reads the account, remembers what it saw, and projects the result as a
 **estate** is the agent's memory. Nothing is written, deleted or changed in
 storage, and the app never applies a fix.
 
-Current version: **25.0.0**. The latest published release is **24.0.0**; this
-checkout has not been tagged or published.
+Current release: **25.0.0**.
 
 ![A brief in Storage Agent](docs/screenshot.png)
 

@@ -96,7 +96,6 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest published release in this checkout is **24.0.0**. The working tree
-is version **25.0.0**; it has not been tagged or published from this checkout.
-Earlier release notes may describe retired behavior; they are history. When the
-next version is tagged, update this line and `docs/README.md`.
+The latest published release in this checkout is **25.0.0**. Earlier release
+notes may describe retired behavior; they are history. When the next version is
+tagged, update this line, `README.md` and `docs/README.md`.
