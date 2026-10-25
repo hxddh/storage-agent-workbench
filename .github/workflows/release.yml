@@ -1,6 +1,6 @@
 name: Release
 
-# Tag a commit (`git tag v22.0.0 && git push origin v22.0.0`) or run this
+# Tag a commit (`git tag v23.0.0 && git push origin v23.0.0`) or run this
 # workflow manually. Builds installers on macOS, Linux and Windows and attaches
 # them, with the update feeds (latest*.yml), to one GitHub release.
 #
@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to release (e.g. v22.0.0)"
+        description: "Existing tag to release (e.g. v23.0.0)"
         required: true
 
 permissions:

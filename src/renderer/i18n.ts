@@ -60,7 +60,7 @@ const en = {
   homeTitle: 'What should I check?',
   moreActions: 'More actions',
   whatsNew:
-    '22.0 · Check an account without a model, stricter access evidence, and a quieter brief.',
+    '23.0 · Choose the first-run demo, watch a check progress, and see exactly what the brief did not read.',
   staleAfter: 'Mark remembered findings stale after',
   staleDays: '{n} days',
   possiblyStale: 'possibly stale',
@@ -341,7 +341,7 @@ const zh: typeof en = {
   scope: '存储桶范围',
   homeTitle: '想让我检查什么？',
   moreActions: 'More actions',
-  whatsNew: '22.0 · 无需模型即可检查账号，更严格的访问证据，以及更安静的简报。',
+  whatsNew: '23.0 · 首次运行由你选择演示存储，检查过程可见，简报明确标出没有读到什么。',
   staleAfter: '记忆超过多久标记为可能过期',
   staleDays: '{n} 天',
   possiblyStale: '可能已过期',

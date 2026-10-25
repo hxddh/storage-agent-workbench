@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 23.0.0
 
-A first pass at the task surface and the honesty of its edges.
+A version about making the task surface explicit, observable and honest about
+what it did not read.
 
 ### Changed
 
