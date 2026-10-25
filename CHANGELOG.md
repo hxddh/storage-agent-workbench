@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+A first pass at the task surface and the honesty of its edges.
+
+### Changed
+
+- **First run is explicit.** With no account, Home offers **Try with demo
+  storage** and **Set up a model / Add an account**. Check account never adds
+  demo storage silently; the demo is a choice.
+- **Check account is observable.** It opens its task immediately, streams
+  survey and access progress, and leaves the deterministic checks and verdict
+  in the durable task. A repeated check gets a dated, account-named title.
+- **The brief has a scope line.** It names the account, `read / total` buckets,
+  blind reads, survey-cap buckets and the read time. A capped survey is no
+  longer invisible, and the model-free verdict refuses to call it clean.
+- **Actions are discoverable.** Copy and an overflow menu are always visible;
+  Save, Check again, Re-verify, link, evidence and PDF live in the overflow.
+  The task list no longer reserves a hidden 28px More button below every row.
+- **Test tests the form.** Settings tests the provider, model, base URL and key
+  currently typed, not the previously saved model.
+
+### Fixed
+
+- **CloudTrail attribution** uses each bucket's region instead of the account's
+  default region.
+- **Access paths** state that policy and ACL rows are grants, not a merged
+  effective-access verdict.
+- **Markdown fallback** no longer flashes raw backticks while the lazy renderer
+  loads.
+
+### Known limits
+
+- The Settings sheet is still one long form; its visual simplification is not
+  part of this pass.
+- Policy/ACL grants are labelled as evidence, not yet intersected with every
+  identity and SCP Deny into one effective verdict.
+- Real-model evaluation and signed installers remain release-channel work.
+
 ## 22.0.0
 
 A version about finishing the answer without a model, and about the access

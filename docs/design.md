@@ -55,15 +55,20 @@ rules because they are data surfaces, not cards.
 
 A quiet account summary, not a dashboard: one heading, account lines with the
 last read and unresolved risk, a change line and one **Check account** action.
-The composer is in the same place as in a task. No cards, charts, suggestion
-pills or large illustration.
+With no account, the two explicit choices are **Try with demo storage** and
+**Set up a model / Add an account**; the demo is never added silently. The
+composer is in the same place as in a task. No cards, charts, suggestion pills
+or large illustration.
 
 ## The brief
 
-Top to bottom: a 12px meta line (`checked 2m ago · 5 findings`) with Copy and
-Save revealed on hover; the latest request as one quiet line; the verdict;
-notices; findings; changes; the fix; one data section (including access paths);
-and the checks receipt. There is no next-step row and no chat transcript.
+Top to bottom: a 12px scope line (`Demo · 2/2 buckets read · 1 blind · checked
+2m ago · 5 findings`), with Copy and a single overflow menu always visible; the
+latest request as one quiet line; the verdict; notices; findings; changes; the
+fix; one data section (including access paths); and the checks receipt. Save,
+Check again, Re-verify and exports live in the overflow, not behind hover. A
+capped survey adds `N outside this run` here and in **Not read**. There is no
+next-step row and no chat transcript.
 
 Findings use a severity dot, a 14px title and a 12px meta line. There is no
 severity pill. Clicking a finding scrolls to its check and flashes it; **Accept

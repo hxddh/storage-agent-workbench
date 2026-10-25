@@ -20,12 +20,14 @@ export function Home({
   boot,
   onSetup,
   onUseLocal,
+  onDemo,
   onAudit,
   auditing,
 }: {
   boot: Bootstrap
   onSetup: () => void
   onUseLocal: (model: LocalModel) => Promise<void>
+  onDemo: () => void
   onAudit: () => void
   auditing: boolean
 }) {
@@ -129,12 +131,13 @@ export function Home({
                   ))}
                 </div>
               )}
-              <button className="btn primary" type="button" onClick={onAudit} disabled={auditing}>
-                {auditing ? t.checkingAccount : t.checkAccount}
+              <button className="btn primary" type="button" onClick={onDemo} disabled={auditing}>
+                {auditing ? t.checkingAccount : t.tryDemo}
               </button>
               <button className="btn" type="button" onClick={onSetup}>
                 {!hasModel ? t.setModel : t.addAccount}
               </button>
+              <span className="hint home-setup-hint">{t.demoHint}</span>
               {localError && <p className="brief-error">{localError}</p>}
             </div>
           </>

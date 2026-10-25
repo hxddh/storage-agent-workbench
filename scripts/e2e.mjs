@@ -151,8 +151,8 @@ try {
   await page.locator('.composer textarea').fill('')
 
   // Re-verify is model-free: it re-reads the buckets this task touched.
-  await page.locator('.brief').hover()
-  await page.getByRole('button', { name: 'Re-verify' }).click()
+  await page.getByRole('button', { name: 'More actions' }).click()
+  await page.getByRole('menuitem', { name: 'Re-verify' }).click()
   await page.waitForSelector('.reverify-section', { timeout: 30_000 })
   const reverify = await page.locator('.reverify-section').innerText()
   console.log('REVERIFY:', reverify.replace(/\s+/g, ' ').slice(0, 160))
@@ -254,7 +254,7 @@ try {
   // Keyboard: j moves between findings. Search resolves the audit task, which
   // carries several findings; the request itself ran inside that task.
   await page.locator('.sidebar-search input').fill('public')
-  await page.locator('.search-hit', { hasText: 'Check account' }).first().click()
+  await page.locator('.search-hit', { hasText: 'Check · Demo' }).first().click()
   await page.waitForSelector('.finding-main', { timeout: 10_000 })
   await page.locator('.finding-main').first().focus()
   await page.keyboard.press('j')

@@ -5,6 +5,7 @@ import type {
   AppEvent,
   Bootstrap,
   EstateOverview,
+  ModelInput,
   TaskSummary,
   UpdateState,
 } from '@shared/contract'
@@ -13,7 +14,7 @@ import { AppDb } from './db'
 import { Estate } from './estate/estate'
 import { Providers } from './providers'
 import { AgentHarness, harnessDirs, type RunOutcome } from './runtime/harness'
-import { createModelSet, testModel } from './runtime/model'
+import { createModelSet, testModel, testModelDraft } from './runtime/model'
 import { Vault } from './security/vault'
 import { Settings } from './settings'
 import { Staging } from './staging'
@@ -140,10 +141,14 @@ export class App {
     return { accounts: summary, lastRead, changesSince }
   }
 
-  async testModel(): Promise<{ ok: boolean; detail: string }> {
+  async testModel(input?: ModelInput): Promise<{ ok: boolean; detail: string }> {
     const stored = this.settings.get().model
-    if (!stored) return { ok: false, detail: 'No model is configured.' }
-    const result = await testModel(this.models, stored, this.vault)
+    const result = input
+      ? await testModelDraft(this.models, input, stored, this.vault)
+      : stored
+        ? await testModel(this.models, stored, this.vault)
+        : { ok: false, detail: 'No model is configured.' }
+    // A draft test replaces the in-memory provider; restore the saved one.
     this.harness.applyModel()
     return result
   }

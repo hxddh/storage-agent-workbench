@@ -38,6 +38,19 @@ export function auditVerdict(
     0,
   )
   const pending = surveys.reduce((sum, survey) => sum + (survey.coverage.pending ?? 0), 0)
+  // A survey stops selecting at its cap. The page must not turn the rest of
+  // the account into "no issue found"; count the buckets outside the run.
+  const truncated = surveys.reduce(
+    (sum, survey) =>
+      sum +
+      (survey.coverage.truncated
+        ? Math.max(
+            0,
+            survey.coverage.visible - survey.coverage.processed - (survey.coverage.pending ?? 0),
+          )
+        : 0),
+    0,
+  )
   const second: string[] = []
   const accessLine =
     access && access.examined < access.total
@@ -52,6 +65,13 @@ export function auditVerdict(
         : `${blind + pending} bucket${blind + pending === 1 ? '' : 's'} could not be read completely.`,
     )
   }
+  if (truncated) {
+    second.push(
+      lang === 'zh'
+        ? `还有 ${truncated} 个桶超出本次读取范围。`
+        : `${truncated} bucket${truncated === 1 ? '' : 's'} were outside this run.`,
+    )
+  }
   if (accessLine) second.push(accessLine)
 
   if (open.length) {
@@ -61,12 +81,12 @@ export function auditVerdict(
         : `${open.length} issue${open.length === 1 ? '' : 's'}${high ? ` (${high} high)` : ''} ${open.length === 1 ? 'is' : 'are'} open across ${processed} bucket${processed === 1 ? '' : 's'}${joinNames(buckets, lang)}.`
     return [first, second.join(' ')].filter(Boolean).join(' ')
   }
-  if (blind || pending) {
+  if (blind || pending || truncated) {
     const first =
       lang === 'zh'
         ? `这次读取覆盖了 ${processed} 个桶，但还不能下结论：有桶未能完整读取。`
         : `The reading covered ${processed} bucket${processed === 1 ? '' : 's'}, but it cannot close the question because a read was incomplete.`
-    return [first, ...(accessLine ? [accessLine] : [])].join(' ')
+    return [first, ...second].join(' ')
   }
   const clean =
     lang === 'zh'

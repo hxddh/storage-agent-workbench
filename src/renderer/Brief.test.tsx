@@ -104,6 +104,32 @@ describe('the brief', () => {
     expect(document.querySelector('.verdict code.ungrounded')).toBeNull()
   })
 
+  it('shows the reading scope and never hides a capped survey', () => {
+    const surveyView = survey.view as Extract<
+      NonNullable<Extract<UiEntry, { kind: 'tool' }>['view']>,
+      { kind: 'survey' }
+    >
+    const capped: UiEntry = {
+      ...survey,
+      view: {
+        ...surveyView,
+        coverage: { ...surveyView.coverage, visible: 3, processed: 2, truncated: true },
+      },
+    }
+    render(
+      <Brief
+        view={view([capped])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(document.querySelector('.brief-scope')?.textContent).toContain('2/3 buckets read')
+    expect(document.querySelector('.brief-scope')?.textContent).toContain('1 outside this run')
+  })
+
   it('lets the user accept a risk, and folds it once accepted', () => {
     const { rerender } = render(
       <Brief

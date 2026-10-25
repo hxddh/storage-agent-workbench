@@ -186,7 +186,13 @@ export function Settings({
     setModelBusy(true)
     setModelStatus(null)
     try {
-      const result = await window.agent.testModel()
+      const result = await window.agent.testModel({
+        provider,
+        modelId,
+        baseUrl,
+        ...(apiKey ? { apiKey } : {}),
+        ...(contextWindow ? { contextWindow } : {}),
+      })
       setModelStatus(result)
     } finally {
       setModelBusy(false)

@@ -17,9 +17,10 @@ brief.
 
 The composer is docked at the foot of the window on every screen, including
 Home. Home is a quiet estate summary: account names, the last read, unresolved
-risk and changes since the last visit. **Check account** runs the deterministic
-survey and access reads without a model; the first run adds demo storage when no
-account exists. Home is not a dashboard and has no charts or cards.
+risk and changes since the last visit. A first run offers **Try with demo
+storage** explicitly; **Check account** runs the deterministic survey and access
+reads without a model on an account the user chose. Home is not a dashboard and
+has no charts or cards.
 
 ## A task
 
@@ -47,6 +48,9 @@ sentences. On a model-free account check the same slot is a deterministic
 sentence built only from survey views. Everything else is projected from tool
 results, so the page cannot contradict the tools.
 
+- **Reading scope** — the top line names the account, `read / total` buckets,
+  blind or incomplete reads, whether the survey hit its cap, and when the last
+  read happened. A capped sweep is never hidden.
 - **Findings** — the current state, not the history. Results are folded in
   order: a survey replaces what the task knew about its account, a review
   replaces what it knew about the rules it read, and a reading that proves a
@@ -60,7 +64,8 @@ results, so the page cannot contradict the tools.
 - **Accepted** — risks the user accepted, folded into one line, each with
   **Reopen**.
 - **Not read** — buckets whose exposure stayed undecided, buckets a stopped
-  survey did not reach, and review blind spots.
+  survey did not reach, survey-cap buckets outside the run, and review blind
+  spots.
 - **Data** — the latest tabular result: bucket posture, an object list, object
   facts, or a query table and chart. Up to ten rows, then `N more`. It is
   open by default when there are no findings, because then it is the answer; a
@@ -198,9 +203,9 @@ estimate for us-east-1 and is labelled as one; it is not a bill.
 
 Settings offers demo storage — believable buckets answered in process — and
 lists models already running on this machine (Ollama, LM Studio). **Check
-account** on Home needs neither a model nor a key: it adds demo storage on the
-first run and produces a deterministic brief. A task can be linked as
-`storage-agent://task/<id>`; the link opens it.
+account** on Home needs neither a model nor a key. A first run offers **Try with
+demo storage** as an explicit choice; it never adds an account silently. A task
+can be linked as `storage-agent://task/<id>`; the link opens it.
 
 ## Fixes
 

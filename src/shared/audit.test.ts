@@ -69,6 +69,27 @@ describe('audit verdict', () => {
     expect(text).toContain('`demo-private`')
   })
 
+  it('does not call an account clean when the survey cap left buckets unread', () => {
+    const text = auditVerdict(
+      [
+        survey({
+          coverage: {
+            visible: 6000,
+            processed: 5000,
+            truncated: true,
+            pending: 0,
+            denied: [],
+            unknown: [],
+          },
+        }),
+      ],
+      undefined,
+      'en',
+    )
+    expect(text).toMatch(/outside this run/i)
+    expect(text).not.toMatch(/^No open issue/i)
+  })
+
   it('states the reverse-query access coverage when it is partial', () => {
     const text = auditVerdict(
       [

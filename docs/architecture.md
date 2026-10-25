@@ -55,9 +55,13 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
     and the shell may send a notification. Tasks without rows are backfilled in
     the background at startup.
 11. `harness.audit()` is the deterministic path: it runs `survey` and the
-    access readers directly, builds an `AuditReport` from the projected views,
-    and writes one `sa.audit` entry. It never asks the model. The window expands
-    that entry into ordinary checks plus the rule-generated answer.
+    access readers directly, emits `audit` progress (`survey`/`access`, done and
+    total), builds an `AuditReport` from the projected views, and writes one
+    `sa.audit` entry. The IPC handler opens the task immediately, so progress
+    and the final checks arrive through the task watch. It never asks the model.
+    The window expands that entry into ordinary checks plus the rule-generated
+    answer; a capped survey is counted as unread in the verdict and the scope
+    line.
 
 The window never receives `entry.model` (the provider-facing messages). The
 mapper in `runtime/project.ts` projects entries into `UiEntry`, extracting only

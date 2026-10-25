@@ -171,6 +171,9 @@ export function AccessChain({
   return (
     <div className="access-chain">
       {showCoverage && coverage && <p className="view-sub">{coverageText}</p>}
+      {paths.some((item) => item.source === 'policy' || item.source === 'acl') && (
+        <p className="view-sub">{t.accessEvidence}</p>
+      )}
       {paths.map((item, index) => (
         <div className="access-row" key={`${item.source}:${item.principal}:${index}`}>
           <span className={`access-source ${item.source}`}>

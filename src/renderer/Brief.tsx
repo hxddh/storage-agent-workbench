@@ -7,6 +7,7 @@ import type {
   BriefNotice,
 } from '@shared/brief'
 import { buildBrief } from '@shared/brief'
+import type { AuditProgress } from '@shared/contract'
 import {
   type Lang,
   TASK_LINK_PREFIX,
@@ -138,6 +139,11 @@ function noticeText(notice: BriefNotice, t: Dict): string {
               : ''
   if (!base) return notice.text
   return notice.text && notice.code !== 'stopped' ? `${base} ${notice.text}` : base
+}
+
+/** A lazy Markdown chunk must not flash raw backticks before it loads. */
+function plainVerdict(text: string): string {
+  return text.replace(/`/g, '')
 }
 
 function tableMarkdown(table: Table, limit = 50): string {
@@ -552,6 +558,7 @@ export function Brief({
   onAudit = () => undefined,
   auditing = false,
   staleDays = 7,
+  auditProgress = null,
 }: {
   view: TaskView
   lang: Lang
@@ -562,6 +569,7 @@ export function Brief({
   onAudit?: () => void
   auditing?: boolean
   staleDays?: number
+  auditProgress?: AuditProgress | null
 }) {
   const t = dict(lang)
   const brief = useMemo(
@@ -664,6 +672,15 @@ export function Brief({
     : null
   const pending = brief.coverage.reduce((n, item) => n + item.pending, 0)
   const unread = new Set(brief.coverage.flatMap((item) => [...item.denied, ...item.unknown])).size
+  const totalBuckets = brief.coverage.reduce((n, item) => n + item.visible, 0)
+  const readBuckets = brief.coverage.reduce((n, item) => n + item.processed, 0)
+  const truncated = brief.coverage.reduce(
+    (n, item) =>
+      n + (item.truncated ? Math.max(0, item.visible - item.processed - item.pending) : 0),
+    0,
+  )
+  const notRead = unread + pending
+  const scopeNames = [...new Set(brief.coverage.map((item) => item.provider))]
   const gone = brief.coverage.flatMap((item) => item.gone)
   const permissions = [
     ...new Map(
@@ -754,6 +771,13 @@ export function Brief({
     }
   }
 
+  const saveBrief = () =>
+    void window.agent.saveText({
+      name: safeFileName(title, 'md'),
+      content: markdown(),
+      kind: 'markdown',
+    })
+
   const accept = (finding: BriefFinding) =>
     finding.issueId
       ? () => void window.agent.acceptIssue(finding.issueId!, finding.status !== 'accepted')
@@ -783,44 +807,38 @@ export function Brief({
       <article className="brief" ref={root} aria-busy={live} onKeyDown={navigate}>
         <h1 className="visually-hidden">{title}</h1>
         <div className={`brief-meta ${hasContent ? '' : 'silent'}`}>
-          <span>
-            {checked ? fill(t.checkedAt, { when: checked }) : ''}
-            {brief.findings.length > 0 &&
-              `${checked ? ' · ' : ''}${fill(t.findingsCount, { n: brief.findings.length })}`}
-            {rememberedAt && ` · ${fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' })}`}
-          </span>
+          {brief.coverage.length > 0 ? (
+            <span className="brief-scope">
+              {[
+                scopeNames.join(' · '),
+                totalBuckets > 0
+                  ? fill(t.scopeRead, { read: readBuckets, total: totalBuckets })
+                  : '',
+                notRead > 0 ? fill(t.scopeUnread, { n: notRead }) : '',
+                truncated > 0 ? fill(t.scopeTruncated, { n: truncated }) : '',
+                checked ? fill(t.checkedAt, { when: checked }) : '',
+                brief.findings.length > 0
+                  ? fill(t.findingsCount, { n: brief.findings.length })
+                  : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+          ) : (
+            <span>
+              {checked ? fill(t.checkedAt, { when: checked }) : ''}
+              {brief.findings.length > 0 &&
+                `${checked ? ' · ' : ''}${fill(t.findingsCount, { n: brief.findings.length })}`}
+              {rememberedAt && ` · ${fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' })}`}
+            </span>
+          )}
           {hasContent && (
             <span className="brief-actions">
               <button className="text-action" type="button" onClick={() => void copy()}>
                 <Copy size={12} aria-hidden="true" />
                 {copied ? t.copied : t.copyBrief}
               </button>
-              <button
-                className="text-action"
-                type="button"
-                onClick={() =>
-                  void window.agent.saveText({
-                    name: safeFileName(title, 'md'),
-                    content: markdown(),
-                    kind: 'markdown',
-                  })
-                }
-              >
-                <ArrowDownToLine size={12} aria-hidden="true" />
-                {t.saveBrief}
-              </button>
-              <button className="text-action" type="button" disabled={auditing} onClick={onAudit}>
-                <Radar size={12} aria-hidden="true" />
-                {auditing ? t.checkingAccount : t.checkAccount}
-              </button>
-              <button
-                className="text-action"
-                type="button"
-                disabled={reverifying}
-                onClick={() => void reverify()}
-              >
-                {reverifying ? t.reverifying : t.reverify}
-              </button>
+
               <div className="brief-more">
                 <button
                   className="text-action"
@@ -833,6 +851,40 @@ export function Brief({
                 </button>
                 {more && (
                   <div className="mini-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMore(false)
+                        saveBrief()
+                      }}
+                    >
+                      <ArrowDownToLine size={13} aria-hidden="true" />
+                      {t.saveBrief}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={auditing}
+                      onClick={() => {
+                        setMore(false)
+                        onAudit()
+                      }}
+                    >
+                      <Radar size={13} aria-hidden="true" />
+                      {auditing || auditProgress ? t.checkingAccount : t.checkAgain}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={reverifying}
+                      onClick={() => {
+                        setMore(false)
+                        void reverify()
+                      }}
+                    >
+                      {reverifying ? t.reverifying : t.reverify}
+                    </button>
                     <button
                       type="button"
                       role="menuitem"
@@ -874,6 +926,16 @@ export function Brief({
           )}
         </div>
 
+        {auditProgress && (
+          <p className="audit-progress" role="status">
+            {fill(auditProgress.phase === 'survey' ? t.auditSurvey : t.auditAccess, {
+              account: auditProgress.account,
+              done: auditProgress.done,
+              total: auditProgress.total,
+            })}
+          </p>
+        )}
+
         {!live && brief.questions.length > 0 && (
           <p className="brief-request" data-entry-id={brief.questions.at(-1)?.id ?? undefined}>
             {brief.questions.at(-1)?.text}
@@ -892,7 +954,7 @@ export function Brief({
               data-verdict
               title={brief.verdict.stale && live ? t.staleVerdict : undefined}
             >
-              <Suspense fallback={<p>{brief.verdict.text}</p>}>
+              <Suspense fallback={<p>{plainVerdict(brief.verdict.text)}</p>}>
                 <Markdown
                   text={brief.verdict.text}
                   components={{
@@ -954,7 +1016,7 @@ export function Brief({
           ))}
         </div>
 
-        {!live && !brief.verdict && brief.checks.length === 0 && (
+        {!live && !auditProgress && !brief.verdict && brief.checks.length === 0 && (
           <p className="brief-empty">{t.emptyStream}</p>
         )}
 
@@ -1115,6 +1177,7 @@ export function Brief({
 
         {(unread > 0 ||
           pending > 0 ||
+          truncated > 0 ||
           permissions.length > 0 ||
           brief.blind.length > 0 ||
           brief.undecided.length > 0 ||
@@ -1131,6 +1194,12 @@ export function Brief({
                 <p className="blind">
                   <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
                   {fill(t.pendingBuckets, { n: pending })}
+                </p>
+              )}
+              {truncated > 0 && (
+                <p className="blind">
+                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                  {fill(t.scopeTruncated, { n: truncated })}
                 </p>
               )}
               {brief.undecided.map((item) => (
@@ -1167,6 +1236,7 @@ export function Brief({
           brief.coverage.length > 0 &&
           unread === 0 &&
           pending === 0 &&
+          truncated === 0 &&
           permissions.length === 0 &&
           brief.undecided.length === 0 &&
           brief.blind.length === 0 &&

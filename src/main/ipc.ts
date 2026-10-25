@@ -25,11 +25,20 @@ export function registerIpc(app: App): void {
   )
 
   ipcMain.handle('agent:audit', async () => {
-    if ((await app.providers.list()).length === 0) await app.providers.addDemo()
-    const id = await app.harness.newTask(
-      app.settings.get().language === 'zh' ? '检查账号' : 'Check account',
-    )
-    await app.harness.audit(id)
+    const accounts = await app.providers.list()
+    if (accounts.length === 0) throw new Error('Choose a storage account first.')
+    const lang = app.settings.get().language
+    const names = accounts
+      .slice(0, 2)
+      .map((account) => account.name)
+      .join(', ')
+    const title = `${lang === 'zh' ? '检查' : 'Check'} · ${names} · ${new Date()
+      .toISOString()
+      .slice(0, 10)}`
+    const id = await app.harness.newTask(title)
+    // Return the task immediately; progress and the durable result arrive
+    // through the task watch instead of making the window wait for the sweep.
+    void app.harness.audit(id).catch(() => undefined)
     return app.harness.openTask(id)
   })
   ipcMain.handle('agent:older', (_event, id: string, before: string) =>
@@ -203,7 +212,10 @@ export function registerIpc(app: App): void {
     app.applyModel()
   })
 
-  ipcMain.handle('agent:testModel', () => app.testModel())
+  ipcMain.handle('agent:testModel', (_event, input?: ModelInput) => {
+    if (input && !PROVIDERS.has(input.provider)) throw new Error('Unknown model provider.')
+    return app.testModel(input)
+  })
 
   ipcMain.handle(
     'agent:listModels',

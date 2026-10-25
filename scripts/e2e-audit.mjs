@@ -1,9 +1,10 @@
 /**
  * First-run proof: no model, no account, one click.
  *
- * The window must add the in-process demo account, run the deterministic
- * account check, and render a brief whose sentences come only from the reading.
- * The Composer stays disabled because free-form questions still need a model.
+ * The window must offer the in-process demo account explicitly, run the
+ * deterministic account check, and render a brief whose sentences come only
+ * from the reading. The Composer stays disabled because free-form questions
+ * still need a model.
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -31,10 +32,10 @@ const fail = async (message) => {
 
 try {
   await page.waitForTimeout(1200)
-  const check = page.getByRole('button', { name: 'Check account' })
-  if ((await check.count()) !== 1) await fail('first run does not offer exactly one account check')
+  const demo = page.getByRole('button', { name: 'Try with demo storage' })
+  if ((await demo.count()) !== 1) await fail('first run does not offer exactly one demo action')
 
-  await check.click()
+  await demo.click()
   await page.waitForSelector('.brief .verdict', { timeout: 120_000 })
   const text = await page.locator('.brief').innerText()
   if (!/issue|problem|No open|could not read/i.test(text)) await fail('audit produced no conclusion')

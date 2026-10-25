@@ -27,6 +27,7 @@ import type {
   AppEvent,
   AttachmentRef,
   AuditCheck,
+  AuditProgress,
   AuditReport,
   ContextRef,
   EstateRef,
@@ -543,6 +544,8 @@ export class AgentHarness {
     if (accounts.length === 0) throw new Error('Add a storage account first.')
     const lang = this.deps.settings.get().language
     const signal = AbortSignal.timeout(300_000)
+    const progress = (value: AuditProgress | null) =>
+      this.deps.emit({ type: 'audit', taskId, progress: value })
     const checks: AuditCheck[] = []
     const surveys: Extract<ToolView, { kind: 'survey' }>[] = []
     let failedAccounts = 0
@@ -553,6 +556,7 @@ export class AgentHarness {
         const config = await this.deps.providers.config(account.id)
         const session: AccessSession = {}
         const aws = this.deps.providers.isAws(config)
+        progress({ account: account.name, phase: 'survey', done: 0, total: 1 })
         const accountFacts = aws
           ? await readAccount(
               this.deps.providers.sts(config),
@@ -565,6 +569,17 @@ export class AgentHarness {
           { provider_id: config.id },
           taskId,
           signal,
+          (text) => {
+            const match = /(\d+)\s+of\s+(\d+)/.exec(text)
+            if (match) {
+              progress({
+                account: account.name,
+                phase: 'survey',
+                done: Number(match[1]),
+                total: Number(match[2]),
+              })
+            }
+          },
         )
         const surveyView = surveyDetails.view?.kind === 'survey' ? surveyDetails.view : null
         if (surveyView) surveys.push(surveyView)
@@ -579,6 +594,13 @@ export class AgentHarness {
             .map((issue) => issue.bucket)
           const selected = [...new Set([...issueBuckets, ...bucketNames])].slice(0, 24)
           accessTotal += surveyView.coverage.visible
+          let accessDone = 0
+          progress({
+            account: account.name,
+            phase: 'access',
+            done: 0,
+            total: selected.length,
+          })
           for (const bucket of selected) {
             try {
               const view = await this.auditAccess(config, bucket, accountFacts, session, signal)
@@ -608,6 +630,13 @@ export class AgentHarness {
                 view: null,
               })
             }
+            accessDone += 1
+            progress({
+              account: account.name,
+              phase: 'access',
+              done: accessDone,
+              total: selected.length,
+            })
           }
         }
         checks.push({
@@ -656,6 +685,8 @@ export class AgentHarness {
         error instanceof Error ? redact(error.message).slice(0, 200) : undefined,
       )
       throw error
+    } finally {
+      progress(null)
     }
   }
 
@@ -664,12 +695,13 @@ export class AgentHarness {
     args: Record<string, unknown>,
     taskId: string,
     signal: AbortSignal,
+    onProgress?: (text: string) => void,
   ): Promise<ToolDetails> {
     const result = await tool.execute(
       args as never,
       {
         conversationId: taskId,
-        output: () => undefined,
+        output: (text: string) => onProgress?.(text),
         details: async () => undefined,
       } as never,
       { conversationId: taskId, abortSignal: signal } as never,

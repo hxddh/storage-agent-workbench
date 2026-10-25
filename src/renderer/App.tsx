@@ -1,5 +1,6 @@
 import type {
   AppEvent,
+  AuditProgress,
   Bootstrap,
   ContextRef,
   LocalModel,
@@ -37,6 +38,10 @@ export function App() {
   const [fatal, setFatal] = useState(false)
   const [searchSignal, setSearchSignal] = useState(0)
   const [auditing, setAuditing] = useState(false)
+  const [auditProgress, setAuditProgress] = useState<{
+    taskId: string
+    progress: AuditProgress
+  } | null>(null)
   const [auditError, setAuditError] = useState<string | null>(null)
   const restored = useRef(false)
   const seenHome = useRef(false)
@@ -77,6 +82,9 @@ export function App() {
         setView((current) =>
           current && current.task.id === event.taskId ? { ...current, live: event.live } : current,
         )
+      } else if (event.type === 'audit') {
+        setAuditProgress(event.progress ? { taskId: event.taskId, progress: event.progress } : null)
+        if (!event.progress) setAuditing(false)
       } else if (event.type === 'usage') {
         setView((current) =>
           current && current.task.id === event.taskId
@@ -184,18 +192,28 @@ export function App() {
       baseUrl: model.baseUrl,
       apiKey: 'local',
     })
-    if (!boot?.accounts.length) {
+    await refresh()
+  }
+
+  const startDemo = async () => {
+    if (auditing) return
+    setAuditError(null)
+    setAuditing(true)
+    try {
       await window.agent.addDemoAccount()
       await refresh()
-      await submit('Survey this account.', [], [])
-    } else {
-      await refresh()
+      setAuditing(false)
+      await audit()
+    } catch (error) {
+      setAuditing(false)
+      setAuditError(error instanceof Error ? error.message : String(error))
     }
   }
 
   const audit = async () => {
     if (auditing) return
     setAuditing(true)
+    setAuditProgress(null)
     setAuditError(null)
     try {
       const next = await window.agent.audit()
@@ -204,9 +222,9 @@ export function App() {
       setSidebarOpen(false)
       void refresh()
     } catch (error) {
-      setAuditError(error instanceof Error ? error.message : String(error))
-    } finally {
+      setAuditProgress(null)
       setAuditing(false)
+      setAuditError(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -281,6 +299,9 @@ export function App() {
                 onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
                 onAudit={() => void audit()}
                 auditing={auditing}
+                auditProgress={
+                  auditProgress?.taskId === view.task.id ? auditProgress.progress : null
+                }
                 staleDays={boot?.settings.staleDays ?? 7}
               />
             </Suspense>
@@ -290,6 +311,7 @@ export function App() {
             boot={boot}
             onSetup={() => setSettingsOpen(true)}
             onUseLocal={startLocal}
+            onDemo={() => void startDemo()}
             onAudit={() => void audit()}
             auditing={auditing}
           />

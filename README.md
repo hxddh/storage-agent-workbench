@@ -37,8 +37,9 @@ writes, deletes or changes anything in storage.
   case-sensitively. Coverage, undecided conditions and truncation are shown; a
   blind read is named, never turned into an empty grant list.
 - **Check account** on Home runs the survey and access reads without a model or
-  an API key. On a first run it adds demo storage and writes a deterministic
-  brief, so the product can prove itself before any model is configured.
+  an API key. A first run offers **Try with demo storage** explicitly and only
+  checks an account the user chose; the brief is deterministic, so the product
+  can prove itself before any model is configured.
 - Compares each survey with the last remembered posture and, on AWS, asks
   CloudTrail who changed it over a stated 90-day window. A denied lookup leaves
   the actor unknown.
@@ -53,11 +54,11 @@ writes, deletes or changes anything in storage.
   the whole brief as Markdown. Every bucket the answer names is checked against
   what the tools returned, and so is every claim that a bucket is or is not
   public.
-- Starts without setup: **Check account** adds demo storage on first run and
-  works without a model; models already running on this machine (Ollama, LM
-  Studio) are one click away. Home is a quiet account summary, not a dashboard,
-  with no suggestion pills or follow-up prompts. `@` points at a remembered
-  account, bucket or issue; the names are focus, not authorization.
+- Starts without setup: **Try with demo storage** is an explicit first-run
+  choice and works without a model; models already running on this machine
+  (Ollama, LM Studio) are one click away. Home is a quiet account summary, not a
+  dashboard, with no suggestion pills or follow-up prompts. `@` points at a
+  remembered account, bucket or issue; the names are focus, not authorization.
 - Sets the model in one step: paste a key and the provider's models are fetched,
   the context window is inferred and reasoning is automatic. A small model gets
   shorter method cards and a smaller tool budget.

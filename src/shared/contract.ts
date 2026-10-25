@@ -331,6 +331,14 @@ export interface AuditReport {
   accessBuckets?: { examined: number; total: number }
 }
 
+/** Live progress for a deterministic account check; never persisted. */
+export interface AuditProgress {
+  account: string
+  phase: 'survey' | 'access'
+  done: number
+  total: number
+}
+
 export type UiEntry =
   | {
       id: string
@@ -529,6 +537,7 @@ export type AppEvent =
   | { type: 'entry'; taskId: string; entry: UiEntry }
   | { type: 'patch'; taskId: string; entryId: string; patch: Partial<UiEntry> }
   | { type: 'live'; taskId: string; live: Live | null }
+  | { type: 'audit'; taskId: string; progress: AuditProgress | null }
   | { type: 'usage'; taskId: string; usage: Usage | null }
   | { type: 'issues'; statuses: Record<string, IssueRow['status']> }
   | { type: 'update'; update: UpdateState }
@@ -593,7 +602,8 @@ export interface AgentApi {
   saveModel(input: ModelInput): Promise<void>
   listModels(input: ModelListInput): Promise<{ models: CatalogModel[]; detail: string }>
   clearModel(): Promise<void>
-  testModel(): Promise<{ ok: boolean; detail: string }>
+  /** Test the saved model, or the form values when an input is supplied. */
+  testModel(input?: ModelInput): Promise<{ ok: boolean; detail: string }>
   saveSettings(patch: Partial<AppSettings>): Promise<void>
   markHomeSeen(): Promise<void>
   openExternal(url: string): Promise<void>

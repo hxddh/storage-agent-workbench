@@ -2,7 +2,8 @@ import { createModels, createProvider, type Model } from '@earendil-works/pi-ai'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
-import type { ThinkingLevel } from '@shared/contract'
+import type { ModelInput, ThinkingLevel } from '@shared/contract'
+import { contextFor, thinkingFor } from '../model-catalog'
 import type { Vault } from '../security/vault'
 import type { StoredModel } from '../settings'
 
@@ -41,9 +42,10 @@ function baseUrlOf(stored: StoredModel): string {
 export function installModel(
   models: ReturnType<typeof createModels>,
   stored: StoredModel,
-  vault: Vault,
+  vault: Vault | null,
+  directKey?: string,
 ): ModelRef {
-  const apiKey = vault.open(stored.keyRef)
+  const apiKey = directKey ?? vault?.open(stored.keyRef) ?? ''
   const baseUrl = baseUrlOf(stored)
   const contextWindow = stored.contextWindow > 0 ? stored.contextWindow : 128_000
   const reasoning = stored.thinking !== 'off'
@@ -85,13 +87,13 @@ export function thinkingOf(stored: StoredModel | null): ThinkingLevel {
   return stored?.thinking ?? 'off'
 }
 
-export async function testModel(
+async function testModelWithKey(
   models: ReturnType<typeof createModels>,
   stored: StoredModel,
-  vault: Vault,
+  apiKey: string,
 ): Promise<{ ok: boolean; detail: string }> {
   try {
-    const ref = installModel(models, stored, vault)
+    const ref = installModel(models, stored, null, apiKey)
     const model = models.getModel(ref.provider, ref.modelId)
     if (!model) return { ok: false, detail: 'The model is not available.' }
     const started = Date.now()
@@ -122,4 +124,51 @@ export async function testModel(
       detail: error instanceof Error ? error.message.slice(0, 240) : String(error),
     }
   }
+}
+
+export async function testModel(
+  models: ReturnType<typeof createModels>,
+  stored: StoredModel,
+  vault: Vault,
+): Promise<{ ok: boolean; detail: string }> {
+  try {
+    return await testModelWithKey(models, stored, vault.open(stored.keyRef))
+  } catch (error) {
+    return {
+      ok: false,
+      detail: error instanceof Error ? error.message.slice(0, 240) : String(error),
+    }
+  }
+}
+
+/** Test the values currently in the Settings form without saving them. */
+export async function testModelDraft(
+  models: ReturnType<typeof createModels>,
+  input: ModelInput,
+  stored: StoredModel | null,
+  vault: Vault,
+): Promise<{ ok: boolean; detail: string }> {
+  const modelId = input.modelId?.trim()
+  if (!modelId) return { ok: false, detail: 'A model id is required.' }
+  let apiKey = input.apiKey?.trim() ?? ''
+  if (!apiKey && stored?.provider === input.provider) {
+    try {
+      apiKey = vault.open(stored.keyRef)
+    } catch {
+      apiKey = ''
+    }
+  }
+  if (!apiKey) return { ok: false, detail: 'Enter an API key first.' }
+  const draft: StoredModel = {
+    provider: input.provider,
+    modelId,
+    baseUrl: input.baseUrl?.trim() ?? '',
+    contextWindow:
+      input.contextWindow && input.contextWindow > 0
+        ? Math.min(Math.round(input.contextWindow), 10_000_000)
+        : contextFor(modelId),
+    thinking: input.thinking ?? thinkingFor(modelId, input.provider),
+    keyRef: 'draft',
+  }
+  return testModelWithKey(models, draft, apiKey)
 }

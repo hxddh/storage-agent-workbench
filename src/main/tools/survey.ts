@@ -263,7 +263,10 @@ export function surveyTool(deps: ToolDeps) {
         const looked = await Promise.all(
           buckets.map((bucket) =>
             attribute(
-              deps.providers.cloudTrail(config, config.region || 'us-east-1'),
+              deps.providers.cloudTrail(
+                config,
+                regionOf.get(bucket) ?? config.region ?? 'us-east-1',
+              ),
               bucket,
               run.signal,
             ),
