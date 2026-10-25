@@ -55,7 +55,7 @@ application itself still has the read-only, scope and secret boundaries in
 
 Real-model evaluation is valuable but not guaranteed by the repository alone:
 it needs a provider key and model variables. The release records a smoke result
-when they are absent. A full run covers 26 scenarios and fails on a must-pass
+when they are absent. A full run covers 28 scenarios and fails on a must-pass
 regression; the report is attached and named after the model, never the key.
 
 For an open-model baseline, point the same eval at Ollama. The local server
@@ -96,6 +96,7 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest published release in this checkout is **24.0.0**. Earlier release
-notes may describe retired behavior; they are history. When the next version is
-tagged, update this line and `docs/README.md`.
+The latest published release in this checkout is **24.0.0**. The working tree
+is version **25.0.0**; it has not been tagged or published from this checkout.
+Earlier release notes may describe retired behavior; they are history. When the
+next version is tagged, update this line and `docs/README.md`.

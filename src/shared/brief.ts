@@ -535,20 +535,53 @@ export function buildBrief(
     if (view.kind === 'survey') {
       changes = view.postureChanges ?? []
       attribution = view.attribution ?? null
-      coverage.set(view.providerId ?? view.provider, {
-        provider: view.provider,
-        accountBlock: view.account?.pab ?? null,
-        capacity: view.capacity ?? null,
-        issueTotal: view.issueTotal ?? null,
-        visible: view.coverage.visible,
-        processed: view.coverage.processed,
-        pending: view.coverage.pending ?? 0,
-        denied: view.coverage.denied,
-        unknown: view.coverage.unknown,
-        gone: view.coverage.gone ?? [],
-        truncated: view.coverage.truncated,
-        at: check.at,
-      })
+      const key = view.providerId ?? view.provider
+      const existing = coverage.get(key)
+      // A narrowed re-read is useful for the bucket, but it cannot speak for
+      // the account. Merge it into an existing account reading; never replace
+      // that reading with one bucket's coverage.
+      if (!view.scoped) {
+        coverage.set(key, {
+          provider: view.provider,
+          accountBlock: view.account?.pab ?? null,
+          capacity: view.capacity ?? null,
+          issueTotal: view.issueTotal ?? null,
+          visible: view.coverage.visible,
+          processed: view.coverage.processed,
+          pending: view.coverage.pending ?? 0,
+          denied: view.coverage.denied,
+          unknown: view.coverage.unknown,
+          gone: view.coverage.gone ?? [],
+          truncated: view.coverage.truncated,
+          at: check.at,
+        })
+      } else if (existing) {
+        const read = new Set(view.buckets.rows.map((row) => String(row[0])))
+        coverage.set(key, {
+          ...existing,
+          processed: Math.min(
+            existing.visible,
+            existing.processed + Math.max(0, view.coverage.processed),
+          ),
+          // A narrowed read cannot identify which account-wide pending bucket
+          // it covered, so it never reduces the pending count.
+          pending: existing.pending,
+          denied: [
+            ...new Set([
+              ...existing.denied.filter((bucket) => !read.has(bucket)),
+              ...view.coverage.denied,
+            ]),
+          ],
+          unknown: [
+            ...new Set([
+              ...existing.unknown.filter((bucket) => !read.has(bucket)),
+              ...view.coverage.unknown,
+            ]),
+          ],
+          truncated: existing.truncated || view.coverage.truncated,
+          at: later(existing.at, check.at),
+        })
+      }
     }
   }
   set.overlay(issueStatus)

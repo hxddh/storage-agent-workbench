@@ -54,6 +54,22 @@ export type IssueStatus = 'open' | 'resolved' | 'accepted'
 
 export type IssueEvent = 'opened' | 'resolved' | 'recurred' | 'gone' | 'accepted' | 'reopened'
 
+/** One life-cycle event joined to the Issue it belongs to, for estate history. */
+export interface IssueEventRecord {
+  id: string
+  issue_id: string
+  conversation_id: string | null
+  kind: IssueEvent
+  at: string
+  detail: string | null
+  provider_id: string
+  bucket: string
+  code: string
+  severity: Severity
+  status: IssueStatus
+  last_seen_at: string
+}
+
 export interface NoteRecord {
   id: string
   scope: 'estate' | 'provider' | 'bucket'
@@ -419,6 +435,88 @@ export class AppDb {
       }
     }
     return out.slice(0, 200)
+  }
+
+  async listIssueEvents(
+    filter: {
+      providerId?: string
+      bucket?: string
+      code?: string
+      since?: string
+      limit?: number
+    } = {},
+  ): Promise<IssueEventRecord[]> {
+    const where: string[] = []
+    const params: (string | number)[] = []
+    if (filter.providerId) {
+      where.push('i.provider_id = ?')
+      params.push(filter.providerId)
+    }
+    if (filter.bucket) {
+      where.push('i.bucket = ?')
+      params.push(filter.bucket)
+    }
+    if (filter.code) {
+      where.push('i.code = ?')
+      params.push(filter.code)
+    }
+    if (filter.since) {
+      where.push('e.at >= ?')
+      params.push(filter.since)
+    }
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
+    params.push(Math.max(1, Math.min(filter.limit ?? 80, 500)))
+    const rows = await this.raw.all<{
+      id: string
+      issue_id: string
+      conversation_id: string | null
+      kind: IssueEvent
+      at: string
+      detail_json: string | null
+      provider_id: string
+      bucket: string
+      code: string
+      severity: Severity
+      status: IssueStatus
+      last_seen_at: string
+      issue_detail: string | null
+    }>(
+      `SELECT e.id, e.issue_id, e.conversation_id, e.kind, e.at, e.detail_json,
+              i.provider_id, i.bucket, i.code, i.severity, i.status, i.last_seen_at,
+              i.detail AS issue_detail
+         FROM issue_events e
+         JOIN issues i ON i.id = e.issue_id
+         ${clause}
+        ORDER BY e.at DESC
+        LIMIT ?`,
+      ...params,
+    )
+    return rows.map((row) => {
+      let detail = row.issue_detail
+      try {
+        const parsed = row.detail_json ? (JSON.parse(row.detail_json) as unknown) : null
+        if (parsed && typeof parsed === 'object' && 'detail' in parsed) {
+          const value = (parsed as { detail?: unknown }).detail
+          if (typeof value === 'string') detail = value
+        }
+      } catch {
+        // A damaged event payload still leaves the event's date and kind usable.
+      }
+      return {
+        id: row.id,
+        issue_id: row.issue_id,
+        conversation_id: row.conversation_id,
+        kind: row.kind,
+        at: row.at,
+        detail,
+        provider_id: row.provider_id,
+        bucket: row.bucket,
+        code: row.code,
+        severity: row.severity,
+        status: row.status,
+        last_seen_at: row.last_seen_at,
+      }
+    })
   }
 
   async listBuckets(providerId: string): Promise<BucketRow[]> {

@@ -36,6 +36,8 @@ empty string as its bucket.
 `opened`, `resolved`, `recurred`, `gone`, `accepted` or `reopened`. A bucket
 with `gone_at` is left out of every listing and the digest; seeing it again
 clears the mark. `recurred` counts reopenings of a resolved Issue.
+`AppDb.listIssueEvents` joins `issue_events` to `issues` for `estate` history;
+it is a read of these rows, not a second store.
 
 `search_docs` is rebuilt per conversation when the task settles and backfilled
 at startup. It stores the request, the current verdict (`entry_id = 'verdict'`)

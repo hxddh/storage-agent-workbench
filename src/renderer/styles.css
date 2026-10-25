@@ -1079,6 +1079,21 @@ button {
   margin: 2px 0 2px;
 }
 
+.history-title {
+  margin: 18px 0 4px;
+  color: var(--ink-3);
+  font-size: 10.75px;
+  font-weight: 600;
+  letter-spacing: 0.085em;
+  text-transform: uppercase;
+}
+.history-table table.data td:last-child,
+.history-table table.data th:last-child {
+  min-width: 260px;
+  white-space: normal;
+  line-height: 1.45;
+}
+
 .data-section .table-tools {
   opacity: 0;
   transition: opacity var(--fast) var(--ease);

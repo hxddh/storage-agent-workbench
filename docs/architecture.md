@@ -73,6 +73,19 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
 `Check again` creates a new task and runs the same deterministic path. A
 model-free check is a snapshot; the estate remains the durable memory.
 
+Memory history is a read of host rows, not a second store: `AppDb.listIssueEvents`
+joins `issue_events` to `issues`, and `estate(history: true)` merges those rows
+with `posture_changes` under the same `agentTool()` bounds, redaction and
+untrusted-data envelope as every other tool result. It never reads raw requests
+or `search_docs`.
+
+Read closure is deterministic too. `buildBrief()` keeps account coverage across
+a narrowed re-read instead of replacing it, and the window's scope line says
+`Reads complete` only when account coverage, pending reads, access evidence,
+failed reads and undecided rules are closed. The agent keeps a per-run set of
+the same coverage signals; a clean account claim while that set is non-empty
+gets one correction. The scope line remains the source of truth on the page.
+
 The window never receives `entry.model` (provider-facing messages). The mapper
 in `runtime/project.ts` projects entries into `UiEntry`, extracting only answer
 text and shaped tool details. `pi.user` entries (the harness's correction to
@@ -110,7 +123,7 @@ and truncation stay in the view.
 
 | Module | Responsibility |
 |---|---|
-| `main/db.ts` | schema, append-only migrations (`user_version`), typed queries |
+| `main/db.ts` | schema, append-only migrations (`user_version`), typed queries including Issue events |
 | `main/providers.ts` | accounts (keys or profile), regional S3 clients, profile list, connection test |
 | `main/settings.ts` | `settings.json` (language, theme, notify, stale days, model, last task, last seen) |
 | `main/model-catalog.ts` | provider model list and context-window/thinking inference |
@@ -119,7 +132,7 @@ and truncation stay in the view.
 | `main/security/redact.ts` | credential-shaped text removal, bounded views, envelope escaping |
 | `main/staging.ts` | files waiting for their message |
 | `main/runtime/model.ts` | pi-ai provider (Anthropic, OpenAI Responses, Chat Completions), saved and draft test |
-| `main/runtime/agent.ts` | prompt sections, guard hooks, grounding correction, estate digest |
+| `main/runtime/agent.ts` | prompt sections, guard hooks, grounding and open-read corrections, estate digest |
 | `main/runtime/harness.ts` | task lifecycle, model per run, watches, model-free audit, re-verify, purge |
 | `main/runtime/project.ts` | entries → `UiEntry`, live state, usage |
 | `main/runtime/search.ts` | sidebar search and index rows |

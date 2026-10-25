@@ -53,6 +53,9 @@ function plan(body) {
     if (ask.includes('fix')) {
       return { tool: call('call_fix_1', 'fix', { bucket: 'demo-private', code: 'no_abort_mpu' }) }
     }
+    if (ask.includes('history') || ask.includes('changed')) {
+      return { tool: call('call_history_1', 'estate', { history: true }) }
+    }
     if (ask.includes('issue')) {
       return { tool: call('call_estate_1', 'estate', {}) }
     }
@@ -84,6 +87,11 @@ function plan(body) {
   }
   if (ask.includes('fix')) {
     return { text: 'Add an abort rule for incomplete uploads on `demo-private`.' }
+  }
+  if (ask.includes('history') || ask.includes('changed')) {
+    return {
+      text: 'The history records the Issues that were opened for `demo-public` and `demo-private`.',
+    }
   }
   if (ask.includes('issue')) {
     return {

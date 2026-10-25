@@ -1,5 +1,42 @@
 # Changelog
 
+## 25.0.0
+
+Memory that can answer what happened, and a reading that says when it is
+closed. No new surface, no new tool, no write path.
+
+### Added
+
+- **Estate history.** `estate(history: true)` reads remembered Issue life-cycle
+  events (opened, resolved, recurred, gone, accepted, reopened) and posture
+  changes, newest first, with optional `bucket`, `code` and `since` filters.
+  It is rendered under the existing Data section; raw requests and search-index
+  text are never part of memory.
+- **A deterministic read status.** The scope line says `Reads complete` or
+  `Reads open: n · m blocked`; failed, stopped, blind, pending, truncated,
+  undecided and partial access reads keep it open. The Not read section names
+  them.
+- **A clean-claim correction.** The model gets one correction if it calls the
+  account clean while the current run still has open reads.
+
+### Fixed
+
+- A narrowed survey no longer replaces account-wide coverage. A one-bucket
+  re-read updates its own bucket, but a pending or blind account read stays
+  visible; the same rule applies to the agent's per-run coverage.
+- A failed or stopped storage read can no longer sit beside a `Reads complete`
+  line.
+- Access coverage is now shown on the access chain and counted in the scope
+  status. Query access coverage is included too.
+
+### Verification
+
+- Added Issue-event history and filter tests, scoped-survey coverage tests,
+  failed-read UI tests, history rendering tests and clean-claim correction tests.
+- Added `history-recall` and `blind-clean-claim` evaluation scenarios. The
+  real-model evaluation still requires `EVAL_*` credentials; this checkout has
+  no model key or local model.
+
 ## 24.0.0
 
 A quieter window and a new identity. The read-only agent, durable task model,

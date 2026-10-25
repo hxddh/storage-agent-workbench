@@ -1,6 +1,6 @@
 # Documentation
 
-These pages describe the behavior of the **24.0.0** tree. They are not a
+These pages describe the behavior of the **25.0.0** tree. They are not a
 roadmap and not a substitute for the code.
 
 | File | What it is |

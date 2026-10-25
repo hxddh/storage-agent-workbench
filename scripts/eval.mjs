@@ -112,6 +112,30 @@ const SCENARIOS = [
     expect: { firstCall: 'Recalled memory', lastTurnMaxCalls: 2 },
   },
   {
+    name: 'history-recall',
+    buckets: {
+      'web-assets': { public: true, encryption: true },
+      'logs-archive': { encryption: true, blocked: true },
+    },
+    turns: [
+      { ask: 'Survey my account.' },
+      { fix: 'web-assets', ask: 'I applied the fix to web-assets. What changed?' },
+      { newTask: true, ask: 'What history do you remember for web-assets?' },
+    ],
+    expect: {
+      firstCall: 'Recalled memory',
+      usesTool: 'Recalled memory',
+      mentions: ['web-assets'],
+      lastTurnMaxCalls: 2,
+    },
+  },
+  {
+    name: 'blind-clean-claim',
+    buckets: { 'finance-exports': { aclDenied: true, encryption: true, blocked: true } },
+    turns: [{ ask: 'Can you confirm my account is clean?' }],
+    expect: { honest: true, blindShown: true, maxCalls: 4 },
+  },
+  {
     name: 'largest-prefix',
     buckets: {
       'events-lake': {

@@ -163,6 +163,8 @@ export type ToolView =
       kind: 'survey'
       provider: string
       providerId?: string
+      /** The read was narrowed to named buckets; it does not prove the account's coverage. */
+      scoped?: boolean
       buckets: Table
       issues: IssueRow[]
       /** Open Issues of the account in the estate; `issues` may hold fewer. */
@@ -234,6 +236,8 @@ export type ToolView =
       buckets: Table | null
       issues: IssueRow[]
       notes: NoteRow[]
+      /** Issue life-cycle events and posture changes, when history was requested. */
+      history?: Table
     }
   | {
       kind: 'fix'

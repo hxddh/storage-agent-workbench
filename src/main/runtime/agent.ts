@@ -6,7 +6,7 @@ import {
   section,
   ToolTask,
 } from '@earendil-works/pi-durable'
-import type { ToolDetails } from '@shared/contract'
+import type { ToolDetails, ToolView } from '@shared/contract'
 import { contradicted, exposureInView, namesInView, ungrounded } from '@shared/grounding'
 import { BY_CODE, ruleTitle } from '../estate/rules'
 import { createTools } from '../tools'
@@ -28,29 +28,41 @@ export function maxRounds(tier: ModelTier): number {
 
 // Memory and surveys change as the task reads (a survey continues where the last stopped).
 const MEMORY_TOOLS = new Set(['estate', 'fix', 'note', 'survey'])
+const STORAGE_READS = new Set([
+  'survey',
+  'buckets',
+  'objects',
+  'object',
+  'config',
+  'probe',
+  'query',
+])
 
 const METHOD = `How to work:
 - Start from memory. \`estate\` returns remembered posture with the date it was read; use it when it answers the question and say it is memory.
+- Ask for history when the question is temporal: when a risk appeared, what changed, what a previous task fixed, or what the user accepted. \`estate(history: true)\` returns Issue events and posture changes; narrow it with \`bucket\`, \`code\` or \`since\`. History is memory, not a fresh read.
 - Survey when memory is empty, older than today, or the question is about current exposure. After the user says they applied a fix, survey only that bucket (\`survey\` with \`buckets\`).
 - Review one bucket with \`config\` when the question is about a specific setting or a survey left a rule undecided.
 - Use \`query\` when the answer needs many objects or many buckets at once (largest prefixes, data untouched for a year, versions piling up, buckets by size), or when the user attached an access log or inventory: call \`dataset\` then \`aggregate\` inside the script. Prefer CloudWatch capacity, S3 Inventory (\`inventory\`), or a prefix-level listing (delimiter "/") to paging through millions of objects.
 - When the user asks who can reach a bucket, use \`config\` with aspect \`access\`. Policy statements are local; IAM is read with GetAccountAuthorizationDetails and evaluated locally; SCPs, KMS and Access Analyzer are AWS-only and may be blind. Use \`query\` with \`principal\` for a principal-first view. A blind access read means the list is incomplete, not empty.
 - A survey that stops early has read the longest-unread buckets first; survey again to read the rest when the question needs them.
-- Read before you conclude. A denied, unsupported or failed read leaves the question open; silence is never a clean bill of health.
+- Read before you conclude. A denied, unsupported or failed read leaves the question open; silence is never a clean bill of health. The tool result's coverage fields (pending, denied, unknown, truncated, undecided, permissions) are part of the evidence.
 - Calls that do not depend on each other can go in the same round.
-- Three to six tool calls is a normal task. Past twelve you are circling: answer with what you have.`
+- Three to six tool calls is normal. Twelve is a prompt to check what remains: if a read could still change the answer, continue or say the question remains open; do not spend calls on evidence that cannot change the answer.
+- The page reports \`Reads complete\` only when its coverage is closed. If it reports \`Reads open\`, your verdict must not call the account clean.`
 
 const ANSWER = `Answering:
 - The window is the page: it renders the findings, one data section, the fixes and the checks from your tool results. You write only the verdict.
 - Verdict: at most two sentences. Say what is true and what it means. No headings, tables, bullets, or numbers the page already shows.
 - Put every bucket, object key and account name in backticks, spelled exactly as a tool returned it. Never name one no tool returned; never put anything else in backticks.
 - When the page shows a fix, say what it changes in one sentence.
-- If a read was blind or a survey stopped early, say the question is still open for what was not read.
+- If a read was blind, a survey stopped early, or the page says \`Reads open\`, say the question is still open for what was not read. Do not call the account clean until coverage is closed or the unread evidence cannot change the answer.
 - Never add next steps, suggestions, or an offer to help further.`
 
 const CARDS = `Method cards:
 Access: \`config(aspect: "access")\` reads the bucket policy and ACL locally, reads all IAM principals and policies with GetAccountAuthorizationDetails, evaluates them locally, reads inherited SCPs when Organizations is available, and attaches KMS and Access Analyzer evidence. The view reports principal coverage, undecided conditions and truncation; a denied read is shown as a blind spot.
 Changes: survey compares this reading with the last remembered posture and names what changed. On AWS it asks CloudTrail who made the change over a 90-day window; a denied or unsupported lookup means the actor is unknown, not that nobody changed it.
+History: \`estate(history: true)\` returns the estate's Issue events (opened, resolved, recurred, gone, accepted, reopened) and posture changes, newest first. Use \`since\` for a time window and \`bucket\` or \`code\` to narrow it. It is memory, not a fresh read.
 Inventory: when a bucket has S3 Inventory, \`inventory\` reads the latest manifest and a bounded page, or \`full: true\` imports every manifest file (CSV or Parquet) into a dataset. It covers objects that ListObjects cannot enumerate cheaply; coverage and the inventory date are explicit.
 Batch fixes: \`fix\` without a bucket or code returns one fix per open Issue class, so the same change is not generated five times by hand.
 Account posture: survey reads every bucket's policy, ACL, public access block, ownership, CORS, logging, encryption and lifecycle, and decides twelve rules. A bucket is public only when the policy or the ACL proves it and neither the bucket's nor the account's public access block cancels it; when a read was blind, exposure is undecided, not no.
@@ -62,6 +74,12 @@ Lifecycle and cost: no AbortIncompleteMultipartUpload leaves parts billing forev
 Capacity: on AWS, survey reads CloudWatch's daily storage metrics — size by storage class, object count, 14-day growth and a storage-only estimate at us-east-1 list price. Call it an estimate. S3-compatible endpoints publish none; use \`query\` to measure a bucket there.
 Account: on AWS, the account-wide public access block applies to every bucket and can cancel exposure a bucket's own settings show; survey reads it. TLS: on AWS a bucket should deny requests where aws:SecureTransport is false.`
 
+/** What the current run's readings leave open. */
+export interface ReadGap {
+  open: number
+  blocked: number
+}
+
 /** Per-run state the hooks keep; the harness resets it at each submission. */
 export interface RunState {
   rounds: number
@@ -69,7 +87,12 @@ export interface RunState {
   known: Set<string>
   /** What the task's readings proved about each bucket's exposure. */
   exposure: Map<string, boolean>
+  /** Latest coverage per account or bucket review; a later read replaces its entry. */
+  readGaps: Map<string, ReadGap>
+  /** Accounts for which an account-wide survey ran, even when it had no gap. */
+  accountSurveys: Set<string>
   corrected: boolean
+  coverageCorrected: boolean
 }
 
 export interface AgentState {
@@ -88,7 +111,10 @@ export function freshRun(
     calls: new Set(),
     known: new Set(known),
     exposure: new Map(exposure),
+    readGaps: new Map(),
+    accountSurveys: new Set(),
     corrected: false,
+    coverageCorrected: false,
   }
 }
 
@@ -135,6 +161,105 @@ export function blockReason(
   }
   current.calls.add(key)
   return undefined
+}
+
+function setReadGap(state: RunState, key: string, open: number, blocked: number): void {
+  if (open > 0 || blocked > 0) state.readGaps.set(key, { open, blocked })
+  else state.readGaps.delete(key)
+}
+
+/** Read the coverage fields of a tool view into the current run's open-read set. */
+export function recordReadGaps(state: RunState, view: ToolView): void {
+  if (view.kind === 'survey') {
+    const coverage = view.coverage
+    const outside = coverage.truncated
+      ? Math.max(1, coverage.visible - coverage.processed - (coverage.pending ?? 0))
+      : 0
+    const blocked =
+      coverage.denied.length + coverage.unknown.length + (view.permissions?.length ?? 0)
+    const open =
+      Math.max(0, coverage.pending ?? 0) +
+      coverage.denied.length +
+      coverage.unknown.length +
+      outside +
+      (view.undecided?.length ?? 0)
+    const key = `survey:${view.providerId ?? view.provider}`
+    if (view.scoped) {
+      // A narrowed re-read can prove its buckets but not the account. Keep an
+      // existing account gap; if the account was never surveyed, remember that
+      // the account itself was not read rather than treating this as complete.
+      if (!state.accountSurveys.has(key) && !state.readGaps.has(key))
+        setReadGap(state, `${key}:scoped`, Math.max(1, open), blocked)
+      return
+    }
+    state.accountSurveys.add(key)
+    state.readGaps.delete(`${key}:scoped`)
+    setReadGap(state, key, open, blocked)
+    return
+  }
+  if (view.kind === 'config') {
+    const access = view.accessCoverage
+    const accessOpen = access
+      ? Math.max(0, access.principals - access.evaluated) +
+        Math.max(0, access.undecided) +
+        (access.truncated ? 1 : 0) +
+        Math.max(0, (access.bucketsTotal ?? 0) - (access.bucketsExamined ?? 0))
+      : 0
+    const blind = Math.max(
+      view.findings.filter((finding) => finding.severity === 'blind').length,
+      view.accessBlind?.length ?? 0,
+    )
+    const blocked = blind + (view.permissions?.length ?? 0)
+    setReadGap(
+      state,
+      `config:${view.providerId ?? ''}:${view.bucket}:${view.aspect ?? 'security'}`,
+      accessOpen + blocked,
+      blocked,
+    )
+    return
+  }
+  if (view.kind === 'query') {
+    const access = view.coverage
+    const accessOpen = access
+      ? Math.max(0, access.principals - access.evaluated) +
+        Math.max(0, access.undecided) +
+        (access.truncated ? 1 : 0) +
+        Math.max(0, (access.bucketsTotal ?? 0) - (access.bucketsExamined ?? 0))
+      : 0
+    const blocked = view.blind?.length ?? 0
+    setReadGap(state, `query:${view.providerId ?? ''}:${view.title}`, accessOpen + blocked, blocked)
+  }
+}
+
+export function readGapTotals(state: RunState): ReadGap {
+  let open = 0
+  let blocked = 0
+  for (const gap of state.readGaps.values()) {
+    open += gap.open
+    blocked += gap.blocked
+  }
+  return { open, blocked }
+}
+
+// A broad clean bill of health. A specific claim about one bucket is left to
+// the page's grounding and undecided markers; this guard is about the account.
+const GENERAL_CLEAN =
+  /\b(?:no (?:issues?|findings?|problems?)|no (?:bucket|buckets) (?:is|are) public|no public (?:bucket|buckets)|nothing is (?:public|exposed)|all (?:buckets )?(?:are )?(?:private|clean|clear|secure)|all clear|(?:the )?(?:account|estate) (?:is|looks) (?:clean|secure))\b|(?:没有|未发现)(?:任何)?(?:问题|公开)|一切正常|全部正常/i
+
+/** The one correction a clean claim gets while the current run still has open reads. */
+export function coverageCorrection(
+  state: AgentState,
+  conversationId: string,
+  verdict: string,
+): string | undefined {
+  const current = run(state, conversationId)
+  if (current.coverageCorrected || !GENERAL_CLEAN.test(verdict)) return undefined
+  const totals = readGapTotals(current)
+  if (totals.open === 0) return undefined
+  current.coverageCorrected = true
+  return `The reads are not complete: ${totals.open} read(s) remain open${
+    totals.blocked ? ` (${totals.blocked} blocked)` : ''
+  }. Do not call the account clean; either read the missing evidence or say the question remains open.`
 }
 
 /** The one correction an ungrounded or contradicted verdict gets, or undefined. */
@@ -200,7 +325,9 @@ export function createAgent(deps: ToolDeps, state: AgentState, tools?: ToolRegis
           const text = answer.content
             .map((part) => (part.type === 'text' ? part.text : ''))
             .join('')
-          const correction = groundingCorrection(state, String(api.conversationId), text)
+          const correction =
+            groundingCorrection(state, String(api.conversationId), text) ??
+            coverageCorrection(state, String(api.conversationId), text)
           return correction ? { continue: correction } : undefined
         },
       }),
@@ -211,10 +338,16 @@ export function createAgent(deps: ToolDeps, state: AgentState, tools?: ToolRegis
         },
         afterTool: (_call, result, api) => {
           const details = (result as { details?: ToolDetails }).details
-          if (details && details.status === 'done') {
+          if (details) {
             const current = run(state, String(api.conversationId))
-            namesInView(details.view, details.target, current.known, _call.name)
-            exposureInView(details.view, current.exposure)
+            if (details.status === 'done') {
+              namesInView(details.view, details.target, current.known, _call.name)
+              exposureInView(details.view, current.exposure)
+              if (details.view) recordReadGaps(current, details.view)
+              current.readGaps.delete(`failed:${_call.name}:${details.target}`)
+            } else if (STORAGE_READS.has(_call.name)) {
+              setReadGap(current, `failed:${_call.name}:${details.target}`, 1, 1)
+            }
           }
           return undefined
         },
@@ -258,6 +391,18 @@ export async function refreshDigest(deps: ToolDeps, state: AgentState): Promise<
       )
     }
     if (accepted) lines.push(`${accepted} Issue(s) accepted by the user.`)
+    const recent = await deps.db.listIssueEvents({ limit: 5 })
+    if (recent.length) {
+      lines.push(
+        `Recent Issue history: ${recent
+          .map((event) => {
+            const rule = BY_CODE.get(event.code)
+            const title = rule ? ruleTitle(rule, 'en') : event.code
+            return `${event.at.slice(0, 10)} ${event.kind} ${event.bucket} (${title})`
+          })
+          .join('; ')}.`,
+      )
+    }
     if (notes.length) {
       lines.push(`Notes: ${notes.map((note) => note.text.slice(0, 160)).join(' | ')}.`)
     }

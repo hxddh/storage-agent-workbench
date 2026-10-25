@@ -422,6 +422,7 @@ export function surveyTool(deps: ToolDeps) {
           kind: 'survey' as const,
           provider: config.name,
           providerId: config.id,
+          scoped: Boolean(args.buckets?.length),
           buckets: table,
           issues,
           issueTotal,

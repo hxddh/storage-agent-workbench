@@ -25,17 +25,33 @@ export function estateTools(deps: ToolDeps) {
     agentTool(deps, {
       name: 'estate',
       description:
-        'Read what the agent remembers: recorded bucket posture, open Issues with their history, and notes. Use it before asking the user to repeat anything.',
+        'Read what the agent remembers: recorded bucket posture, open and accepted Issues, notes, and — with history — what happened to those Issues and the posture over time. Use it before asking the user to repeat anything.',
       parameters: Type.Object({
         provider_id: providerParam,
         bucket: Type.Optional(
-          Type.String({ description: 'Narrow Issues and notes to one bucket.' }),
+          Type.String({ description: 'Narrow Issues, history and notes to one bucket.' }),
+        ),
+        code: Type.Optional(
+          Type.String({ description: 'Narrow Issues and history to one rule code.' }),
+        ),
+        history: Type.Optional(
+          Type.Boolean({
+            description:
+              'Include Issue life-cycle events (opened, resolved, recurred, gone, accepted, reopened) and posture changes.',
+          }),
+        ),
+        since: Type.Optional(
+          Type.String({
+            description: 'Only history at or after this ISO date or timestamp, e.g. 2026-10-01.',
+          }),
         ),
         notes: Type.Optional(Type.Boolean({ description: 'Include notes (default true).' })),
       }),
       timeoutMs: 20_000,
       target: (args) => args.bucket ?? 'memory',
       run: async (args, run) => {
+        if (args.since && Number.isNaN(Date.parse(args.since)))
+          throw new Error('since must be an ISO date or timestamp, e.g. 2026-10-01.')
         const config = await deps.providers.resolve(args.provider_id)
         await run.setTarget(config.name)
         const lang = deps.lang()
@@ -66,7 +82,9 @@ export function estateTools(deps: ToolDeps) {
           }),
         }
         const issues = (await deps.estate.issueRows(config.id, lang, 100)).filter(
-          (issue) => !args.bucket || issue.bucket === args.bucket,
+          (issue) =>
+            (!args.bucket || issue.bucket === args.bucket) &&
+            (!args.code || issue.code === args.code),
         )
         const notes =
           args.notes === false
@@ -84,6 +102,42 @@ export function estateTools(deps: ToolDeps) {
           (at, row) => (row.posture_at && (!at || row.posture_at < at) ? row.posture_at : at),
           null,
         )
+        let historyTable: Table | undefined
+        if (args.history) {
+          const eventRows = await deps.db.listIssueEvents({
+            providerId: config.id,
+            bucket: args.bucket,
+            code: args.code,
+            since: args.since,
+            limit: 80,
+          })
+          const changeRows = (await deps.db.listChanges(config.id, args.since)).filter(
+            (change) => !args.bucket || change.bucket === args.bucket,
+          )
+          const titleOf = (code: string) => {
+            const rule = BY_CODE.get(code)
+            return rule ? ruleTitle(rule, lang) : code
+          }
+          const rows: Table['rows'] = [
+            ...eventRows.map((event) => [
+              event.at.slice(0, 10),
+              event.kind,
+              event.bucket,
+              `${titleOf(event.code)}${event.detail ? ` — ${event.detail}` : ''}`,
+            ]),
+            ...changeRows.map((change) => [
+              change.at.slice(0, 10),
+              'changed',
+              change.bucket,
+              `${change.field} — ${change.before} → ${change.after}`,
+            ]),
+          ]
+          rows.sort((a, b) => String(b[0]).localeCompare(String(a[0])))
+          historyTable = {
+            columns: ['When', 'Event', 'Bucket', 'Evidence'],
+            rows: rows.slice(0, 60),
+          }
+        }
         const open = issues.filter((issue) => issue.status === 'open')
         const accepted = issues.length - open.length
         const lines = [
@@ -97,12 +151,24 @@ export function estateTools(deps: ToolDeps) {
               (issue) =>
                 `[${issue.severity}] ${issue.title} — ${issue.bucket}${issue.detail ? ` (${issue.detail})` : ''}`,
             ),
+          ...(historyTable
+            ? [
+                historyTable.rows.length
+                  ? `History (newest first, ${historyTable.rows.length} row(s)):`
+                  : 'History: no matching Issue event or posture change is remembered.',
+                ...historyTable.rows
+                  .slice(0, 10)
+                  .map((row) => `${row[0]} ${row[1]} ${row[2]} — ${row[3]}`),
+              ]
+            : []),
           ...notes.slice(0, 6).map((note) => `note: ${note.text.slice(0, 160)}`),
         ]
         return {
           model: lines.join('\n'),
           target: config.name,
-          note: `${buckets.length} bucket${buckets.length === 1 ? '' : 's'} · ${issues.length} issue${issues.length === 1 ? '' : 's'}`,
+          note: `${buckets.length} bucket${buckets.length === 1 ? '' : 's'} · ${issues.length} issue${issues.length === 1 ? '' : 's'}${
+            historyTable ? ` · ${historyTable.rows.length} history row(s)` : ''
+          }`,
           view: {
             kind: 'estate' as const,
             providerId: config.id,
@@ -118,6 +184,7 @@ export function estateTools(deps: ToolDeps) {
               author: note.author,
               createdAt: note.created_at,
             })),
+            ...(historyTable ? { history: historyTable } : {}),
           },
         }
       },

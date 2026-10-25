@@ -193,9 +193,10 @@ function briefMarkdown(title: string, brief: BriefModel, t: Dict, lang: Lang): s
     if (view.kind === 'query')
       parts.push(`## ${view.title}`, tableMarkdown(view.rows), `\`\`\`js\n${view.code}\n\`\`\``)
     else if (view.kind === 'survey') parts.push(`## ${t.buckets}`, tableMarkdown(view.buckets))
-    else if (view.kind === 'estate' && view.buckets)
+    else if (view.kind === 'estate' && view.buckets) {
       parts.push(`## ${t.buckets} (${t.remembered})`, tableMarkdown(view.buckets))
-    else if (view.kind === 'buckets' || view.kind === 'objects')
+      if (view.history?.rows.length) parts.push(`## ${t.history}`, tableMarkdown(view.history))
+    } else if (view.kind === 'buckets' || view.kind === 'objects')
       parts.push(`## ${t.dataTitle}`, tableMarkdown(view.rows))
     else if (view.kind === 'object')
       parts.push(
@@ -373,13 +374,21 @@ function DataSection({ data, t }: { data: BriefData; t: Dict }) {
   }
   if (view.kind === 'estate' && view.buckets) {
     return (
-      <TableView
-        table={view.buckets}
-        name="remembered-buckets"
-        empty={t.emptyEstate}
-        t={t}
-        limit={10}
-      />
+      <>
+        <TableView
+          table={view.buckets}
+          name="remembered-buckets"
+          empty={t.emptyEstate}
+          t={t}
+          limit={10}
+        />
+        {view.history && view.history.rows.length > 0 && (
+          <div className="history-table">
+            <h3 className="history-title">{t.history}</h3>
+            <TableView table={view.history} name="history" empty={t.noRows} t={t} limit={10} />
+          </div>
+        )}
+      </>
     )
   }
   if (view.kind === 'buckets' || view.kind === 'objects') {
@@ -394,7 +403,14 @@ function DataSection({ data, t }: { data: BriefData; t: Dict }) {
     )
   }
   if (view.kind === 'config' && view.access) {
-    return <AccessChain paths={view.access} blind={view.accessBlind} t={t} />
+    return (
+      <AccessChain
+        paths={view.access}
+        blind={view.accessBlind}
+        coverage={view.accessCoverage}
+        t={t}
+      />
+    )
   }
   if (view.kind === 'object') {
     if (view.facts.length === 0) return <p className="view-empty">{t.noRows}</p>
@@ -680,7 +696,6 @@ export function Brief({
       n + (item.truncated ? Math.max(0, item.visible - item.processed - item.pending) : 0),
     0,
   )
-  const notRead = unread + pending
   const scopeNames = [...new Set(brief.coverage.map((item) => item.provider))]
   const gone = brief.coverage.flatMap((item) => item.gone)
   const permissions = [
@@ -694,6 +709,44 @@ export function Brief({
         .map((gap) => [`${gap.bucket}:${gap.action}`, gap]),
     ).values(),
   ].slice(0, 12)
+  const failedReads = brief.checks.filter(
+    (check) =>
+      !['estate', 'fix', 'note'].includes(check.name) &&
+      ['failed', 'refused', 'stopped', 'timeout'].includes(check.status),
+  ).length
+  const runningReads = brief.checks.some(
+    (check) => !['estate', 'fix', 'note'].includes(check.name) && check.status === 'running',
+  )
+  const accessGapByKey = new Map<string, number>()
+  for (const check of brief.checks) {
+    const view = check.view
+    if (!view || (view.kind !== 'config' && view.kind !== 'query')) continue
+    const coverage = view.kind === 'config' ? view.accessCoverage : view.coverage
+    const blind = view.kind === 'config' ? view.accessBlind?.length : view.blind?.length
+    const gap = coverage
+      ? Math.max(0, coverage.principals - coverage.evaluated) +
+        Math.max(0, coverage.undecided) +
+        (coverage.truncated ? 1 : 0) +
+        Math.max(0, (coverage.bucketsTotal ?? 0) - (coverage.bucketsExamined ?? 0))
+      : 0
+    const key =
+      view.kind === 'config'
+        ? `config:${view.providerId ?? ''}:${view.bucket}:${view.aspect ?? 'security'}`
+        : `query:${view.providerId ?? ''}:${view.title}`
+    accessGapByKey.set(key, gap + (blind ?? 0))
+  }
+  const accessGaps = [...accessGapByKey.values()].reduce((total, gap) => total + gap, 0)
+  // One deterministic read status. It names coverage, never a security verdict.
+  const blocked = unread + permissions.length + brief.blind.length + failedReads + accessGaps
+  const openReads = pending + truncated + blocked + brief.undecided.length
+  const coverageStatus =
+    openReads > 0
+      ? `${fill(t.scopeOpen, { n: openReads })}${
+          blocked > 0 ? ` · ${fill(t.scopeBlocked, { n: blocked })}` : ''
+        }`
+      : brief.coverage.length > 0 && !runningReads
+        ? t.scopeComplete
+        : ''
   const checked = brief.lastReadAt ? ago(brief.lastReadAt, t) : null
   const title = view.task.title
   const hasContent = Boolean(brief.verdict || brief.findings.length || brief.checks.length)
@@ -808,31 +861,18 @@ export function Brief({
       <article className="brief" ref={root} aria-busy={live} onKeyDown={navigate}>
         <h1 className="visually-hidden">{title}</h1>
         <div className={`brief-meta ${hasContent ? '' : 'silent'}`}>
-          {brief.coverage.length > 0 ? (
-            <span className="brief-scope">
-              {[
-                scopeNames.join(' · '),
-                totalBuckets > 0
-                  ? fill(t.scopeRead, { read: readBuckets, total: totalBuckets })
-                  : '',
-                notRead > 0 ? fill(t.scopeUnread, { n: notRead }) : '',
-                truncated > 0 ? fill(t.scopeTruncated, { n: truncated }) : '',
-                checked ? fill(t.checkedAt, { when: checked }) : '',
-                brief.findings.length > 0
-                  ? fill(t.findingsCount, { n: brief.findings.length })
-                  : '',
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </span>
-          ) : (
-            <span>
-              {checked ? fill(t.checkedAt, { when: checked }) : ''}
-              {brief.findings.length > 0 &&
-                `${checked ? ' · ' : ''}${fill(t.findingsCount, { n: brief.findings.length })}`}
-              {rememberedAt && ` · ${fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' })}`}
-            </span>
-          )}
+          <span className={brief.coverage.length > 0 || coverageStatus ? 'brief-scope' : undefined}>
+            {[
+              scopeNames.join(' · '),
+              coverageStatus,
+              totalBuckets > 0 ? fill(t.scopeRead, { read: readBuckets, total: totalBuckets }) : '',
+              checked ? fill(t.checkedAt, { when: checked }) : '',
+              brief.findings.length > 0 ? fill(t.findingsCount, { n: brief.findings.length }) : '',
+              rememberedAt ? fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' }) : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
           {hasContent && (
             <span className="brief-actions">
               <button className="text-action" type="button" onClick={() => void copy()}>
@@ -1178,76 +1218,72 @@ export function Brief({
           </section>
         )}
 
-        {(unread > 0 ||
-          pending > 0 ||
-          truncated > 0 ||
-          permissions.length > 0 ||
-          brief.blind.length > 0 ||
-          brief.undecided.length > 0 ||
-          gone.length > 0) &&
-          !live && (
-            <section className="brief-section blind-section" aria-label={t.openQuestions}>
-              {unread > 0 && (
-                <p className="blind">
-                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                  {fill(t.blind, { n: unread })}
-                </p>
-              )}
-              {pending > 0 && (
-                <p className="blind">
-                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                  {fill(t.pendingBuckets, { n: pending })}
-                </p>
-              )}
-              {truncated > 0 && (
-                <p className="blind">
-                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                  {fill(t.scopeTruncated, { n: truncated })}
-                </p>
-              )}
-              {brief.undecided.map((item) => (
-                <p className="blind" key={item.code}>
-                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                  {fill(t.undecidedRule, {
-                    n: item.count,
-                    title: item.title,
-                    buckets: item.buckets.slice(0, 6).join(', '),
-                  })}
-                  {item.count > item.buckets.length && item.buckets.length === 20 ? ' …' : ''}
-                </p>
-              ))}
-              {brief.blind.map((item) => (
-                <p className="blind" key={item.key}>
-                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                  <span className="mono">{item.bucket}</span> · {item.title}
-                </p>
-              ))}
-              {permissions.map((gap) => (
-                <p className="blind permission-gap" key={`${gap.bucket}:${gap.action}`}>
-                  <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                  <span className="mono">{gap.bucket}</span> · {gap.item} ·{' '}
-                  <code>{gap.action}</code>
-                </p>
-              ))}
-              {gone.length > 0 && (
-                <p className="quiet">{fill(t.goneBuckets, { names: gone.join(', ') })}</p>
-              )}
-            </section>
-          )}
+        {(openReads > 0 || gone.length > 0) && !live && (
+          <section className="brief-section blind-section" aria-label={t.openQuestions}>
+            {unread > 0 && (
+              <p className="blind">
+                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                {fill(t.blind, { n: unread })}
+              </p>
+            )}
+            {pending > 0 && (
+              <p className="blind">
+                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                {fill(t.pendingBuckets, { n: pending })}
+              </p>
+            )}
+            {truncated > 0 && (
+              <p className="blind">
+                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                {fill(t.scopeTruncated, { n: truncated })}
+              </p>
+            )}
+            {failedReads > 0 && (
+              <p className="blind">
+                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                {fill(t.failedReads, { n: failedReads })}
+              </p>
+            )}
+            {accessGaps > 0 && (
+              <p className="blind">
+                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                {fill(t.accessOpen, { n: accessGaps })}
+              </p>
+            )}
+            {brief.undecided.map((item) => (
+              <p className="blind" key={item.code}>
+                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                {fill(t.undecidedRule, {
+                  n: item.count,
+                  title: item.title,
+                  buckets: item.buckets.slice(0, 6).join(', '),
+                })}
+                {item.count > item.buckets.length && item.buckets.length === 20 ? ' …' : ''}
+              </p>
+            ))}
+            {brief.blind.map((item) => (
+              <p className="blind" key={item.key}>
+                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                <span className="mono">{item.bucket}</span> · {item.title}
+              </p>
+            ))}
+            {permissions.map((gap) => (
+              <p className="blind permission-gap" key={`${gap.bucket}:${gap.action}`}>
+                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+                <span className="mono">{gap.bucket}</span> · {gap.item} · <code>{gap.action}</code>
+              </p>
+            ))}
+            {gone.length > 0 && (
+              <p className="quiet">{fill(t.goneBuckets, { names: gone.join(', ') })}</p>
+            )}
+          </section>
+        )}
 
-        {!answered &&
-          brief.coverage.length > 0 &&
-          unread === 0 &&
-          pending === 0 &&
-          truncated === 0 &&
-          permissions.length === 0 &&
-          brief.undecided.length === 0 &&
-          brief.blind.length === 0 &&
-          !live && (
-            <section className="brief-section">
-              <p className="clean">{t.noFindingsClean}</p>
-            </section>
-          )}
+        {!answered && brief.coverage.length > 0 && openReads === 0 && !live && (
+          <section className="brief-section">
+            <p className="clean">{t.noFindingsClean}</p>
+          </section>
+        )}
 
         <FixSection fixes={brief.fixes} titleOf={ruleTitle} t={t} />
 

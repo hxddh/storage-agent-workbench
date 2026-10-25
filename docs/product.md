@@ -80,27 +80,32 @@ the page shows only the latest request above the current verdict.
 
 Top to bottom:
 
-1. **Scope line** — account name(s), `read / total` buckets, blind reads,
-   buckets outside the run, the last read time and the finding count.
+1. **Scope line** — account name(s), a deterministic `Reads complete` or
+   `Reads open: n · m blocked` status, `checked / total` buckets, the last read
+   time and the finding count. A failed or stopped storage read keeps the line
+   open. A narrowed re-read never turns an account-wide gap into a complete
+   reading.
 2. **Latest request** — one quiet line. A model-free check has no request line.
 3. **Verdict** — at most two sentences from the model, or a deterministic
    sentence from the account check.
 4. **Notices and grounding** — stopped, failed, no-answer, model-missing and
    budget notices; a backticked name the readings never showed; a contradicted
-   public/not-public claim.
+   public/not-public claim. The model also gets one correction if it calls the
+   account clean while the run still has open reads.
 5. **Findings** — current problems grouped by bucket, severity ordered, with
    memory age and Security Hub controls where they match.
 6. **Re-verification** — the latest model-free replay report, when one exists.
 7. **Changed since the last reading** — posture differences, then CloudTrail
    attribution when AWS supplies it.
 8. **Not read** — blind buckets, survey-pending or capped buckets, undecided
-   rules, missing permissions, blind configuration reads and buckets no longer
-   listed.
+   rules, missing permissions, blind configuration reads, partial access
+   coverage, failed or stopped reads, and buckets no longer listed.
 9. **Fix** — generated text and impact, newest fix open and earlier fixes
    folded.
 10. **Data** — the latest tabular result: survey buckets and capacity, an object
-    list or facts, a query table and chart, or access paths. Up to ten rows,
-    then a disclosure.
+    list or facts, a query table and chart, access paths, or the estate's
+    remembered buckets with its Issue/posture history. Up to ten rows, then a
+    disclosure.
 11. **Checks** — every executed tool call in order, with target, result note and
     duration, folded to checks · time · tokens.
 
@@ -305,6 +310,14 @@ accepted Issues with their evidence, notes, and the latest change rows. The
 agent reads memory first and surveys only when memory is empty, stale or the
 question is about current exposure. It re-reads only the bucket the user says
 they fixed.
+
+`estate` also answers temporal questions with `history: true`: Issue events
+(opened, resolved, recurred, gone, accepted, reopened) and posture changes,
+newest first, optionally narrowed by bucket, code or `since`. The page renders
+that history under the existing Data section; it is evidence about what
+happened, not a new findings list. The model sees the same structured rows
+inside the untrusted-data envelope; raw requests and `search_docs` text are
+never part of memory.
 
 There is no watch, no background check and no scheduled task. Deleting a task
 purges its conversation, entries, documents, datasets, uploads, search rows,

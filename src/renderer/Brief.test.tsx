@@ -126,8 +126,132 @@ describe('the brief', () => {
         onReverify={async () => undefined}
       />,
     )
-    expect(document.querySelector('.brief-scope')?.textContent).toContain('2/3 buckets read')
-    expect(document.querySelector('.brief-scope')?.textContent).toContain('1 outside this run')
+    expect(document.querySelector('.brief-scope')?.textContent).toContain('2/3 buckets checked')
+    expect(document.querySelector('.brief-scope')?.textContent).toContain('Reads open: 1')
+    expect(document.querySelector('.blind-section')?.textContent).toContain('1 outside this run')
+  })
+
+  it('says reads are complete only when the account coverage is closed', () => {
+    render(
+      <Brief
+        view={view([
+          { id: 'u', kind: 'user', at: '2026-01-01T00:00:00Z', text: 'q', attachments: [] },
+          survey,
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(document.querySelector('.brief-scope')?.textContent).toContain('Reads complete')
+    expect(document.querySelector('.brief-scope')?.textContent).toContain('1/1 buckets checked')
+  })
+
+  it('renders estate history inside the existing data section', () => {
+    const history: UiEntry = {
+      id: 'h',
+      kind: 'tool',
+      at: '2026-01-01T00:00:01Z',
+      name: 'estate',
+      target: 'Demo',
+      status: 'done',
+      note: null,
+      ms: 10,
+      view: {
+        kind: 'estate',
+        providerId: 'p1',
+        buckets: { columns: ['Bucket'], rows: [['demo']] },
+        issues: [],
+        notes: [],
+        history: {
+          columns: ['When', 'Event', 'Bucket', 'Evidence'],
+          rows: [['2026-01-01', 'resolved', 'demo', 'Public access — fixed']],
+        },
+      },
+    }
+    render(
+      <Brief
+        view={view([
+          { id: 'u', kind: 'user', at: '2026-01-01T00:00:00Z', text: 'q', attachments: [] },
+          history,
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(screen.getByText('History')).toBeTruthy()
+    expect(screen.getByText('resolved')).toBeTruthy()
+    expect(screen.getByText('Public access — fixed')).toBeTruthy()
+  })
+
+  it('counts partial access coverage as an open read', () => {
+    const access: UiEntry = {
+      id: 'a',
+      kind: 'tool',
+      at: '2026-01-01T00:00:01Z',
+      name: 'config',
+      target: 'demo',
+      status: 'done',
+      note: null,
+      ms: 10,
+      view: {
+        kind: 'config',
+        bucket: 'demo',
+        providerId: 'p1',
+        aspect: 'access',
+        access: [],
+        accessCoverage: {
+          principals: 4,
+          evaluated: 2,
+          undecided: 1,
+          truncated: false,
+          sources: ['iam'],
+        },
+        findings: [],
+      },
+    }
+    render(
+      <Brief
+        view={view([
+          { id: 'u', kind: 'user', at: '2026-01-01T00:00:00Z', text: 'q', attachments: [] },
+          access,
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(document.querySelector('.brief-scope')?.textContent).toContain('Reads open: 3')
+    expect(document.querySelector('.blind-section')?.textContent).toContain(
+      '3 access reads are partial',
+    )
+    expect(screen.getByText('2/4 IAM users and roles evaluated · 1 undecided')).toBeTruthy()
+  })
+
+  it('never claims complete reads after a failed read', () => {
+    const failed: UiEntry = { ...survey, id: 'f', status: 'failed', view: null }
+    render(
+      <Brief
+        view={view([
+          { id: 'u', kind: 'user', at: '2026-01-01T00:00:00Z', text: 'q', attachments: [] },
+          failed,
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(document.querySelector('.brief-scope')?.textContent).toContain('Reads open: 1')
+    expect(document.querySelector('.blind-section')?.textContent).toContain('reads failed')
   })
 
   it('lets the user accept a risk, and folds it once accepted', () => {

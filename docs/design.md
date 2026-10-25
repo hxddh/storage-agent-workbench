@@ -97,16 +97,23 @@ The composer is inert until a model exists; the account can still be checked.
 
 ## The brief
 
-Top to bottom: an 11.75px scope line (`Demo · 2/2 buckets read · checked 2m ago
-· 5 findings`), the latest request as one quiet 13px line, the verdict, notices
-and grounding notes, findings, re-verification, changes, **Not read**, the fix,
-one data section and the checks receipt. Copy and a single overflow menu are
-always visible. Save, Check again, Re-verify, Copy link, Export evidence and
-Save PDF live in that overflow.
+Top to bottom: an 11.75px scope line (`Demo · Reads complete · 2/2 buckets
+checked · checked 2m ago · 5 findings`), the latest request as one quiet 13px
+line, the verdict, notices and grounding notes, findings, re-verification,
+changes, **Not read**, the fix, one data section and the checks receipt. Copy
+and a single overflow menu are always visible. Save, Check again, Re-verify,
+Copy link, Export evidence and Save PDF live in that overflow.
 
 The scope line is the one place that makes coverage visible before the user
-reads the answer. A capped survey adds `N outside this run` here and in
-**Not read**. There is no next-step row and no chat transcript.
+reads the answer. It says `Reads open: n · m blocked` when a read failed,
+stopped, was blind, is pending, was truncated or left an access question
+undecided; those details stay in **Not read**. A narrowed re-read never turns an
+account-wide gap into `Reads complete`. There is no next-step row and no chat
+transcript.
+
+Estate history stays inside the existing Data section: the remembered bucket
+table, then a quiet `HISTORY` label and a four-column evidence table. It is not
+a second panel or a timeline.
 
 Findings group by bucket, with a hairline between groups. A group heading is
 12px mono; each finding is a 14px title with a 12px meta line, a severity dot

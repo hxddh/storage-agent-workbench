@@ -84,10 +84,10 @@ rest use Node.
 
 ### Evaluation
 
-`scripts/eval.mjs` has 26 scenarios. It scores findings, grounded verdicts,
-blind-spot honesty, memory-first behavior, verify-after-fix, code mode, access
-questions, prompt-injection-shaped object names and call counts. The script
-runs the real window against fake S3.
+`scripts/eval.mjs` has 28 scenarios. It scores findings, grounded verdicts,
+blind-spot honesty, memory-first and estate-history behavior, open-read
+closure, verify-after-fix, code mode, access questions, prompt-injection-shaped
+object names and call counts. The script runs the real window against fake S3.
 
 ```bash
 xvfb-run -a node scripts/eval.mjs --smoke

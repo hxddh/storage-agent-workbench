@@ -125,4 +125,25 @@ describe('issue lifecycle', () => {
     await db.upsertBucket('p', 'b', {})
     expect(await db.countBuckets('p')).toBe(1)
   })
+
+  it('reads Issue events with the Issue they belong to, and filters them', async () => {
+    const db = await open()
+    const opened = await observe(db, true, 'The policy is public')
+    const issue = opened.issue!
+    await db.insertEvent(issue.id, 'c1', 'accepted', '2020-01-01T00:00:00.000Z', null)
+    const events = await db.listIssueEvents({
+      providerId: 'p',
+      bucket: 'b',
+      code: 'cors_all_origins',
+    })
+    expect(events.map((event) => event.kind)).toEqual(['opened', 'accepted'])
+    expect(events[0]).toMatchObject({
+      bucket: 'b',
+      code: 'cors_all_origins',
+      provider_id: 'p',
+      detail: 'The policy is public',
+    })
+    expect(await db.listIssueEvents({ bucket: 'other' })).toHaveLength(0)
+    expect(await db.listIssueEvents({ since: '2021-01-01T00:00:00.000Z' })).toHaveLength(1)
+  })
 })

@@ -6,7 +6,8 @@ the agent reads the account, remembers what it saw, and projects the result as a
 **estate** is the agent's memory. Nothing is written, deleted or changed in
 storage, and the app never applies a fix.
 
-Current release: **24.0.0**.
+Current version: **25.0.0**. The latest published release is **24.0.0**; this
+checkout has not been tagged or published.
 
 ![A brief in Storage Agent](docs/screenshot.png)
 
@@ -33,6 +34,13 @@ Current release: **24.0.0**.
 - **Explain changes.** A survey compares the reading with the last remembered
   posture. On AWS it asks CloudTrail who changed the bucket over a stated
   90-day window. A denied lookup leaves the actor unknown, never "nobody".
+- **Ask what happened.** `estate(history: true)` reads remembered Issue events
+  and posture changes, optionally narrowed by bucket, rule or date. It is the
+  same estate and the same Data section, not a new transcript or tool.
+- **Know when the reading is closed.** The scope line says `Reads complete` or
+  `Reads open: n · m blocked`, and the Not read section names failed, blind,
+  partial and pending reads. A narrowed re-read never substitutes for account
+  coverage.
 - **Answer open questions with code mode.** `query` runs a short read-only
   script in a QuickJS sandbox for questions over many objects or buckets:
   largest prefixes, data untouched for two years, versions piling up. There is

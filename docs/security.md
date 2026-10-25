@@ -30,6 +30,9 @@
 6. **No model-facing raw rows.** Logs and inventories are parsed into a local
    SQLite file; the model receives only aggregates and bounded samples. A query
    script's rows are capped at 500 on the page and 40 in the model prompt.
+   Estate history is likewise structured: Issue-event kinds, dates, bucket,
+   rule and redacted evidence, plus posture changes. Raw user requests and the
+   `search_docs` text are not part of memory and never enter a prompt.
 7. **Audit.** Every executed tool call writes
    `audit(tool, target, outcome, conversation)`. A refused scope call is
    `refused`, a user-stopped call is `stopped`, and other failures are `error`.
@@ -112,7 +115,9 @@ unread", not "this is the complete set of principals who can reach the bucket".
 - **The model is untrusted**: it can propose a fix, never apply one; it cannot
   open, resolve or accept Issues, and its prose is never parsed as product
   state. A name in the verdict that no tool returned is marked on the page.
-  Tool output is wrapped as untrusted data before the model sees it.
+  A clean account claim while a run still has open reads is corrected once; the
+  page's `Reads open` status remains authoritative. Tool output is wrapped as
+  untrusted data before the model sees it.
 - **The vault fallback is local**: without an OS keyring, the AES key file and
   the database both live under the user profile. Copying the database without
   the key file protects the ciphertext; copying both does not. Settings does not

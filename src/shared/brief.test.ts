@@ -193,6 +193,50 @@ describe('brief projection', () => {
     expect(brief.coverage[0]).toMatchObject({ denied: ['secret'], pending: 4 })
   })
 
+  it('does not replace account coverage with a one-bucket re-read', () => {
+    const account = {
+      ...survey([], { read: ['a', 'b', 'c'], denied: ['secret'] }),
+      coverage: {
+        visible: 4,
+        processed: 2,
+        truncated: true,
+        pending: 2,
+        denied: ['secret'],
+        unknown: [],
+        gone: [],
+      },
+    } as ToolView
+    const scoped = {
+      ...survey([], { read: ['a'] }),
+      scoped: true,
+      coverage: {
+        visible: 1,
+        processed: 1,
+        truncated: false,
+        pending: 0,
+        denied: [],
+        unknown: [],
+        gone: [],
+      },
+    } as ToolView
+    const brief = buildBrief([
+      user('u1', at(0)),
+      tool('t1', 'survey', at(1), account),
+      tool('t2', 'survey', at(2), scoped),
+    ])
+    expect(brief.coverage).toHaveLength(1)
+    expect(brief.coverage[0]).toMatchObject({
+      visible: 4,
+      processed: 3,
+      pending: 2,
+      truncated: true,
+      denied: ['secret'],
+    })
+    expect(
+      buildBrief([user('u1', at(0)), tool('t1', 'survey', at(1), scoped)]).coverage,
+    ).toHaveLength(0)
+  })
+
   it('keeps a review blind spot until that review is repeated', () => {
     const blindReview: ToolView = {
       kind: 'config',

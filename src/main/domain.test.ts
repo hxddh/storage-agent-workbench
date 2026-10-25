@@ -189,6 +189,33 @@ describe('tools over the estate', () => {
     expect((await deps.db.getIssue(issue.id))?.status).toBe('accepted')
   })
 
+  it('returns Issue events and posture changes when memory history is requested', async () => {
+    await deps.db.insertChanges(providerId, 'cors-open', [
+      {
+        bucket: 'cors-open',
+        field: 'CORS',
+        before: 'no wildcard',
+        after: 'wildcard',
+        at: '2026-01-02T00:00:00.000Z',
+      },
+    ])
+    const estate = estateTools(deps)[0] as Executable
+    const { text, details } = await run(estate, { bucket: 'cors-open', history: true })
+    expect(details.status).toBe('done')
+    if (details.view?.kind !== 'estate') throw new Error('expected an estate view')
+    expect(details.view.history?.columns).toEqual(['When', 'Event', 'Bucket', 'Evidence'])
+    expect(details.view.history?.rows.some((row) => row[1] === 'accepted')).toBe(true)
+    expect(details.view.history?.rows.some((row) => row[1] === 'changed')).toBe(true)
+    expect(text).toContain('History (newest first')
+    const empty = await run(estate, {
+      bucket: 'cors-open',
+      history: true,
+      since: '2099-01-01T00:00:00.000Z',
+    })
+    if (empty.details.view?.kind !== 'estate') throw new Error('expected an estate view')
+    expect(empty.details.view.history?.rows).toHaveLength(0)
+  })
+
   it('a lifecycle review never clears a rule it proves present', async () => {
     const { details } = await run(configTool(deps), { bucket: 'versioned', aspect: 'lifecycle' })
     if (details.view?.kind !== 'config') throw new Error('expected a config view')
