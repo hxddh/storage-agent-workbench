@@ -18,7 +18,10 @@ const modelPort = 9220
 rmSync(dataDir, { recursive: true, force: true })
 
 function start(script, port) {
-  return spawn(process.execPath, [join(root, script), String(port)], { stdio: 'ignore' })
+  return spawn(process.execPath, [join(root, script), String(port)], {
+    stdio: 'ignore',
+    env: { ...process.env, SLOW_MS: '650' },
+  })
 }
 const s3 = start('scripts/fake-s3.mjs', s3Port)
 const model = start('scripts/fake-model.mjs', modelPort)
@@ -34,11 +37,14 @@ await page.waitForTimeout(1200)
 
 async function configure() {
   await page.getByRole('button', { name: 'Set up a model' }).first().click()
+  await page.waitForTimeout(350)
+  await page.screenshot({ path: join(out, '02a-settings-model.png') })
   await page.locator('#modelId').fill('fake-model')
   await page.locator('#baseUrl').fill(`http://127.0.0.1:${modelPort}/v1`)
   await page.locator('#apiKey').fill('test-key')
   await page.getByRole('button', { name: 'Save', exact: true }).first().click()
   await page.waitForTimeout(400)
+  await page.screenshot({ path: join(out, '02d-settings-account-form.png') })
   await page.locator('#accName').fill('Demo')
   await page.locator('#accEndpoint').fill(`http://127.0.0.1:${s3Port}`)
   await page.locator('#accRegion').fill('us-east-1')
@@ -52,7 +58,7 @@ async function configure() {
 await page.waitForTimeout(350)
   await page.screenshot({ path: join(out, '01-home-light.png') })
 await configure()
-await page.locator('.sheet-body').evaluate((element) => {
+await page.locator('.settings-content').evaluate((element) => {
   element.scrollTop = 0
 })
 await page.waitForTimeout(350)
@@ -84,8 +90,12 @@ await page.waitForTimeout(400)
 await page.screenshot({ path: join(out, '05-estate-light.png') })
 
 await page.getByRole('button', { name: 'Settings' }).click()
+await page.getByRole('button', { name: 'Appearance', exact: true }).click()
+await page.waitForTimeout(350)
+await page.screenshot({ path: join(out, '02b-settings-appearance.png') })
 await page.getByRole('button', { name: 'Dark' }).click()
 await page.waitForTimeout(400)
+await page.screenshot({ path: join(out, '02c-settings-dark.png') })
 await page.getByRole('button', { name: 'Close' }).click()
 await page.waitForTimeout(400)
 await page.waitForTimeout(350)
@@ -95,6 +105,38 @@ await page.getByRole('button', { name: 'New task' }).click()
 await page.waitForTimeout(300)
 await page.waitForTimeout(350)
   await page.screenshot({ path: join(out, '07-home-dark.png') })
+
+// The live state must read as work in progress, not a finished brief.
+await page.getByRole('button', { name: 'Settings' }).click()
+await page.getByRole('button', { name: 'Appearance', exact: true }).click()
+await page.getByRole('button', { name: 'Light', exact: true }).click()
+await page.getByRole('button', { name: 'Close' }).click()
+await page.waitForTimeout(350)
+await page.locator('.composer textarea').fill('Which buckets are public?')
+await page.keyboard.press('Enter')
+await page.waitForSelector('.run-strip', { timeout: 5000 })
+await page.waitForTimeout(450)
+await page.screenshot({ path: join(out, '08-live-light.png') })
+await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
+
+// Narrow window: navigation must stay reachable from Home, not only tasks.
+await app.evaluate(({ BrowserWindow }) => {
+  BrowserWindow.getAllWindows()[0]?.setSize(760, 820)
+})
+await page.waitForTimeout(400)
+await page.screenshot({ path: join(out, '09-task-compact.png') })
+await page.getByRole('button', { name: 'Tasks' }).click()
+await page.waitForTimeout(250)
+await page.screenshot({ path: join(out, '10-sidebar-compact.png') })
+await page.getByRole('button', { name: 'Close' }).click()
+await page.getByRole('button', { name: 'Tasks' }).click()
+await page.getByRole('button', { name: 'New task' }).click()
+await page.waitForTimeout(350)
+await page.screenshot({ path: join(out, '11-home-compact.png') })
+await page.getByRole('button', { name: 'Tasks' }).click()
+await page.getByRole('button', { name: 'Settings' }).click()
+await page.waitForTimeout(350)
+await page.screenshot({ path: join(out, '12-settings-compact.png') })
 
 await app.close()
 s3.kill()

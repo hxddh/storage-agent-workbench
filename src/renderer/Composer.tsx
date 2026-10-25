@@ -1,7 +1,7 @@
 import type { ContextRef, EstateRef, Live, StagedFile } from '@shared/contract'
 import { ArrowUp, AtSign, ChevronDown, Paperclip, Square, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { dict } from './i18n'
+import { dict, fill } from './i18n'
 
 export function Composer({
   lang,
@@ -31,6 +31,7 @@ export function Composer({
   const [context, setContext] = useState<ContextRef[]>([])
   const [refs, setRefs] = useState<EstateRef[]>([])
   const [picker, setPicker] = useState<string | null>(null)
+  const [now, setNow] = useState(Date.now())
   const ref = useRef<HTMLTextAreaElement>(null)
 
   const stage = useCallback(async (list: FileList | File[]) => {
@@ -110,6 +111,13 @@ export function Composer({
   }
 
   useEffect(() => {
+    if (!live) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [live])
+
+  useEffect(() => {
     const element = ref.current
     if (!element) return
     element.style.height = 'auto'
@@ -153,8 +161,41 @@ export function Composer({
     if (picked.length) setFiles((current) => [...current, ...picked].slice(0, 10))
   }
 
+  const current = live?.tools.at(-1)
+  const elapsed = live
+    ? Math.max(0, Math.floor((now - (Date.parse(live.startedAt) || now)) / 1000))
+    : 0
+  const elapsedLabel =
+    elapsed < 1
+      ? '<1s'
+      : elapsed < 60
+        ? fill(t.liveSeconds, { n: elapsed })
+        : `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
+  const phase =
+    live?.phase === 'tool'
+      ? current?.target
+        ? `${t.liveReading} ${current.target}`
+        : t.livePacing
+      : live?.phase === 'writing'
+        ? t.writing
+        : live?.phase === 'reasoning'
+          ? t.thinking
+          : t.thinking
+
   return (
     <div className="composer-dock">
+      {live && (
+        <div className="run-strip">
+          <span className="run-dot" aria-hidden="true" />
+          <span className="run-phase" role="status">
+            {phase}
+          </span>
+          {current?.note && <span className="run-note">{current.note}</span>}
+          <span className="run-elapsed" aria-hidden="true">
+            {elapsedLabel}
+          </span>
+        </div>
+      )}
       <div className={`composer ${focused ? 'focused' : ''} ${dragging ? 'dragging' : ''}`}>
         {dragging && <div className="drop-hint">{t.dropHint}</div>}
         {(files.length > 0 || context.length > 0) && (

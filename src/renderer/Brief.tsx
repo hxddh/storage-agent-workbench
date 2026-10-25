@@ -20,6 +20,7 @@ import {
 import {
   Activity,
   ArrowDownToLine,
+  ChevronDown,
   ChevronRight,
   Code2,
   Copy,
@@ -1046,13 +1047,15 @@ export function Brief({
             </div>
             {brief.findings.length > FINDINGS_SHOWN && (
               <button
-                className="text-action section-more"
+                className="more-toggle"
                 type="button"
+                aria-expanded={allFindings}
                 onClick={() => setAllFindings((value) => !value)}
               >
                 {allFindings
                   ? t.less
                   : fill(t.moreFindings, { n: brief.findings.length - FINDINGS_SHOWN })}
+                <ChevronDown size={13} className={allFindings ? 'open' : undefined} />
               </button>
             )}
             {brief.issueTotal !== null && brief.issueTotal > shownIssues && (

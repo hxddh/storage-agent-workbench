@@ -1,30 +1,65 @@
 # Release
 
-A release is more than a tag. The workflow in `.github/workflows/release.yml`
-builds macOS (x64 + arm64), Windows and Linux from the tagged commit; the
-Publish job attaches the installers, `latest*.yml` and `sbom.json` to one
-GitHub release. A release needs every platform: if one build fails, nothing is
-published.
+A release is a tag plus three platform builds and one GitHub release. The
+workflow is `.github/workflows/release.yml`; it is triggered by a `v*` tag or a
+manual dispatch with an existing tag.
 
-## Gates
+## What CI checks
 
-1. `npm run typecheck && npm run lint && npm test && npm run build`
-2. `npm run budget` (initial renderer JavaScript under 500 KiB)
-3. `xvfb-run -a node scripts/e2e.mjs` (real window, axe, fake S3 + model)
-4. `xvfb-run -a node scripts/e2e-audit.mjs` (first run, no model, demo storage)
-5. `xvfb-run -a node scripts/eval.mjs --runs 2` against **two** models, at
-   least one large and one small/medium context model. The smoke run only
-   checks plumbing; it is not a quality result. Without `EVAL_API_KEY`, the
-   workflow runs the smoke check and states that limitation in the release
-   notes.
-6. `xvfb-run -a node scripts/shots.mjs && node scripts/visual.mjs` (committed
-   baselines under `visual/baseline`)
-7. The moto compatibility job (S3, IAM, KMS; CloudTrail is reported as
-   unavailable when the emulator has no endpoint).
+The normal CI workflow runs on `main` and pull requests:
 
-For a local open-model baseline, point the same eval at an Ollama server.
-The local server ignores the API key; set `OLLAMA_API_KEY` to any non-empty
-value for the client:
+- typecheck, Biome lint, Vitest, build, bundle budget, production dependency
+  audit and SBOM;
+- the real-window E2E with fake S3 and a fake OpenAI-compatible model;
+- the no-model first-run E2E;
+- the smoke eval, cold-start budget, screenshots and visual comparison;
+- the moto compatibility suite.
+
+The Release workflow itself does not run typecheck, lint or unit tests. Tag a
+commit from a green `main`; do not use the tag workflow as a substitute for CI.
+
+## Release jobs
+
+1. **Evaluation** — if the `EVAL_API_KEY` secret exists, the job runs
+   `scripts/eval.mjs --runs 2` for the primary and secondary model variables and
+   retains both reports. If it does not exist, it runs
+   `scripts/eval.mjs --smoke` and retains the smoke report. A smoke report
+   proves the harness runs; it is not a model-quality score.
+2. **Signing detection** — checks all seven signing secrets. Only when every one
+   is present is the build marked signed.
+3. **Build** — macOS x64 and arm64 (`.dmg`, `.zip`), Windows NSIS `.exe`, Linux
+   AppImage and `.deb`, plus `sbom.json` and `latest*.yml` feeds. Builds run in
+   parallel; one failed platform stops the publish job.
+4. **Publish** — collects all artifacts, writes release notes from the eval and
+   signing facts, and creates one GitHub release. The notes explicitly say
+   either “real-model evaluation” or “harness smoke only”, and either “signed
+   and notarized” or “unsigned; macOS is ad-hoc signed only”.
+
+## Signing
+
+- macOS: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
+  `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
+- Windows: `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`.
+
+When every secret exists, macOS is signed and notarized and Windows is signed.
+When any is absent, the workflow still builds every platform: macOS is ad-hoc
+signed (so an Apple-silicon download can launch) and Windows is unsigned. The
+release notes state this. There is no silent “unsigned presented as signed”
+path.
+
+This is a distribution limitation, not a runtime security boundary. The
+application itself still has the read-only, scope and secret boundaries in
+[security.md](security.md).
+
+## Evaluation and visual gates
+
+Real-model evaluation is valuable but not guaranteed by the repository alone:
+it needs a provider key and model variables. The release records a smoke result
+when they are absent. A full run covers 26 scenarios and fails on a must-pass
+regression; the report is attached and named after the model, never the key.
+
+For an open-model baseline, point the same eval at Ollama. The local server
+ignores the API key; set `OLLAMA_API_KEY` to any non-empty value for the client:
 
 ```bash
 EVAL_PROVIDER=compatible \
@@ -34,31 +69,33 @@ EVAL_API_KEY="$OLLAMA_API_KEY" \
 xvfb-run -a node scripts/eval.mjs --runs 1
 ```
 
-Record its report with the release. A smoke result is never presented as a
-real-model score.
-
-## Signing and notarization
-
-- macOS: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
-  `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
-- Windows: `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`.
-
-When every secret is present, the build signs and notarizes. When they are
-absent, the workflow builds every platform anyway: macOS gets an ad-hoc
-signature (so an Apple-silicon download can launch) and Windows is unsigned.
-The release notes say exactly which case applies; there is no silent
-"unsigned but presented as signed" path.
+The visual gate in CI compares committed captures to `visual/baseline` with a
+5% global budget plus a 64px local-region check. A screenshot run is evidence of
+rendered states; it is not a substitute for the E2E interaction checks.
 
 ## Update path
 
-Before publishing a major release, install the previous release, let it check
-for the new one, download it and restart. The updater is disabled when
-`STORAGE_AGENT_NO_UPDATE` is set and only runs in a packaged build. A new
-release must keep the three feed names (`latest.yml`, `latest-mac.yml`,
-`latest-linux.yml`) and the same `appId`. If a feed is missing, Settings says
-the platform has no update feed instead of failing silently.
+`electron-updater` checks this repository's GitHub releases in packaged builds.
+A release must keep:
 
-## What's new
+- the same `appId` (`com.storageagent.app`);
+- `latest.yml`, `latest-mac.yml` and `latest-linux.yml`;
+- the existing artifact naming convention in `package.json`.
 
-Settings shows one line for the release. Keep it factual and short; the
-`CHANGELOG.md` entry is the full record. There is no in-app modal.
+A missing feed is shown in Settings as an unavailable update source instead of
+failing silently. Before publishing a packaging or updater change, install the
+previous release, let it check, download and restart. That upgrade is a manual
+check; there is no automated upgrade E2E.
+
+## Release notes and version
+
+Version is the `package.json` version and the tag is `v<version>`. Published
+tags are immutable; put a correction in a new patch release. The Settings sheet
+shows the installed version and the update state. The full release record lives
+in `CHANGELOG.md` and on the GitHub release.
+
+## Current release facts
+
+The latest published release in this checkout is **24.0.0**. Earlier release
+notes may describe retired behavior; they are history. When the next version is
+tagged, update this line and `docs/README.md`.

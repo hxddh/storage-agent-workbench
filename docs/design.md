@@ -1,119 +1,199 @@
 # Design
 
-One brief, one composer, one accent. The window should feel like a page you
-read, not a console you operate.
+One brief, one composer, one accent. The window should read like a page you
+inspect, not a console you operate. Hierarchy comes from space, weight and
+hairlines, not cards.
+
+## Mark
+
+`src/renderer/Logo.tsx` is a single flat tile and one open frame: a rounded
+square with its upper-right corner left open. There is no accent, dot or second
+element. The frame is drawn as a stroke path, scaled to hold its identity at
+16px. `build/icon.svg` is the same geometry at app-icon scale; `build/icon.png`
+is rendered from it at 1024×1024. In dark mode the tile inverts to paper and the
+frame to ink.
 
 ## Tokens
 
-Defined in `src/renderer/styles.css`. No component uses a raw colour.
+Defined in `src/renderer/styles.css`. Components use variables; the CSS file is
+the only place raw colours are declared.
 
 | Token | Light | Dark |
 |---|---|---|
-| `--bg` | `#f8f7f4` | `#151413` |
-| `--bg-sunken` | `#f2f0ec` | `#111110` |
-| `--surface` | `#ffffff` | `#1d1c1a` |
-| `--ink` | `#1b1a18` | `#ecebe6` |
-| `--ink-2` | `#5f5b54` | `#a9a49b` |
-| `--ink-3` | `#6b665e` | `#938e84` |
-| `--line` | `#e6e2da` | `#2c2a27` |
-| `--accent` | `#3b6ef5` | `#6f95ff` |
-| `--danger` | `#b4423a` | `#e0766c` |
-| `--warn` | `#8a5d14` | `#d0a25c` |
-| `--ok` | `#2f7d5c` | `#63b08c` |
+| `--bg` | `#f7f5ef` | `#12110f` |
+| `--bg-sunken` | `#efede6` | `#0c0c0b` |
+| `--surface` | `#fcfbf8` | `#1b1a17` |
+| `--surface-2` | `#f2efe8` | `#25231f` |
+| `--ink` | `#1b1916` | `#f1eee6` |
+| `--ink-2` | `#59554c` | `#b8b2a6` |
+| `--ink-3` | `#6e685e` | `#9a9488` |
+| `--line` | `#e3dfd4` | `#2d2a25` |
+| `--line-strong` | `#d4cec1` | `#3e3932` |
+| `--accent` | `#3d63dd` | `#8ea8ff` |
+| `--accent-ink` | `#2e4eb3` | `#c0ceff` |
+| `--accent-soft` | `#e9edfb` | `#1e2742` |
+| `--danger` | `#b13b37` | `#e27a70` |
+| `--warn` | `#875c12` | `#d8a861` |
+| `--ok` | `#2f7458` | `#6ab894` |
 
-Every text colour clears WCAG AA on every surface it appears on. `--ink-3` is
-the quietest text that still does: 5.0:1 on `--bg-sunken` in light, 4.9:1 on
-`--surface-2` in dark.
+`--ink-3` measures 5.06:1 on light `--bg`, 5.33:1 on `--surface`, and 6.26:1 on
+dark `--bg`. Secondary text therefore clears WCAG AA at the sizes it is used.
+There is no dedicated automated contrast test; the E2E axe gate fails serious or
+critical violations.
 
 ## Type
 
-System UI. 26px for the Home heading, 16px for the verdict, 15px for body and
-prose, 13px for UI and finding titles, 12px for meta and section labels, 11px
-only for durations. Line height 1.6–1.7 for prose, 1.45 for rows. Prose is
-capped at 66 characters. Mono is used for bucket names, keys and generated text.
+Geist Variable and Geist Mono Variable ship with the app under
+`@fontsource-variable`, with system and CJK fallbacks. No font is fetched at
+runtime.
+
+- Home heading: 30–36px, weight 570, tight tracking.
+- Verdict: 17.5px / 1.64. Body and prose: 14.5px / 1.55.
+- Finding titles: 14px; finding meta: 12px.
+- Controls and task rows: 12.5–13px.
+- Section labels: 10.75px, weight 600, uppercase with 0.085em tracking.
+- Scope and receipt lines: 11.75px; task-group labels: 10px.
+- Prose is capped at 64 characters; long generated text is not set as one wide
+  line.
 
 ## Shape
 
-Four spacing steps are used everywhere: 4, 8, 12, 16 (plus 22 and 32 for
-section rhythm). Radii: 6 for controls, 10 for panels, 14 for the composer. One
-shadow level exists, and only the composer and menus use it.
+Spacing follows a 4/8/12/16/24 base. Radii are 6–8px for controls and rows and
+14px for the composer. There are two shadow tokens; the composer, menus,
+popovers and the active sidebar row are the only elevated surfaces.
 
-The document is flat: hairline separators and space, no cards. The composer is
-the only elevated surface on the page. Tables and code blocks keep their own
-rules because they are data surfaces, not cards.
+The document is flat: hairline separators and space, no cards. Tables and code
+blocks are data surfaces, not cards. Settings uses a navigation rail and form
+fields, not a sequence of panels.
 
 ## Layout
 
-- Sidebar 252px, `bg-sunken`: New task, ⌘K search, one list, Settings at the foot.
-- Brief column 720px, centred. The task title appears once, in the sidebar (and
-  in the small top bar below 860px).
-- Composer docked at the bottom on every screen, 720px wide, on the same left
-  edge as the brief.
-- Below 860px the sidebar becomes an overlay; the composer stays.
+- Sidebar 252px, `--bg-sunken`: mark and wordmark, New task, search, pinned /
+  today / earlier task rows, Settings at the foot. There are no boxes around
+  New task or search; the active task is one quiet surface.
+- Brief column 720px with 24px gutters, centred. The task title appears in the
+  sidebar; below 860px it also appears in the compact top bar.
+- Composer docked at the bottom on Home and task screens, 720px wide, with the
+  run status strip immediately above it.
+- Settings is a full-screen surface: a 200px navigation rail and a 620px form
+  column inside a 1000px frame. The rail becomes a horizontal tab row below
+  860px. On the rail, version and update state sit at the foot; in the compact
+  layout they sit below the tab row.
+- Below 860px the sidebar is a dismissable overlay with a scrim, and Home gains
+  the same Tasks button as a task screen.
 
 ## Home
 
-A quiet account summary, not a dashboard: one heading, account lines with the
-last read and unresolved risk, a change line and one **Check account** action.
-With no account, the two explicit choices are **Try with demo storage** and
-**Set up a model / Add an account**; the demo is never added silently. The
-composer is in the same place as in a task. No cards, charts, suggestion pills
-or large illustration.
+A quiet account summary: a 30–36px heading, account lines with remembered
+bucket count, last read and unresolved risk, a change line, and **Check
+account**. With no account, the explicit choices are **Try with demo storage**
+and **Add an account**; **Set up a model** is a secondary text action and the
+composer explains that a model is only needed to ask a question. A configured
+account with no model still offers Check account and model setup. Local models
+appear as quiet one-click chips, not a dashboard.
+
+No cards, charts, suggestion pills, follow-up prompts or large illustration.
+The composer is inert until a model exists; the account can still be checked.
 
 ## The brief
 
-Top to bottom: a 12px scope line (`Demo · 2/2 buckets read · 1 blind · checked
-2m ago · 5 findings`), with Copy and a single overflow menu always visible; the
-latest request as one quiet line; the verdict; notices; findings; changes; the
-fix; one data section (including access paths); and the checks receipt. Save,
-Check again, Re-verify and exports live in the overflow, not behind hover. A
-capped survey adds `N outside this run` here and in **Not read**. There is no
-next-step row and no chat transcript.
+Top to bottom: an 11.75px scope line (`Demo · 2/2 buckets read · checked 2m ago
+· 5 findings`), the latest request as one quiet 13px line, the verdict, notices
+and grounding notes, findings, re-verification, changes, **Not read**, the fix,
+one data section and the checks receipt. Copy and a single overflow menu are
+always visible. Save, Check again, Re-verify, Copy link, Export evidence and
+Save PDF live in that overflow.
 
-Findings use a severity dot, a 14px title and a 12px meta line. There is no
-severity pill. Clicking a finding scrolls to its check and flashes it; **Accept
-risk** appears on hover at the row's end as quiet text. A finding from memory
-carries a hairline `remembered · 3d ago` tag — or, when every finding is memory,
-the meta line says it once. Accepted risks and what the task fixed are one-line
-folds; the fixed fold is the one place `--ok` colours a label. Data and Checks
-are disclosures; their headers are 12px labels, not buttons that look like
-buttons. A backticked name the checks never showed gets a dashed `--warn`
-underline and one quiet line under the verdict. Names in the verdict are plain
-text, not boxed code chips.
+The scope line is the one place that makes coverage visible before the user
+reads the answer. A capped survey adds `N outside this run` here and in
+**Not read**. There is no next-step row and no chat transcript.
 
-A code-mode result shows its rows as a table or a bar chart, then the script
-and its output folded under them in monospace. Byte columns render as human
-sizes; the CSV keeps the raw numbers.
+Findings group by bucket, with a hairline between groups. A group heading is
+12px mono; each finding is a 14px title with a 12px meta line, a severity dot
+and no pill. **Accept risk** appears on hover or keyboard focus at the row's
+end as quiet text. A memory finding carries a hairline `remembered · 3d ago`
+tag, or the group meta line says it once when every finding is memory. **N more
+findings** is a bordered disclosure control with a chevron, not body text.
+Accepted risks and proved-fixed findings are one-line folds; the fixed fold and
+success status text use `--ok`.
 
-Keyboard: `j`/`k` move between findings, `Enter` opens a finding's check, `a`
-accepts the focused risk. The page has one visually hidden `h1`.
+A name the checks never showed gets a dashed `--warn` underline and one quiet
+line under the verdict. Names in the verdict are prose, not boxed code chips.
+The `Markdown` chunk is lazy; while it loads, backticks are stripped rather than
+flashing raw syntax.
 
-Dropping a file anywhere shows a dashed accent border on the composer and one
-centred line; nothing else on the page moves. `@` opens one quiet picker above
-the composer; selected names become chips. Home is an account summary with no
-cards; the composer is in the same position there and in a task.
+A code-mode result shows its rows and chart in the data section; the script and
+output open under the query's check as the evidence. Byte columns render as
+human sizes; CSV keeps raw numbers.
+
+Data and Checks are disclosures. The data section is open when findings do not
+already answer or when it is the access view; otherwise it is folded. Checks
+fold to a receipt showing the number of checks, elapsed time and tokens/cost
+when known. Checks that were blocked before execution are not listed.
+
+### Running
+
+While a run is live, a status strip above the composer shows a pulsing accent
+dot, the current phase and target, the latest note and elapsed time. The checks
+section opens as work happens and folds to a receipt when the task settles.
+
+### Keyboard and pointer
+
+- `j` / `k` or arrow keys move between findings.
+- `Enter` opens the evidence for a focused finding.
+- `a` accepts or reopens the focused risk.
+- `⌘K` focuses sidebar search.
+- `⌘N` starts a new task.
+- `⌘,` opens Settings.
+- `⌘.` stops the active run.
+- `⌘⇧R` re-verifies the open task.
+
+Dropping a file anywhere shows a dashed accent border and one centred line on
+the composer; nothing else moves. `@` opens one quiet picker above the composer;
+selected names become chips and are focus, not authorization.
+
+## Settings
+
+Four panes: Model, Storage accounts, Memory and Appearance. The active pane is
+the top-bar title and the selected rail row. Model configuration is one form:
+provider, model, base URL, key, Save and Test. Local models are one-click
+chips. Accounts list read-only credentials and open one inline form for add or
+edit; the key fields are never pre-filled. Memory controls freshness and lists
+forgettable notes. Appearance holds language, theme and the background-
+notification switch.
+
+Inputs and selects are styled consistently with visible focus rings; selects use
+a drawn chevron. Checkboxes keep the native input for keyboard and screen
+readers, with a 16px drawn box. No raw browser widget survives.
 
 ## Motion
 
-120ms for hover and focus, 180ms for an unfolding check or data section. Only
-`transform` and `opacity`. `prefers-reduced-motion` disables all of it. No
-reveal-on-scroll, no page transitions, no animation library.
+120ms for hover and focus; 180ms for unfolding checks and data; 200ms for the
+sidebar overlay on narrow windows. Colour, opacity and transform transitions are
+small and local. `prefers-reduced-motion` disables them. There is no
+reveal-on-scroll, page transition or animation library.
 
 ## Icons and states
 
-Lucide, 14–16px, 1.6 stroke. Six states exist: idle, hover, focus-visible,
-working (a pulsing accent dot), attention (warn dot) and failure (danger).
+Lucide icons at 14–16px with 1.6–1.8 stroke. Task rows use a small state dot:
+working, attention or ready. Hovering a task reveals one task-actions button and
+hides its relative time, so the two never collide. The composer shows focused and
+dragging states. Icons next to text are `aria-hidden`.
 
 ## Accessibility
 
-The verdict and notices sit in a polite live region; the checks receipt is a
-`status`; an error notice is an `alert`. Icons next to text are `aria-hidden`.
-Every action is a real button reachable by keyboard; hover-revealed actions
-also appear on `:focus-visible`.
+The verdict and notices sit in a polite live region; the running phase is a
+`status`; an error notice is an `alert`. Every action is a real button reachable
+by keyboard; hover-revealed finding and task actions also appear on
+`:focus-visible`. The page has one visually hidden `h1`. Focus is trapped in the
+Settings sheet and returns to the trigger on close.
+
+The E2E runs axe and fails on serious or critical violations. This is a floor,
+not a certification.
 
 ## Writing
 
 English and Chinese are written separately, not translated word for word. The
-verdict is short: at most two sentences, no heading, no table, no restated
+verdict is short: at most two sentences, no heading, no table and no restated
 numbers. The interface never says "Let me know if…", "Here is what I found:" or
-"Next steps".
+"Next steps". A fix is text; there is no Apply button.

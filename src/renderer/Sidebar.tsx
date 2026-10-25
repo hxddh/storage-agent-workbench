@@ -1,7 +1,9 @@
 import type { SearchHit, TaskSummary } from '@shared/contract'
 import { MoreHorizontal, Pin, PinOff, Plus, Search, Settings2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { dict } from './i18n'
+import { LogoMark } from './Logo'
 
 function Snippet({ text, query }: { text: string; query: string }) {
   const index = text.toLowerCase().indexOf(query.toLowerCase())
@@ -19,9 +21,9 @@ function relative(iso: string, lang: 'en' | 'zh'): string {
   const seconds = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
   if (lang === 'zh') {
     if (seconds < 60) return '刚刚'
-    if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`
-    if (seconds < 86_400) return `${Math.floor(seconds / 3600)} 小时前`
-    return `${Math.floor(seconds / 86_400)} 天前`
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} 分`
+    if (seconds < 86_400) return `${Math.floor(seconds / 3600)} 时`
+    return `${Math.floor(seconds / 86_400)} 天`
   }
   if (seconds < 60) return 'now'
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -51,12 +53,42 @@ function TaskRow({
   const [value, setValue] = useState(task.title)
   const [menu, setMenu] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [tip, setTip] = useState<{ left: number; top: number } | null>(null)
+  const titleRef = useRef<HTMLSpanElement>(null)
+  const tipTimer = useRef<number | null>(null)
 
   useEffect(() => {
     if (!confirming) return
     const timer = setTimeout(() => setConfirming(false), 3000)
     return () => clearTimeout(timer)
   }, [confirming])
+
+  useEffect(() => {
+    return () => {
+      if (tipTimer.current !== null) window.clearTimeout(tipTimer.current)
+    }
+  }, [])
+
+  const hideTip = () => {
+    if (tipTimer.current !== null) window.clearTimeout(tipTimer.current)
+    tipTimer.current = null
+    setTip(null)
+  }
+
+  const showTip = () => {
+    if (tipTimer.current !== null) return
+    tipTimer.current = window.setTimeout(() => {
+      tipTimer.current = null
+      const element = titleRef.current
+      if (!element || element.scrollWidth <= element.clientWidth + 1) return
+      const rect = element.getBoundingClientRect()
+      const above = rect.bottom + 40 > window.innerHeight
+      setTip({
+        left: Math.max(8, rect.left),
+        top: above ? rect.top - 32 : rect.bottom + 6,
+      })
+    }, 480)
+  }
 
   return (
     <div className="task-row-wrap">
@@ -90,16 +122,24 @@ function TaskRow({
             setEditing(true)
           }}
           type="button"
+          aria-current={active ? 'page' : undefined}
+          onPointerEnter={showTip}
+          onPointerLeave={hideTip}
+          onFocus={showTip}
+          onBlur={hideTip}
         >
-          <span className={`dot ${task.state}`} aria-hidden="true" />
-          <span className="title">{task.title}</span>
+          {task.state !== 'ready' && <span className={`dot ${task.state}`} aria-hidden="true" />}
+          <span className="title" ref={titleRef}>
+            {task.title}
+          </span>
+          {task.pinned && <Pin size={10} className="pin-mark" aria-hidden="true" />}
           <span className="task-time">{relative(task.updatedAt, lang)}</span>
         </button>
       )}
       <button
         className="icon-btn row-more"
         type="button"
-        aria-label="More"
+        aria-label={t.taskActions}
         onClick={(event) => {
           event.stopPropagation()
           setConfirming(false)
@@ -108,6 +148,15 @@ function TaskRow({
       >
         <MoreHorizontal size={14} />
       </button>
+      {tip &&
+        !menu &&
+        !editing &&
+        createPortal(
+          <div className="row-tip" style={{ left: tip.left, top: tip.top }} role="tooltip">
+            {task.title}
+          </div>,
+          document.body,
+        )}
       {menu && (
         <>
           <div
@@ -255,8 +304,8 @@ export function Sidebar({
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <div className="brand">
-        <span className="mark" />
-        Storage Agent
+        <LogoMark size={24} />
+        <span className="brand-name">Storage Agent</span>
       </div>
       <button className="new-task" type="button" onClick={onNew}>
         <span className="new-task-label">

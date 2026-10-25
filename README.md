@@ -1,144 +1,152 @@
 # Storage Agent
 
-A local agent for object storage. You ask a question about your S3-compatible
-accounts; it reads them read-only, remembers what it saw, and answers with a
-brief: a verdict, the findings it proved, the evidence and a fix. It never
-writes, deletes or changes anything in storage.
+A local, read-only agent for S3-compatible object storage. You ask a question;
+the agent reads the account, remembers what it saw, and projects the result as a
+**brief** grounded in tool results. A **task** is the window's object, and the
+**estate** is the agent's memory. Nothing is written, deleted or changed in
+storage, and the app never applies a fix.
 
-![Storage Agent](docs/screenshot.png)
+Current release: **24.0.0**.
+
+![A brief in Storage Agent](docs/screenshot.png)
 
 ## What it does
 
-- Surveys an account of up to 5,000 buckets: reads every bucket's policy, ACL,
-  public access block, TLS policy, ownership, CORS, logging, encryption and
-  lifecycle once, plus the account-wide public access block and — on AWS —
-  CloudWatch capacity with a monthly storage estimate. It remembers each bucket
-  as it is read and decides twelve deterministic rules, mapped to AWS Security
-  Hub controls where they match exactly.
-- Answers questions no fixed check can — the largest prefixes, data untouched
-  for two years, versions piling up — by writing a short read-only script that
-  runs in a sandbox with no network, files or process; the rows become the page
-  and the script stays as the evidence.
-- Evaluates bucket policies locally, so an S3-compatible store without AWS's
-  policy-status API can still be proved public — or proved narrowed by a
-  network or organization condition.
-- Says a question is open when a read was denied or unsupported, instead of
-  pretending it is clean, and shows the blind spot on the page.
-- After you apply a fix, re-reads just that bucket and shows what the task
-  proved fixed. A risk you accept folds away until a reading proves it gone.
-- Lists objects, versions and incomplete uploads; inspects one object's metadata,
-  tags, ACL and a bounded text preview.
-- Generates fixes as text — AWS CLI, Terraform and the API document — with an
-  impact preview built only from what the estate already knows.
-- Reads access paths: bucket policy and ACL locally, all IAM users and roles and
-  their policies with `GetAccountAuthorizationDetails`, inherited SCPs, KMS key
-  policy and Access Analyzer findings. Identity grants are intersected with
-  bucket-policy Denies; action/resource forms are paired and ARNs are matched
-  case-sensitively. Coverage, undecided conditions and truncation are shown; a
-  blind read is named, never turned into an empty grant list.
-- **Check account** on Home runs the survey and access reads without a model or
-  an API key. A first run offers **Try with demo storage** explicitly and only
-  checks an account the user chose; the brief is deterministic, so the product
-  can prove itself before any model is configured.
-- Compares each survey with the last remembered posture and, on AWS, asks
-  CloudTrail who changed it over a stated 90-day window. A denied lookup leaves
-  the actor unknown.
-- Re-verifies a task without a model: it re-reads the buckets the task touched
-  and reports what changed. Findings, controls, timestamps and redacted views
-  export as an evidence pack; the brief saves as PDF.
-- Imports an attached access log or S3 Inventory through code mode (`dataset`,
-  `aggregate`, `inventory`, `principal`); a full inventory can be imported file
-  by file, and raw rows never reach the model.
-- Shows each tool call where it happens, with real progress, and keeps it as
-  the receipt behind every finding; every table can be copied as CSV or saved,
-  the whole brief as Markdown. Every bucket the answer names is checked against
-  what the tools returned, and so is every claim that a bucket is or is not
-  public.
-- Starts without setup: **Try with demo storage** is an explicit first-run
-  choice and works without a model; models already running on this machine
-  (Ollama, LM Studio) are one click away. Home is a quiet account summary, not a
-  dashboard, with no suggestion pills or follow-up prompts. `@` points at a
-  remembered account, bucket or issue; the names are focus, not authorization.
-- Sets the model in one step: paste a key and the provider's models are fetched,
-  the context window is inferred and reasoning is automatic. A small model gets
-  shorter method cards and a smaller tool budget.
-- Searches task titles, requests, findings and the current answer with ⌘K;
-  failed or stopped runs offer Retry or Continue.
+- **Survey an account.** Reads bucket policy, ACL, public access block, TLS
+  policy, ownership, CORS, logging, encryption and lifecycle, plus the
+  account-wide public access block and, on AWS, CloudWatch capacity. A survey
+  reads up to 5,000 buckets, longest-unread first, and stops before its 300-second
+  timeout rather than pretending it finished. Twelve deterministic rules turn
+  those readings into current findings; a blind read leaves its rule undecided.
+- **Check account without a model or an API key.** Home can survey and read
+  access evidence, then write one deterministic `sa.audit` entry. The task opens
+  immediately and progress is visible. On a first run, demo storage is an
+  explicit **Try with demo storage** choice; the app never adds it silently.
+- **Read access evidence.** Bucket policy and ACL grants are read locally; IAM
+  users, groups, managed and inline policies, permission boundaries and role
+  trust are read with paginated account authorization details; SCPs, KMS key
+  policy and Access Analyzer are read when available. Identity grants are
+  intersected with bucket-policy Denies and, where present, SCPs and
+  permission boundaries. Policy and ACL rows are still grant evidence, not one
+  merged authorization verdict; conditions, unread sources and truncation are
+  shown in the coverage line.
+- **Explain changes.** A survey compares the reading with the last remembered
+  posture. On AWS it asks CloudTrail who changed the bucket over a stated
+  90-day window. A denied lookup leaves the actor unknown, never "nobody".
+- **Answer open questions with code mode.** `query` runs a short read-only
+  script in a QuickJS sandbox for questions over many objects or buckets:
+  largest prefixes, data untouched for two years, versions piling up. There is
+  no network, filesystem, process, timer or model access. The rows become the
+  page and the script stays as evidence.
+- **Import logs and inventories.** Attach an access log or S3 Inventory, then
+  use `dataset`, `aggregate`, `inventory` or `principal`. A full Inventory can
+  be imported into a local dataset; raw rows never reach the model.
+- **Generate fixes as text.** The agent produces AWS CLI, Terraform and API
+  document text with an impact preview built from what the estate remembers.
+  There is no Apply button.
+- **Re-verify without a model.** Re-read the buckets the task touched and report
+  which conclusions changed, which stayed open and which could not be re-read.
+- **Keep the evidence.** The brief has a scope line, findings grouped by bucket,
+  changes, open questions, fixes, one data section and a checks receipt. Copy,
+  save Markdown, check again, re-verify, copy a task link, export the evidence
+  pack and save PDF live behind a visible overflow menu. Tables copy as CSV.
+- **Use the model you have.** Pick OpenAI, Anthropic or an OpenAI-compatible
+  endpoint; paste a key and the provider's models are fetched. Context window
+  and reasoning effort are inferred. Models already running in Ollama or LM
+  Studio are one click away.
 
 ## Shape
 
 One window, one brief, one composer. The task list is the only navigation.
-There is no storage page, no bucket browser, no dashboard and no settings
-wizard: the agent resolves storage from the request, and Settings holds the
-model and the accounts.
+There is no storage browser, dashboard, side pane, chat transcript or second
+window. Settings holds the model, accounts, memory, language, theme and
+notifications.
 
 ```text
 ┌──────────────────────────── Electron ────────────────────────────┐
-│  renderer (React)                    main                        │
-│  tasks · brief · composer     ⇄ IPC ⇄  pi-durable harness        │
-│                                        ├ 10 read-only tools      │
-│                                        ├ estate (rules/issues)   │
-│                                        └ pi-ai → model           │
+│ renderer (React, sandboxed)        main                          │
+│ tasks · brief · composer    ⇄ IPC ⇄  pi-durable harness          │
+│                                         ├ 10 read-only tools     │
+│                                         ├ estate (rules/issues)  │
+│                                         ├ s3 (readers/access)    │
+│                                         └ pi-ai → model          │
 │                              one SQLite: pi_* + host tables      │
+│                              tasks/<id>/uploads + datasets       │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- **Electron 45 + TypeScript + React 19**, no sidecar, no localhost HTTP.
-- **pi-durable 1.4** for the durable agent loop: storage, resume, steering,
-  abort, compaction and tool tasks.
-- **pi-ai 1.4** for model access: OpenAI (Responses API, reasoning effort),
-  Anthropic (thinking) and any OpenAI-compatible endpoint (Ollama, LM Studio,
-  vLLM, OpenRouter). Prompt caching where the provider supports it.
-- **Accounts** by sealed access keys or by AWS profile — SSO,
-  `credential_process` and assume-role resolve through the AWS SDK.
-- **One SQLite database** through Node's built-in `node:sqlite`; pi's tables are
-  prefixed `pi_`. Each imported dataset is a separate SQLite file.
-- **No native addons.** Nothing to rebuild, nothing to sign beyond the app.
+- **Electron 45 + TypeScript + React 19**. No sidecar, no HTTP server and no
+  native addon build.
+- **pi-durable 1.4** owns the durable loop: storage, resume, steering, abort,
+  compaction and tool tasks. This app does not reimplement it.
+- **pi-ai 1.4** provides model access for OpenAI Responses, Anthropic Messages
+  and OpenAI-compatible Chat Completions.
+- **Accounts** use sealed access keys or an AWS profile. A profile resolves
+  through the AWS SDK, including SSO, `credential_process` and assume-role.
+- **One SQLite database** through Node's built-in `node:sqlite`; pi's tables
+  use the `pi_` prefix. Each imported dataset is a separate SQLite file.
+- **Scope** (`scope.buckets`) is enforced in the main process by
+  `assertInScope` before any bucket read. Focus in the composer is not scope.
 
 ## Development
 
 ```bash
 npm ci
-npm run dev          # Electron + Vite with HMR
+npm run dev              # Electron + Vite with HMR
 npm run typecheck
 npm run lint
 npm test
 npm run build
-npm run budget       # first-paint bundle under 500 KiB
-xvfb-run -a npm run perf  # cold start under 1 s
+npm run budget           # first-paint renderer bundle under 500 KiB
+xvfb-run -a npm run perf # cold start to composer
 npm run audit
 npm run sbom
-npm run dist:dir     # unpacked app under release/
+npm run dist:dir         # unpacked app under release/
 ```
 
-End-to-end against a fake S3 and a fake OpenAI-compatible model, and the agent
-eval against a real model:
+End-to-end, first-run, screenshot and real-model evaluation:
 
 ```bash
 xvfb-run -a node scripts/e2e.mjs
-xvfb-run -a node scripts/e2e-audit.mjs   # first run without a model
-xvfb-run -a node scripts/shots.mjs       # screenshots under .amp/in/artifacts
-EVAL_PROVIDER=anthropic EVAL_MODEL=… EVAL_API_KEY=… xvfb-run -a node scripts/eval.mjs
+xvfb-run -a node scripts/e2e-audit.mjs
+xvfb-run -a node scripts/shots.mjs && node scripts/visual.mjs
+xvfb-run -a node scripts/eval.mjs --smoke
+EVAL_PROVIDER=anthropic EVAL_MODEL=… EVAL_API_KEY=… \
+  xvfb-run -a node scripts/eval.mjs
 ```
 
-## Security
+The normal E2E uses a fake S3 endpoint and a fake OpenAI-compatible model. The
+smoke eval proves the harness runs; it is not a model-quality score. See
+[docs/release.md](docs/release.md) for the release path and its signed/smoke
+fallbacks.
 
-Secrets live in the OS keychain through Electron `safeStorage`, or — when no
-keyring is available — in a local AES-256-GCM file with a 0600 key. SQLite holds
-only ciphertext; a profile account holds only the profile name. Every tool is read-only. A provider's bucket scope is enforced
-server-side before any call. Tool output reaches the model inside an
-`<untrusted-data>` envelope, and credentials are redacted before anything is
-stored, shown or sent. See [docs/security.md](docs/security.md).
+## Safety and honest limits
 
-## Deliberate omissions
+- No storage put, delete or mutate call exists. Fix commands are text for the
+  user to apply.
+- Secrets are sealed with Electron `safeStorage`, or a local AES-256-GCM file
+  when no OS keyring exists. Profile accounts store a profile name, never a key.
+  The renderer receives masked metadata, never a credential.
+- Tool output reaches the model inside `<untrusted-data>` and is bounded and
+  redacted. Tool status comes from `details.status`, never from result text.
+- A denied or unsupported read is a blind spot. It is never converted into a
+  clean result. The scope line and **Not read** section say what is missing.
+- Access analysis is evidence, not a complete authorization decision. Policy
+  and ACL grants are not merged with every identity, SCP and condition into a
+  single yes/no; service principals, federated identities and some external
+  policies remain out of scope. Coverage is stated instead of implied.
+- A survey is capped at 5,000 buckets and its time budget. CloudTrail covers 90
+  days and attributes at most six changed buckets per survey; re-verification
+  replays at most 50 buckets per account and can skip or truncate. Inventory
+  full imports are bounded by files, bytes and 2,000,000 rows. `query` has
+  explicit call, listing, time, memory and row budgets.
+- Release installers are signed and notarized only when all signing secrets are
+  configured. Without a real `EVAL_API_KEY`, the release notes carry a smoke
+  result rather than a model-quality claim.
 
-Twelve rules are not a compliance scanner: they are the checks a reading can
-decide without guessing intent.
+The exact current behavior, limits and IAM actions are in [docs/](docs/README.md);
+the changelog and release notes are history, not current documentation.
 
-No message editing or version trees, no Evidence side pane, no MCP bridge, no
-user skills, no standing instructions, no subagents, no background watch, no S3
-log download (attach the log instead), no write/apply action, no dashboard, no
-second window and no import of the previous app's data. A fix is text the user
-applies.
+## License
 
-License: Apache-2.0.
+Apache-2.0.

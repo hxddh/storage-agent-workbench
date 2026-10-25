@@ -2,106 +2,148 @@
 
 ## Requirements
 
-- Node 24 or newer (Node 26 also works)
-- npm 10+
+- Node.js 24 or newer (`engines` requires `>=24`).
+- npm 10+.
 - Linux desktop builds need the usual Electron runtime libraries; CI uses
-  `ubuntu-latest`
+  `ubuntu-latest`.
+- `xvfb` is required for the Electron tests on a headless Linux machine.
+- Optional: Python 3.12 and `moto[server]==5.2.4` for the AWS compatibility
+  test; Ollama or LM Studio for local models.
 
 ## Commands
 
 ```bash
 npm ci
-npm run dev          # Electron + Vite with HMR
-npm run typecheck    # tsconfig.node.json + tsconfig.web.json
-npm run lint         # Biome
-npm test             # Vitest
-npm run build        # out/{main,preload,renderer}
-npm run budget       # initial renderer bundle under 500 KiB
-xvfb-run -a npm run perf  # cold start to composer under 1 s
-npm run audit        # production dependency audit
-npm run sbom         # CycloneDX SBOM
-npm run dist:dir     # unpacked app in release/
-npm run dist         # installers for the current OS
+npm run dev              # Electron + Vite with HMR
+npm run typecheck        # tsconfig.node.json + tsconfig.web.json
+npm run lint             # Biome
+npm test                 # Vitest
+npm run build            # out/{main,preload,renderer}
+npm run budget           # initial renderer JavaScript under 500 KiB
+xvfb-run -a npm run perf # cold start to composer under 1 s
+npm run audit            # production dependency audit
+npm run sbom             # CycloneDX SBOM
+npm run dist:dir         # unpacked app in release/
+npm run dist             # installers for the current OS
 ```
+
+The package also exposes direct aliases: `npm run e2e`, `npm run e2e:audit`,
+`npm run eval`, `npm run visual`.
 
 ## Tests
 
-- **Vitest** covers what must not drift: local policy evaluation, exposure, the
-  twelve rules and their tri-state evaluation, the account rule, TLS policy
-  detection, the Issue lifecycle (accepted, gone, recurred), the schema migrations,
-  code mode (sandbox, scope, budgets, timeout), demo storage, generated fixes and impact, log
-  normalization and IP masking, CSV/Parquet import, the aggregate whitelist,
-  the search index and its escaping, the entry → UI projection, the brief's
-  current-state folding, verdict grounding, the run guardrails, redaction and
-  the tool floor, and the brief in jsdom, provider capabilities, posture diffs, permission diagnosis, model windows, access paths and batch fixes.
-- **Domain tests** (`src/main/domain.test.ts`) run the real AWS SDK and the
-  real tools over HTTP against `scripts/fake-s3.mjs` profiles — AWS, an
-  S3-compatible store without policy status, a denied ACL, a condition-narrowed
-  policy, CORS `*`, versioning — into a real SQLite estate.
-- **Compatibility** (`src/main/compat.test.ts`) runs survey against moto, an
-  independent AWS emulator, for exposure, the account-wide block and access
-  reads where the emulator supports them. It runs
-  only with `STORAGE_AGENT_AWS_ENDPOINT`; the `compat` CI job starts
-  `moto_server`:
+`npm test` is the fast suite. It covers policy evaluation and exposure, the
+twelve rules and tri-state decisions, the account rule, TLS policy detection,
+Issue lifecycle (opened, resolved, gone, accepted, recurred), schema migrations,
+scope and the tool floor, code mode (sandbox, budgets, timeout, import), demo
+storage, generated fixes and impact, log normalization and IP masking,
+CSV/Parquet import and the aggregate whitelist, the search index, entry → UI
+projection, brief current-state folding, verdict grounding, the run guardrails,
+redaction, provider capabilities, posture diffs, permission diagnosis, model
+windows, access evaluation and batch fixes. `Brief.test.tsx` runs in jsdom; the
+rest use Node.
+
+### Domain and compatibility
+
+- `src/main/domain.test.ts` runs the real AWS SDK and the real tools over HTTP
+  against `scripts/fake-s3.mjs` profiles: AWS, an S3-compatible store without
+  policy status, a denied ACL, a condition-narrowed policy, CORS `*`, versioning
+  and the demo account. It uses a real SQLite estate.
+- `src/main/compat.test.ts` runs against moto, an independent AWS emulator, for
+  S3 exposure, the account-wide block and access reads where moto supports them.
+  It runs only with `STORAGE_AGENT_AWS_ENDPOINT`:
 
   ```bash
-  pip install 'moto[server]==5.2.4' && moto_server -p 5055 &
-  STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 npx vitest run src/main/compat.test.ts
+  pip install 'moto[server]==5.2.4'
+  moto_server -p 5055 &
+  STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 \
+    npx vitest run src/main/compat.test.ts
   ```
-- **Playwright + Electron** (`scripts/e2e.mjs`) drives the real window against
-  `scripts/fake-s3.mjs` (delayed, so a running call is observable) and
-  `scripts/fake-model.mjs`: configure a model, add an account, ask a question,
-  see the running row, open the evidence, accept a risk, apply a fix outside
-  the app and verify it, get a grounding correction, ask for a fix, stop a run,
-  continue it, search and open a hit, answer a question with code mode, walk
-  findings by keyboard, pick a bucket with `@`, re-verify without a model,
-  export evidence, run axe with zero serious violations, and open the demo
-  account.
-- **Eval** (`scripts/eval.mjs`) runs scenarios against a real model in the real
-  window and scores findings, grounding, honesty about blind reads, memory
-  first, verify-after-fix, code mode for open questions (largest prefix),
-  re-surveying stale memory and call counts. `--smoke` checks the plumbing with
-  the fake model (CI runs it); the `Eval` workflow runs it with a real model on
-  demand.
-- **`scripts/shots.mjs`** captures the states that matter under
-  `.amp/in/artifacts`; `scripts/budget.mjs` enforces the first-paint budget.
 
-Run the E2E headless:
+### Real window
+
+- `scripts/e2e.mjs` builds the app and drives the real Electron window against
+  `scripts/fake-s3.mjs` (delayed so a running check is observable) and
+  `scripts/fake-model.mjs`. It covers model setup and test, an account check,
+  a model answer, finding evidence, axe (serious/critical violations fail),
+  `@` focus, re-verify, access rows, accepting a risk, applying a fix outside
+  the app and proving it, grounding correction, a generated fix, stop/continue,
+  search, code-mode rows and the demo account.
+- `scripts/e2e-audit.mjs` starts with no model and no account, chooses demo
+  storage explicitly, waits for the deterministic brief, checks that the
+  composer stays disabled and captures the no-model state.
+- `scripts/shots.mjs` captures Home, Settings, task, data, estate and dark-mode
+  states under `.amp/in/artifacts`.
+- `scripts/visual.mjs` compares those captures to `visual/baseline`. It rejects
+  a global pixel change above 5% and any 64px tile with a large local change,
+  so a missing control is not hidden by a large unchanged window.
+- `scripts/perf.mjs` launches three times and fails when the median time to a
+  visible composer exceeds 1,000 ms.
+- `scripts/budget.mjs` excludes the lazy Settings, Brief and Markdown chunks and
+  fails when the initial renderer JavaScript exceeds 500 KiB.
+
+### Evaluation
+
+`scripts/eval.mjs` has 26 scenarios. It scores findings, grounded verdicts,
+blind-spot honesty, memory-first behavior, verify-after-fix, code mode, access
+questions, prompt-injection-shaped object names and call counts. The script
+runs the real window against fake S3.
 
 ```bash
-xvfb-run -a node scripts/e2e.mjs
+xvfb-run -a node scripts/eval.mjs --smoke
+EVAL_PROVIDER=anthropic EVAL_MODEL=... EVAL_API_KEY=... \
+  xvfb-run -a node scripts/eval.mjs
 ```
+
+`--smoke` runs only the `public-aws` scenario with the fake model. It proves the
+harness and scoring plumbing run; it is not a quality result. A real run exits
+non-zero when a must-pass check fails and writes
+`.amp/in/artifacts/eval-report.md` and `.json`. The report names the model and
+never includes the key.
 
 ## Packaging
 
-`electron-builder` reads the `build` block in `package.json`. There are no
-native addons, so no rebuild step is required. The release workflow requires
-`CSC_LINK`, `APPLE_ID` and the related secrets, signs and notarizes the macOS
-bundle, and fails before the build when any are missing. `latest*.yml` feeds are
-attached to every release for `electron-updater`.
+`electron-builder` reads the `build` block in `package.json`:
 
-Outputs: `release/linux-unpacked`, `.AppImage`, `.deb`, `.dmg`, `.zip`, `.exe`.
+- macOS: `.dmg` and `.zip`, x64 and arm64, notarization when secrets exist.
+- Windows: NSIS `.exe`.
+- Linux: AppImage and `.deb`.
+- Update feeds: `latest.yml`, `latest-mac.yml`, `latest-linux.yml`.
+- SBOM: `sbom.json`.
 
-## Release
+There are no native Node addons to rebuild; QuickJS is shipped as WebAssembly
+and unpacked from the asar. The release workflow, its smoke/real evaluation
+fallback and its signing fallback are described in [release.md](release.md). A
+tagged release builds all three platforms or publishes nothing.
 
-1. `npm run typecheck && npm run lint && npm test && npm run build`
-2. Run the E2E and the shots script; inspect the screenshots. Run the eval
-   against the model you recommend and read the report.
-3. Bump `version` in `package.json`.
-4. Commit, tag `vX.Y.Z`, push the tag.
-5. The release workflow builds macOS, Linux and Windows and attaches the
-   artifacts to the GitHub release.
+## Release work
+
+1. Run the local gates you intend to claim: typecheck, lint, unit tests, build,
+   budget, E2E, audit E2E, shots/visual, and the relevant eval.
+2. Bump `package.json` and `package-lock.json`.
+3. Commit, tag the commit, and push the tag. Do not move a published tag.
+4. Watch the Release workflow. With `EVAL_API_KEY` it runs two model
+   evaluations; without it, it records a smoke result. With signing secrets it
+   signs and notarizes; without them, it builds ad-hoc/unsigned packages and
+   says so.
+5. Install the previous release and verify the update path manually when the
+   change affects packaging or `electron-updater`.
 
 ## Known gaps
 
-- Attachments are exercised at the import/aggregate level and through the
-  composer; there is no automated test of the native file dialog or the save
-  dialog.
-- Search indexes text only: titles, requests, findings and the current verdict,
-  not attachments or object names.
-- No import of data from the previous major version; the database starts empty.
-- The live eval needs a model key; it is a release gate for a human, not part of
-  pull-request CI.
-- Real-model scoring and signed/notarized installers need external
-  credentials; the repository cannot fabricate them. Everything else is
-  exercised locally.
+- Real-model evaluation and signed/notarized installers require external
+  credentials. The repository can run the smoke evaluation and unsigned
+  packaging without them, but must not present that as a quality or signing
+  claim.
+- There is no automated native-dialog test for the file picker or save dialog.
+- Search indexes titles, requests, findings and the current verdict only; it
+  does not index attachments or every object name. It returns at most 20 hits.
+- The sidebar shows the 500 most recently updated tasks; Settings lists the 100
+  most recent notes. Older rows remain in SQLite but are not shown.
+- Removing an account does not cascade to notes or `issue_events`; see
+  [data-model.md](data-model.md).
+- Access analysis is evidence with coverage, not a complete IAM authorization
+  proof.
+- There is no import from an earlier version of the app.
+- The E2E axe gate covers serious and critical violations; there is no separate
+  contrast-certification job.

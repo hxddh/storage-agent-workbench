@@ -67,12 +67,14 @@ try {
   console.log('MODEL LIST OK')
   await page.getByRole('button', { name: 'Save', exact: true }).first().click()
   await page.waitForTimeout(600)
+  await page.getByRole('button', { name: 'Model', exact: true }).click()
   await page.getByRole('button', { name: 'Test', exact: true }).click()
   await page.waitForTimeout(1200)
   const modelStatus = await page.locator('.ok-text, .error-text').first().innerText()
   console.log('MODEL:', modelStatus)
   if (!/Connected|ok/i.test(modelStatus)) await fail(`model test: ${modelStatus}`)
 
+  await page.getByRole('button', { name: 'Storage accounts', exact: true }).click()
   await page.locator('#accName').fill('Demo')
   await page.locator('#accEndpoint').fill(`http://127.0.0.1:${s3Port}`)
   await page.locator('#accRegion').fill('us-east-1')
@@ -266,6 +268,7 @@ try {
 
   // Demo storage: an in-process account, offered once.
   await page.getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Storage accounts', exact: true }).click()
   await page.getByRole('button', { name: 'Try with demo storage' }).click()
   await page.waitForSelector('.account-name:has-text("Demo storage")', { timeout: 5_000 })
   if (await page.getByRole('button', { name: 'Try with demo storage' }).count())

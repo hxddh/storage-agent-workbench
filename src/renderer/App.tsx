@@ -12,6 +12,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Composer } from './Composer'
 import { Home } from './Home'
 import { dict } from './i18n'
+import type { SettingsPane } from './Settings'
 
 // Settings is a sheet most launches never open; the brief and its Markdown
 // bundle load when a task opens. Home and the composer are the first paint.
@@ -33,6 +34,7 @@ export function App() {
   const [tasks, setTasks] = useState<TaskSummary[]>([])
   const [view, setView] = useState<TaskView | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsPane, setSettingsPane] = useState<SettingsPane>('model')
   const [focusId, setFocusId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [fatal, setFatal] = useState(false)
@@ -119,6 +121,11 @@ export function App() {
     return () => media.removeEventListener('change', apply)
   }, [boot?.settings.theme])
 
+  const openSettings = useCallback((pane: SettingsPane = 'model') => {
+    setSettingsPane(pane)
+    setSettingsOpen(true)
+  }, [])
+
   const newTask = useCallback(() => {
     setView(null)
     setSidebarOpen(false)
@@ -131,7 +138,7 @@ export function App() {
   useEffect(() => {
     if (!('agent' in window)) return
     return window.agent.onCommand((command) => {
-      if (command === 'settings') setSettingsOpen(true)
+      if (command === 'settings') openSettings('model')
       if (command === 'new-task') newTask()
       if (command === 'search') {
         setSidebarOpen(true)
@@ -146,7 +153,7 @@ export function App() {
         if (current && !current.live) void window.agent.reverifyTask(current.task.id)
       }
     })
-  }, [newTask])
+  }, [newTask, openSettings])
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -268,48 +275,53 @@ export function App() {
         open={sidebarOpen}
         onOpen={(id, focus) => void openTask(id, focus)}
         onNew={newTask}
-        onSettings={() => setSettingsOpen(true)}
+        onSettings={() => openSettings('model')}
         onRename={(id, title) => void rename(id, title)}
         onDelete={(id) => void remove(id)}
         onPin={(id, pinned) => void window.agent.pinTask(id, pinned)}
         searchSignal={searchSignal}
       />
+      {sidebarOpen && (
+        <button
+          className="sidebar-scrim"
+          type="button"
+          aria-label={t.close}
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
       <main className="main">
+        <div className="mobile-head">
+          <button
+            className="icon-btn"
+            type="button"
+            aria-label={t.showTasks}
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Menu size={16} />
+          </button>
+          <span className="task-title">{view?.task.title ?? 'Storage Agent'}</span>
+        </div>
         {view ? (
-          <>
-            <div className="mobile-head">
-              <button
-                className="icon-btn"
-                type="button"
-                aria-label={t.showTasks}
-                onClick={() => setSidebarOpen(true)}
-              >
-                <Menu size={16} />
-              </button>
-              <span className="task-title">{view.task.title}</span>
-            </div>
-            <Suspense fallback={null}>
-              <Brief
-                key={view.task.id}
-                view={view}
-                lang={lang}
-                focusId={focusId}
-                onRetry={() => void window.agent.retryTask(view.task.id)}
-                onContinue={() => void window.agent.continueTask(view.task.id)}
-                onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
-                onAudit={() => void audit()}
-                auditing={auditing}
-                auditProgress={
-                  auditProgress?.taskId === view.task.id ? auditProgress.progress : null
-                }
-                staleDays={boot?.settings.staleDays ?? 7}
-              />
-            </Suspense>
-          </>
+          <Suspense fallback={null}>
+            <Brief
+              key={view.task.id}
+              view={view}
+              lang={lang}
+              focusId={focusId}
+              onRetry={() => void window.agent.retryTask(view.task.id)}
+              onContinue={() => void window.agent.continueTask(view.task.id)}
+              onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
+              onAudit={() => void audit()}
+              auditing={auditing}
+              auditProgress={auditProgress?.taskId === view.task.id ? auditProgress.progress : null}
+              staleDays={boot?.settings.staleDays ?? 7}
+            />
+          </Suspense>
         ) : boot ? (
           <Home
             boot={boot}
-            onSetup={() => setSettingsOpen(true)}
+            onSetup={() => openSettings('model')}
+            onAddAccount={() => openSettings('accounts')}
             onUseLocal={startLocal}
             onDemo={() => void startDemo()}
             onAudit={() => void audit()}
@@ -325,13 +337,14 @@ export function App() {
           onSend={submit}
           onSteer={steer}
           onStop={stop}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => openSettings('model')}
         />
       </main>
       {settingsOpen && boot && (
         <Suspense fallback={null}>
           <Settings
             boot={boot}
+            initialPane={settingsPane}
             onClose={() => setSettingsOpen(false)}
             onChanged={async () => {
               await refresh()

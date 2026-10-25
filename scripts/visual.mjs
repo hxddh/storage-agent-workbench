@@ -19,12 +19,21 @@ mkdirSync(baseline, { recursive: true })
 const names = [
   '01-home-light.png',
   '01b-home-configured-light.png',
+  '02a-settings-model.png',
   '02-settings-light.png',
+  '02b-settings-appearance.png',
+  '02c-settings-dark.png',
+  '02d-settings-account-form.png',
   '03-task-light.png',
   '04-survey-light.png',
   '05-estate-light.png',
   '06-task-dark.png',
   '07-home-dark.png',
+  '08-live-light.png',
+  '09-task-compact.png',
+  '10-sidebar-compact.png',
+  '11-home-compact.png',
+  '12-settings-compact.png',
 ]
 let failed = 0
 for (const name of names) {

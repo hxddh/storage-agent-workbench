@@ -278,6 +278,7 @@ async function configure(page, s3) {
   await page.locator('#apiKey').fill(model.key)
   await page.getByRole('button', { name: 'Save', exact: true }).first().click()
   await page.waitForTimeout(500)
+  await page.getByRole('button', { name: 'Storage accounts', exact: true }).click()
   await page.locator('#accName').fill('Eval')
   await page.locator('#accEndpoint').fill(s3.endpoint)
   await page.locator('#accRegion').fill('us-east-1')

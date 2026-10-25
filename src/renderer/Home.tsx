@@ -19,6 +19,7 @@ function ago(iso: string | null, lang: 'en' | 'zh'): string {
 export function Home({
   boot,
   onSetup,
+  onAddAccount,
   onUseLocal,
   onDemo,
   onAudit,
@@ -26,6 +27,7 @@ export function Home({
 }: {
   boot: Bootstrap
   onSetup: () => void
+  onAddAccount: () => void
   onUseLocal: (model: LocalModel) => Promise<void>
   onDemo: () => void
   onAudit: () => void
@@ -75,80 +77,94 @@ export function Home({
     <div className="home">
       <div className="home-inner">
         <h1>{t.homeTitle}</h1>
-        {hasAccount && (
-          <div className="home-estate">
-            {overview.accounts.map((account) => (
-              <p className="home-account" key={account.id}>
-                <span className="home-account-name">{account.name}</span>
-                <span className="home-account-meta">
-                  {account.buckets} {account.buckets === 1 ? t.bucketsOne : t.bucketsShort} ·{' '}
-                  {account.buckets === 0 ? t.homeUnsurveyed : ago(account.lastRead, lang)}
-                  {account.buckets === 0
-                    ? ''
-                    : account.openHigh > 0
-                      ? ` · ${account.openHigh} ${t.homeHigh}`
-                      : account.openTotal > 0
-                        ? ` · ${account.openTotal} ${t.homeOpen}`
-                        : ` · ${t.homeClear}`}
-                </span>
-              </p>
-            ))}
-            {overview.changesSince > 0 && (
-              <p className="home-change">
-                {t.homeChanges.replace('{n}', String(overview.changesSince))}
-              </p>
-            )}
-            <button
-              className="btn primary home-audit"
-              type="button"
-              disabled={auditing}
-              onClick={onAudit}
-            >
-              {auditing ? t.checkingAccount : t.checkAccount}
-            </button>
-          </div>
-        )}
-
-        {!hasAccount ? (
+        {hasAccount ? (
+          <>
+            <div className="home-estate">
+              {overview.accounts.map((account) => (
+                <p className="home-account" key={account.id}>
+                  <span className="home-account-name">{account.name}</span>
+                  <span className="home-account-meta">
+                    {account.buckets === 0
+                      ? t.homeUnsurveyed
+                      : `${account.buckets} ${account.buckets === 1 ? t.bucketsOne : t.bucketsShort} · ${ago(account.lastRead, lang)}`}
+                    {account.buckets === 0
+                      ? ''
+                      : account.openHigh > 0
+                        ? ` · ${account.openHigh} ${t.homeHigh}`
+                        : account.openTotal > 0
+                          ? ` · ${account.openTotal} ${t.homeOpen}`
+                          : ` · ${t.homeClear}`}
+                  </span>
+                </p>
+              ))}
+              {overview.changesSince > 0 && (
+                <p className="home-change">
+                  {t.homeChanges.replace('{n}', String(overview.changesSince))}
+                </p>
+              )}
+            </div>
+            <div className="home-actions">
+              <button
+                className="btn primary home-audit"
+                type="button"
+                disabled={auditing}
+                onClick={onAudit}
+              >
+                {auditing ? t.checkingAccount : t.checkAccount}
+              </button>
+              <button className="btn" type="button" onClick={onAddAccount}>
+                {t.addAccount}
+              </button>
+              {!hasModel && (
+                <button className="home-link" type="button" onClick={onSetup}>
+                  {t.setModel}
+                </button>
+              )}
+            </div>
+            {!hasModel && <p className="hint home-hint">{t.checkAccountHint}</p>}
+          </>
+        ) : (
           <>
             <p className="home-lede">{hasModel ? t.homeNoEstate : t.homeNoModel}</p>
-            <div className="home-setup">
-              {!hasModel && local.length > 0 && (
-                <div className="home-local">
-                  <span className="home-local-label">{t.localModels}</span>
-                  {local.map((model) => (
-                    <button
-                      className="home-prompt"
-                      key={`${model.source}:${model.modelId}`}
-                      type="button"
-                      disabled={starting !== null}
-                      onClick={() => void startLocal(model)}
-                    >
-                      <Sparkles size={12} strokeWidth={1.7} aria-hidden="true" />
-                      <span>{fill(t.useLocal, { model: model.modelId })}</span>
-                      <span className="hint">{model.source}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="home-actions">
               <button className="btn primary" type="button" onClick={onDemo} disabled={auditing}>
                 {auditing ? t.checkingAccount : t.tryDemo}
               </button>
-              <button className="btn" type="button" onClick={onSetup}>
-                {!hasModel ? t.setModel : t.addAccount}
+              <button className="btn" type="button" onClick={onAddAccount}>
+                {t.addAccount}
               </button>
-              <span className="hint home-setup-hint">{t.demoHint}</span>
-              {localError && <p className="brief-error">{localError}</p>}
             </div>
+
+            {!hasModel && local.length > 0 && (
+              <div className="home-local">
+                <span className="home-local-label">{t.localModels}</span>
+                {local.map((model) => (
+                  <button
+                    className="home-prompt"
+                    key={`${model.source}:${model.modelId}`}
+                    type="button"
+                    disabled={starting !== null}
+                    onClick={() => void startLocal(model)}
+                  >
+                    <Sparkles size={12} strokeWidth={1.7} aria-hidden="true" />
+                    <span>{fill(t.useLocal, { model: model.modelId })}</span>
+                    <span className="hint">{model.source}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="home-foot">
+              {!hasModel && (
+                <button className="home-link" type="button" onClick={onSetup}>
+                  {t.setModel}
+                </button>
+              )}
+              <span className="hint">{t.demoHint}</span>
+            </div>
+            {localError && <p className="brief-error">{localError}</p>}
           </>
-        ) : !hasModel ? (
-          <div className="home-setup">
-            <button className="btn" type="button" onClick={onSetup}>
-              {t.setModel}
-            </button>
-            <span className="hint home-setup-hint">{t.checkAccountHint}</span>
-          </div>
-        ) : null}
+        )}
       </div>
     </div>
   )

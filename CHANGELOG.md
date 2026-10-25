@@ -1,5 +1,52 @@
 # Changelog
 
+## 24.0.0
+
+A quieter window and a new identity. The read-only agent, durable task model,
+storage reads and evidence boundaries are unchanged; this release is about how
+the product presents them.
+
+### Changed
+
+- **A new mark.** The app icon and sidebar brand are one flat tile with an open
+  rounded frame. There is no gradient, dot or secondary element. The geometry is
+  sized to keep the opening legible from 16px up.
+- **A real type system.** Geist and Geist Mono ship with the app instead of
+  falling back to a generic system sans. The warm paper/graphite palette, single
+  cobalt accent, hairline sections and flat surfaces now hold across light and
+  dark themes.
+- **Home is a start surface, not a setup page.** Account state, **Check account**,
+  demo storage and **Add an account** are the main path; model setup is a quiet
+  secondary action and the composer states that a model is only needed to ask a
+  question.
+- **Settings is navigable.** Model, Storage accounts, Memory and Appearance are
+  four panes in a rail instead of one long web form. The rail becomes a
+  horizontal tab row below 860px, and account add/edit lives in one inline form.
+  Inputs, selects, checkboxes, focus rings and the first-run key hint are styled
+  consistently.
+- **The brief is easier to read.** The verdict is set at 17.5px, findings group
+  by bucket with hairline separators, and **N more findings** is a real
+  disclosure control. The latest request stays a quiet line above the verdict.
+- **Running work is visible.** A status strip above the composer names the
+  current phase and target, the latest note and elapsed time; checks still fold
+  to their receipt when the task settles.
+- **The compact window works as a window.** Home gains the same Tasks button as
+  a task screen, the sidebar is dismissable with a scrim, and Settings preserves
+  its version/update state below 860px.
+- **Documentation is current.** `README`, `CLAUDE.md` and every `docs/` page now
+  describe the 24.0.0 tree; the screenshot and 17-state visual baseline set are
+  current.
+
+### Fixed
+
+- A narrow Home screen previously hid the sidebar without a way to reach tasks
+  or Settings. The compact header now provides it on every screen.
+- First-run Settings told users to leave the API key empty “to keep the saved
+  one” even when no key had ever been saved. The initial hint now explains the
+  vault write.
+- The task actions button and the brief overflow no longer share an accessible
+  name, and task titles with an ellipsis get a themed tooltip only when needed.
+
 ## 23.0.1
 
 A test-fixture correction for the released 23.0.0.
