@@ -11,15 +11,22 @@ A first pass at the task surface and the honesty of its edges.
   demo storage silently; the demo is a choice.
 - **Check account is observable.** It opens its task immediately, streams
   survey and access progress, and leaves the deterministic checks and verdict
-  in the durable task. A repeated check gets a dated, account-named title.
+  in the durable task. A repeated check gets an account-named title with the
+  minute, so two checks on the same day stay distinct.
 - **The brief has a scope line.** It names the account, `read / total` buckets,
   blind reads, survey-cap buckets and the read time. A capped survey is no
   longer invisible, and the model-free verdict refuses to call it clean.
 - **Actions are discoverable.** Copy and an overflow menu are always visible;
   Save, Check again, Re-verify, link, evidence and PDF live in the overflow.
   The task list no longer reserves a hidden 28px More button below every row.
+- **Findings read as prose.** Bucket group headings use body-copy size, detail
+  lines wrap instead of truncating, and the composer dock leaves room for the
+  last disclosure.
 - **Test tests the form.** Settings tests the provider, model, base URL and key
-  currently typed, not the previously saved model.
+  currently typed, not the previously saved model. A typed key fetches the
+  provider's model list automatically; the manual Fetch action remains only
+  when no key is in the field. Section headings use the same sentence-case
+  hierarchy as the brief.
 
 ### Fixed
 

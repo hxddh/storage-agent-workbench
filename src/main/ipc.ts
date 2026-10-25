@@ -32,9 +32,10 @@ export function registerIpc(app: App): void {
       .slice(0, 2)
       .map((account) => account.name)
       .join(', ')
-    const title = `${lang === 'zh' ? '检查' : 'Check'} · ${names} · ${new Date()
-      .toISOString()
-      .slice(0, 10)}`
+    // A check is a snapshot. Include the minute so two checks on the same day
+    // remain distinguishable in the task list.
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
+    const title = `${lang === 'zh' ? '检查' : 'Check'} · ${names} · ${stamp}`
     const id = await app.harness.newTask(title)
     // Return the task immediately; progress and the durable result arrive
     // through the task watch instead of making the window wait for the sweep.

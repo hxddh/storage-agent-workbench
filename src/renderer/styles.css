@@ -546,10 +546,10 @@ button {
 }
 .finding-group-title {
   margin: 10px 0 2px;
-  color: var(--ink-3);
-  font-size: 10.5px;
+  color: var(--ink-2);
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 .finding-group:first-child .finding-group-title {
   margin-top: 0;
@@ -741,9 +741,9 @@ button {
   font-size: 12px;
   line-height: 1.45;
   color: var(--ink-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 .finding-row .chev {
   color: var(--ink-3);
@@ -1280,7 +1280,7 @@ pre.code {
 /* ---------- composer ---------- */
 
 .composer-dock {
-  padding: 6px 28px 22px;
+  padding: 6px 28px 16px;
   background: linear-gradient(to top, var(--bg) 55%, transparent);
 }
 
@@ -1462,10 +1462,10 @@ pre.code {
 }
 
 .section h3 {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-3);
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
   font-weight: 600;
   margin: 0 0 10px;
 }

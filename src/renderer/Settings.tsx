@@ -327,15 +327,18 @@ export function Settings({
                     setContextWindow(null)
                   }}
                 />
-                <button
-                  className="btn"
-                  type="button"
-                  disabled={modelsBusy}
-                  onClick={() => void fetchModels()}
-                >
-                  {modelsBusy ? t.fetching : t.fetchModels}
-                </button>
+                {!apiKey.trim() && (
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={modelsBusy}
+                    onClick={() => void fetchModels()}
+                  >
+                    {modelsBusy ? t.fetching : t.fetchModels}
+                  </button>
+                )}
               </div>
+              {apiKey.trim() && modelsBusy && <span className="hint">{t.fetching}</span>}
               {models.length > 0 && (
                 <select
                   aria-label={t.models}

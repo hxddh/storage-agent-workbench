@@ -62,7 +62,6 @@ try {
   await page.getByRole('button', { name: 'Set up a model' }).first().click()
   await page.locator('#baseUrl').fill(`http://127.0.0.1:${modelPort}/v1`)
   await page.locator('#apiKey').fill('test-key')
-  await page.getByRole('button', { name: 'Fetch models' }).click()
   await page.waitForSelector('select[aria-label="Models"]', { timeout: 5_000 })
   await page.locator('select[aria-label="Models"]').selectOption('fake-model')
   console.log('MODEL LIST OK')
