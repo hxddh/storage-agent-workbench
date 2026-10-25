@@ -21,6 +21,19 @@ function plan(body) {
   // Tool results of the current turn only: a task can hold several turns.
   const toolMessages = messages.slice(lastUserIndex + 1).filter((message) => message.role === 'tool')
   const ask = String(lastUser?.content ?? '').toLowerCase()
+  const toolText = toolMessages
+    .map((message) =>
+      typeof message.content === 'string'
+        ? message.content
+        : JSON.stringify(message.content ?? ''),
+    )
+    .join('\n')
+  // The smoke eval uses web-assets/ledger-private; the E2E demo uses demo-*.
+  // Read the bucket the survey actually proved public instead of hardcoding the
+  // demo names into every scenario.
+  const publicBucket = (
+    /(?:^|\n)Public:\s*([A-Za-z0-9._-]+)/.exec(toolText)?.[1] ?? ''
+  ).replace(/[.,]+$/, '') || null
   if (ask.includes('no tool result in this task shows')) console.log('GROUNDING_CORRECTION')
   if (toolMessages.length === 0) {
     if (ask.includes('applied')) {
@@ -53,7 +66,12 @@ function plan(body) {
     !ask.includes('issue') &&
     !ask.includes('largest')
   ) {
-    return { tool: call('call_config_1', 'config', { bucket: 'demo-public', aspect: 'security' }) }
+    return {
+      tool: call('call_config_1', 'config', {
+        bucket: publicBucket ?? 'demo-public',
+        aspect: 'security',
+      }),
+    }
   }
   if (ask.includes('applied')) {
     return { text: '`demo-public` is no longer public; the fix took.' }
@@ -76,6 +94,9 @@ function plan(body) {
   // The harness asks once for a correction when the verdict names something no tool returned.
   if (ask.includes('ghost')) {
     return { text: '`demo-public` is public and so is `ghost-bucket`.' }
+  }
+  if (publicBucket && publicBucket !== 'demo-public') {
+    return { text: `\`${publicBucket}\` is publicly accessible.` }
   }
   return {
     text:

@@ -1,5 +1,16 @@
 # Changelog
 
+## 23.0.1
+
+A test-fixture correction for the released 23.0.0.
+
+### Fixed
+
+- The smoke model now reads the bucket names the survey actually returned
+  instead of hardcoding the E2E demo buckets. The `public-aws` smoke scenario
+  is 7/7 again, with no failed config call and a grounded verdict. This does
+  not change product behavior; it makes the release report truthful.
+
 ## 23.0.0
 
 A version about making the task surface explicit, observable and honest about
