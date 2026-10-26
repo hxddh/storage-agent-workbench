@@ -1,14 +1,15 @@
 # Storage Agent
 
 A local, read-only agent for S3-compatible object storage. You ask a question;
-the agent reads the account, remembers what it saw, and projects the result as a
-**brief** grounded in tool results. A **task** is the window's object, and the
-**estate** is the agent's memory. Nothing is written, deleted or changed in
-storage, and the app never applies a fix.
+the agent plans what to read, reads the account, remembers what it saw, and
+composes a **run** from its plan, answer blocks and the evidence behind them. A
+**task** is the window's object, and the **estate** is the agent's memory.
+Nothing is written, deleted or changed in storage, and the app never applies a
+fix.
 
-Current release: **26.0.0**.
+Current release: **27.0.0**.
 
-![A brief in Storage Agent](docs/screenshot.png)
+![A run in Storage Agent](docs/screenshot.png)
 
 ## What it does
 
@@ -58,8 +59,10 @@ Current release: **26.0.0**.
   compare the result with its plan: confirmed, not applied or still unknown,
   plus skipped and truncated coverage. A reading record on Home keeps the last
   complete read and the new findings since it.
-- **Keep the evidence.** The brief has a scope line, findings grouped by bucket,
-  changes, open questions, fixes, one data section and a checks receipt. Copy,
+- **Keep the agent visible.** A task is a run: the agent's own short plan, the
+  answer blocks it composed, the evidence each block cites, then the findings,
+  changes, open questions, fixes, data and checks. The model can choose a table,
+  timeline, plan or code block; it cannot invent the facts behind it. Copy,
   save Markdown, check again, re-verify, copy a task link, export the evidence
   pack and save PDF live behind a visible overflow menu. Tables copy as CSV.
 - **Use the model you have.** Pick OpenAI, Anthropic or an OpenAI-compatible
@@ -69,7 +72,7 @@ Current release: **26.0.0**.
 
 ## Shape
 
-One window, one brief, one composer. The task list is the only navigation.
+One window, one run, one composer. The task list is the only navigation.
 There is no storage browser, dashboard, side pane, chat transcript or second
 window. Settings holds the model, accounts, memory, language, theme and
 notifications.
@@ -77,8 +80,9 @@ notifications.
 ```text
 ┌──────────────────────────── Electron ────────────────────────────┐
 │ renderer (React, sandboxed)        main                          │
-│ tasks · brief · composer    ⇄ IPC ⇄  pi-durable harness          │
-│                                         ├ 10 read-only tools     │
+│ tasks · run · composer      ⇄ IPC ⇄  pi-durable harness          │
+│                                         ├ 10 storage tools       │
+│                                         ├ plan/report/playbook   │
 │                                         ├ estate (rules/issues)  │
 │                                         ├ s3 (readers/access)    │
 │                                         └ pi-ai → model          │

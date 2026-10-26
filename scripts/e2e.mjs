@@ -89,7 +89,7 @@ try {
   if (accounts < 1) await fail('account was not saved')
 
   await page.getByRole('button', { name: 'Close' }).click()
-  await page.waitForSelector('.home-account', { timeout: 5_000 })
+  await page.waitForSelector('.home-ledger-row', { timeout: 5_000 })
   console.log('HOME OVERVIEW OK')
 
   // Model-free account check: the same readers produce a brief without a model.
@@ -227,8 +227,16 @@ try {
   await page.waitForSelector('text=demo-public is publicly accessible', { timeout: 60_000 })
   console.log('CONTINUE OK')
 
+  // Create one task in this session and find it by a distinctive title. This
+  // also proves a model task reaches the durable task list, not only the view.
+  await page.getByRole('button', { name: 'New task' }).click()
+  await page.locator('.composer textarea').fill('Searchable demo question')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('text=demo-public is publicly accessible', { timeout: 60_000 })
+  await page.waitForTimeout(400)
+
   await page.locator('.sidebar-search input').click()
-  await page.keyboard.type('public')
+  await page.keyboard.type('Searchable')
   await page.waitForSelector('.search-hit', { timeout: 10_000 })
   const hits = await page.locator('.search-hit').count()
   console.log('SEARCH HITS:', hits)

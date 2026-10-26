@@ -542,6 +542,8 @@ export function buildBrief(
     } else if (entry.kind === 'answer') {
       if (entry.text.trim()) answers.push({ text: entry.text.trim(), at: entry.at, index })
     } else if (entry.kind === 'tool') {
+      // plan/report/playbook shape the answer; they are not storage checks.
+      if (entry.name === 'plan' || entry.name === 'report' || entry.name === 'playbook') return
       checks.push({
         id: entry.id,
         name: entry.name,

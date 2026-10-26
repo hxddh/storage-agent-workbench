@@ -1,5 +1,6 @@
 import { briefSearchText, buildBrief } from '@shared/brief'
 import type { SearchHit, UiEntry } from '@shared/contract'
+import { buildRun, reportSearchText } from '@shared/run'
 import type { AppDb } from '../db'
 
 /**
@@ -61,6 +62,22 @@ export function searchDocsFor(
     if (entry.kind === 'user')
       docs.push({ entryId: entry.id, kind: 'user', text: entry.text, at: entry.at })
   }
-  docs.push(...briefSearchText(buildBrief(entries)))
+  // A report is compositional; an older/partial task may not project one. The
+  // deterministic evidence must still be searchable even then.
+  let run: ReturnType<typeof buildRun> | null = null
+  try {
+    run = buildRun(entries)
+  } catch {
+    run = null
+  }
+  docs.push(...briefSearchText(run?.brief ?? buildBrief(entries)))
+  const report = run ? reportSearchText(run) : ''
+  if (report)
+    docs.push({
+      entryId: 'verdict',
+      kind: 'answer',
+      text: report,
+      at: run?.report?.at ?? '',
+    })
   return docs
 }

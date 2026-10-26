@@ -1,6 +1,6 @@
 # Design
 
-One brief, one composer, one accent. The window should read like a page you
+One run, one composer, one accent. The window should read like a page you
 inspect, not a console you operate. Hierarchy comes from space, weight and
 hairlines, not cards.
 
@@ -52,7 +52,7 @@ runtime.
 - Finding titles: 14px; finding meta: 12px.
 - Controls and task rows: 12.5–13px.
 - Section labels: 10.75px, weight 600, uppercase with 0.085em tracking.
-- Scope and receipt lines: 11.75px; task-group labels: 10px.
+- Run scope: 12.5px; receipt lines: 11.75px; task-group labels: 10px.
 - Prose is capped at 64 characters; long generated text is not set as one wide
   line.
 
@@ -71,8 +71,9 @@ fields, not a sequence of panels.
 - Sidebar 252px, `--bg-sunken`: mark and wordmark, New task, search, pinned /
   today / earlier task rows, Settings at the foot. There are no boxes around
   New task or search; the active task is one quiet surface.
-- Brief column 720px with 24px gutters, centred. The task title appears in the
-  sidebar; below 860px it also appears in the compact top bar.
+- Run column 720px with 24px gutters, centred. The question or task title is
+  the run's largest line; it also appears in the sidebar and, below 860px, the
+  compact top bar.
 - Composer docked at the bottom on Home and task screens, 720px wide, with the
   run status strip immediately above it.
 - Settings is a full-screen surface: a 200px navigation rail and a 620px form
@@ -84,9 +85,10 @@ fields, not a sequence of panels.
 
 ## Home
 
-A quiet account summary: a 30–36px heading, account lines with remembered
-bucket count, the last complete reading and unresolved risk, a line for new
-findings since the latest complete reading, and **Check account**. With no
+A quiet estate ledger: a 30–36px heading, one row per account with remembered
+bucket count, the last complete reading and high/total risk, a line for new
+findings since the latest complete reading, and **Check account**. The compact
+layout stacks the row's metadata; the bucket count carries its unit. With no
 account, the explicit choices are **Try with demo storage**
 and **Add an account**; **Set up a model** is a secondary text action and the
 composer explains that a model is only needed to ask a question. A configured
@@ -96,15 +98,15 @@ appear as quiet one-click chips, not a dashboard.
 No cards, charts, suggestion pills, follow-up prompts or large illustration.
 The composer is inert until a model exists; the account can still be checked.
 
-## The brief
+## The run
 
-Top to bottom: an 11.75px scope line (`Demo · Reads complete · 2/2 buckets
-checked · checked 2m ago · 5 findings`), the latest request as one quiet 13px
-line, the verdict, notices and grounding notes, findings, re-verification,
-changes, **Not read**, the change plan, one data section and the checks receipt.
-Copy
-and a single overflow menu are always visible. Save, Check again, Re-verify,
-Copy link, Export evidence and Save PDF live in that overflow.
+Top to bottom: a 12.5px scope line (`Demo · Reads complete · 2/2 buckets
+checked · checked 2m ago`), the question at 24px, severity counts, Copy and the
+overflow menu, the agent's plan, the ordered answer blocks (summary, callout,
+table, findings, timeline, plan or code), then the deterministic evidence:
+findings, re-verification, changes, **Not read**, the change plan, one data
+section and the checks receipt. Save, Check again, Re-verify, Copy link, Export
+evidence and Save PDF live in the overflow.
 
 The scope line is the one place that makes coverage visible before the user
 reads the answer. It says `Reads open: n · m blocked` when a read failed,
@@ -127,7 +129,8 @@ Accepted risks and proved-fixed findings are one-line folds; the fixed fold and
 success status text use `--ok`.
 
 A name the checks never showed gets a dashed `--warn` underline and one quiet
-line under the verdict. Names in the verdict are prose, not boxed code chips.
+line under the answer. Names in the answer summary are prose, not boxed code
+chips.
 
 A change plan is one hairline list, not a stack of cards. Its summary names
 steps, buckets, manual merges and residual findings; the baseline is one quiet
@@ -199,7 +202,7 @@ dragging states. Icons next to text are `aria-hidden`.
 
 ## Accessibility
 
-The verdict and notices sit in a polite live region; the running phase is a
+The answer and notices sit in a polite live region; the running phase is a
 `status`; an error notice is an `alert`. Every action is a real button reachable
 by keyboard; hover-revealed finding and task actions also appear on
 `:focus-visible`. The page has one visually hidden `h1`. Focus is trapped in the
@@ -211,6 +214,6 @@ not a certification.
 ## Writing
 
 English and Chinese are written separately, not translated word for word. The
-verdict is short: at most two sentences, no heading, no table and no restated
-numbers. The interface never says "Let me know if…", "Here is what I found:" or
+summary is direct: no heading, no table and no restated table; the block
+carries the detail. The interface never says "Let me know if…", "Here is what I found:" or
 "Next steps". A fix is text; there is no Apply button.

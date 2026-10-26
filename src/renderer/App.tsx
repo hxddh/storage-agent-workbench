@@ -18,6 +18,7 @@ import type { SettingsPane } from './Settings'
 // bundle load when a task opens. Home and the composer are the first paint.
 const Settings = lazy(() => import('./Settings').then((module) => ({ default: module.Settings })))
 const Brief = lazy(() => import('./Brief').then((module) => ({ default: module.Brief })))
+const Run = lazy(() => import('./Run').then((module) => ({ default: module.Run })))
 
 import { Sidebar } from './Sidebar'
 
@@ -257,6 +258,19 @@ export function App() {
     return <div className="fatal">{t.fatal}</div>
   }
 
+  // A task that has a plan or a composed report is an agent run. Old tasks and
+  // a model-free audit without a report keep the original brief.
+  const nativeView = view
+    ? view.entries.some(
+        (entry) =>
+          entry.kind === 'tool' &&
+          entry.view &&
+          (entry.view.kind === 'report' || entry.view.kind === 'plan'),
+      ) ||
+      (!view.entries.some((entry) => entry.kind === 'user') &&
+        view.entries.some((entry) => entry.kind === 'tool'))
+    : false
+
   return (
     <div className="app">
       <div className="dragbar" />
@@ -295,19 +309,39 @@ export function App() {
         </div>
         {view ? (
           <Suspense fallback={null}>
-            <Brief
-              key={view.task.id}
-              view={view}
-              lang={lang}
-              focusId={focusId}
-              onRetry={() => void window.agent.retryTask(view.task.id)}
-              onContinue={() => void window.agent.continueTask(view.task.id)}
-              onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
-              onAudit={() => void audit()}
-              auditing={auditing}
-              auditProgress={auditProgress?.taskId === view.task.id ? auditProgress.progress : null}
-              staleDays={boot?.settings.staleDays ?? 7}
-            />
+            {nativeView ? (
+              <Run
+                key={view.task.id}
+                view={view}
+                lang={lang}
+                focusId={focusId}
+                onRetry={() => void window.agent.retryTask(view.task.id)}
+                onContinue={() => void window.agent.continueTask(view.task.id)}
+                onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
+                onAudit={() => void audit()}
+                auditing={auditing}
+                auditProgress={
+                  auditProgress?.taskId === view.task.id ? auditProgress.progress : null
+                }
+                staleDays={boot?.settings.staleDays ?? 7}
+              />
+            ) : (
+              <Brief
+                key={view.task.id}
+                view={view}
+                lang={lang}
+                focusId={focusId}
+                onRetry={() => void window.agent.retryTask(view.task.id)}
+                onContinue={() => void window.agent.continueTask(view.task.id)}
+                onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
+                onAudit={() => void audit()}
+                auditing={auditing}
+                auditProgress={
+                  auditProgress?.taskId === view.task.id ? auditProgress.progress : null
+                }
+                staleDays={boot?.settings.staleDays ?? 7}
+              />
+            )}
           </Suspense>
         ) : boot ? (
           <Home

@@ -1,10 +1,11 @@
 # Tools
 
-Ten tools, all read-only, all registered in one pi extension
-(`runtime/agent.ts`). Every call goes through `agentTool()`, which applies the
-account scope, a timeout, an audit row, redaction and the untrusted-data
-envelope, and attaches a typed `view` and a `status` (`done`, `failed`,
-`refused`, `timeout`, `stopped`) for the window.
+Thirteen tools in one pi extension (`runtime/agent.ts`). Ten are read-only
+storage reads; every one goes through `agentTool()`, which applies the account
+scope, a timeout, an audit row, redaction and the untrusted-data envelope, and
+attaches a typed `view`, a `status` (`done`, `failed`, `refused`, `timeout`,
+`stopped`) and an `evidenceId` for the model and the window. Three are control
+tools (`plan`, `report`, `playbook`) and never read storage.
 
 | Tool | Input | Model output | View |
 |---|---|---|---|
@@ -18,6 +19,9 @@ envelope, and attaches a typed `view` and a `status` (`done`, `failed`,
 | `fix` | `provider_id?`, `bucket?`, `code?` (omit for every open issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500, emits up to 20) | plan rows; each step opens CLI/Terraform/API tabs and impact |
 | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
 | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | first 40 rows, call and listing counts, script output | table, bar chart, script, buckets read |
+| `plan` | `steps` (3–12), `note?` | the plan was recorded | the run's plan with pending/active/done/blocked steps |
+| `report` | ordered `blocks`: summary, callout, table, findings, timeline, plan, code | the report was recorded | the answer blocks; data blocks cite an `evidenceId` |
+| `playbook` | `card?` | one field-guide card, or the card list | not rendered; documentation for the model |
 
 ## Code mode (`query`)
 
@@ -48,6 +52,18 @@ accepted; a larger file is reported instead of silently cut. With `full: true`,
 every manifest file is imported into a local dataset, bounded to 1,000 files,
 128 MiB per file, 512 MiB total and 2,000,000 rows. `aggregate` is the only way
 to query that dataset.
+
+## Control tools
+
+The agent publishes a short plan before its first read and updates it when a
+step materially changes. The run header renders it above the answer; it is not
+a transcript. `report` is the answer composition: a summary or callout carries
+prose and evidence ids; a table, timeline, plan or code block points at one tool
+result by its `evidenceId`; a findings block selects deterministic estate
+findings. The window resolves the actual tool view, drops a block whose evidence
+is missing and says how many were omitted. `playbook` reads one of the field
+cards in `src/main/playbooks.ts`; the cards are no longer pasted into every
+system prompt.
 
 ## Rules the tools enforce
 

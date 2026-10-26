@@ -5,11 +5,11 @@
 ```text
 Electron main                              Renderer (sandboxed)
   index.ts    window, menu, dock, links      App.tsx  state + layout
-  app.ts      wiring, bootstrap     ⇄ IPC   Sidebar / Home / Brief / Composer
+  app.ts      wiring, bootstrap     ⇄ IPC   Sidebar / Home / Run / Composer
   ipc.ts      the only IPC surface           Settings (lazy)
   preload     contextBridge, CJS
   harness     pi-durable tasks, entries, watches
-  tools       ten read-only tools
+  tools       read-only tools + plan/report/playbook
   estate      rules, Issues, change plans
   s3          readers, policy, access, changes
   analysis    one SQLite file per dataset
@@ -43,9 +43,11 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
    `timeout`, `stopped`); the projection never parses result text for it.
 5. Hooks guard the run. `beforeTool` blocks a repeated storage read and any
    call after the model tier's round budget (14 small, 24 mid, 32 large).
-   `afterTool` records the names and exposure a result shows. `onYield` asks
-   once for a corrected verdict when it names something no result showed or
-   contradicts what the readings proved (`shared/grounding.ts`).
+   `afterTool` records the names, exposure and evidence id a result shows.
+   `onYield` asks once for a corrected answer when the report summary or final
+   prose names something no result showed or contradicts what the readings
+   proved (`shared/grounding.ts`). `plan`, `report` and `playbook` are control
+   tools, not storage reads.
 6. The open task is streamed with `conversation.watch()`. Each frame appends
    new entries and pushes live state and `pi.usage` to the window through
    `agent:event`.
@@ -56,19 +58,21 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
    continues with the unread remainder first.
 9. pi compacts when the model context fills; a compaction entry appears as a
    divider. The model's provider-facing messages never reach the renderer.
-10. When a task settles, its request, current verdict and findings are written
-    to `search_docs` from the same `buildBrief()` projection the window uses.
+10. When a task settles, its request, report summary, findings and evidence are
+    written to `search_docs` from the same run/brief projection the window
+    uses.
     A settled account reading also writes one `readings` row per account: the
     trigger, coverage counts, open totals and whether the read was complete.
-    The row carries no request, verdict, policy, account id or secret. The shell
+    The row carries no request, answer, policy, account id or secret. The shell
     may send one notification if the window is in the background. Tasks without
     search rows are backfilled at startup.
 11. `harness.audit()` is the deterministic path. `ipc.ts` creates the task,
     returns it immediately, and starts `audit()` in the background. `audit()`
     surveys every account, reads access evidence for up to 24 buckets per
     account, emits transient `audit` progress, and writes one `sa.audit` entry.
-    The window expands that entry into ordinary checks and a verdict generated
-    by `shared/audit.ts`. It never asks the model.
+    The window expands that entry into ordinary checks and a synthesized run
+    report (`shared/run.ts`) whose summary comes from `shared/audit.ts`. It
+    never asks the model and uses the same run surface as a model task.
 12. `harness.reverify()` replays the read operations for buckets the task
     touched and the buckets and account block in its latest change plan, up to
     50 buckets per account, and writes one `sa.reverify` entry. When a plan
@@ -121,7 +125,7 @@ an access-denied read into the missing IAM action.
 These modules feed the same facts. `estate/rules.ts` decides the twelve rules
 (eleven per bucket, one per account) by code. `survey` and `config` both apply
 the same decisions to the estate and attach observations to their view, which
-is how the brief knows a finding was proved fixed.
+is how the run knows a finding was proved fixed.
 
 **Access is evidence, not one merged authorization decision.** Policy and ACL
 rows are grants; they are not intersected with every identity, SCP and condition
@@ -147,10 +151,12 @@ and truncation stay in the view.
 | `main/runtime/reverify-plan.ts` | deterministic plan-step comparison for re-verification |
 | `main/runtime/project.ts` | entries → `UiEntry`, live state, usage |
 | `main/runtime/search.ts` | sidebar search and index rows |
-| `shared/audit.ts` | deterministic account-check verdict from survey views |
-| `shared/brief.ts` | entries → brief, current-state folding, search text |
+| `shared/audit.ts` | deterministic account-check summary from survey views |
+| `shared/brief.ts` | entries → deterministic evidence (findings, coverage, fixes, data) |
+| `shared/run.ts` | plan + report blocks + evidence resolution + audit synthesis |
 | `shared/grounding.ts` | names and exposure a task's results show; correction input |
-| `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details |
+| `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details, evidence id |
+| `main/tools/control.ts` | `plan`, `report`, `playbook` control tools |
 | `main/s3/facts.ts` | one reading per bucket, exposure, rememberable posture |
 | `main/s3/policy.ts` | local policy evaluation, TLS enforcement |
 | `main/s3/account.ts` | account-wide public access block (STS, S3 Control) |
@@ -170,7 +176,8 @@ and truncation stay in the view.
 | `main/window-state.ts` | window bounds in `window.json`, clamped to a display |
 | `renderer/Sidebar.tsx` | task list, search, rename, pin, delete |
 | `renderer/Home.tsx` | account summary, demo/local-model entry |
-| `renderer/Brief.tsx` | brief, checks, focus, copy/save/export |
+| `renderer/Run.tsx` | run header, plan, report blocks, evidence, copy/save/export |
+| `renderer/Brief.tsx` | evidence body, checks, focus, findings |
 | `renderer/Composer.tsx` | request, steer, stop, @ focus, files |
 | `renderer/Settings.tsx` | model, accounts, memory, appearance, version |
 
@@ -194,7 +201,9 @@ pi rows, host task rows, search rows, datasets, audit rows and task directory.
 
 ## Deliberate absences
 
-No event-sourcing layer, no second queue, no SSE, no report generator, no MCP
-bridge, no skills loader, no subagents, no approval UI, no follow-up prompts, no
-background watch, no second window and no dashboard. pi owns the durable loop;
-the product owns storage semantics and the brief.
+No event-sourcing layer, no second queue, no SSE, no free-form report generator,
+no MCP bridge, no skills loader, no subagents, no approval UI, no follow-up
+prompts, no background watch, no second window and no dashboard. The agent
+composes from a fixed block vocabulary; the app resolves every data block to a
+tool result. pi owns the durable loop; the product owns storage semantics,
+evidence and validation.

@@ -78,10 +78,12 @@ export function namesInView(
   }
 }
 
+const CONTROL = new Set(['playbook', 'plan', 'report'])
+
 export function knownNames(entries: readonly UiEntry[]): Set<string> {
   const names = new Set<string>()
   for (const entry of entries) {
-    if (entry.kind === 'tool' && entry.status === 'done')
+    if (entry.kind === 'tool' && entry.status === 'done' && !CONTROL.has(entry.name))
       namesInView(entry.view, entry.target, names, entry.name)
     if (entry.kind === 'user') {
       for (const file of entry.attachments) names.add(file.name)

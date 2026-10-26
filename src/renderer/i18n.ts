@@ -318,6 +318,29 @@ const en = {
   localModels: 'Running on this machine',
   useLocal: 'Use {model}',
   useModel: 'Use',
+
+  runPlanTitle: 'Plan',
+  runAnswerTitle: 'Answer',
+  runEvidenceTitle: 'Evidence',
+  runStale: 'This answer belongs to an earlier question.',
+  runSynthesized: 'Deterministic account check',
+  runUnresolved: '{n} block(s) had no matching evidence and were omitted.',
+  runNoAnswer: 'The agent has not composed an answer yet.',
+  runTimeline: 'History',
+  runCoverage: 'Coverage',
+  runHigh: '{n} high',
+  runMedium: '{n} medium',
+  runLow: '{n} low',
+  runSources: '{n} sources',
+  runSourceOne: '1 source',
+  runNoScope: 'No fresh account read',
+  homeAccount: 'Account',
+  homeBuckets: 'Buckets',
+  homeLastRead: 'Last complete read',
+  homeRisk: 'Open risk',
+  runNoMatch: 'No current finding matches this block.',
+  runAgentPlan: 'The agent updates this plan as it reads.',
+  runViewEvidence: 'View evidence',
 }
 
 const zh: typeof en = {
@@ -631,6 +654,29 @@ const zh: typeof en = {
   localModels: '本机正在运行',
   useLocal: '使用 {model}',
   useModel: '使用',
+
+  runPlanTitle: '计划',
+  runAnswerTitle: '回答',
+  runEvidenceTitle: '证据',
+  runStale: '这是上一个问题的回答。',
+  runSynthesized: '确定性账号检查',
+  runUnresolved: '{n} 个内容块没有匹配的证据，已省略。',
+  runNoAnswer: 'agent 还没有组成回答。',
+  runTimeline: '历史',
+  runCoverage: '覆盖',
+  runHigh: '{n} 高',
+  runMedium: '{n} 中',
+  runLow: '{n} 低',
+  runSources: '{n} 个来源',
+  runSourceOne: '1 个来源',
+  runNoScope: '没有新的账号读取',
+  homeAccount: '账号',
+  homeBuckets: '桶',
+  homeLastRead: '最近完整读取',
+  homeRisk: '未解决风险',
+  runNoMatch: '没有与这个内容块匹配的当前发现。',
+  runAgentPlan: 'agent 会在读取过程中更新这个计划。',
+  runViewEvidence: '查看证据',
 }
 
 export type Dict = typeof en
@@ -654,6 +700,9 @@ const TOOL_EN: Record<string, string> = {
   fix: 'Prepared fix',
   note: 'Remembered',
   query: 'Ran a read-only query',
+  playbook: 'Read the playbook',
+  plan: 'Published a plan',
+  report: 'Composed the answer',
 }
 
 const TOOL_ZH: Record<string, string> = {
@@ -667,6 +716,9 @@ const TOOL_ZH: Record<string, string> = {
   fix: '生成修复',
   note: '记住',
   query: '运行只读查询',
+  playbook: '查阅手册',
+  plan: '发布计划',
+  report: '组成回答',
 }
 
 export function toolLabel(name: string, lang: Lang): string {

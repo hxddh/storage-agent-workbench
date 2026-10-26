@@ -20,6 +20,7 @@ import {
 import {
   Activity,
   ArrowDownToLine,
+  BookOpen,
   ChevronDown,
   ChevronRight,
   Code2,
@@ -28,6 +29,7 @@ import {
   FileText,
   Link2,
   List,
+  ListChecks,
   MoreHorizontal,
   Radar,
   Shield,
@@ -72,6 +74,9 @@ const ICONS: Record<ToolName, typeof Radar> = {
   fix: Wrench,
   note: StickyNote,
   query: Code2,
+  playbook: BookOpen,
+  plan: ListChecks,
+  report: FileText,
 }
 
 const FINDINGS_SHOWN = 5
@@ -165,7 +170,7 @@ function tableMarkdown(table: Table, limit = 50): string {
   return `${head}\n${body}${table.rows.length > rows.length ? '\n\n…' : ''}`
 }
 
-function briefMarkdown(title: string, brief: BriefModel, t: Dict, lang: Lang): string {
+export function briefMarkdown(title: string, brief: BriefModel, t: Dict, lang: Lang): string {
   const parts: string[] = [`# ${title}`]
   if (brief.verdict?.text) parts.push(brief.verdict.text)
   if (brief.findings.length) {
@@ -261,7 +266,7 @@ function briefMarkdown(title: string, brief: BriefModel, t: Dict, lang: Lang): s
   return `${parts.join('\n\n')}\n`
 }
 
-function FindingRow({
+export function FindingRow({
   finding,
   t,
   onOpen,
@@ -626,6 +631,11 @@ export function Brief({
   auditing = false,
   staleDays = 7,
   auditProgress = null,
+  evidenceOnly = false,
+  hideFindings = false,
+  hideData = false,
+  hideFix = false,
+  prefixMarkdown = '',
 }: {
   view: TaskView
   lang: Lang
@@ -637,6 +647,13 @@ export function Brief({
   auditing?: boolean
   staleDays?: number
   auditProgress?: AuditProgress | null
+  /** Render only findings, changes, not-read, data and checks; the run header owns the rest. */
+  evidenceOnly?: boolean
+  hideFindings?: boolean
+  hideData?: boolean
+  hideFix?: boolean
+  /** Markdown the run composed above this evidence body; included in Copy. */
+  prefixMarkdown?: string
 }) {
   const t = dict(lang)
   const brief = useMemo(
@@ -764,13 +781,15 @@ export function Brief({
         : ''
   const checked = brief.lastReadAt ? ago(brief.lastReadAt, t) : null
   const title = view.task.title
-  const hasContent = Boolean(brief.verdict || brief.findings.length || brief.checks.length)
+  const hasContent =
+    Boolean(brief.verdict || brief.findings.length || brief.checks.length) || evidenceOnly
   const answered = brief.findings.length > 0 || brief.accepted.length > 0
   const dataExpanded = dataOpen ?? (!answered || brief.data?.view.kind === 'config')
   const ungrounded = new Set(brief.verdict?.ungrounded ?? [])
   const contradicted = new Set(brief.verdict?.contradicted ?? [])
   const shownIssues = brief.findings.length + brief.accepted.length
-  const markdown = () => briefMarkdown(title, brief, t, lang)
+  const markdown = () =>
+    [prefixMarkdown, briefMarkdown(title, brief, t, lang)].filter(Boolean).join('\n\n')
   const ruleTitle = (fix: BriefFix) =>
     [...brief.findings, ...brief.accepted, ...brief.resolved].find(
       (finding) => finding.bucket === fix.view.bucket && finding.code === fix.view.code,
@@ -871,212 +890,215 @@ export function Brief({
     }
   }
 
-  return (
-    <div className="scroll">
-      <article className="brief" ref={root} aria-busy={live} onKeyDown={navigate}>
-        <h1 className="visually-hidden">{title}</h1>
-        <div className={`brief-meta ${hasContent ? '' : 'silent'}`}>
-          <span className={brief.coverage.length > 0 || coverageStatus ? 'brief-scope' : undefined}>
-            {[
-              scopeNames.join(' · '),
-              coverageStatus,
-              totalBuckets > 0 ? fill(t.scopeRead, { read: readBuckets, total: totalBuckets }) : '',
-              checked ? fill(t.checkedAt, { when: checked }) : '',
-              brief.findings.length > 0 ? fill(t.findingsCount, { n: brief.findings.length }) : '',
-              rememberedAt ? fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' }) : '',
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-          {hasContent && (
-            <span className="brief-actions">
-              <button className="text-action" type="button" onClick={() => void copy()}>
-                <Copy size={12} aria-hidden="true" />
-                {copied ? t.copied : t.copyBrief}
+  const body = (
+    <article
+      className={evidenceOnly ? 'run-evidence' : 'brief'}
+      ref={root}
+      aria-busy={live}
+      onKeyDown={navigate}
+    >
+      <h1 className="visually-hidden">{title}</h1>
+      <div className={`brief-meta ${hasContent ? '' : 'silent'}`}>
+        <span className={brief.coverage.length > 0 || coverageStatus ? 'brief-scope' : undefined}>
+          {[
+            scopeNames.join(' · '),
+            coverageStatus,
+            totalBuckets > 0 ? fill(t.scopeRead, { read: readBuckets, total: totalBuckets }) : '',
+            checked ? fill(t.checkedAt, { when: checked }) : '',
+            brief.findings.length > 0 ? fill(t.findingsCount, { n: brief.findings.length }) : '',
+            rememberedAt ? fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' }) : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </span>
+        {hasContent && (
+          <span className="brief-actions">
+            <button className="text-action" type="button" onClick={() => void copy()}>
+              <Copy size={12} aria-hidden="true" />
+              {copied ? t.copied : t.copyBrief}
+            </button>
+
+            <div className="brief-more">
+              <button
+                className="text-action"
+                type="button"
+                aria-label={t.moreActions}
+                aria-expanded={more}
+                onClick={() => setMore((value) => !value)}
+              >
+                <MoreHorizontal size={13} aria-hidden="true" />
               </button>
-
-              <div className="brief-more">
-                <button
-                  className="text-action"
-                  type="button"
-                  aria-label={t.moreActions}
-                  aria-expanded={more}
-                  onClick={() => setMore((value) => !value)}
-                >
-                  <MoreHorizontal size={13} aria-hidden="true" />
-                </button>
-                {more && (
-                  <div className="mini-menu" role="menu">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMore(false)
-                        saveBrief()
-                      }}
-                    >
-                      <ArrowDownToLine size={13} aria-hidden="true" />
-                      {t.saveBrief}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={auditing}
-                      onClick={() => {
-                        setMore(false)
-                        onAudit()
-                      }}
-                    >
-                      <Radar size={13} aria-hidden="true" />
-                      {auditing || auditProgress ? t.checkingAccount : t.checkAgain}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={reverifying}
-                      onClick={() => {
-                        setMore(false)
-                        void reverify()
-                      }}
-                    >
-                      {reverifying ? t.reverifying : t.reverify}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={async () => {
-                        setMore(false)
-                        if (await copyText(`${TASK_LINK_PREFIX}${view.task.id}`)) {
-                          setLinked(true)
-                          setTimeout(() => setLinked(false), 1500)
-                        }
-                      }}
-                    >
-                      <Link2 size={13} aria-hidden="true" />
-                      {linked ? t.copied : t.copyLink}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMore(false)
-                        exportEvidence()
-                      }}
-                    >
-                      {t.exportEvidence}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMore(false)
-                        void window.agent.exportPdf()
-                      }}
-                    >
-                      {t.savePdf}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </span>
-          )}
-        </div>
-
-        {auditProgress && (
-          <p className="audit-progress" role="status">
-            {fill(auditProgress.phase === 'survey' ? t.auditSurvey : t.auditAccess, {
-              account: auditProgress.account,
-              done: auditProgress.done,
-              total: auditProgress.total,
-            })}
-          </p>
-        )}
-
-        {!live && brief.questions.length > 0 && (
-          <p className="brief-request" data-entry-id={brief.questions.at(-1)?.id ?? undefined}>
-            {brief.questions.at(-1)?.text}
-          </p>
-        )}
-        {live && brief.questions.length > 0 && (
-          <p className="live-request">{brief.questions.at(-1)?.text}</p>
-        )}
-
-        <div aria-live="polite" aria-atomic="false">
-          {brief.verdict && (
-            <div
-              className={`verdict prose ${brief.verdict.streaming ? 'streaming' : ''} ${
-                brief.verdict.stale && live ? 'stale' : ''
-              }`}
-              data-verdict
-              title={brief.verdict.stale && live ? t.staleVerdict : undefined}
-            >
-              <Suspense fallback={<p>{plainVerdict(brief.verdict.text)}</p>}>
-                <Markdown
-                  text={brief.verdict.text}
-                  components={{
-                    code: ({ children, className }) => {
-                      const text = String(children ?? '').trim()
-                      const missing = !className && ungrounded.has(text)
-                      const wrong = !className && contradicted.has(text)
-                      return (
-                        <code
-                          className={
-                            [className, missing || wrong ? 'ungrounded' : '']
-                              .filter(Boolean)
-                              .join(' ') || undefined
-                          }
-                          title={
-                            missing ? t.ungroundedHint : wrong ? t.contradictedHint : undefined
-                          }
-                        >
-                          {children}
-                        </code>
-                      )
-                    },
-                  }}
-                />
-              </Suspense>
-            </div>
-          )}
-          {ungrounded.size > 0 && !brief.verdict?.streaming && (
-            <p className="grounding">
-              <TriangleAlert size={12} strokeWidth={1.7} aria-hidden="true" />
-              {t.ungroundedNote}
-            </p>
-          )}
-          {contradicted.size > 0 && !brief.verdict?.streaming && (
-            <p className="grounding">
-              <TriangleAlert size={12} strokeWidth={1.7} aria-hidden="true" />
-              {t.contradictedNote}
-            </p>
-          )}
-
-          {brief.notices.map((notice) => (
-            <div
-              className={`notice ${notice.tone}`}
-              key={notice.id}
-              role={notice.tone === 'error' ? 'alert' : undefined}
-            >
-              <span className="dot" aria-hidden="true" />
-              <span className="text">{noticeText(notice, t)}</span>
-              {notice.action && (
-                <button
-                  className="text-action"
-                  type="button"
-                  onClick={notice.action === 'retry' ? onRetry : onContinue}
-                >
-                  {notice.action === 'retry' ? t.retry : t.continue}
-                </button>
+              {more && (
+                <div className="mini-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMore(false)
+                      saveBrief()
+                    }}
+                  >
+                    <ArrowDownToLine size={13} aria-hidden="true" />
+                    {t.saveBrief}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={auditing}
+                    onClick={() => {
+                      setMore(false)
+                      onAudit()
+                    }}
+                  >
+                    <Radar size={13} aria-hidden="true" />
+                    {auditing || auditProgress ? t.checkingAccount : t.checkAgain}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={reverifying}
+                    onClick={() => {
+                      setMore(false)
+                      void reverify()
+                    }}
+                  >
+                    {reverifying ? t.reverifying : t.reverify}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={async () => {
+                      setMore(false)
+                      if (await copyText(`${TASK_LINK_PREFIX}${view.task.id}`)) {
+                        setLinked(true)
+                        setTimeout(() => setLinked(false), 1500)
+                      }
+                    }}
+                  >
+                    <Link2 size={13} aria-hidden="true" />
+                    {linked ? t.copied : t.copyLink}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMore(false)
+                      exportEvidence()
+                    }}
+                  >
+                    {t.exportEvidence}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMore(false)
+                      void window.agent.exportPdf()
+                    }}
+                  >
+                    {t.savePdf}
+                  </button>
+                </div>
               )}
             </div>
-          ))}
-        </div>
+          </span>
+        )}
+      </div>
 
-        {!live && !auditProgress && !brief.verdict && brief.checks.length === 0 && (
-          <p className="brief-empty">{t.emptyStream}</p>
+      {auditProgress && (
+        <p className="audit-progress" role="status">
+          {fill(auditProgress.phase === 'survey' ? t.auditSurvey : t.auditAccess, {
+            account: auditProgress.account,
+            done: auditProgress.done,
+            total: auditProgress.total,
+          })}
+        </p>
+      )}
+
+      {!live && brief.questions.length > 0 && (
+        <p className="brief-request" data-entry-id={brief.questions.at(-1)?.id ?? undefined}>
+          {brief.questions.at(-1)?.text}
+        </p>
+      )}
+      {live && brief.questions.length > 0 && (
+        <p className="live-request">{brief.questions.at(-1)?.text}</p>
+      )}
+
+      <div aria-live="polite" aria-atomic="false">
+        {brief.verdict && (
+          <div
+            className={`verdict prose ${brief.verdict.streaming ? 'streaming' : ''} ${
+              brief.verdict.stale && live ? 'stale' : ''
+            }`}
+            data-verdict
+            title={brief.verdict.stale && live ? t.staleVerdict : undefined}
+          >
+            <Suspense fallback={<p>{plainVerdict(brief.verdict.text)}</p>}>
+              <Markdown
+                text={brief.verdict.text}
+                components={{
+                  code: ({ children, className }) => {
+                    const text = String(children ?? '').trim()
+                    const missing = !className && ungrounded.has(text)
+                    const wrong = !className && contradicted.has(text)
+                    return (
+                      <code
+                        className={
+                          [className, missing || wrong ? 'ungrounded' : '']
+                            .filter(Boolean)
+                            .join(' ') || undefined
+                        }
+                        title={missing ? t.ungroundedHint : wrong ? t.contradictedHint : undefined}
+                      >
+                        {children}
+                      </code>
+                    )
+                  },
+                }}
+              />
+            </Suspense>
+          </div>
+        )}
+        {ungrounded.size > 0 && !brief.verdict?.streaming && (
+          <p className="grounding">
+            <TriangleAlert size={12} strokeWidth={1.7} aria-hidden="true" />
+            {t.ungroundedNote}
+          </p>
+        )}
+        {contradicted.size > 0 && !brief.verdict?.streaming && (
+          <p className="grounding">
+            <TriangleAlert size={12} strokeWidth={1.7} aria-hidden="true" />
+            {t.contradictedNote}
+          </p>
         )}
 
-        {(brief.findings.length > 0 || brief.accepted.length > 0 || brief.resolved.length > 0) && (
+        {brief.notices.map((notice) => (
+          <div
+            className={`notice ${notice.tone}`}
+            key={notice.id}
+            role={notice.tone === 'error' ? 'alert' : undefined}
+          >
+            <span className="dot" aria-hidden="true" />
+            <span className="text">{noticeText(notice, t)}</span>
+            {notice.action && (
+              <button
+                className="text-action"
+                type="button"
+                onClick={notice.action === 'retry' ? onRetry : onContinue}
+              >
+                {notice.action === 'retry' ? t.retry : t.continue}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {!live && !auditProgress && !brief.verdict && brief.checks.length === 0 && (
+        <p className="brief-empty">{t.emptyStream}</p>
+      )}
+
+      {!hideFindings &&
+        (brief.findings.length > 0 || brief.accepted.length > 0 || brief.resolved.length > 0) && (
           <section className="brief-section" aria-label={t.findingsTitle}>
             {brief.findings.length > 0 && <h2>{t.findingsTitle}</h2>}
             <div className="findings-list">
@@ -1157,225 +1179,225 @@ export function Brief({
           </section>
         )}
 
-        {reverifyError && (
-          <p className="brief-error">
-            {t.reverifyFailed}: {reverifyError}
+      {reverifyError && (
+        <p className="brief-error">
+          {t.reverifyFailed}: {reverifyError}
+        </p>
+      )}
+      {!live && brief.reverify && (
+        <section className="brief-section reverify-section" aria-label={t.reverifyTitle}>
+          <h2>{t.reverifyTitle}</h2>
+          <p className="quiet">
+            {fill(brief.reverify.checked === 1 ? t.reverifyCheckedOne : t.reverifyChecked, {
+              n: brief.reverify.checked,
+              changed: brief.reverify.changes.length,
+            })}{' '}
+            · {new Date(brief.reverify.at).toLocaleString()}
           </p>
-        )}
-        {!live && brief.reverify && (
-          <section className="brief-section reverify-section" aria-label={t.reverifyTitle}>
-            <h2>{t.reverifyTitle}</h2>
-            <p className="quiet">
-              {fill(brief.reverify.checked === 1 ? t.reverifyCheckedOne : t.reverifyChecked, {
-                n: brief.reverify.checked,
-                changed: brief.reverify.changes.length,
-              })}{' '}
-              · {new Date(brief.reverify.at).toLocaleString()}
-            </p>
-            {brief.reverify.skipped > 0 && (
-              <p className="quiet">{fill(t.reverifySkipped, { n: brief.reverify.skipped })}</p>
-            )}
-            {brief.reverify.truncated && <p className="quiet">{t.reverifyTruncated}</p>}
-            {brief.reverify.plan && (
-              <div className="reverify-plan">
-                <p className="quiet">
-                  {fill(t.planReverifySummary, {
-                    confirmed: brief.reverify.plan.confirmed,
-                    notApplied: brief.reverify.plan.notApplied,
-                    unknown: brief.reverify.plan.unknown,
-                  })}
+          {brief.reverify.skipped > 0 && (
+            <p className="quiet">{fill(t.reverifySkipped, { n: brief.reverify.skipped })}</p>
+          )}
+          {brief.reverify.truncated && <p className="quiet">{t.reverifyTruncated}</p>}
+          {brief.reverify.plan && (
+            <div className="reverify-plan">
+              <p className="quiet">
+                {fill(t.planReverifySummary, {
+                  confirmed: brief.reverify.plan.confirmed,
+                  notApplied: brief.reverify.plan.notApplied,
+                  unknown: brief.reverify.plan.unknown,
+                })}
+              </p>
+              {brief.reverify.plan.steps.map((step) => (
+                <p className="reverify-plan-row" key={`${step.bucket}:${step.code}`}>
+                  <span className={`plan-status ${step.status}`}>
+                    {step.status === 'confirmed'
+                      ? t.planStatusConfirmed
+                      : step.status === 'not_applied'
+                        ? t.planStatusNotApplied
+                        : t.planStatusUnknown}
+                  </span>
+                  <span className="mono">{step.bucket || t.accountWide}</span> · {step.title}
                 </p>
-                {brief.reverify.plan.steps.map((step) => (
-                  <p className="reverify-plan-row" key={`${step.bucket}:${step.code}`}>
-                    <span className={`plan-status ${step.status}`}>
-                      {step.status === 'confirmed'
-                        ? t.planStatusConfirmed
-                        : step.status === 'not_applied'
-                          ? t.planStatusNotApplied
-                          : t.planStatusUnknown}
-                    </span>
-                    <span className="mono">{step.bucket || t.accountWide}</span> · {step.title}
-                  </p>
-                ))}
-              </div>
-            )}
-            {brief.reverify.changes.length === 0 ? (
-              brief.reverify.plan && brief.reverify.plan.notApplied > 0 ? (
-                <p className="quiet">{t.reverifyPlanPending}</p>
-              ) : (
-                <p className="clean">{t.reverifyNoChange}</p>
-              )
+              ))}
+            </div>
+          )}
+          {brief.reverify.changes.length === 0 ? (
+            brief.reverify.plan && brief.reverify.plan.notApplied > 0 ? (
+              <p className="quiet">{t.reverifyPlanPending}</p>
             ) : (
-              <div className="change-list">
-                {brief.reverify.changes.slice(0, 20).map((change) => (
-                  <div className="change-row" key={`${change.bucket}:${change.code}`}>
-                    <span className="change-bucket mono">{change.bucket}</span>
-                    <span className="change-field">{change.title}</span>
-                    <span className="change-before">{stateLabel(change.before, t)}</span>
-                    <span className="change-arrow" aria-hidden="true">
-                      →
-                    </span>
-                    <span className="change-after">{stateLabel(change.after, t)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {!live && brief.changes.length > 0 && (
-          <section className="brief-section changes-section" aria-label={t.changesTitle}>
-            <h2>{t.changesTitle}</h2>
+              <p className="clean">{t.reverifyNoChange}</p>
+            )
+          ) : (
             <div className="change-list">
-              {brief.changes.slice(0, 12).map((change, index) => (
-                <div className="change-row" key={`${change.bucket}:${change.field}:${index}`}>
+              {brief.reverify.changes.slice(0, 20).map((change) => (
+                <div className="change-row" key={`${change.bucket}:${change.code}`}>
                   <span className="change-bucket mono">{change.bucket}</span>
-                  <span className="change-field">{changeField(change.field, lang)}</span>
-                  <span className="change-before">{change.before}</span>
+                  <span className="change-field">{change.title}</span>
+                  <span className="change-before">{stateLabel(change.before, t)}</span>
                   <span className="change-arrow" aria-hidden="true">
                     →
                   </span>
-                  <span className="change-after">{change.after}</span>
+                  <span className="change-after">{stateLabel(change.after, t)}</span>
                 </div>
               ))}
             </div>
-            {brief.attribution && (
-              <p className="quiet">
-                {brief.attribution.events.length
-                  ? `${fill(t.attributionWindow, { days: brief.attribution.days ?? 90 })} · ${brief.attribution.events
-                      .map(
-                        (event) =>
-                          `${event.event} · ${event.actor} · ${new Date(event.at).toLocaleString()}`,
-                      )
-                      .join('  ·  ')}`
-                  : brief.attribution.status === 'ok'
-                    ? fill(t.attributionNone, { days: brief.attribution.days ?? 90 })
-                    : `${t.attributionUnavailable} (${brief.attribution.status}, ${brief.attribution.days ?? 90}d).`}
-                {brief.attribution.events.length && brief.attribution.status !== 'ok'
-                  ? ` · ${t.attributionUnavailable} (${brief.attribution.status})`
-                  : ''}
-                {brief.attribution.truncated ? ` · ${t.attributionTruncated}` : ''}
-              </p>
-            )}
-          </section>
-        )}
+          )}
+        </section>
+      )}
 
-        {(openReads > 0 || gone.length > 0) && !live && (
-          <section className="brief-section blind-section" aria-label={t.openQuestions}>
-            {unread > 0 && (
-              <p className="blind">
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                {fill(t.blind, { n: unread })}
-              </p>
-            )}
-            {pending > 0 && (
-              <p className="blind">
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                {fill(t.pendingBuckets, { n: pending })}
-              </p>
-            )}
-            {truncated > 0 && (
-              <p className="blind">
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                {fill(t.scopeTruncated, { n: truncated })}
-              </p>
-            )}
-            {failedReads > 0 && (
-              <p className="blind">
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                {fill(t.failedReads, { n: failedReads })}
-              </p>
-            )}
-            {accessGaps > 0 && (
-              <p className="blind">
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                {fill(t.accessOpen, { n: accessGaps })}
-              </p>
-            )}
-            {brief.undecided.map((item) => (
-              <p className="blind" key={item.code}>
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                {fill(t.undecidedRule, {
-                  n: item.count,
-                  title: item.title,
-                  buckets: item.buckets.slice(0, 6).join(', '),
-                })}
-                {item.count > item.buckets.length && item.buckets.length === 20 ? ' …' : ''}
-              </p>
-            ))}
-            {brief.blind.map((item) => (
-              <p className="blind" key={item.key}>
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                <span className="mono">{item.bucket}</span> · {item.title}
-              </p>
-            ))}
-            {permissions.map((gap) => (
-              <p className="blind permission-gap" key={`${gap.bucket}:${gap.action}`}>
-                <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
-                <span className="mono">{gap.bucket}</span> · {gap.item} · <code>{gap.action}</code>
-              </p>
-            ))}
-            {gone.length > 0 && (
-              <p className="quiet">{fill(t.goneBuckets, { names: gone.join(', ') })}</p>
-            )}
-          </section>
-        )}
-
-        {!answered && read.complete && !live && (
-          <section className="brief-section">
-            <p className="clean">{t.noFindingsClean}</p>
-          </section>
-        )}
-
-        <FixSection fixes={brief.fixes} titleOf={ruleTitle} t={t} />
-
-        {brief.data && (
-          <section className="brief-section data-section">
-            <button
-              className="section-head"
-              type="button"
-              aria-expanded={dataExpanded}
-              onClick={() => setDataOpen(!dataExpanded)}
-            >
-              <span className="section-title">
-                {brief.data.view.kind === 'config' ? t.accessTitle : t.dataTitle}
-              </span>
-              <span className="section-target data-count">{dataSummary(brief.data, t)}</span>
-              <ChevronRight size={13} className={`chev ${dataExpanded ? 'open' : ''}`} />
-            </button>
-            {dataExpanded && <DataSection data={brief.data} t={t} />}
-          </section>
-        )}
-
-        {brief.checks.length > 0 && (
-          <section className="checks-section">
-            <button
-              className="checks-head"
-              type="button"
-              aria-expanded={openChecks}
-              onClick={() => setOpenChecks((value) => !value)}
-            >
-              <span role="status">{receipt(brief, view.usage, t)}</span>
-              <ChevronRight size={13} className={`chev ${openChecks ? 'open' : ''}`} />
-            </button>
-            {openChecks && (
-              <div className="checks-list">
-                {brief.checks.map((check) => (
-                  <CheckRow
-                    key={check.id}
-                    check={check}
-                    open={openCheck === check.id}
-                    onToggle={() => setOpenCheck((id) => (id === check.id ? null : check.id))}
-                    lang={lang}
-                    t={t}
-                    taskTitle={title}
-                  />
-                ))}
+      {!live && brief.changes.length > 0 && (
+        <section className="brief-section changes-section" aria-label={t.changesTitle}>
+          <h2>{t.changesTitle}</h2>
+          <div className="change-list">
+            {brief.changes.slice(0, 12).map((change, index) => (
+              <div className="change-row" key={`${change.bucket}:${change.field}:${index}`}>
+                <span className="change-bucket mono">{change.bucket}</span>
+                <span className="change-field">{changeField(change.field, lang)}</span>
+                <span className="change-before">{change.before}</span>
+                <span className="change-arrow" aria-hidden="true">
+                  →
+                </span>
+                <span className="change-after">{change.after}</span>
               </div>
-            )}
-          </section>
-        )}
-      </article>
-    </div>
+            ))}
+          </div>
+          {brief.attribution && (
+            <p className="quiet">
+              {brief.attribution.events.length
+                ? `${fill(t.attributionWindow, { days: brief.attribution.days ?? 90 })} · ${brief.attribution.events
+                    .map(
+                      (event) =>
+                        `${event.event} · ${event.actor} · ${new Date(event.at).toLocaleString()}`,
+                    )
+                    .join('  ·  ')}`
+                : brief.attribution.status === 'ok'
+                  ? fill(t.attributionNone, { days: brief.attribution.days ?? 90 })
+                  : `${t.attributionUnavailable} (${brief.attribution.status}, ${brief.attribution.days ?? 90}d).`}
+              {brief.attribution.events.length && brief.attribution.status !== 'ok'
+                ? ` · ${t.attributionUnavailable} (${brief.attribution.status})`
+                : ''}
+              {brief.attribution.truncated ? ` · ${t.attributionTruncated}` : ''}
+            </p>
+          )}
+        </section>
+      )}
+
+      {(openReads > 0 || gone.length > 0) && !live && (
+        <section className="brief-section blind-section" aria-label={t.openQuestions}>
+          {unread > 0 && (
+            <p className="blind">
+              <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+              {fill(t.blind, { n: unread })}
+            </p>
+          )}
+          {pending > 0 && (
+            <p className="blind">
+              <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+              {fill(t.pendingBuckets, { n: pending })}
+            </p>
+          )}
+          {truncated > 0 && (
+            <p className="blind">
+              <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+              {fill(t.scopeTruncated, { n: truncated })}
+            </p>
+          )}
+          {failedReads > 0 && (
+            <p className="blind">
+              <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+              {fill(t.failedReads, { n: failedReads })}
+            </p>
+          )}
+          {accessGaps > 0 && (
+            <p className="blind">
+              <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+              {fill(t.accessOpen, { n: accessGaps })}
+            </p>
+          )}
+          {brief.undecided.map((item) => (
+            <p className="blind" key={item.code}>
+              <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+              {fill(t.undecidedRule, {
+                n: item.count,
+                title: item.title,
+                buckets: item.buckets.slice(0, 6).join(', '),
+              })}
+              {item.count > item.buckets.length && item.buckets.length === 20 ? ' …' : ''}
+            </p>
+          ))}
+          {brief.blind.map((item) => (
+            <p className="blind" key={item.key}>
+              <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+              <span className="mono">{item.bucket}</span> · {item.title}
+            </p>
+          ))}
+          {permissions.map((gap) => (
+            <p className="blind permission-gap" key={`${gap.bucket}:${gap.action}`}>
+              <TriangleAlert size={13} strokeWidth={1.7} aria-hidden="true" />
+              <span className="mono">{gap.bucket}</span> · {gap.item} · <code>{gap.action}</code>
+            </p>
+          ))}
+          {gone.length > 0 && (
+            <p className="quiet">{fill(t.goneBuckets, { names: gone.join(', ') })}</p>
+          )}
+        </section>
+      )}
+
+      {!answered && read.complete && !live && (
+        <section className="brief-section">
+          <p className="clean">{t.noFindingsClean}</p>
+        </section>
+      )}
+
+      {!hideFix && <FixSection fixes={brief.fixes} titleOf={ruleTitle} t={t} />}
+
+      {!hideData && brief.data && (
+        <section className="brief-section data-section">
+          <button
+            className="section-head"
+            type="button"
+            aria-expanded={dataExpanded}
+            onClick={() => setDataOpen(!dataExpanded)}
+          >
+            <span className="section-title">
+              {brief.data.view.kind === 'config' ? t.accessTitle : t.dataTitle}
+            </span>
+            <span className="section-target data-count">{dataSummary(brief.data, t)}</span>
+            <ChevronRight size={13} className={`chev ${dataExpanded ? 'open' : ''}`} />
+          </button>
+          {dataExpanded && <DataSection data={brief.data} t={t} />}
+        </section>
+      )}
+
+      {brief.checks.length > 0 && (
+        <section className="checks-section">
+          <button
+            className="checks-head"
+            type="button"
+            aria-expanded={openChecks}
+            onClick={() => setOpenChecks((value) => !value)}
+          >
+            <span role="status">{receipt(brief, view.usage, t)}</span>
+            <ChevronRight size={13} className={`chev ${openChecks ? 'open' : ''}`} />
+          </button>
+          {openChecks && (
+            <div className="checks-list">
+              {brief.checks.map((check) => (
+                <CheckRow
+                  key={check.id}
+                  check={check}
+                  open={openCheck === check.id}
+                  onToggle={() => setOpenCheck((id) => (id === check.id ? null : check.id))}
+                  lang={lang}
+                  t={t}
+                  taskTitle={title}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </article>
   )
+  return evidenceOnly ? body : <div className="scroll">{body}</div>
 }

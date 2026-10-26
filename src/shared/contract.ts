@@ -23,6 +23,9 @@ export type ToolName =
   | 'fix'
   | 'note'
   | 'query'
+  | 'playbook'
+  | 'plan'
+  | 'report'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
 
@@ -201,6 +204,29 @@ export interface Chart {
   unit?: string
 }
 
+/** One step of the agent's own investigation plan. */
+export interface PlanStep {
+  title: string
+  status: 'pending' | 'active' | 'done' | 'blocked'
+  detail?: string
+}
+
+export type ReportTone = 'info' | 'warn' | 'danger' | 'ok'
+
+/**
+ * One block of an agent-composed answer. Free text is bounded to a summary or
+ * a callout; all data blocks point at one tool result by its evidence id, so the
+ * window renders what the tool returned rather than a model-authored copy.
+ */
+export type ReportBlock =
+  | { kind: 'summary'; text: string; evidence: string[] }
+  | { kind: 'callout'; tone: ReportTone; text: string; title?: string; evidence: string[] }
+  | { kind: 'table'; evidence: string[]; title?: string; limit?: number }
+  | { kind: 'findings'; bucket?: string; code?: string; limit?: number }
+  | { kind: 'timeline'; evidence: string[]; title?: string; limit?: number }
+  | { kind: 'plan'; evidence: string[]; title?: string }
+  | { kind: 'code'; evidence: string[]; title?: string }
+
 export type ToolView =
   | {
       kind: 'survey'
@@ -313,6 +339,9 @@ export type ToolView =
       /** Sources the access question could not read. */
       blind?: { source: string; status: string }[]
     }
+  | { kind: 'playbook'; cards: { name: string; body: string }[] }
+  | { kind: 'plan'; steps: PlanStep[]; note?: string }
+  | { kind: 'report'; title?: string; blocks: ReportBlock[] }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'
 
@@ -323,6 +352,8 @@ export interface ToolDetails {
   view: ToolView | null
   ms: number | null
   status: ToolStatus
+  /** Stable id the model cites from a report block. */
+  evidenceId?: string
 }
 
 /** App notices are codes; the window words them in the user's language. */
@@ -409,6 +440,7 @@ export type UiEntry =
       ms: number | null
       view: ToolView | null
       callId?: string
+      evidenceId?: string
     }
   | {
       id: string
@@ -672,4 +704,7 @@ export const TOOL_LABEL: Record<ToolName, string> = {
   fix: 'Prepared fix',
   note: 'Remembered',
   query: 'Ran a read-only query',
+  playbook: 'Read the playbook',
+  plan: 'Published a plan',
+  report: 'Composed the answer',
 }

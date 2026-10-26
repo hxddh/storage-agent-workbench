@@ -774,7 +774,25 @@ export class AgentHarness {
         CONTEXT,
       )
       await this.deps.db.touchTask(taskId)
-      await this.index(taskId).catch(() => undefined)
+      // `write` submissions land in the durable log just after submit()
+      // returns. Index the report we already hold instead of racing the active
+      // view. Search only needs the summary and the current Issues; a finding
+      // hit can load the task and reveal its check.
+      const auditId = `audit:${taskId}`
+      const auditDocs: { entryId: string; kind: string; text: string; at: string }[] = [
+        { entryId: 'verdict', kind: 'answer', text: report.verdict, at: report.at },
+      ]
+      report.checks.forEach((check, index) => {
+        if (check.view?.kind !== 'survey') return
+        for (const issue of check.view.issues)
+          auditDocs.push({
+            entryId: `f:${auditId}:${index}:issue:${issue.id}`,
+            kind: 'finding',
+            text: [issue.bucket, issue.title, issue.detail].filter(Boolean).join(' · '),
+            at: check.at,
+          })
+      })
+      await this.deps.db.replaceSearchDocs(taskId, auditDocs).catch(() => undefined)
       await this.recordReadings(
         taskId,
         'check',
@@ -1238,7 +1256,11 @@ export class AgentHarness {
   private async index(taskId: string): Promise<void> {
     const conversation = await this.conversation(taskId)
     if (!conversation) return
-    await this.deps.db.replaceSearchDocs(taskId, searchDocsFor(await this.entries(conversation)))
+    // Read the durable view, not the active watch cache: a just-written audit
+    // entry may not have reached the cache yet, and an empty index is worse
+    // than a slightly later one.
+    const state = await conversation.viewState(CONTEXT)
+    await this.deps.db.replaceSearchDocs(taskId, searchDocsFor(mapEntries(state.value.entries)))
   }
 
   private async backfillSearch(): Promise<void> {

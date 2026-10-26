@@ -38,7 +38,7 @@ Issue lifecycle (opened, resolved, gone, accepted, recurred), schema migrations,
 scope and the tool floor, code mode (sandbox, budgets, timeout, import), demo
 storage, generated fixes, plans and impact, log normalization and IP masking,
 CSV/Parquet import and the aggregate whitelist, the search index, entry → UI
-projection, brief current-state folding, verdict grounding, the run guardrails,
+projection, run/evidence folding, answer grounding, the run guardrails,
 redaction, provider capabilities, posture diffs, permission diagnosis, model
 windows, access evaluation, reading records and plan-aware re-verification.
 `Brief.test.tsx` runs in jsdom; the rest use Node.
@@ -71,7 +71,7 @@ windows, access evaluation, reading records and plan-aware re-verification.
   plan-aware re-verification, stop/continue, search, code-mode rows and the demo
   account.
 - `scripts/e2e-audit.mjs` starts with no model and no account, chooses demo
-  storage explicitly, waits for the deterministic brief, checks that the
+  storage explicitly, waits for the deterministic run, checks that the
   composer stays disabled and captures the no-model state.
 - `scripts/shots.mjs` captures Home, Settings, task, data, estate and dark-mode
   states under `.amp/in/artifacts`.
@@ -85,7 +85,7 @@ windows, access evaluation, reading records and plan-aware re-verification.
 
 ### Evaluation
 
-`scripts/eval.mjs` has 28 scenarios. It scores findings, grounded verdicts,
+`scripts/eval.mjs` has 28 scenarios. It scores findings, grounded answers,
 blind-spot honesty, memory-first and estate-history behavior, open-read
 closure, verify-after-fix, code mode, access questions, prompt-injection-shaped
 object names and call counts. The script runs the real window against fake S3.
@@ -137,7 +137,7 @@ tagged release builds all three platforms or publishes nothing.
   packaging without them, but must not present that as a quality or signing
   claim.
 - There is no automated native-dialog test for the file picker or save dialog.
-- Search indexes titles, requests, findings and the current verdict only; it
+- Search indexes titles, requests, findings and the report summary only; it
   does not index attachments or every object name. It returns at most 20 hits.
 - The sidebar shows the 500 most recently updated tasks; Settings lists the 100
   most recent notes. Older rows remain in SQLite but are not shown.

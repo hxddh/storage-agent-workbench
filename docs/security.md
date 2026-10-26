@@ -89,7 +89,7 @@ answer:
 - Display is capped at 120 paths; IAM pagination, SCP pages, Access Analyzer
   pages and role trust have their own bounds. Truncation is reported.
 - A model-free account check reads access paths for up to 24 buckets per
-  account. When that is fewer than the account has, the brief states
+  account. When that is fewer than the account has, the run states
   `examined / total`.
 - A missing permission is a named blind spot, not an empty grant list.
 
@@ -114,7 +114,7 @@ unread", not "this is the complete set of principals who can reach the bucket".
   never receives a credential, a raw provider message or a filesystem handle.
 - **The model is untrusted**: it can propose a fix, never apply one; it cannot
   open, resolve or accept Issues, and its prose is never parsed as product
-  state. A name in the verdict that no tool returned is marked on the page.
+  state. A name in the answer summary that no tool returned is marked on the page.
   A clean account claim while a run still has open reads is corrected once; the
   page's `Reads open` status remains authoritative. Tool output is wrapped as
   untrusted data before the model sees it.

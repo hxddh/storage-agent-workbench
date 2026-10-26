@@ -53,6 +53,9 @@ const TOOL_NAMES = new Set<ToolName>([
   'fix',
   'note',
   'query',
+  'playbook',
+  'plan',
+  'report',
 ])
 
 function iso(timestamp: number | undefined): string {
@@ -113,6 +116,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
             note: check.note,
             ms: check.ms,
             view: check.view,
+            evidenceId: `${id}:${index}`,
           })
         out.push({ id: `${id}:answer`, kind: 'answer', at: report.at, text: report.verdict })
       }
@@ -169,6 +173,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
         ms: details?.ms ?? message.durationMs ?? null,
         view: details?.view ?? null,
         callId: message.toolCallId,
+        ...(details?.evidenceId ? { evidenceId: details.evidenceId } : {}),
       })
       continue
     }

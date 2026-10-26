@@ -1,21 +1,22 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 26.0.0**. Read
+> Implementation contract for **Storage Agent 27.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes and the changelog are history.
 
 ## The product
 
-A local, read-only agent for object storage. One window, one brief, one
+A local, read-only agent for object storage. One window, one run, one
 composer. A **Task** is a question or a deterministic account check; the agent
-remembers what it read in an **estate**, and the task's page is a **brief**
-projected from its tool results.
+remembers what it read in an **estate**, and the task's page is a **run**: the
+agent's own plan, the answer blocks it composed, and the evidence behind them.
 
 The invariant:
 
 > The task is the window's object; the estate is the agent's memory; every
-> claim on the page is grounded in a tool call.
+> claim on the page is grounded in a tool call. The agent owns the plan and the
+> composition; the application owns the capabilities, evidence and validation.
 
 ## Non-negotiables
 
@@ -31,10 +32,12 @@ The invariant:
    `bound()` and `redact()`; `details` reaching the window are already shaped.
    Tool status comes from `details.status`, never from result text.
 5. Nothing is invented: an unreadable or unsupported read leaves the question
-   open, never a clean bill of health. The brief shows the blind spot. A
-   backticked name in the verdict that no tool returned is marked. The scope
-   line says `Reads complete` only when account coverage, pending reads, access
-   gaps and failed reads are closed; a narrowed re-read never counts as account
+   open, never a clean bill of health. The run shows the blind spot. A
+   backticked name in the answer or report summary that no tool returned is
+   marked. Report data blocks point at a tool result by `evidenceId`; the window
+   drops a block whose evidence is missing and says so. The scope line says
+   `Reads complete` only when account coverage, pending reads, access gaps and
+   failed reads are closed; a narrowed re-read never counts as account
    coverage. A clean account claim is corrected once while reads remain open.
 6. Fixes are one deterministic change plan the user applies. There is no Apply
    button. Only re-verification may call a step confirmed; an unapplied step is
@@ -66,12 +69,14 @@ The invariant:
   builds only, with a visible missing-feed state.
 - `src/preload/index.ts` — `contextBridge` surface, sandboxed, CJS.
 - `src/shared/contract.ts` — the single type contract; both sides import it.
-- `src/shared/brief.ts` — the one projection from `UiEntry[]` to the brief;
-  the window renders it and the main process indexes the same findings.
-- `src/shared/audit.ts` — the deterministic verdict for a model-free account
+- `src/shared/brief.ts` — the deterministic evidence projection from
+  `UiEntry[]`: findings, coverage, fixes, data and checks.
+- `src/shared/run.ts` — the agent-native projection: the latest plan, the
+  composed report blocks, evidence resolution, grounding and audit synthesis.
+- `src/shared/audit.ts` — the deterministic summary for a model-free account
   check; it names only buckets and counts already present in survey views.
 - `src/shared/grounding.ts` — which names and exposure a task's results show;
-  used by the brief and by the agent's `onYield` correction.
+  used by the run and by the agent's `onYield` correction.
 - `src/main/runtime/harness.ts` — pi-durable lifecycle, task CRUD, model per
   run, conversation watch, task-graph watch, model-free `audit()`, re-verify,
   purge on delete.
@@ -83,10 +88,12 @@ The invariant:
 - `src/main/runtime/search.ts` — sidebar search and the derived index rows.
 - `src/main/runtime/agent.ts` — the one extension: prompt sections, tools,
   hooks, per-run read coverage and the one clean-claim correction.
-- `src/main/tools/*` — ten tools through `agentTool()`, which owns scope,
-  bounds, timeout, audit, redaction, status and the untrusted envelope.
-  `estate` returns current memory and, with `history`, Issue events and posture
-  changes filtered by account, bucket, code or `since`.
+- `src/main/tools/*` — read-only storage tools through `agentTool()`, which
+  owns scope, bounds, timeout, audit, redaction, status, evidence ids and the
+  untrusted envelope; plus the control tools `plan`, `report` and `playbook`
+  in `tools/control.ts`. `estate` returns current memory and, with `history`,
+  Issue events and posture changes filtered by account, bucket, code or
+  `since`.
 - `src/main/s3/facts.ts` — the one reading of a bucket; `s3/policy.ts`
   evaluates a policy document locally; `s3/account.ts` reads the account-wide
   block; `s3/metrics.ts` reads CloudWatch capacity and prices it;
@@ -124,18 +131,20 @@ changes are append-only migrations in `db.ts`, gated by `user_version` (head
 **11**).
 
 `readings` records one settled account survey: trigger, coverage counts, open
-high/total and whether it was complete. It stores no request, verdict, policy,
+high/total and whether it was complete. It stores no request, answer, policy,
 account id or secret. `complete` is false for any narrowed or re-verified read;
 Home's "last complete read" comes from this table. `estate(history: true)`
 includes reading rows only in an unfiltered history.
 
 `search_docs` is a derived index (title search reads `task_meta` directly). It
 is rebuilt for a conversation when that conversation settles, and backfilled at
-startup for tasks without rows. It stores the request, the current verdict
-(`entry_id = 'verdict'`) and one row per finding (`f:<source entry>:<key>`).
+startup for tasks without rows. It stores the request, the current answer
+summary (`entry_id = 'verdict'`) and one row per finding (`f:<source entry>:<key>`).
 A model-free check writes one `sa.audit` entry; its `survey` and `access`
 progress events are transient and never persisted. It has no `sa.user`
-request, so the page shows its verdict and checks without a fake question.
+request, so the page shows its synthesized report and checks without a fake
+question. Its search rows are written from the report directly, because a
+`write` submission may not have reached the active view when indexing runs.
 
 Deleting a task purges `task_meta`, `search_docs`, its pi conversation, entries,
 tasks, submissions, documents and revisions, datasets, audit rows and
@@ -144,19 +153,26 @@ a null conversation id. There is no background watch.
 
 ## Agent
 
-One extension, ten tools: `survey`, `buckets`, `objects`, `object`, `config`,
-`probe`, `estate`, `fix`, `note`, `query`. `query` exists because questions over
-many objects or buckets (largest prefixes, data untouched for a year, buckets by
-size) cannot be carried to the model by a fixed tool without flooding its
-context or adding one tool per question. It also imports attached logs and
-inventories through `dataset` / `aggregate`; there is no separate analyze tool.
-Adding an eleventh requires saying why `query` cannot do the job.
+One extension, thirteen tools. Ten are read-only storage reads: `survey`,
+`buckets`, `objects`, `object`, `config`, `probe`, `estate`, `fix`, `note`,
+`query`. Three are control tools: `plan` publishes the investigation plan,
+`report` composes the answer blocks, and `playbook` returns a field-guide card
+when the agent asks for one. `query` exists because questions over many objects
+or buckets (largest prefixes, data untouched for a year, buckets by size) cannot
+be carried to the model by a fixed tool without flooding its context or adding
+one tool per question. It also imports attached logs and inventories through
+`dataset` / `aggregate`; there is no separate analyze tool. Adding another
+storage tool requires saying why `query` cannot do the job; control tools are
+not storage reads.
 
-Prompt sections: identity, today, method, answer format, method cards, estate
-digest, language. The model writes only the verdict: at most two sentences, no
-headings, tables or restated numbers, every bucket, key and account name in
-backticks. Findings, tables, fixes and checks are projected by the window from
-`details`.
+Prompt sections: identity, today, policy, capabilities, compose, estate digest,
+language. The policy states the goal, safety and evidence rules; the detailed
+method cards live in `playbook` and are consulted on demand. The model owns the
+plan and the composition. It can answer with a summary, callout, table,
+findings, timeline, plan or code block. Every data block points at one tool
+result by its `evidenceId`; the window resolves the actual view, drops a block
+whose evidence is missing, and marks names the task never showed. The model
+never authors a table of facts or an Issue transition.
 
 `fix` returns one change plan: lifecycle rules merge per bucket, a policy fix
 is merged only when the current policy was read and contains no account id,
@@ -164,23 +180,24 @@ and an unread or unsafe merge becomes a manual step with a blocker. The plan
 names its baseline, residual findings and unreadable dependencies. It remains
 text for the user.
 
-The method reads memory first (`estate`), surveys only when memory is empty,
-stale, or the question is about current exposure, after a fix re-reads only
-that bucket (`survey` with `buckets`), and uses `query` for questions over many
-objects or buckets. Temporal questions use `estate(history: true)` with
-optional `since`, `bucket` or `code`; it returns Issue events and posture
-changes, never raw request text. A survey reads up to 5,000 buckets,
-longest-unread first, and may be called again to continue. Hooks: a repeated
-storage read is blocked and left off the page; a storage tool stops at the
-model-tier round budget (**14 small, 24 mid, 32 large**); a verdict that names
-something no tool returned, or calls a bucket public (or not) against the
-readings, gets one correction; a clean account claim while the run has open
-reads gets one correction. Read coverage is per run: a narrowed survey updates
-its buckets but never replaces an account-wide survey's pending, blind or
-truncated coverage. Every model run uses the configured model and its inferred
-reasoning level. Compaction is pi's, configured by model context window. The
-no-model `audit()` path runs the same survey and access readers without a model,
-emits transient progress, and writes deterministic state.
+The agent decides when to read memory (`estate`), survey an account, review
+one bucket (`config`), run `query`, or ask for history. The policy still says
+read before concluding; a survey reads up to 5,000 buckets, longest-unread
+first, and may be called again. Temporal questions use `estate(history: true)`
+with optional `since`, `bucket` or `code`; it returns Issue events and posture
+changes, never raw request text. Hooks: a repeated storage read is blocked and
+left off the page; a storage tool stops at the model-tier round budget (**14
+small, 24 mid, 32 large**); an answer that names something no tool returned, or
+calls a bucket public (or not) against the readings, gets one correction; a
+clean account claim while the run has open reads gets one correction; an
+answer that ran a read but did not call `report` gets one correction. The
+correction sees the report summary as well as the final prose. Read coverage is
+per run: a narrowed survey updates its buckets but never replaces an
+account-wide survey's pending, blind or truncated coverage. Every model run uses
+the configured model and its inferred reasoning level. Compaction is pi's,
+configured by model context window. The no-model `audit()` path runs the same
+survey and access readers without a model, emits transient progress, and writes
+a deterministic report that the same run surface renders.
 
 `harness.audit()` surveys every configured account and examines access evidence
 for up to 24 buckets per account, reporting examined/total when the run covers
@@ -194,44 +211,49 @@ unknown. Neither path calls a model. A settled unscoped survey writes one
 
 ## Window
 
-`Sidebar · brief · Composer`, plus a full-screen Settings sheet. No side pane,
+`Sidebar · run · Composer`, plus a full-screen Settings sheet. No side pane,
 no command palette, no second window, no chat transcript.
 
 The task list groups pinned, today and earlier, with a state dot and a relative
-time. The sidebar has new task, search and Settings; task rows support rename,
-pin and delete. A task title appears once, in the sidebar, plus the compact top
-bar below 860px.
+time. Titles may take two lines; task rows support rename, pin and delete. A
+task title appears once, in the sidebar, plus the compact top bar below 860px.
 
-The brief starts with a deterministic scope line naming the account(s),
-`Reads complete` or `Reads open: n · m blocked`, checked/total buckets, the read
-time and finding count. A failed or stopped storage read keeps the line open.
-Copy and a single overflow menu are always visible. The overflow holds save
-Markdown, check again, re-verify, copy link, export evidence and save PDF.
-`Check again` opens a new check task; re-verify writes a report in the current
-task. Home reads its "last complete read" from the reading records and never
-substitutes a single bucket's last read.
+A task with a plan or report is an agent run. The run header names the question
+or task, the account(s), `Reads complete` or `Reads open: n · m blocked`,
+checked/total buckets, the read time and the severity counts. A failed or
+stopped storage read keeps the line open. Copy and one overflow menu sit in the
+header: save Markdown, check again, re-verify, copy link, export evidence and
+save PDF. `Check again` opens a new check task; re-verify writes a report in the
+current task. Home reads its "last complete read" from the reading records.
 
-A model run shows a check the moment a tool starts and folds the checks to a
-receipt (checks · time · tokens) when it ends. A model-free check shows a
-transient progress line and writes its final checks when complete. The brief
-shows the verdict, current findings grouped by bucket (merged by rule and
-bucket, severity ordered, memory marked, five visible with **N more**), what the
-task proved fixed, accepted risks folded, re-verification with plan status,
-changes, **Not read**, the change plan (baseline, manual blockers, residual),
-one data section (folded when findings answer, except access data;
-a query's rows and chart, the survey table with capacity, or the estate's
-remembered buckets and its Issue/posture history) and checks. The
-latest request is one quiet line above the verdict. There are no next-step
-suggestions or follow-up prompts. A query's script opens under its check as the
-evidence. Results are flat sections separated by hairlines, never cards.
-Findings carry their Security Hub control where one matches; when a survey view
-carries fewer Issues than the account has, the brief says how many.
+The plan section is the agent's own 3–6 steps with pending/active/done/blocked
+states; it is not a transcript. The answer section renders the ordered report
+blocks: summary, callout, table, findings, timeline, plan or code. A data block
+resolves one evidence id to the tool view that proved it; a missing block is
+omitted with a quiet note. The deterministic evidence follows: current findings
+grouped by bucket (merged by rule and bucket, severity ordered, memory marked,
+five visible with **N more**), what the task proved fixed, accepted risks
+folded, re-verification with plan status, changes, **Not read**, the change plan
+and one data section (a query's rows and chart, the survey table with capacity,
+or the estate's remembered buckets and history) and checks. Results are flat
+sections separated by hairlines, never cards. Findings carry their Security Hub
+control where one matches; when a survey view carries fewer Issues than the
+account has, the run says how many.
+
+A model-free check renders through the same run surface with a synthesized
+report and a `Deterministic account check` tag. A model run shows a check the
+moment a tool starts and folds the checks to a receipt (checks · time · tokens)
+when it ends. A stopped run keeps its plan and offers Continue. There are no
+next-step suggestions or follow-up prompts. A query's script opens under its
+check as the evidence; a report table or code block can also cite it.
 
 Every table can be copied as CSV or saved; the page can be copied or saved as
 Markdown. Failed model runs offer Retry; stopped runs offer Continue. The
-sidebar search (⌘K) covers titles, requests, findings and the current verdict.
+sidebar search (⌘K) covers titles, requests, findings and the composed report
+summary.
 Files can be dropped or pasted onto the composer. A run that finishes while the
-window is in the background sends one notification. `storage-agent://task/<id>`
+window is in the background sends one notification. PDF export keeps the run
+header, question, coverage, findings and report; the checks receipt stays out. `storage-agent://task/<id>`
 opens a task; Copy link puts it on the clipboard. In findings, j/k move, Enter
 opens the evidence, a accepts. Settings offers demo storage and the models
 already running on this machine; its Test button tests the values currently in

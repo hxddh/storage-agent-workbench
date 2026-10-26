@@ -42,13 +42,14 @@ it is a read of these rows, not a second store.
 
 `readings` is the compact history of settled account reads. It stores counts and
 booleans, the triggering path and the current open Issue totals, never a request,
-verdict, policy document, account id or secret. `complete = 1` only for an
+answer, policy document, account id or secret. `complete = 1` only for an
 unscoped, closed survey; re-verification is always partial. Home selects each
 account's latest complete row and the newest complete row overall; `estate`
 history includes up to 30 reading rows in an unfiltered view.
 
 `search_docs` is rebuilt per conversation when the task settles and backfilled
-at startup. It stores the request, the current verdict (`entry_id = 'verdict'`)
+at startup. It stores the request, the current report summary
+(`entry_id = 'verdict'`)
 and one row per finding (`entry_id = 'f:<source entry>:<finding key>'`). The
 source entry id lets a search hit load the evidence even when it is outside the
 window's initial page. Title search reads `task_meta` directly.
@@ -76,7 +77,7 @@ Entry kinds the window understands:
 | `pi.compaction` | compaction divider |
 | `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window |
 | `sa.reverify` | a model-free re-read report; data `ReverifyReport`, including plan-step status when the task has a change plan |
-| `sa.audit` | a deterministic account check without a model; data `AuditReport` (verdict + checks) |
+| `sa.audit` | a deterministic account check without a model; data `AuditReport` (summary + checks) |
 
 pi's `pi.usage` document supplies the task's token/cost receipt. A model-free
 check has no model usage; its receipt still shows the checks and time.

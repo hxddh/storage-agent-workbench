@@ -19,25 +19,78 @@ function plan(body) {
   const lastUserIndex = messages.findLastIndex((message) => message.role === 'user')
   const lastUser = messages[lastUserIndex]
   // Tool results of the current turn only: a task can hold several turns.
-  const toolMessages = messages.slice(lastUserIndex + 1).filter((message) => message.role === 'tool')
+  const turn = messages.slice(lastUserIndex + 1)
+  const toolMessages = turn.filter((message) => message.role === 'tool')
   const ask = String(lastUser?.content ?? '').toLowerCase()
-  const toolText = toolMessages
-    .map((message) =>
+
+  const names = new Map()
+  for (const message of turn) {
+    if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) continue
+    for (const call of message.tool_calls) {
+      if (call?.id && call?.function?.name) names.set(call.id, call.function.name)
+    }
+  }
+  const called = new Set(names.values())
+  let planCalls = 0
+  for (const message of turn) {
+    if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) continue
+    for (const call of message.tool_calls) if (call?.function?.name === 'plan') planCalls += 1
+  }
+  const output = new Map()
+  for (const message of toolMessages) {
+    const name = names.get(message.tool_call_id)
+    if (!name) continue
+    output.set(
+      name,
       typeof message.content === 'string'
         ? message.content
         : JSON.stringify(message.content ?? ''),
     )
+  }
+  const toolText = [...output.values()].join('\n')
+  const surveyText = [...output.entries()]
+    .filter(([name]) => name === 'survey')
+    .map(([, text]) => text)
     .join('\n')
-  // The smoke eval uses web-assets/ledger-private; the E2E demo uses demo-*.
-  // Read the bucket the survey actually proved public instead of hardcoding the
-  // demo names into every scenario.
-  const publicBucket = (
-    /(?:^|\n)Public:\s*([A-Za-z0-9._-]+)/.exec(toolText)?.[1] ?? ''
-  ).replace(/[.,]+$/, '') || null
-  if (ask.includes('no tool result in this task shows')) console.log('GROUNDING_CORRECTION')
-  if (toolMessages.length === 0) {
+  const publicBucket =
+    (/(?:^|\n)Public:\s*([A-Za-z0-9._-]+)/.exec(surveyText)?.[1] ?? '').replace(
+      /[.,]+$/,
+      '',
+    ) || null
+  const evidence = (name) => {
+    const text = output.get(name) ?? ''
+    return /evidence="([^"]+)"/.exec(text)?.[1] ?? ''
+  }
+
+  // The harness asks once when the answer names something no read returned.
+  // The composed report is already on the page; a short coda is enough.
+  if (/no tool result in this task shows|which no tool result/i.test(ask)) {
+    console.log('GROUNDING_CORRECTION')
+    return { text: 'The readings do not show that name.' }
+  }
+
+  if (!called.has('plan')) {
+    return {
+      tool: call('call_plan_1', 'plan', {
+        note: 'Plan the read before spending a call.',
+        steps: [
+          { title: 'Recall the estate', status: 'done' },
+          { title: 'Read the account', status: 'active' },
+          { title: 'Compose the answer', status: 'pending' },
+        ],
+      }),
+    }
+  }
+
+  if (
+    !called.has('survey') &&
+    !called.has('estate') &&
+    !called.has('config') &&
+    !called.has('query') &&
+    !called.has('fix')
+  ) {
     if (ask.includes('applied')) {
-      return { tool: call('call_verify_1', 'survey', { buckets: ['demo-public'] }) }
+      return { tool: call('call_survey_1', 'survey', { buckets: ['demo-public'] }) }
     }
     if (ask.includes('who can read')) {
       return { tool: call('call_access_1', 'config', { bucket: 'demo-public', aspect: 'access' }) }
@@ -61,8 +114,10 @@ function plan(body) {
     }
     return { tool: call('call_survey_1', 'survey', {}) }
   }
+
   if (
-    toolMessages.length === 1 &&
+    called.has('survey') &&
+    !called.has('config') &&
     ask.includes('public') &&
     !ask.includes('who can read') &&
     !ask.includes('fix') &&
@@ -76,40 +131,69 @@ function plan(body) {
       }),
     }
   }
-  if (ask.includes('applied')) {
-    return { text: '`demo-public` is no longer public; the fix took.' }
-  }
-  if (ask.includes('who can read')) {
-    return { text: 'The public bucket policy is the anonymous grant on `demo-public`.' }
-  }
-  if (ask.includes('largest')) {
-    return { text: '`reports/` holds everything in `demo-public`.' }
-  }
-  if (ask.includes('fix')) {
-    return { text: 'Add an abort rule for incomplete uploads on `demo-private`.' }
-  }
-  if (ask.includes('history') || ask.includes('changed')) {
+
+  if (called.has('report') && planCalls < 3) {
     return {
-      text: 'The history records the Issues that were opened for `demo-public` and `demo-private`.',
+      tool: call('call_plan_3', 'plan', {
+        note: 'The answer is composed.',
+        steps: [
+          { title: 'Recall the estate', status: 'done' },
+          { title: 'Read the account', status: 'done' },
+          { title: 'Compose the answer', status: 'done' },
+        ],
+      }),
     }
   }
-  if (ask.includes('issue')) {
+
+  if (planCalls === 1 && !called.has('report')) {
     return {
-      text:
-        'Five issues are open: `demo-public` is public, has no default encryption and no public access block; both buckets never clean up incomplete uploads.',
+      tool: call('call_plan_2', 'plan', {
+        note: 'The reads are in; compose next.',
+        steps: [
+          { title: 'Recall the estate', status: 'done' },
+          { title: 'Read the account', status: 'done' },
+          { title: 'Compose the answer', status: 'active' },
+        ],
+      }),
     }
   }
-  // The harness asks once for a correction when the verdict names something no tool returned.
-  if (ask.includes('ghost')) {
-    return { text: '`demo-public` is public and so is `ghost-bucket`.' }
+
+  if (!called.has('report')) {
+    let text =
+      '`demo-public` is publicly accessible and has no default encryption. `demo-private` is not public, is encrypted, and blocks public access.'
+    if (ask.includes('applied')) text = '`demo-public` is no longer public; the fix took.'
+    else if (ask.includes('who can read'))
+      text = 'The public bucket policy is the anonymous grant on `demo-public`.'
+    else if (ask.includes('largest')) text = '`reports/` holds everything in `demo-public`.'
+    else if (ask.includes('fix')) text = 'Add an abort rule for incomplete uploads on `demo-private`.'
+    else if (ask.includes('history') || ask.includes('changed'))
+      text = 'The history records the Issues that were opened for `demo-public` and `demo-private`.'
+    else if (ask.includes('issue'))
+      text =
+        'Eight issues are open: `demo-public` is public, has no default encryption and no public access block; both buckets never clean up incomplete uploads.'
+    else if (ask.includes('ghost'))
+      text = '`demo-public` is public and so is `ghost-bucket`.'
+    else if (publicBucket && publicBucket !== 'demo-public')
+      text = `\`${publicBucket}\` is publicly accessible.`
+
+    const ids = [
+      evidence('survey'),
+      evidence('config'),
+      evidence('estate'),
+      evidence('query'),
+      evidence('fix'),
+    ].filter(Boolean)
+    return {
+      tool: call('call_report_1', 'report', {
+        title: 'Answer',
+        blocks: [{ kind: 'summary', text, evidence: ids }],
+      }),
+    }
   }
-  if (publicBucket && publicBucket !== 'demo-public') {
-    return { text: `\`${publicBucket}\` is publicly accessible.` }
-  }
-  return {
-    text:
-      '`demo-public` is publicly accessible and has no default encryption. `demo-private` is not public, is encrypted, and blocks public access.',
-  }
+
+  // The report is the answer. An empty coda keeps the page free of a second
+  // generated paragraph while still letting the run settle.
+  return { text: '' }
 }
 
 function chunk(res, payload) {
@@ -160,7 +244,7 @@ const server = createServer((req, res) => {
               finish_reason: next.tool ? 'tool_calls' : 'stop',
               message: next.tool
                 ? { role: 'assistant', content: null, tool_calls: [next.tool] }
-                : { role: 'assistant', content: next.text },
+                : { role: 'assistant', content: next.text ?? null },
             },
           ],
           usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
@@ -207,7 +291,7 @@ const server = createServer((req, res) => {
       })
       chunk(res, { ...base, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })
     } else {
-      for (const word of next.text.split(' ')) {
+      for (const word of (next.text ?? '').split(' ').filter(Boolean)) {
         chunk(res, { ...base, choices: [{ index: 0, delta: { content: `${word} ` }, finish_reason: null }] })
       }
       chunk(res, { ...base, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })

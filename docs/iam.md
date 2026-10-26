@@ -85,7 +85,7 @@ objects is compatible with the app's scope, but it is the user's choice.
 | Statement | Enables | When it is missing |
 |---|---|---|
 | `s3:ListAllMyBuckets` | the account survey's bucket list | the survey cannot start |
-| `s3:GetBucket*`, `ListBucketVersions`, `ListBucketMultipartUploads` | posture, exposure, lifecycle, logging, tags, versions and uploads | the matching rule or object question is undecided; the brief names the action |
+| `s3:GetBucket*`, `ListBucketVersions`, `ListBucketMultipartUploads` | posture, exposure, lifecycle, logging, tags, versions and uploads | the matching rule or object question is undecided; the run names the action |
 | `s3:GetObject` | object metadata and a bounded preview; inventory manifest/files | object and inventory questions stay open |
 | `s3:GetObjectAcl`, `s3:GetObjectTagging` | those two object aspects | the object view says the aspect is not readable |
 | `s3:GetAccountPublicAccessBlock` | the account-wide block, S3.1 | account block is unknown, never assumed off |

@@ -1,3 +1,60 @@
+## 27.0.0
+
+An agent-native run, not a fixed report. The storage boundary, deterministic
+rules, coverage and fix plan are unchanged; the product layer now lets the agent
+own the plan and the answer composition, while the app keeps the evidence.
+
+### Added
+
+- **A run, not a brief.** A task with a plan or report renders a run header
+  (question, account, coverage, read time, severity counts), the agent's own
+  plan, the answer blocks it composed, and the deterministic evidence below.
+- **`plan` control tool.** The agent publishes 3–12 steps with pending, active,
+  done or blocked status before its first read and updates them when the work
+  changes. The plan is durable and visible; it is not a chat transcript.
+- **`report` control tool.** The agent composes ordered summary, callout, table,
+  findings, timeline, plan and code blocks. A data block resolves one evidence
+  id to the tool result that proved it; a missing block is omitted with a quiet
+  note. The summary can be more than two sentences, but it must stay grounded
+  and concise.
+- **Evidence ids.** Every `agentTool()` result carries a stable `evidenceId` in
+  its untrusted-data envelope and its details. The report cites those ids; the
+  run resolves the actual view instead of trusting model-authored facts.
+- **`playbook` tool.** The access, changes, history, inventory, fix, capacity,
+  account, IAM, protocol, logs and lifecycle cards moved out of every system
+  prompt into a field guide the agent reads on demand.
+- **A unified model-free check.** A deterministic `Check account` is synthesized
+  into the same run surface with a `Deterministic account check` tag; no second
+  page or report shell.
+- **Home estate ledger.** Account rows show bucket count, last complete read and
+  high/total risk instead of a single run-on line. Task titles may take two
+  lines.
+- **Run actions.** Copy, save Markdown, check again, re-verify, copy link, export
+  evidence and save PDF sit in the run header. PDF keeps the question, scope,
+  coverage and report; checks still fold away.
+
+### Changed
+
+- Prompt sections are identity, today, policy, capabilities, compose, estate
+  and language. The fixed method script and method cards are gone; the policy
+  states goals and safety, and the playbook carries the detailed methods.
+- A report summary and the final prose are both checked for grounding and open
+  coverage. A blocked or failed read still keeps the scope open.
+- Search indexes the composed report summary as well as findings and requests;
+  a summary hit opens the run and scrolls to the answer.
+- The print stylesheet keeps the run header and report while hiding the
+  controls and checks receipt.
+
+### Verification
+
+- Unit tests cover control-tool sanitization, report block validation, evidence
+  resolution, audit synthesis, the run renderer, invalid evidence and the
+  existing deterministic rules/coverage.
+- Local verification: typecheck, Biome, 194 tests, build, bundle budget, E2E,
+  no-model E2E, axe 0 serious violations, screenshots and the smoke eval.
+- The release notes state whether a real-model evaluation and signed installers
+  were available; no claim is made otherwise.
+
 # Changelog
 
 ## 26.0.0

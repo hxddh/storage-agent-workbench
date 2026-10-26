@@ -40,8 +40,16 @@ export function assertInScope(provider: ProviderConfig, bucket: string): void {
   }
 }
 
-export function envelope(text: string): string {
-  return `<untrusted-data source="storage">\n${escapeTags(redact(text))}\n</untrusted-data>`
+function attribute(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+}
+
+export function envelope(text: string, evidenceId?: string): string {
+  return `<untrusted-data source="storage"${evidenceId ? ` evidence="${attribute(evidenceId)}"` : ''}>\n${escapeTags(redact(text))}\n</untrusted-data>`
 }
 
 export interface ToolDefinition<T extends TSchema> {
@@ -111,15 +119,17 @@ export function agentTool<T extends TSchema>(
           target: result.view.kind === 'note' ? null : target,
           outcome: 'ok',
         })
+        const evidenceId = api.callId ? String(api.callId) : undefined
         const details: ToolDetails = {
           target: redact(result.target ?? target),
           note: result.note ? redact(result.note) : null,
           view: redactView(result.view) as ToolView,
           ms: Date.now() - started,
           status: 'done',
+          ...(evidenceId ? { evidenceId } : {}),
         }
         return {
-          output: [{ type: 'text' as const, text: envelope(bound(result.model)) }],
+          output: [{ type: 'text' as const, text: envelope(bound(result.model), evidenceId) }],
           details: details as never,
         }
       } catch (error) {
@@ -146,6 +156,7 @@ export function agentTool<T extends TSchema>(
               : status === 'timeout'
                 ? `Timed out after ${Math.round(def.timeoutMs / 1000)} s. Nothing after the last progress line was read.`
                 : `Error: ${message.slice(0, 400)}`
+        const evidenceId = api.callId ? String(api.callId) : undefined
         const details: ToolDetails = {
           target,
           note:
@@ -159,9 +170,10 @@ export function agentTool<T extends TSchema>(
           view: null,
           ms: Date.now() - started,
           status,
+          ...(evidenceId ? { evidenceId } : {}),
         }
         return {
-          output: [{ type: 'text' as const, text: envelope(forModel) }],
+          output: [{ type: 'text' as const, text: envelope(forModel, evidenceId) }],
           isError: true,
           details: details as never,
         }

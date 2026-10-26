@@ -1,7 +1,7 @@
 {
   "name": "storage-agent",
   "productName": "Storage Agent",
-  "version": "26.0.0",
+  "version": "27.0.0",
   "description": "A local agent for object storage",
   "license": "Apache-2.0",
   "private": true,

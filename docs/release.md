@@ -96,7 +96,8 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest release is **26.0.0**. Earlier release notes may describe retired
+The latest release is **27.0.0**. Earlier release notes may describe retired
 behavior; they are history. Keep `README.md`, `CHANGELOG.md` and this paragraph
 in step with the next tag, and refresh `docs/screenshot.png` if the surface
-changed.
+changed. 27.0 changes the task surface from a fixed brief to an agent run with
+a plan and report blocks; its visual baselines and E2E cover that surface.

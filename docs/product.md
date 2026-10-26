@@ -1,8 +1,9 @@
 # Product
 
 Storage Agent is a local, read-only agent for object storage. It answers by
-reading an account, remembers what it read, and projects the result as a page.
-It is not a console, a dashboard, a ticket system or a chat product.
+reading an account, remembers what it read, and projects the result as a run:
+the agent's plan, the answer it composed, and the evidence behind it. It is not
+a console, a dashboard, a ticket system or a chat product.
 
 ## The surfaces
 
@@ -10,7 +11,7 @@ It is not a console, a dashboard, a ticket system or a chat product.
    relative time, rename, pin, delete and Settings. A new task starts empty; a
    deterministic account check also appears here. The task open at quit opens at
    launch.
-2. **Task** — one brief, not a transcript. The page scrolls; the composer stays.
+2. **Task** — one run, not a transcript. The page scrolls; the composer stays.
 3. **Settings** — a full-screen sheet for the model, storage accounts, memory,
    language, theme and notifications. It is one sheet, not a wizard.
 
@@ -21,10 +22,10 @@ check still works.
 
 ## Home
 
-Home is a quiet estate summary, not a dashboard:
+Home is a quiet estate ledger, not a dashboard:
 
-- account lines with remembered bucket count, the last complete reading (or
-  `no complete reading`) and open risk;
+- one row per account with remembered bucket count, the last complete reading
+  (or `no complete reading`) and open high/total risk;
 - a line for new findings since the latest complete reading;
 - **Check account**;
 - the composer in its usual place.
@@ -46,14 +47,15 @@ Home or Settings.
 3. It reads access evidence for up to 24 buckets per account, preferring open
    Issue buckets. When that is fewer than the account has, it reports
    `examined / total`.
-4. It writes one durable `sa.audit` entry. The final checks and the rule-written
-   verdict are projected into the ordinary brief.
+4. It writes one durable `sa.audit` entry. The final checks and the deterministic
+   summary are synthesized into the ordinary run surface; the page carries a
+   `Deterministic account check` tag.
 
 The progress line is live; the final checks are written when the reading ends.
-A check is a snapshot, not a background monitor. **Check again** in a brief
+A check is a snapshot, not a background monitor. **Check again** in a run
 starts another check task; it does not mutate the old one. A settled reading
 also records one `readings` row per account with its coverage and current open
-risk. It stores no request, verdict, policy or secret.
+risk. It stores no request, answer text, policy or secret.
 
 ## A model task
 
@@ -61,7 +63,12 @@ risk. It stores no request, verdict, policy or secret.
 - While it runs, a check appears when a tool starts and shows its real progress
   (`3 of 12 buckets`). The check settles in place. The Checks section opens
   while work is happening and folds to a receipt when it ends.
-- A partial verdict streams at the top. Nothing waits for the final answer.
+- The agent publishes a short plan before its first read; it updates as the
+  work changes. The plan is visible above the answer.
+- When the evidence is ready, the agent calls `report` with ordered blocks. A
+  summary answers; a table, timeline, plan or code block cites the tool result
+  that proved it; a findings block selects deterministic findings. Nothing waits
+  for a single fixed paragraph.
 - **Enter** while running steers the current run. **Stop** (or ⌘.) keeps what was
   read and offers **Continue** without adding a new question.
 - A failed model run becomes one notice with **Retry**; it asks the last request
@@ -77,24 +84,29 @@ risk. It stores no request, verdict, policy or secret.
   neither.
 
 There is no chat transcript. Earlier requests remain in the durable task, but
-the page shows only the latest request above the current verdict.
+the page shows the latest question in the run header.
 
-## The brief
+## The run
 
 Top to bottom:
 
-1. **Scope line** — account name(s), a deterministic `Reads complete` or
-   `Reads open: n · m blocked` status, `checked / total` buckets, the last read
-   time and the finding count. A failed or stopped storage read keeps the line
-   open. A narrowed re-read never turns an account-wide gap into a complete
-   reading.
-2. **Latest request** — one quiet line. A model-free check has no request line.
-3. **Verdict** — at most two sentences from the model, or a deterministic
-   sentence from the account check.
+1. **Run header** — the question or task title, account name(s), a deterministic
+   `Reads complete` or `Reads open: n · m blocked` status, `checked / total`
+   buckets, the last read time and severity counts. Copy and one overflow menu
+   sit here. A failed or stopped storage read keeps the status open. A narrowed
+   re-read never turns an account-wide gap into a complete reading.
+2. **Plan** — the agent's own 3–6 steps, with pending, active, done and blocked
+   states. It is a promise, not a transcript; it is absent on a deterministic
+   check. A stopped run keeps its plan and offers Continue.
+3. **Answer** — the ordered blocks the agent composed: summary, callout, table,
+   findings, timeline, plan or code. A summary or callout carries prose and
+   evidence ids. A data block resolves one id to the tool view that proved it;
+   the window drops a block whose evidence is missing and says how many. A
+   summary is not limited to two sentences; it must stay grounded and concise.
 4. **Notices and grounding** — stopped, failed, no-answer, model-missing and
    budget notices; a backticked name the readings never showed; a contradicted
-   public/not-public claim. The model also gets one correction if it calls the
-   account clean while the run still has open reads.
+   public/not-public claim. The model gets one correction if the report summary
+   calls the account clean while the run still has open reads.
 5. **Findings** — current problems grouped by bucket, severity ordered, with
    memory age and Security Hub controls where they match.
 6. **Re-verification** — the latest model-free replay report, when one exists.
@@ -113,12 +125,15 @@ Top to bottom:
 10. **Data** — the latest tabular result: survey buckets and capacity, an object
     list or facts, a query table and chart, access paths, or the estate's
     remembered buckets with its Issue/posture history. Up to ten rows, then a
-    disclosure.
+    disclosure. A report table block may show the same evidence once; the
+    evidence body keeps the full table.
 11. **Checks** — every executed tool call in order, with target, result note and
-    duration, folded to checks · time · tokens.
+    duration, folded to checks · time · tokens. Plan, report and playbook calls
+    are control tools, not checks.
 
-Copy and a single overflow menu are always visible. The overflow contains save
-Markdown, check again, re-verify, copy task link, export evidence and save PDF.
+Copy and a single overflow menu are always visible in the run header. The
+overflow contains save Markdown, check again, re-verify, copy task link, export
+evidence and save PDF.
 Evidence and PDF include the current findings, controls, read timestamps and
 redacted views; there is no secret or unredacted provider document in them.
 
@@ -199,7 +214,7 @@ On AWS it then queries CloudTrail for management events over a stated 90-day
 window, using each bucket's own region. It attributes changes for at most six
 changed buckets per survey and shows at most 20 matching events. If the lookup
 is denied, unsupported or fails, the actor remains unknown; it is never reported
-as nobody. A truncated lookup says so. The brief never claims that CloudTrail
+as nobody. A truncated lookup says so. The run never claims that CloudTrail
 has the complete history or that an unlisted change did not happen.
 
 ## Inventory and open questions
@@ -231,8 +246,8 @@ the app measures with `query` instead and does not invent a number.
 ## Search
 
 ⌘K focuses the sidebar search. It covers task titles, requests, findings and the
-current verdict. A finding hit opens its task with the finding highlighted; a
-verdict hit opens the verdict. Title search reads `task_meta`; the rest reads the
+report summary. A finding hit opens its task with the finding highlighted; a
+summary hit opens the run and scrolls to the answer. Title search reads `task_meta`; the rest reads the
 derived `search_docs` index. Search is `LIKE`, not full-text search, and returns
 at most 20 hits.
 
