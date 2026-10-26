@@ -1,4 +1,4 @@
-import type { BriefFinding } from '@shared/brief'
+import type { BriefData, BriefFinding, BriefNotice } from '@shared/brief'
 import { readStateOfBrief } from '@shared/brief'
 import {
   type AuditProgress,
@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   ArrowDownToLine,
   Check,
+  ChevronRight,
   Circle,
   Copy,
   Link2,
@@ -20,8 +21,8 @@ import {
   MoreHorizontal,
   Radar,
 } from 'lucide-react'
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Brief, briefMarkdown, FindingRow } from './Brief'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Brief, briefMarkdown, FindingRow, noticeText } from './Brief'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
 import { AccessChain, ChartView, PlanView, TableView, ToolViewBody } from './Views'
@@ -47,30 +48,14 @@ function source(run: RunModel, block: ReportBlock): RunEvidence | undefined {
   return resolveEvidence(run.evidence, block.evidence[0])
 }
 
-function SourceLine({
-  run,
-  block,
-  t,
-  lang,
-  onOpen,
-}: {
-  run: RunModel
-  block: ReportBlock
-  t: Dict
-  lang: Lang
-  onOpen: (entryId: string) => void
-}) {
+function SourceLine({ run, block, lang }: { run: RunModel; block: ReportBlock; lang: Lang }) {
   const item = source(run, block)
   if (!item) return null
   return (
-    <button className="run-source" type="button" onClick={() => onOpen(item.entryId)}>
+    <p className="run-source">
       {toolLabel(item.name, lang)}
       {item.target ? ` · ${item.target}` : ''}
-      <span className="run-source-dot" aria-hidden="true">
-        {' '}
-      </span>
-      {t.runViewEvidence}
-    </button>
+    </p>
   )
 }
 
@@ -147,7 +132,7 @@ function TimelineBlock({ view, limit, t }: { view: ToolView; limit?: number; t: 
           <span className="run-timeline-what">
             {row
               .slice(1)
-              .filter((cell) => cell !== null && cell !== '')
+              .filter((cell) => cell !== null && cell !== '' && cell !== '—' && cell !== '-')
               .map((cell) => String(cell))
               .join(' · ')}
           </span>
@@ -180,21 +165,146 @@ function FindingsBlock({
   )
   const rows = all.slice(0, block.limit ?? 5)
   if (!rows.length) return <p className="quiet">{t.runNoMatch}</p>
+  const navigate = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (!target.classList.contains('finding-main')) return
+    const list = [...event.currentTarget.querySelectorAll<HTMLElement>('.finding-main')]
+    const index = list.indexOf(target)
+    if (event.key === 'j' || event.key === 'ArrowDown') {
+      event.preventDefault()
+      list[Math.min(list.length - 1, index + 1)]?.focus()
+    } else if (event.key === 'k' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      list[Math.max(0, index - 1)]?.focus()
+    } else if (event.key === 'a') {
+      const key = target.closest<HTMLElement>('.finding-row')?.dataset.findingKey
+      const finding = all.find((item) => item.key === key)
+      if (finding) onAccept(finding)
+    }
+  }
   return (
-    <div className="findings-list">
-      {rows.map((finding) => (
-        <FindingRow
-          key={finding.key}
-          finding={finding}
-          t={t}
-          onOpen={() => onOpen(finding.sourceId)}
-          onAccept={() => onAccept(finding)}
-          tagMemory
-          showBucket
-          staleDays={staleDays}
-        />
+    <>
+      {block.title && <h3 className="run-block-title">{block.title}</h3>}
+      <div className="findings-list" onKeyDown={navigate}>
+        {rows.map((finding) => (
+          <FindingRow
+            key={finding.key}
+            finding={finding}
+            t={t}
+            onOpen={() => onOpen(finding.sourceId)}
+            onAccept={() => onAccept(finding)}
+            tagMemory
+            showBucket
+            staleDays={staleDays}
+          />
+        ))}
+        {all.length > rows.length && (
+          <button
+            className="more-toggle"
+            type="button"
+            onClick={() => rows[0] && onOpen(rows[0].sourceId)}
+          >
+            {fill(t.moreFindings, { n: all.length - rows.length })}
+            <ChevronRight size={13} />
+          </button>
+        )}
+      </div>
+    </>
+  )
+}
+
+function RunNotices({
+  notices,
+  t,
+  onRetry,
+  onContinue,
+}: {
+  notices: BriefNotice[]
+  t: Dict
+  onRetry: () => void
+  onContinue: () => void
+}) {
+  if (!notices.length) return null
+  return (
+    <div className="run-notices">
+      {notices.map((notice) => (
+        <div
+          className={`notice ${notice.tone}`}
+          key={notice.id}
+          role={notice.tone === 'error' ? 'alert' : undefined}
+        >
+          <span className="dot" aria-hidden="true" />
+          <span className="text">{noticeText(notice, t)}</span>
+          {notice.action && (
+            <button
+              className="text-action"
+              type="button"
+              onClick={notice.action === 'retry' ? onRetry : onContinue}
+            >
+              {notice.action === 'retry' ? t.retry : t.continue}
+            </button>
+          )}
+        </div>
       ))}
     </div>
+  )
+}
+
+/** The one evidence view that directly answers the question; the rest is in the fold. */
+function PrimaryData({ data, t, taskTitle }: { data: BriefData; t: Dict; taskTitle: string }) {
+  const view = data.view
+  let title = t.dataTitle
+  let body: React.ReactNode = null
+  if (view.kind === 'survey') {
+    title = t.buckets
+    body = (
+      <TableView
+        table={view.buckets}
+        name={`${view.provider}-buckets`}
+        empty={t.noBuckets}
+        t={t}
+        limit={3}
+      />
+    )
+  } else if (view.kind === 'config' && view.access) {
+    title = t.accessTitle
+    body = (
+      <AccessChain
+        paths={view.access}
+        blind={view.accessBlind}
+        coverage={view.accessCoverage}
+        t={t}
+      />
+    )
+  } else if (view.kind === 'query') {
+    body = (
+      <>
+        {view.chart && <ChartView chart={view.chart} />}
+        <TableView table={view.rows} name={view.title} empty={t.noRows} t={t} limit={5} />
+      </>
+    )
+  } else if (view.kind === 'estate' && view.history) {
+    title = t.history
+    body = <TimelineBlock view={view} limit={5} t={t} />
+  } else if (view.kind === 'buckets' || view.kind === 'objects') {
+    body = (
+      <TableView
+        table={view.rows}
+        name={taskTitle || view.kind}
+        empty={view.kind === 'buckets' ? t.noBuckets : t.noObjects}
+        t={t}
+        limit={5}
+      />
+    )
+  }
+  if (!body) return null
+  return (
+    <section className="run-preview">
+      <div className="run-preview-head">
+        <span className="run-section-title">{title}</span>
+      </div>
+      {body}
+    </section>
   )
 }
 
@@ -227,6 +337,7 @@ export function Run({
     [view.entries, view.live, view.issueStatus],
   )
   const [evidenceFocus, setEvidenceFocus] = useState<string | null>(null)
+  const [evidenceOpen, setEvidenceOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [linked, setLinked] = useState(false)
   const [more, setMore] = useState(false)
@@ -242,27 +353,93 @@ export function Run({
         ? t.scopeComplete
         : ''
   const checked = run.brief.lastReadAt ? ago(run.brief.lastReadAt, t) : null
-  const question = run.question?.text ?? view.task.title
+  const question = run.audit ? null : (run.question?.text ?? view.task.title)
   const report = run.report
-  const hasSummary = Boolean(report?.blocks.some((block) => block.kind === 'summary'))
-  const hasTable = Boolean(
-    report?.blocks.some(
-      (block) => block.kind === 'table' || block.kind === 'code' || block.kind === 'timeline',
-    ),
-  )
-  const hasPlan = Boolean(report?.blocks.some((block) => block.kind === 'plan'))
-  const ungrounded = new Set(report?.ungrounded ?? [])
-  const contradicted = new Set(report?.contradicted ?? [])
+  const stale = Boolean(report?.stale)
+  // A stale report belongs to the previous question. Keep its prose as context,
+  // but do not let its tables or plan masquerade as the current answer.
+  const visibleBlocks = report
+    ? stale
+      ? report.blocks.filter((block) => block.kind === 'summary' || block.kind === 'callout')
+      : report.blocks
+    : []
+  const hasSummary = visibleBlocks.some((block) => block.kind === 'summary')
+  const hasReportTable = visibleBlocks.some((block) => block.kind === 'table')
+  const hasReportTimeline = visibleBlocks.some((block) => block.kind === 'timeline')
+  const hasReportCode = visibleBlocks.some((block) => block.kind === 'code')
+  const hasReportPlan = visibleBlocks.some((block) => block.kind === 'plan')
+  const hasReportFindings = visibleBlocks.some((block) => block.kind === 'findings')
+  const ungrounded = new Set(stale ? [] : (report?.ungrounded ?? []))
+  const contradicted = new Set(stale ? [] : (report?.contradicted ?? []))
+  const stopped = run.brief.notices.some((notice) => notice.code === 'stopped')
+  const showPlan =
+    Boolean(view.live) ||
+    stopped ||
+    Boolean(run.plan?.steps.some((step) => step.status === 'blocked'))
+  const showCounts = hasReportFindings
+  const evidenceVisible = Boolean(view.live) || Boolean(auditProgress) || evidenceOpen
+  // The agent's report is the answer. When it did not compose the proof itself,
+  // the latest data read is the one view that can stand beside the summary.
+  const primaryData = useMemo(() => {
+    if (view.live || stale) return null
+    if (hasReportTable || hasReportTimeline || hasReportFindings || hasReportPlan) return null
+    const data = run.brief.data
+    if (!data) return null
+    const kind = data.view.kind
+    if (kind === 'survey' || kind === 'query' || kind === 'buckets' || kind === 'objects')
+      return data
+    if (kind === 'config' && data.view.access) return data
+    if (kind === 'estate' && data.view.history) return data
+    return null
+  }, [
+    view.live,
+    stale,
+    hasReportTable,
+    hasReportTimeline,
+    hasReportFindings,
+    hasReportPlan,
+    run.brief.data,
+  ])
+
+  const turnKey = run.question?.id ?? view.task.id
+  useEffect(() => {
+    if (!turnKey) return
+    setEvidenceOpen(false)
+    setEvidenceFocus(null)
+    setMore(false)
+  }, [turnKey])
+
+  const openEvidence = useCallback((entryId?: string) => {
+    setEvidenceOpen(true)
+    if (entryId) setEvidenceFocus(entryId)
+    window.setTimeout(() => {
+      const target = entryId
+        ? root.current?.querySelector<HTMLElement>(`[data-check-id="${CSS.escape(entryId)}"]`)
+        : root.current?.querySelector<HTMLElement>('.run-evidence-wrap')
+      target?.scrollIntoView({ block: 'center' })
+    }, 40)
+  }, [])
+
+  const reverify = async () => {
+    await onReverify()
+    openEvidence()
+  }
 
   useEffect(() => {
-    if (focusId !== 'verdict' && focusId !== run.report?.id) return
-    const summary = root.current?.querySelector<HTMLElement>('.run-summary')
-    if (!summary) return
-    summary.scrollIntoView({ block: 'center' })
-    summary.classList.add('flash')
-    const timer = setTimeout(() => summary.classList.remove('flash'), 1600)
-    return () => clearTimeout(timer)
-  }, [focusId, run.report?.id])
+    if (!focusId) return
+    if (focusId === 'verdict' || focusId === run.report?.id) {
+      const summary = root.current?.querySelector<HTMLElement>('.run-summary')
+      if (!summary) return
+      summary.scrollIntoView({ block: 'center' })
+      summary.classList.add('flash')
+      const timer = setTimeout(() => summary.classList.remove('flash'), 1600)
+      return () => clearTimeout(timer)
+    }
+    // A search hit on the request is a highlight, not a reason to open the
+    // evidence fold. Findings and tool checks do open it.
+    if (run.brief.questions.some((item) => item.id === focusId)) return
+    openEvidence(focusId)
+  }, [focusId, run.report?.id, openEvidence, run.brief.questions])
 
   const accept = (finding: BriefFinding) => {
     if (finding.issueId)
@@ -303,6 +480,14 @@ export function Run({
       ),
       kind: 'json',
     })
+
+  const hideData =
+    Boolean(primaryData) ||
+    hasReportTable ||
+    hasReportTimeline ||
+    hasReportFindings ||
+    hasReportPlan ||
+    hasReportCode
 
   return (
     <div className="scroll" ref={root}>
@@ -368,7 +553,7 @@ export function Run({
                       role="menuitem"
                       onClick={() => {
                         setMore(false)
-                        void onReverify()
+                        void reverify()
                       }}
                     >
                       {t.reverify}
@@ -412,35 +597,29 @@ export function Run({
               </div>
             </span>
           </div>
-          <h2 className="run-question">{question}</h2>
-          <div className="run-facts">
-            {run.counts.high > 0 && (
-              <span className="run-count high">{fill(t.runHigh, { n: run.counts.high })}</span>
-            )}
-            {run.counts.medium > 0 && (
-              <span className="run-count medium">
-                {fill(t.runMedium, { n: run.counts.medium })}
-              </span>
-            )}
-            {run.counts.low > 0 && (
-              <span className="run-count low">{fill(t.runLow, { n: run.counts.low })}</span>
-            )}
-            {report?.synthesized && <span className="run-tag">{t.runSynthesized}</span>}
-            {report?.stale && <span className="run-tag warn">{t.runStale}</span>}
-            {report && !report.stale && (
-              <span className="run-tag quiet">
-                {(() => {
-                  const n = new Set(
-                    report.blocks.flatMap((block) => ('evidence' in block ? block.evidence : [])),
-                  ).size
-                  return n === 1 ? t.runSourceOne : fill(t.runSources, { n })
-                })()}
-              </span>
-            )}
-          </div>
+          {question && <h2 className="run-question">{question}</h2>}
+          {(showCounts || report?.synthesized || report?.stale) && (
+            <div className="run-facts">
+              {showCounts && run.counts.high > 0 && (
+                <span className="run-count high">{fill(t.runHigh, { n: run.counts.high })}</span>
+              )}
+              {showCounts && run.counts.medium > 0 && (
+                <span className="run-count medium">
+                  {fill(t.runMedium, { n: run.counts.medium })}
+                </span>
+              )}
+              {showCounts && run.counts.low > 0 && (
+                <span className="run-count low">{fill(t.runLow, { n: run.counts.low })}</span>
+              )}
+              {report?.synthesized && <span className="run-tag">{t.runSynthesized}</span>}
+              {report?.stale && <span className="run-tag warn">{t.runStale}</span>}
+            </div>
+          )}
         </header>
 
-        {run.plan && (
+        <RunNotices notices={run.brief.notices} t={t} onRetry={onRetry} onContinue={onContinue} />
+
+        {showPlan && run.plan && (
           <section className="run-plan" aria-label={t.runPlanTitle}>
             <div className="run-section-head">
               <span className="run-section-title">{t.runPlanTitle}</span>
@@ -479,7 +658,7 @@ export function Run({
               {!hasSummary && run.brief.verdict?.text && (
                 <p className="verdict prose run-summary">{plain(run.brief.verdict.text)}</p>
               )}
-              {report.blocks.map((block, index) => {
+              {visibleBlocks.map((block, index) => {
                 if (block.kind === 'summary')
                   return (
                     <div className="verdict prose run-summary" data-verdict key={index}>
@@ -534,13 +713,7 @@ export function Run({
                         t={t}
                         taskTitle={view.task.title}
                       />
-                      <SourceLine
-                        run={run}
-                        block={block}
-                        t={t}
-                        lang={lang}
-                        onOpen={setEvidenceFocus}
-                      />
+                      <SourceLine run={run} block={block} lang={lang} />
                     </section>
                   )
                 }
@@ -551,13 +724,7 @@ export function Run({
                     <section className="run-block" key={index}>
                       {block.title && <h3 className="run-block-title">{block.title}</h3>}
                       <TimelineBlock view={item.view} limit={block.limit} t={t} />
-                      <SourceLine
-                        run={run}
-                        block={block}
-                        t={t}
-                        lang={lang}
-                        onOpen={setEvidenceFocus}
-                      />
+                      <SourceLine run={run} block={block} lang={lang} />
                     </section>
                   )
                 }
@@ -568,7 +735,7 @@ export function Run({
                         run={run}
                         block={block}
                         t={t}
-                        onOpen={(id) => setEvidenceFocus(id)}
+                        onOpen={openEvidence}
                         onAccept={accept}
                         staleDays={staleDays}
                       />
@@ -576,82 +743,101 @@ export function Run({
                   )
                 if (block.kind === 'plan') {
                   const item = source(run, block)
-                  const view = item?.view
-                  if (view?.kind !== 'fix' || !view.plan) return null
+                  const planView = item?.view
+                  if (planView?.kind !== 'fix' || !planView.plan) return null
                   return (
                     <section className="run-block" key={index}>
                       {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                      <PlanView plan={view.plan} t={t} />
-                      <SourceLine
-                        run={run}
-                        block={block}
-                        t={t}
-                        lang={lang}
-                        onOpen={setEvidenceFocus}
-                      />
+                      <PlanView plan={planView.plan} t={t} />
+                      <SourceLine run={run} block={block} lang={lang} />
                     </section>
                   )
                 }
                 if (block.kind === 'code') {
                   const item = source(run, block)
-                  const view = item?.view
-                  if (view?.kind !== 'query') return null
+                  const codeView = item?.view
+                  if (codeView?.kind !== 'query') return null
                   return (
                     <section className="run-block" key={index}>
                       {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                      <pre className="code">{view.code}</pre>
-                      <SourceLine
-                        run={run}
-                        block={block}
-                        t={t}
-                        lang={lang}
-                        onOpen={setEvidenceFocus}
-                      />
+                      <pre className="code">{codeView.code}</pre>
+                      <SourceLine run={run} block={block} lang={lang} />
                     </section>
                   )
                 }
                 return null
               })}
-              {report.unresolved > 0 && (
+              {!stale && report.unresolved > 0 && (
                 <p className="quiet run-unresolved">
-                  {fill(t.runUnresolved, { n: report.unresolved })}
+                  {report.unresolved === 1
+                    ? t.runUnresolvedOne
+                    : fill(t.runUnresolved, { n: report.unresolved })}
                 </p>
               )}
-              {ungrounded.size > 0 && (
+              {!stale && ungrounded.size > 0 && (
                 <p className="grounding">
                   <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
                   {t.ungroundedNote}
                 </p>
               )}
-              {contradicted.size > 0 && (
+              {!stale && contradicted.size > 0 && (
                 <p className="grounding">
                   <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
                   {t.contradictedNote}
                 </p>
               )}
             </>
-          ) : (
+          ) : view.live ? null : (
             <p className="quiet">{t.runNoAnswer}</p>
           )}
         </section>
 
-        <Brief
-          view={view}
-          lang={lang}
-          focusId={evidenceFocus ?? focusId}
-          onRetry={onRetry}
-          onContinue={onContinue}
-          onReverify={onReverify}
-          onAudit={onAudit}
-          auditing={auditing}
-          staleDays={staleDays}
-          auditProgress={auditProgress}
-          evidenceOnly
-          hideFindings={false}
-          hideData={hasTable}
-          hideFix={hasPlan}
-          prefixMarkdown={runMarkdown(run)}
-        />
+        {primaryData && !view.live && (
+          <PrimaryData data={primaryData} t={t} taskTitle={view.task.title} />
+        )}
+
+        {!view.live && !auditProgress && (
+          <button
+            className={`run-evidence-toggle ${evidenceOpen ? 'open' : ''}`}
+            type="button"
+            aria-expanded={evidenceOpen}
+            onClick={() => (evidenceOpen ? setEvidenceOpen(false) : openEvidence())}
+          >
+            <span className="run-section-title">
+              {evidenceOpen ? t.runHideEvidence : t.runEvidenceTitle}
+            </span>
+            <span className="run-evidence-count">
+              {run.brief.checks.length > 0
+                ? run.brief.checks.length === 1
+                  ? t.checkOne
+                  : `${run.brief.checks.length} ${t.checksTitle.toLowerCase()}`
+                : ''}
+            </span>
+            <ChevronRight size={13} className={`chev ${evidenceOpen ? 'open' : ''}`} />
+          </button>
+        )}
+
+        <div className={`run-evidence-wrap ${evidenceVisible ? '' : 'is-collapsed'}`}>
+          <Brief
+            key={turnKey}
+            view={view}
+            lang={lang}
+            focusId={evidenceFocus ?? focusId}
+            onRetry={onRetry}
+            onContinue={onContinue}
+            onReverify={onReverify}
+            onAudit={onAudit}
+            auditing={auditing}
+            staleDays={staleDays}
+            auditProgress={auditProgress}
+            evidenceOnly
+            hideFindings={hasReportFindings}
+            hideData={hideData}
+            hideFix={hasReportPlan}
+            hideNotices
+            prefixMarkdown={runMarkdown(run)}
+          />
+        </div>
       </article>
     </div>
   )

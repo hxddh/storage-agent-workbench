@@ -107,7 +107,12 @@ try {
   await page.waitForTimeout(600)
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-running.png') })
 
-  await page.waitForSelector('text=demo-public is publicly accessible', { timeout: 60_000 })
+  await page.waitForSelector('.run-evidence-toggle', { timeout: 60_000 })
+  if (await page.locator('.run-plan').count()) await fail('a finished plan is still visible')
+  await page.waitForSelector('.run-block .table-block table', { timeout: 5_000 })
+  await page.locator('.run-evidence-toggle').click()
+  await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 5_000 })
+  await page.waitForSelector('.finding-main', { timeout: 5_000 })
   const body = await page.locator('body').innerText()
   console.log('ANSWER OK')
   console.log(body.slice(0, 1200))
@@ -115,8 +120,7 @@ try {
     await fail('a grounded verdict was marked')
   await page.locator('.finding-main').first().click()
   await page.waitForSelector('.check-row.flash', { timeout: 5_000 })
-  await page.locator('.section-head').click()
-  await page.waitForSelector('.data-section table', { timeout: 5_000 })
+  await page.waitForSelector('.run-block .table-block table', { timeout: 5_000 })
   console.log('EVIDENCE OK')
   await page.waitForTimeout(200)
   await page.evaluate(readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8'))
@@ -168,6 +172,9 @@ try {
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-access.png') })
 
   // Accepting a risk is the user's call; it folds the finding and survives a reload.
+  await page.waitForSelector('.run-evidence-toggle', { timeout: 10_000 })
+  await page.locator('.run-evidence-toggle').click()
+  await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 5_000 })
   const encryption = page.locator('.finding-row', { hasText: 'No default encryption' }).first()
   await encryption.hover()
   await encryption.getByRole('button', { name: 'Accept risk' }).click()
@@ -179,6 +186,9 @@ try {
   await page.locator('.composer textarea').fill('I applied the fix to demo-public')
   await page.keyboard.press('Enter')
   await page.waitForSelector('text=no longer public', { timeout: 60_000 })
+  await page.waitForSelector('.run-evidence-toggle', { timeout: 10_000 })
+  await page.locator('.run-evidence-toggle').click()
+  await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 5_000 })
   await page.waitForSelector('.fold.ok .fold-head', { timeout: 10_000 })
   const fixed = await page.locator('.fold.ok .fold-head').innerText()
   console.log('VERIFY OK:', fixed)
@@ -224,7 +234,10 @@ try {
   await page.waitForSelector('text=Stopped.', { timeout: 10_000 })
   console.log('STOP OK')
   await page.getByRole('button', { name: 'Continue' }).click()
-  await page.waitForSelector('text=demo-public is publicly accessible', { timeout: 60_000 })
+  await page.waitForSelector('.run-evidence-toggle', { timeout: 60_000 })
+  await page.locator('.run-evidence-toggle').click()
+  await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 5_000 })
+  await page.waitForSelector('.finding-main', { timeout: 5_000 })
   console.log('CONTINUE OK')
 
   // Create one task in this session and find it by a distinctive title. This
@@ -232,7 +245,10 @@ try {
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('Searchable demo question')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('text=demo-public is publicly accessible', { timeout: 60_000 })
+  await page.waitForSelector('.run-evidence-toggle', { timeout: 60_000 })
+  await page.locator('.run-evidence-toggle').click()
+  await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 5_000 })
+  await page.waitForSelector('.finding-main', { timeout: 5_000 })
   await page.waitForTimeout(400)
 
   await page.locator('.sidebar-search input').click()
@@ -259,9 +275,11 @@ try {
   await page.keyboard.press('Enter')
   await page.waitForSelector('text=holds everything', { timeout: 60_000 })
   await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
-  await page.waitForSelector('.data-section table', { timeout: 10_000 })
-  const firstCell = await page.locator('.data-section table tbody td').first().innerText()
+  await page.waitForSelector('.run-block .table-block table', { timeout: 10_000 })
+  const firstCell = await page.locator('.run-block .table-block table tbody td').first().innerText()
   if (firstCell !== 'reports/') await fail(`query rows: ${firstCell}`)
+  await page.locator('.run-evidence-toggle').click()
+  await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 5_000 })
   await page.locator('.checks-head').click()
   await page.locator('.check-line', { hasText: 'Ran a read-only query' }).click()
   await page.waitForSelector('.check-body pre.code:has-text("tools.list")', { timeout: 5_000 })
@@ -269,11 +287,12 @@ try {
   console.log('QUERY OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-query.png') })
 
-  // Keyboard: j moves between findings. Search resolves the audit task, which
-  // carries several findings; the request itself ran inside that task.
-  await page.locator('.sidebar-search input').fill('public')
-  await page.locator('.search-hit', { hasText: 'Check · Demo' }).first().click()
-  await page.waitForSelector('.finding-main', { timeout: 10_000 })
+  // Keyboard: j moves between findings. A report findings block stays visible
+  // without opening the evidence fold.
+  await page.getByRole('button', { name: 'New task' }).click()
+  await page.locator('.composer textarea').fill('Which issues are open?')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.finding-main', { timeout: 60_000 })
   await page.locator('.finding-main').first().focus()
   await page.keyboard.press('j')
   const moved = await page.evaluate(() => {

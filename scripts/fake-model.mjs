@@ -160,33 +160,44 @@ function plan(body) {
 
   if (!called.has('report')) {
     let text =
-      '`demo-public` is publicly accessible and has no default encryption. `demo-private` is not public, is encrypted, and blocks public access.'
-    if (ask.includes('applied')) text = '`demo-public` is no longer public; the fix took.'
+      'Only `demo-public` is public. `demo-private` is private and blocks public access.'
+    if (ask.includes('applied')) text = '`demo-public` is no longer public.'
     else if (ask.includes('who can read'))
       text = 'The public bucket policy is the anonymous grant on `demo-public`.'
     else if (ask.includes('largest')) text = '`reports/` holds everything in `demo-public`.'
     else if (ask.includes('fix')) text = 'Add an abort rule for incomplete uploads on `demo-private`.'
     else if (ask.includes('history') || ask.includes('changed'))
-      text = 'The history records the Issues that were opened for `demo-public` and `demo-private`.'
+      text = 'The history records open issues on `demo-public` and `demo-private`.'
     else if (ask.includes('issue'))
       text =
-        'Eight issues are open: `demo-public` is public, has no default encryption and no public access block; both buckets never clean up incomplete uploads.'
+        'Eight issues are open; the highest severity is public exposure on `demo-public`.'
     else if (ask.includes('ghost'))
       text = '`demo-public` is public and so is `ghost-bucket`.'
     else if (publicBucket && publicBucket !== 'demo-public')
       text = `\`${publicBucket}\` is publicly accessible.`
 
-    const ids = [
-      evidence('survey'),
-      evidence('config'),
-      evidence('estate'),
-      evidence('query'),
-      evidence('fix'),
-    ].filter(Boolean)
+    const blocks = [{ kind: 'summary', text, evidence: [] }]
+    if (ask.includes('issue')) blocks.push({ kind: 'findings', title: 'Open findings' })
+    else if (ask.includes('history') || ask.includes('changed')) {
+      const id = evidence('estate')
+      if (id) blocks.push({ kind: 'timeline', title: 'History', evidence: [id], limit: 5 })
+    } else if (ask.includes('largest')) {
+      const id = evidence('query')
+      if (id) blocks.push({ kind: 'table', title: 'Largest prefixes', evidence: [id], limit: 5 })
+    } else if (ask.includes('who can read')) {
+      const id = evidence('config')
+      if (id) blocks.push({ kind: 'table', title: 'Access', evidence: [id] })
+    } else if (ask.includes('fix')) {
+      const id = evidence('fix')
+      if (id) blocks.push({ kind: 'plan', title: 'Change plan', evidence: [id] })
+    } else if (ask.includes('public')) {
+      const id = evidence('survey')
+      if (id) blocks.push({ kind: 'table', title: 'Buckets', evidence: [id], limit: 5 })
+    }
     return {
       tool: call('call_report_1', 'report', {
         title: 'Answer',
-        blocks: [{ kind: 'summary', text, evidence: ids }],
+        blocks,
       }),
     }
   }

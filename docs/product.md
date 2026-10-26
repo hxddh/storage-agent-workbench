@@ -64,7 +64,8 @@ risk. It stores no request, answer text, policy or secret.
   (`3 of 12 buckets`). The check settles in place. The Checks section opens
   while work is happening and folds to a receipt when it ends.
 - The agent publishes a short plan before its first read; it updates as the
-  work changes. The plan is visible above the answer.
+  work changes. The plan is visible while the run is in flight and folds away
+  when a normal answer settles. It stays for a stopped run or a blocked step.
 - When the evidence is ready, the agent calls `report` with ordered blocks. A
   summary answers; a table, timeline, plan or code block cites the tool result
   that proved it; a findings block selects deterministic findings. Nothing waits
@@ -84,58 +85,63 @@ risk. It stores no request, answer text, policy or secret.
   neither.
 
 There is no chat transcript. Earlier requests remain in the durable task, but
-the page shows the latest question in the run header.
+the page shows the latest question in the run header. A deterministic account
+check has no question; its page starts with the scope line and the verdict, not
+a task title posing as a request.
 
 ## The run
 
+The page is composed for the question, not for every fact the task has read.
 Top to bottom:
 
-1. **Run header** — the question or task title, account name(s), a deterministic
-   `Reads complete` or `Reads open: n · m blocked` status, `checked / total`
-   buckets, the last read time and severity counts. Copy and one overflow menu
-   sit here. A failed or stopped storage read keeps the status open. A narrowed
-   re-read never turns an account-wide gap into a complete reading.
-2. **Plan** — the agent's own 3–6 steps, with pending, active, done and blocked
-   states. It is a promise, not a transcript; it is absent on a deterministic
-   check. A stopped run keeps its plan and offers Continue.
-3. **Answer** — the ordered blocks the agent composed: summary, callout, table,
+1. **Run header** — the latest question (never the task title posing as one),
+   account name(s), a deterministic `Reads complete` or
+   `Reads open: n · m blocked` status, `checked / total` buckets and the last
+   read time. Copy and one overflow menu sit here. Severity counts appear on an
+   account check, or when the answer carries a findings block. A failed
+   or stopped storage read keeps the status open. A narrowed re-read never turns
+   an account-wide gap into a complete reading.
+2. **Notices** — stopped, failed, no-answer, model-missing and budget notices,
+   with Retry or Continue where they apply. They sit outside the evidence fold.
+3. **Plan** — the agent's own 3–6 steps, with pending, active, done and blocked
+   states. It is process, not answer: it is visible while the run is live,
+   remains for a stopped run or a blocked step, and is absent on a deterministic
+   check. A settled answer does not carry the finished checklist.
+4. **Answer** — the ordered blocks the agent composed: summary, callout, table,
    findings, timeline, plan or code. A summary or callout carries prose and
    evidence ids. A data block resolves one id to the tool view that proved it;
    the window drops a block whose evidence is missing and says how many. A
    summary is not limited to two sentences; it must stay grounded and concise.
-4. **Notices and grounding** — stopped, failed, no-answer, model-missing and
-   budget notices; a backticked name the readings never showed; a contradicted
-   public/not-public claim. The model gets one correction if the report summary
-   calls the account clean while the run still has open reads.
-5. **Findings** — current problems grouped by bucket, severity ordered, with
-   memory age and Security Hub controls where they match.
-6. **Re-verification** — the latest model-free replay report, when one exists.
-   When the task contains a change plan, every step is compared with the fresh
-   reading as `confirmed`, `not applied` or `still unknown`. Skipped and
-   truncated buckets stay visible.
-7. **Changed since the last reading** — posture differences, then CloudTrail
-   attribution when AWS supplies it.
-8. **Not read** — blind buckets, survey-pending or capped buckets, undecided
-   rules, missing permissions, blind configuration reads, partial access
-   coverage, failed or stopped reads, and buckets no longer listed.
-9. **Change plan** — one plan instead of a pile of independent commands. Steps
-   open one at a time with their exact CLI, Terraform and API text, impact
-   preview, baseline and manual blockers. The residual list names findings the
-   plan does not cover.
-10. **Data** — the latest tabular result: survey buckets and capacity, an object
-    list or facts, a query table and chart, access paths, or the estate's
-    remembered buckets with its Issue/posture history. Up to ten rows, then a
-    disclosure. A report table block may show the same evidence once; the
-    evidence body keeps the full table.
-11. **Checks** — every executed tool call in order, with target, result note and
-    duration, folded to checks · time · tokens. Plan, report and playbook calls
-    are control tools, not checks.
+   The window does not append a generic report after the answer.
+5. **Additional evidence** — when the agent's report is prose only, the latest
+   data read is shown as one preview: a survey, a query table and chart, an
+   access chain, or a remembered history. Up to three or five rows; the table
+   keeps its copy/save actions, and the Evidence control below opens the full
+   check. When the agent already composed a table, timeline, findings or plan,
+   that block is the answer and is not repeated here.
+6. **Evidence** — one control on a settled task, labelled with its check count.
+   It opens outside the answer, not interleaved with it. A report's findings
+   block is already visible in the answer, so the evidence body does not
+   duplicate current findings; accepted and fixed folds remain available. A
+   report's plan block is the change plan and stays in the answer — the window
+   does not assign the task a type to decide that. A deterministic check
+   synthesizes a report with its findings and uses the same evidence fold for
+   checks. The full evidence body still carries findings, re-verification,
+   changed posture, **Not read** and checks when they exist.
+7. **Checks** — every executed tool call in order, with target, result note and
+   duration, folded to checks · time · tokens. Plan, report and playbook calls
+   are control tools, not checks. They live with the rest of Evidence on every
+   task, including a deterministic check.
+
+A report's own table, timeline, plan or findings block is part of the answer and
+is not folded. The deterministic sections underneath are evidence, not a second
+answer.
 
 Copy and a single overflow menu are always visible in the run header. The
 overflow contains save Markdown, check again, re-verify, copy task link, export
-evidence and save PDF.
-Evidence and PDF include the current findings, controls, read timestamps and
-redacted views; there is no secret or unredacted provider document in them.
+evidence and save PDF. Evidence and PDF include the current findings, controls,
+read timestamps and redacted views; there is no secret or unredacted provider
+document in them.
 
 ### Findings and Issues
 

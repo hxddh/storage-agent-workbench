@@ -128,6 +128,7 @@ export function App() {
 
   const newTask = useCallback(() => {
     setView(null)
+    setFocusId(null)
     setSidebarOpen(false)
     void refresh()
   }, [refresh])
@@ -183,6 +184,7 @@ export function App() {
   }, [boot])
 
   const submit = async (text: string, tokens: string[], context: ContextRef[] = []) => {
+    setFocusId(null)
     if (view) {
       await window.agent.send(view.task.id, text, tokens, context)
     } else {

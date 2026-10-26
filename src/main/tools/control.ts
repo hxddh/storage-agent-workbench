@@ -103,6 +103,7 @@ function reportBlocks(value: unknown): ReportBlock[] {
         kind,
         ...(text(item.bucket, 255) ? { bucket: text(item.bucket, 255) } : {}),
         ...(text(item.code, 120) ? { code: text(item.code, 120) } : {}),
+        ...(title ? { title } : {}),
         ...(limit ? { limit } : {}),
       })
       continue
@@ -176,7 +177,7 @@ export function reportTool() {
   return defineTool({
     name: 'report',
     description:
-      'Compose the answer the window renders. Blocks are ordered. summary and callout carry your prose and cite the tool-call ids that support it; table, timeline, plan and code point at one tool result each; findings selects deterministic estate findings. Call it once when the investigation is ready; after it, write one short sentence at most.',
+      'Compose the answer the window renders. Blocks are ordered. summary and callout carry your prose and cite the tool-call ids that support it; table, timeline, plan and code point at one tool result each; findings selects deterministic estate findings. Use one summary and at most one proof block for the question; do not append findings, changes, checks or a full survey for completeness. Call it once when the investigation is ready; after it, write one short sentence at most.',
     parameters: Type.Object({
       title: Type.Optional(Type.String({ maxLength: 160 })),
       blocks: Type.Array(blockSchema, { minItems: 1, maxItems: 12 }),

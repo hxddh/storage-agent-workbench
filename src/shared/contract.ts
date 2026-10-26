@@ -222,7 +222,7 @@ export type ReportBlock =
   | { kind: 'summary'; text: string; evidence: string[] }
   | { kind: 'callout'; tone: ReportTone; text: string; title?: string; evidence: string[] }
   | { kind: 'table'; evidence: string[]; title?: string; limit?: number }
-  | { kind: 'findings'; bucket?: string; code?: string; limit?: number }
+  | { kind: 'findings'; bucket?: string; code?: string; title?: string; limit?: number }
   | { kind: 'timeline'; evidence: string[]; title?: string; limit?: number }
   | { kind: 'plan'; evidence: string[]; title?: string }
   | { kind: 'code'; evidence: string[]; title?: string }

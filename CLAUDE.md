@@ -142,7 +142,7 @@ startup for tasks without rows. It stores the request, the current answer
 summary (`entry_id = 'verdict'`) and one row per finding (`f:<source entry>:<key>`).
 A model-free check writes one `sa.audit` entry; its `survey` and `access`
 progress events are transient and never persisted. It has no `sa.user`
-request, so the page shows its synthesized report and checks without a fake
+request, so the page shows its synthesized report and Evidence fold without a fake
 question. Its search rows are written from the report directly, because a
 `write` submission may not have reached the active view when indexing runs.
 
@@ -218,24 +218,34 @@ The task list groups pinned, today and earlier, with a state dot and a relative
 time. Titles may take two lines; task rows support rename, pin and delete. A
 task title appears once, in the sidebar, plus the compact top bar below 860px.
 
-A task with a plan or report is an agent run. The run header names the question
-or task, the account(s), `Reads complete` or `Reads open: n · m blocked`,
-checked/total buckets, the read time and the severity counts. A failed or
-stopped storage read keeps the line open. Copy and one overflow menu sit in the
-header: save Markdown, check again, re-verify, copy link, export evidence and
-save PDF. `Check again` opens a new check task; re-verify writes a report in the
-current task. Home reads its "last complete read" from the reading records.
+A task with a plan or report is an agent run. The run header names the latest
+question (a deterministic check has no fake question), the account(s),
+`Reads complete` or `Reads open: n · m blocked`, checked/total buckets and the
+read time; severity counts appear only when the task is about findings. A
+failed or stopped storage read keeps the line open. Copy and one overflow menu
+sit in the header: save Markdown, check again, re-verify, copy link, export
+evidence and save PDF. `Check again` opens a new check task; re-verify writes a
+report in the current task. Home reads its "last complete read" from the
+reading records.
 
 The plan section is the agent's own 3–6 steps with pending/active/done/blocked
-states; it is not a transcript. The answer section renders the ordered report
-blocks: summary, callout, table, findings, timeline, plan or code. A data block
-resolves one evidence id to the tool view that proved it; a missing block is
-omitted with a quiet note. The deterministic evidence follows: current findings
-grouped by bucket (merged by rule and bucket, severity ordered, memory marked,
-five visible with **N more**), what the task proved fixed, accepted risks
-folded, re-verification with plan status, changes, **Not read**, the change plan
-and one data section (a query's rows and chart, the survey table with capacity,
-or the estate's remembered buckets and history) and checks. Results are flat
+states; it is not a transcript. It is visible while the run is live and remains
+for a stopped run or a blocked step; a settled answer folds it away. The answer
+section renders the ordered report blocks: summary, callout, table, findings,
+timeline, plan or code. A data block resolves one evidence id to the tool view
+that proved it; a missing block is omitted with a quiet note. A report findings
+block is visible in the answer; the evidence body does not duplicate its
+current findings. A report plan block is the change plan; no task subtype
+selects it. A model task whose report is prose only shows the latest data read
+as one preview — a survey, a query table, an access chain or a remembered
+history — and one Evidence control carrying its check count. Evidence holds
+current findings grouped by bucket (merged by rule and bucket, severity
+ordered, memory marked, five visible with **N more**), what the task proved
+fixed, accepted risks folded, re-verification with plan status, changes,
+**Not read**, and one data section (a query's rows and chart, the survey table
+with capacity, or the estate's remembered buckets and history) and checks. A
+deterministic check synthesizes report blocks and uses the same evidence fold.
+Results are flat
 sections separated by hairlines, never cards. Findings carry their Security Hub
 control where one matches; when a survey view carries fewer Issues than the
 account has, the run says how many.

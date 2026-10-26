@@ -139,7 +139,7 @@ function severityLabel(finding: BriefFinding, t: Dict): string {
       : t.severityLow
 }
 
-function noticeText(notice: BriefNotice, t: Dict): string {
+export function noticeText(notice: BriefNotice, t: Dict): string {
   const base =
     notice.code === 'stopped'
       ? t.noticeStopped
@@ -635,6 +635,7 @@ export function Brief({
   hideFindings = false,
   hideData = false,
   hideFix = false,
+  hideNotices = false,
   prefixMarkdown = '',
 }: {
   view: TaskView
@@ -652,6 +653,7 @@ export function Brief({
   hideFindings?: boolean
   hideData?: boolean
   hideFix?: boolean
+  hideNotices?: boolean
   /** Markdown the run composed above this evidence body; included in Copy. */
   prefixMarkdown?: string
 }) {
@@ -1072,35 +1074,38 @@ export function Brief({
           </p>
         )}
 
-        {brief.notices.map((notice) => (
-          <div
-            className={`notice ${notice.tone}`}
-            key={notice.id}
-            role={notice.tone === 'error' ? 'alert' : undefined}
-          >
-            <span className="dot" aria-hidden="true" />
-            <span className="text">{noticeText(notice, t)}</span>
-            {notice.action && (
-              <button
-                className="text-action"
-                type="button"
-                onClick={notice.action === 'retry' ? onRetry : onContinue}
-              >
-                {notice.action === 'retry' ? t.retry : t.continue}
-              </button>
-            )}
-          </div>
-        ))}
+        {!hideNotices &&
+          brief.notices.map((notice) => (
+            <div
+              className={`notice ${notice.tone}`}
+              key={notice.id}
+              role={notice.tone === 'error' ? 'alert' : undefined}
+            >
+              <span className="dot" aria-hidden="true" />
+              <span className="text">{noticeText(notice, t)}</span>
+              {notice.action && (
+                <button
+                  className="text-action"
+                  type="button"
+                  onClick={notice.action === 'retry' ? onRetry : onContinue}
+                >
+                  {notice.action === 'retry' ? t.retry : t.continue}
+                </button>
+              )}
+            </div>
+          ))}
       </div>
 
       {!live && !auditProgress && !brief.verdict && brief.checks.length === 0 && (
         <p className="brief-empty">{t.emptyStream}</p>
       )}
 
-      {!hideFindings &&
-        (brief.findings.length > 0 || brief.accepted.length > 0 || brief.resolved.length > 0) && (
-          <section className="brief-section" aria-label={t.findingsTitle}>
-            {brief.findings.length > 0 && <h2>{t.findingsTitle}</h2>}
+      {((!hideFindings && brief.findings.length > 0) ||
+        brief.accepted.length > 0 ||
+        brief.resolved.length > 0) && (
+        <section className="brief-section" aria-label={t.findingsTitle}>
+          {!hideFindings && brief.findings.length > 0 && <h2>{t.findingsTitle}</h2>}
+          {!hideFindings && (
             <div className="findings-list">
               {findingGroups.map((group) => (
                 <div className="finding-group" key={group.bucket || 'account'}>
@@ -1122,62 +1127,63 @@ export function Brief({
                 </div>
               ))}
             </div>
-            {brief.findings.length > FINDINGS_SHOWN && (
-              <button
-                className="more-toggle"
-                type="button"
-                aria-expanded={allFindings}
-                onClick={() => setAllFindings((value) => !value)}
-              >
-                {allFindings
-                  ? t.less
-                  : fill(t.moreFindings, { n: brief.findings.length - FINDINGS_SHOWN })}
-                <ChevronDown size={13} className={allFindings ? 'open' : undefined} />
-              </button>
-            )}
-            {brief.issueTotal !== null && brief.issueTotal > shownIssues && (
-              <p className="quiet">
-                {fill(t.issuesShown, { shown: shownIssues, total: brief.issueTotal })}
-              </p>
-            )}
-            {brief.accepted.length > 0 && (
-              <Fold
-                label={
-                  brief.accepted.length === 1
-                    ? t.acceptedOne
-                    : fill(t.acceptedCount, { n: brief.accepted.length })
-                }
-              >
-                {brief.accepted.map((finding) => (
-                  <FindingRow
-                    key={finding.key}
-                    finding={finding}
-                    t={t}
-                    onOpen={() => revealCheck(finding.sourceId)}
-                    onAccept={accept(finding)}
-                    staleDays={staleDays}
-                  />
-                ))}
-              </Fold>
-            )}
-            {brief.resolved.length > 0 && (
-              <Fold
-                tone="ok"
-                label={
-                  brief.resolved.length === 1
-                    ? t.fixedOne
-                    : fill(t.fixedCount, { n: brief.resolved.length })
-                }
-              >
-                {brief.resolved.map((finding) => (
-                  <p className="resolved-row" key={finding.key}>
-                    <span className="mono">{finding.bucket}</span> · {finding.title}
-                  </p>
-                ))}
-              </Fold>
-            )}
-          </section>
-        )}
+          )}
+          {!hideFindings && brief.findings.length > FINDINGS_SHOWN && (
+            <button
+              className="more-toggle"
+              type="button"
+              aria-expanded={allFindings}
+              onClick={() => setAllFindings((value) => !value)}
+            >
+              {allFindings
+                ? t.less
+                : fill(t.moreFindings, { n: brief.findings.length - FINDINGS_SHOWN })}
+              <ChevronDown size={13} className={allFindings ? 'open' : undefined} />
+            </button>
+          )}
+          {!hideFindings && brief.issueTotal !== null && brief.issueTotal > shownIssues && (
+            <p className="quiet">
+              {fill(t.issuesShown, { shown: shownIssues, total: brief.issueTotal })}
+            </p>
+          )}
+          {brief.accepted.length > 0 && (
+            <Fold
+              label={
+                brief.accepted.length === 1
+                  ? t.acceptedOne
+                  : fill(t.acceptedCount, { n: brief.accepted.length })
+              }
+            >
+              {brief.accepted.map((finding) => (
+                <FindingRow
+                  key={finding.key}
+                  finding={finding}
+                  t={t}
+                  onOpen={() => revealCheck(finding.sourceId)}
+                  onAccept={accept(finding)}
+                  staleDays={staleDays}
+                />
+              ))}
+            </Fold>
+          )}
+          {brief.resolved.length > 0 && (
+            <Fold
+              tone="ok"
+              label={
+                brief.resolved.length === 1
+                  ? t.fixedOne
+                  : fill(t.fixedCount, { n: brief.resolved.length })
+              }
+            >
+              {brief.resolved.map((finding) => (
+                <p className="resolved-row" key={finding.key}>
+                  <span className="mono">{finding.bucket}</span> · {finding.title}
+                </p>
+              ))}
+            </Fold>
+          )}
+        </section>
+      )}
 
       {reverifyError && (
         <p className="brief-error">

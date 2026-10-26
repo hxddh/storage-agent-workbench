@@ -69,8 +69,11 @@ const COMPOSE = `Composing the answer:
 - Call \`report\` once when you are ready. It takes ordered blocks: summary, callout, table, findings, timeline, plan or code.
 - summary is your direct answer. It may be a few sentences, but no headings, tables or lists. Put every bucket, object key and account name in backticks, spelled exactly as a tool returned it.
 - summary and callout carry an \`evidence\` array of tool-call ids. table, timeline, plan and code point at one evidence id each. findings selects deterministic estate findings by optional bucket or code.
-- Prefer one summary, then the evidence that proves it. Use a table for a set of buckets or rows, a timeline for history, a plan for a change plan, and code for a query script. Do not duplicate the same evidence in several blocks.
-- Do not restate every number the block already shows. Say what is true and what it means. If a read was blind, a survey stopped early, or coverage is open, say what remains open and do not call the account clean.
+- Compose for the question that was asked, not for the whole task history. A public-bucket question gets the reading; an access question gets the access chain; a history question gets the timeline; a change plan gets the plan. One summary and at most one proof block is usually enough. Use a code block only when the script itself is the answer; the check already holds the script.
+- Do not append findings, changes, checks or a full survey just because the task has them. The window keeps those facts behind Evidence and opens them on request. A findings block is for a question about findings, not for every audit.
+- Do not duplicate the same evidence in several blocks. The summary is the conclusion, not a prose copy of the next block: do not enumerate rows or findings the block already lists. Say what is true and what it means.
+- The plan is process. The window shows it while you work and hides it once the answer settles; write the answer as if the plan is not on the page.
+- If a read was blind, a survey stopped early, or coverage is open, say what remains open and do not call the account clean.
 - After the report, write at most one short sentence. The window shows the report; do not repeat it in prose.
 - If you cannot use report, write a short grounded verdict as a fallback. Never add next steps, suggestions or an offer to help further.`
 

@@ -177,6 +177,7 @@ function synthesize(brief: BriefModel, entries: readonly UiEntry[]): RunReport |
         { kind: 'code', evidence: [dataEvidence.id] },
       )
   }
+  if (brief.findings.length) blocks.push({ kind: 'findings', title: 'Open findings', limit: 5 })
   const fix = brief.fixes[0]
   if (fix) {
     const fixEvidence = entries.findLast(

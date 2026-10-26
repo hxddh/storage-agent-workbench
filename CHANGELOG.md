@@ -1,3 +1,37 @@
+## 27.1.0
+
+A quieter task page, driven by the agent's report rather than display-time task
+subtypes.
+
+### Changed
+
+- Removed issue/fix/history intent classification from the renderer. A task is
+  a question or a deterministic check; report blocks decide whether the answer
+  is a table, timeline, findings list or change plan.
+- A finished process plan folds away. It remains only while the run is live, or
+  when the run is stopped or a step is blocked.
+- A deterministic account check synthesizes the same report blocks, including
+  its findings, and uses the same Evidence fold as a model task.
+- One Evidence control. Source lines are provenance only; the duplicate
+  "View evidence" link and repeated summary facts are gone.
+- Summaries state the conclusion; the table, findings and timeline carry the
+  detail. History drops placeholder columns.
+
+### Fixed
+
+- A follow-up question resets evidence and focus state; a stale report keeps
+  only its prose.
+- Report findings support j/k/a; row actions keep accessible contrast and
+  hover/focus behavior.
+- Report findings blocks keep their title; the unresolved-block note
+  pluralizes correctly.
+
+### Verification
+
+- Typecheck, Biome, 197 unit tests, build and bundle budget.
+- Full E2E and no-model E2E, axe 0 serious violations, 20 visual baselines and
+  the harness smoke eval.
+
 ## 27.0.0
 
 An agent-native run, not a fixed report. The storage boundary, deterministic
