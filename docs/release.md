@@ -96,6 +96,7 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest published release in this checkout is **25.0.0**. Earlier release
-notes may describe retired behavior; they are history. When the next version is
-tagged, update this line, `README.md` and `docs/README.md`.
+The latest release is **26.0.0**. Earlier release notes may describe retired
+behavior; they are history. Keep `README.md`, `CHANGELOG.md` and this paragraph
+in step with the next tag, and refresh `docs/screenshot.png` if the surface
+changed.

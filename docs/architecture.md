@@ -10,7 +10,7 @@ Electron main                              Renderer (sandboxed)
   preload     contextBridge, CJS
   harness     pi-durable tasks, entries, watches
   tools       ten read-only tools
-  estate      rules, Issues, fixes
+  estate      rules, Issues, change plans
   s3          readers, policy, access, changes
   analysis    one SQLite file per dataset
   updater     GitHub releases
@@ -58,8 +58,11 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
    divider. The model's provider-facing messages never reach the renderer.
 10. When a task settles, its request, current verdict and findings are written
     to `search_docs` from the same `buildBrief()` projection the window uses.
-    The shell may send one notification if the window is in the background.
-    Tasks without rows are backfilled at startup.
+    A settled account reading also writes one `readings` row per account: the
+    trigger, coverage counts, open totals and whether the read was complete.
+    The row carries no request, verdict, policy, account id or secret. The shell
+    may send one notification if the window is in the background. Tasks without
+    search rows are backfilled at startup.
 11. `harness.audit()` is the deterministic path. `ipc.ts` creates the task,
     returns it immediately, and starts `audit()` in the background. `audit()`
     surveys every account, reads access evidence for up to 24 buckets per
@@ -67,8 +70,12 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
     The window expands that entry into ordinary checks and a verdict generated
     by `shared/audit.ts`. It never asks the model.
 12. `harness.reverify()` replays the read operations for buckets the task
-    touched, up to 50 per account, and writes one `sa.reverify` entry. It never
-    calls the model and never writes storage.
+    touched and the buckets and account block in its latest change plan, up to
+    50 buckets per account, and writes one `sa.reverify` entry. When a plan
+    exists, `runtime/reverify-plan.ts` compares every step with the fresh
+    decisions: confirmed only when all of its codes are clear, not applied when
+    an Issue remains open or accepted, and unknown when the bucket or rule was
+    not read. It never calls the model and never writes storage.
 
 `Check again` creates a new task and runs the same deterministic path. A
 model-free check is a snapshot; the estate remains the durable memory.
@@ -80,11 +87,14 @@ untrusted-data envelope as every other tool result. It never reads raw requests
 or `search_docs`.
 
 Read closure is deterministic too. `buildBrief()` keeps account coverage across
-a narrowed re-read instead of replacing it, and the window's scope line says
+a narrowed re-read instead of replacing it. `readStateOfBrief()` is the one
+calculation used by the scope line, Home and the reading record; it says
 `Reads complete` only when account coverage, pending reads, access evidence,
 failed reads and undecided rules are closed. The agent keeps a per-run set of
 the same coverage signals; a clean account claim while that set is non-empty
 gets one correction. The scope line remains the source of truth on the page.
+A model-free re-verification is always recorded as partial; only an unscoped
+survey can produce a complete reading.
 
 The window never receives `entry.model` (provider-facing messages). The mapper
 in `runtime/project.ts` projects entries into `UiEntry`, extracting only answer
@@ -123,9 +133,9 @@ and truncation stay in the view.
 
 | Module | Responsibility |
 |---|---|
-| `main/db.ts` | schema, append-only migrations (`user_version`), typed queries including Issue events |
+| `main/db.ts` | schema, append-only migrations (`user_version`), typed queries including Issue events and reading records |
 | `main/providers.ts` | accounts (keys or profile), regional S3 clients, profile list, connection test |
-| `main/settings.ts` | `settings.json` (language, theme, notify, stale days, model, last task, last seen) |
+| `main/settings.ts` | `settings.json` (language, theme, notify, stale days, model, last task) |
 | `main/model-catalog.ts` | provider model list and context-window/thinking inference |
 | `main/updater.ts` | `electron-updater` against GitHub releases, packaged builds only |
 | `main/security/vault.ts` | `safeStorage` or AES-256-GCM fallback |
@@ -133,7 +143,8 @@ and truncation stay in the view.
 | `main/staging.ts` | files waiting for their message |
 | `main/runtime/model.ts` | pi-ai provider (Anthropic, OpenAI Responses, Chat Completions), saved and draft test |
 | `main/runtime/agent.ts` | prompt sections, guard hooks, grounding and open-read corrections, estate digest |
-| `main/runtime/harness.ts` | task lifecycle, model per run, watches, model-free audit, re-verify, purge |
+| `main/runtime/harness.ts` | task lifecycle, model per run, watches, model-free audit, re-verify, reading records, purge |
+| `main/runtime/reverify-plan.ts` | deterministic plan-step comparison for re-verification |
 | `main/runtime/project.ts` | entries → `UiEntry`, live state, usage |
 | `main/runtime/search.ts` | sidebar search and index rows |
 | `shared/audit.ts` | deterministic account-check verdict from survey views |

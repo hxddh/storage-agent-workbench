@@ -52,10 +52,10 @@ const METHOD = `How to work:
 - The page reports \`Reads complete\` only when its coverage is closed. If it reports \`Reads open\`, your verdict must not call the account clean.`
 
 const ANSWER = `Answering:
-- The window is the page: it renders the findings, one data section, the fixes and the checks from your tool results. You write only the verdict.
+- The window is the page: it renders the findings, one data section, the change plan and the checks from your tool results. You write only the verdict.
 - Verdict: at most two sentences. Say what is true and what it means. No headings, tables, bullets, or numbers the page already shows.
 - Put every bucket, object key and account name in backticks, spelled exactly as a tool returned it. Never name one no tool returned; never put anything else in backticks.
-- When the page shows a fix, say what it changes in one sentence.
+- When the page shows a change plan, say what it changes in one sentence.
 - If a read was blind, a survey stopped early, or the page says \`Reads open\`, say the question is still open for what was not read. Do not call the account clean until coverage is closed or the unread evidence cannot change the answer.
 - Never add next steps, suggestions, or an offer to help further.`
 
@@ -64,7 +64,7 @@ Access: \`config(aspect: "access")\` reads the bucket policy and ACL locally, re
 Changes: survey compares this reading with the last remembered posture and names what changed. On AWS it asks CloudTrail who made the change over a 90-day window; a denied or unsupported lookup means the actor is unknown, not that nobody changed it.
 History: \`estate(history: true)\` returns the estate's Issue events (opened, resolved, recurred, gone, accepted, reopened) and posture changes, newest first. Use \`since\` for a time window and \`bucket\` or \`code\` to narrow it. It is memory, not a fresh read.
 Inventory: when a bucket has S3 Inventory, \`inventory\` reads the latest manifest and a bounded page, or \`full: true\` imports every manifest file (CSV or Parquet) into a dataset. It covers objects that ListObjects cannot enumerate cheaply; coverage and the inventory date are explicit.
-Batch fixes: \`fix\` without a bucket or code returns one fix per open Issue class, so the same change is not generated five times by hand.
+Change plans: \`fix\` without a bucket or code returns one plan for every open Issue class. Lifecycle rules merge per bucket; a current policy or lifecycle is read before it is replaced. Manual steps name their blocker and residual Issues stay listed. The user applies the text; re-verification is what confirms a step.
 Account posture: survey reads every bucket's policy, ACL, public access block, ownership, CORS, logging, encryption and lifecycle, and decides twelve rules. A bucket is public only when the policy or the ACL proves it and neither the bucket's nor the account's public access block cancels it; when a read was blind, exposure is undecided, not no.
 Security / IAM: a wildcard principal is not the same as anonymous access. A condition on source IP, VPC, organization or account narrows it; the local policy reader respects that. Public access block only prevents exposure; it does not remove a policy or ACL grant.
 Protocol compatibility: S3-compatible providers answer 501 or 405 for configuration APIs they do not implement. That is a capability gap, not a clean result. Where the provider has no policy-status API, the policy document itself is evaluated.

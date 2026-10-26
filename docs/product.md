@@ -23,8 +23,9 @@ check still works.
 
 Home is a quiet estate summary, not a dashboard:
 
-- account lines with remembered bucket count, last read and open risk;
-- a line for changes since the last visit;
+- account lines with remembered bucket count, the last complete reading (or
+  `no complete reading`) and open risk;
+- a line for new findings since the latest complete reading;
 - **Check account**;
 - the composer in its usual place.
 
@@ -50,7 +51,9 @@ Home or Settings.
 
 The progress line is live; the final checks are written when the reading ends.
 A check is a snapshot, not a background monitor. **Check again** in a brief
-starts another check task; it does not mutate the old one.
+starts another check task; it does not mutate the old one. A settled reading
+also records one `readings` row per account with its coverage and current open
+risk. It stores no request, verdict, policy or secret.
 
 ## A model task
 
@@ -95,13 +98,18 @@ Top to bottom:
 5. **Findings** — current problems grouped by bucket, severity ordered, with
    memory age and Security Hub controls where they match.
 6. **Re-verification** — the latest model-free replay report, when one exists.
+   When the task contains a change plan, every step is compared with the fresh
+   reading as `confirmed`, `not applied` or `still unknown`. Skipped and
+   truncated buckets stay visible.
 7. **Changed since the last reading** — posture differences, then CloudTrail
    attribution when AWS supplies it.
 8. **Not read** — blind buckets, survey-pending or capped buckets, undecided
    rules, missing permissions, blind configuration reads, partial access
    coverage, failed or stopped reads, and buckets no longer listed.
-9. **Fix** — generated text and impact, newest fix open and earlier fixes
-   folded.
+9. **Change plan** — one plan instead of a pile of independent commands. Steps
+   open one at a time with their exact CLI, Terraform and API text, impact
+   preview, baseline and manual blockers. The residual list names findings the
+   plan does not cover.
 10. **Data** — the latest tabular result: survey buckets and capacity, an object
     list or facts, a query table and chart, access paths, or the estate's
     remembered buckets with its Issue/posture history. Up to ten rows, then a
@@ -260,7 +268,9 @@ mid gets 24 and large 32. The answer format does not change.
 - CloudTrail covers 90 days and is attributed for at most six changed buckets
   per survey; only management events are considered.
 - Re-verification replays at most 50 buckets per account, has a 120-second
-  budget, and reports skipped or truncated buckets.
+  budget, and reports skipped or truncated buckets. A plan generates at most 20
+  steps and scans at most 500 open Issues. A merged lifecycle omits Terraform
+  when existing rules contain fields the renderer cannot reproduce.
 - A code-mode script is bounded to 6,000 characters and the budgets above.
 - Notes are capped at 500; each note is at most 1,000 characters.
 - Attachments are limited to ten files and 4 GiB each.
@@ -296,24 +306,40 @@ undecided.
 
 ## Fixes
 
-`fix` generates AWS CLI, Terraform and API document text, plus an impact preview
-from the remembered posture. It can generate a fix for one bucket and code, or
-a batch for open Issues (it scans up to 500 and generates up to 20). The bucket
-name must match
+`fix` returns one deterministic change plan. Each step carries AWS CLI,
+Terraform and API document text plus an impact preview from the remembered
+posture. It can target one bucket and code, or every open Issue (it scans up to
+500 and generates up to 20). Lifecycle fixes for one bucket merge into one
+document; when existing rules are present, the Terraform tab is omitted rather
+than rendering an incomplete authoritative resource. A policy fix is merged
+with the current policy only when that policy was read and names no account id.
+Otherwise the step is marked manual
+and keeps its blocker; the plan never reproduces an unread or account-bearing
+policy in the window. The plan states its baseline (the latest
+complete reading or remembered state), lists residual findings it does not
+cover, and is text the user applies. The bucket name must match
 `[A-Za-z0-9][A-Za-z0-9._-]{0,254}`; otherwise no safe fix is generated. The
-preview says what it cannot know. The app never applies the text.
+app never applies the text.
+
+**Re-verify** is the only path that confirms a plan step. It re-reads the plan's
+buckets and the account-wide block, applies the same rules, and reports
+`confirmed` only when every code in the step is now clear. An open or accepted
+Issue is `not applied`; an unchecked bucket or undecided rule is `still unknown`.
 
 ## Memory and retention
 
 The estate is remembered bucket posture with the date it was read, open and
-accepted Issues with their evidence, notes, and the latest change rows. The
-agent reads memory first and surveys only when memory is empty, stale or the
-question is about current exposure. It re-reads only the bucket the user says
-they fixed.
+accepted Issues with their evidence, notes, the latest change rows and a compact
+`readings` history (trigger, coverage counts, open totals and whether the read
+was complete). The agent reads memory first and surveys only when memory is
+empty, stale or the question is about current exposure. It re-reads only the
+bucket the user says they fixed.
 
 `estate` also answers temporal questions with `history: true`: Issue events
-(opened, resolved, recurred, gone, accepted, reopened) and posture changes,
-newest first, optionally narrowed by bucket, code or `since`. The page renders
+(opened, resolved, recurred, gone, accepted, reopened), posture changes and
+reading events (read, checked, rechecked), newest first. Issue events and
+posture changes narrow by bucket, code or `since`; reading events are
+account-wide, so a bucket or code filter omits them. The page renders
 that history under the existing Data section; it is evidence about what
 happened, not a new findings list. The model sees the same structured rows
 inside the untrusted-data envelope; raw requests and `search_docs` text are

@@ -43,7 +43,16 @@ function tfName(bucket: string): string {
   return /^[A-Za-z_]/.test(name) ? name : `b_${name}`
 }
 
-const TLS_STATEMENT = (bucket: string) => ({
+/**
+ * Never reproduce a policy that carries an account id. An account id can appear
+ * in a principal, a condition or an ARN; the conservative test is a standalone
+ * 12-digit number. The caller turns this into a manual merge with a blocker.
+ */
+export function policyHasAccountId(document: Record<string, unknown>): boolean {
+  return /\b\d{12}\b/.test(JSON.stringify(document))
+}
+
+export const TLS_STATEMENT = (bucket: string) => ({
   Sid: 'DenyInsecureTransport',
   Effect: 'Deny',
   Principal: '*',
@@ -52,15 +61,17 @@ const TLS_STATEMENT = (bucket: string) => ({
   Condition: { Bool: { 'aws:SecureTransport': 'false' } },
 })
 
+export type FixKind =
+  | 'public_access_block'
+  | 'default_encryption'
+  | 'lifecycle'
+  | 'policy'
+  | 'ownership'
+  | 'logging'
+  | 'account_public_access_block'
+
 interface Fix {
-  kind:
-    | 'public_access_block'
-    | 'default_encryption'
-    | 'lifecycle'
-    | 'policy'
-    | 'ownership'
-    | 'logging'
-    | 'account_public_access_block'
+  kind: FixKind
   document: Record<string, unknown>
   command: string
   notes: string[]
@@ -267,6 +278,70 @@ function terraform(
 export interface GeneratedFix {
   formats: FixFormat[]
   notes: string[]
+  kind: FixKind
+  document: Record<string, unknown>
+  command: string
+}
+
+function targetCommand(
+  command: string,
+  kind: FixKind,
+  endpoint: string | null,
+  region: string | null,
+): string {
+  if (!endpoint && !region) return command
+  const target = [
+    endpoint ? `--endpoint-url ${quote(endpoint)}` : '',
+    region ? `--region ${quote(region)}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+  let out = command.replace('aws s3api ', `aws ${target} s3api `)
+  if (kind === 'account_public_access_block' && region)
+    out = out.replace('aws s3control ', `aws --region ${quote(region)} s3control `)
+  return out
+}
+
+function formatsFor(
+  fix: Fix,
+  bucket: string,
+  endpoint: string | null,
+  region: string | null,
+  includeTerraform: boolean,
+): FixFormat[] {
+  const formats: FixFormat[] = [{ label: 'AWS CLI', language: 'bash', text: fix.command }]
+  const tf = includeTerraform ? terraform(fix, bucket, endpoint, region) : null
+  if (tf) formats.push({ label: 'Terraform', language: 'hcl', text: tf })
+  formats.push({
+    label: 'API document',
+    language: 'json',
+    text: JSON.stringify(fix.document, null, 2),
+  })
+  return formats
+}
+
+/** Format a merged document, or a manual statement, without re-deriving the rule. */
+export function formatFix(
+  kind: FixKind,
+  document: Record<string, unknown>,
+  bucket: string,
+  endpoint: string | null,
+  region: string | null,
+  command: string,
+  notes: string[] = [],
+  options: { terraform?: boolean } = {},
+): GeneratedFix {
+  const finalCommand = targetCommand(command, kind, endpoint, region)
+  const fix: Fix = { kind, document, command: finalCommand, notes }
+  const allNotes = [...notes]
+  if (endpoint) allNotes.unshift(`Runs against ${endpoint} — use credentials for that account.`)
+  return {
+    formats: formatsFor(fix, bucket, endpoint, region, options.terraform !== false),
+    notes: allNotes,
+    kind,
+    document,
+    command: finalCommand,
+  }
 }
 
 export function generateFix(
@@ -279,29 +354,7 @@ export function generateFix(
   if (!account && !SAFE_BUCKET.test(bucket)) return null
   const fix = build(rule.code, bucket)
   if (!fix) return null
-  let command = fix.command
-  if (endpoint || region) {
-    const target = [
-      endpoint ? `--endpoint-url ${quote(endpoint)}` : '',
-      region ? `--region ${quote(region)}` : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-    command = command.replace('aws s3api ', `aws ${target} s3api `)
-    if (account && region)
-      command = command.replace('aws s3control ', `aws --region ${quote(region)} s3control `)
-  }
-  const formats: FixFormat[] = [{ label: 'AWS CLI', language: 'bash', text: command }]
-  const tf = terraform(fix, bucket, endpoint, region)
-  if (tf) formats.push({ label: 'Terraform', language: 'hcl', text: tf })
-  formats.push({
-    label: 'API document',
-    language: 'json',
-    text: JSON.stringify(fix.document, null, 2),
-  })
-  const notes = [...fix.notes]
-  if (endpoint) notes.unshift(`Runs against ${endpoint} — use credentials for that account.`)
-  return { formats, notes }
+  return formatFix(fix.kind, fix.document, bucket, endpoint, region, fix.command, fix.notes)
 }
 
 export function impactPreview(

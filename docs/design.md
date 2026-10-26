@@ -85,8 +85,9 @@ fields, not a sequence of panels.
 ## Home
 
 A quiet account summary: a 30–36px heading, account lines with remembered
-bucket count, last read and unresolved risk, a change line, and **Check
-account**. With no account, the explicit choices are **Try with demo storage**
+bucket count, the last complete reading and unresolved risk, a line for new
+findings since the latest complete reading, and **Check account**. With no
+account, the explicit choices are **Try with demo storage**
 and **Add an account**; **Set up a model** is a secondary text action and the
 composer explains that a model is only needed to ask a question. A configured
 account with no model still offers Check account and model setup. Local models
@@ -100,7 +101,8 @@ The composer is inert until a model exists; the account can still be checked.
 Top to bottom: an 11.75px scope line (`Demo · Reads complete · 2/2 buckets
 checked · checked 2m ago · 5 findings`), the latest request as one quiet 13px
 line, the verdict, notices and grounding notes, findings, re-verification,
-changes, **Not read**, the fix, one data section and the checks receipt. Copy
+changes, **Not read**, the change plan, one data section and the checks receipt.
+Copy
 and a single overflow menu are always visible. Save, Check again, Re-verify,
 Copy link, Export evidence and Save PDF live in that overflow.
 
@@ -126,6 +128,14 @@ success status text use `--ok`.
 
 A name the checks never showed gets a dashed `--warn` underline and one quiet
 line under the verdict. Names in the verdict are prose, not boxed code chips.
+
+A change plan is one hairline list, not a stack of cards. Its summary names
+steps, buckets, manual merges and residual findings; the baseline is one quiet
+line; a step row carries a severity dot, bucket, title and ready/manual status.
+Only the selected step opens the exact tabs, code and impact. A manual step
+shows its blocker above the code. Re-verification uses the same hairline rows
+with a short status before the step: confirmed uses `--ok`, not applied uses
+`--danger`, still unknown uses `--warn`.
 The `Markdown` chunk is lazy; while it loads, backticks are stripped rather than
 flashing raw syntax.
 

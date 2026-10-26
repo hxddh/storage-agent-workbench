@@ -6,7 +6,7 @@ the agent reads the account, remembers what it saw, and projects the result as a
 **estate** is the agent's memory. Nothing is written, deleted or changed in
 storage, and the app never applies a fix.
 
-Current release: **25.0.0**.
+Current release: **26.0.0**.
 
 ![A brief in Storage Agent](docs/screenshot.png)
 
@@ -48,11 +48,16 @@ Current release: **25.0.0**.
 - **Import logs and inventories.** Attach an access log or S3 Inventory, then
   use `dataset`, `aggregate`, `inventory` or `principal`. A full Inventory can
   be imported into a local dataset; raw rows never reach the model.
-- **Generate fixes as text.** The agent produces AWS CLI, Terraform and API
-  document text with an impact preview built from what the estate remembers.
-  There is no Apply button.
-- **Re-verify without a model.** Re-read the buckets the task touched and report
-  which conclusions changed, which stayed open and which could not be re-read.
+- **Turn findings into one change plan.** The agent produces AWS CLI, Terraform
+  and API document text with an impact preview built from what the estate
+  remembers. A batch plan merges lifecycle rules per bucket, checks the current
+  policy/lifecycle before replacing it, states its baseline, marks manual
+  merges and blockers, and lists what it does not cover. There is no Apply
+  button.
+- **Close the loop without a model.** Re-read the buckets a task touched and
+  compare the result with its plan: confirmed, not applied or still unknown,
+  plus skipped and truncated coverage. A reading record on Home keeps the last
+  complete read and the new findings since it.
 - **Keep the evidence.** The brief has a scope line, findings grouped by bucket,
   changes, open questions, fixes, one data section and a checks receipt. Copy,
   save Markdown, check again, re-verify, copy a task link, export the evidence

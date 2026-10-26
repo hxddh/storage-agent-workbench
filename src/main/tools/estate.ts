@@ -1,5 +1,17 @@
-import type { Table } from '@shared/contract'
-import { generateFix, impactPreview } from '../estate/fixes'
+import {
+  GetBucketLifecycleConfigurationCommand,
+  GetBucketPolicyCommand,
+  type S3Client,
+} from '@aws-sdk/client-s3'
+import type { FixFormat, FixPlan, FixPlanStep, Impact, Severity, Table } from '@shared/contract'
+import {
+  type FixKind,
+  formatFix,
+  generateFix,
+  impactPreview,
+  policyHasAccountId,
+  TLS_STATEMENT,
+} from '../estate/fixes'
 import { ACCOUNT_SCOPE, BY_CODE, ruleTitle } from '../estate/rules'
 import { redact } from '../security/redact'
 import { agentTool, assertInScope, providerParam, type ToolDeps, Type } from './policy'
@@ -18,6 +30,119 @@ function age(iso: string | null): string {
   if (!iso) return 'never'
   const days = Math.floor((Date.now() - Date.parse(iso)) / 86_400_000)
   return days <= 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function shellJson(value: unknown): string {
+  return shellQuote(JSON.stringify(value, null, 0))
+}
+
+interface LifecycleRead {
+  ok: boolean
+  rules: Record<string, unknown>[]
+  blocker?: string
+}
+
+interface PolicyRead {
+  ok: boolean
+  document: Record<string, unknown> | null
+  blocker?: string
+}
+
+async function readLifecycle(
+  client: S3Client,
+  bucket: string,
+  signal: AbortSignal,
+): Promise<LifecycleRead> {
+  try {
+    const response = await client.send(
+      new GetBucketLifecycleConfigurationCommand({ Bucket: bucket }),
+      { abortSignal: signal },
+    )
+    return { ok: true, rules: (response.Rules ?? []) as unknown as Record<string, unknown>[] }
+  } catch (error) {
+    if (signal.aborted) throw error
+    const name = error instanceof Error ? error.name : ''
+    if (name === 'NoSuchLifecycleConfiguration') return { ok: true, rules: [] }
+    return {
+      ok: false,
+      rules: [],
+      blocker:
+        'The current lifecycle configuration could not be read; merge the new rules manually.',
+    }
+  }
+}
+
+async function readPolicy(
+  client: S3Client,
+  bucket: string,
+  signal: AbortSignal,
+): Promise<PolicyRead> {
+  try {
+    const response = await client.send(new GetBucketPolicyCommand({ Bucket: bucket }), {
+      abortSignal: signal,
+    })
+    if (!response.Policy) return { ok: true, document: null }
+    const parsed = JSON.parse(response.Policy) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      return {
+        ok: false,
+        document: null,
+        blocker: 'The current bucket policy is not a JSON object.',
+      }
+    return { ok: true, document: parsed as Record<string, unknown> }
+  } catch (error) {
+    if (signal.aborted) throw error
+    const name = error instanceof Error ? error.name : ''
+    if (name === 'NoSuchBucketPolicy') return { ok: true, document: null }
+    return {
+      ok: false,
+      document: null,
+      blocker: 'The current bucket policy could not be read; merge the statement manually.',
+    }
+  }
+}
+
+function mergeImpacts(items: { impact: import('@shared/contract').Impact }[]) {
+  const verdicts = items.map((item) => item.impact.verdict)
+  const verdict = verdicts.includes('unknown')
+    ? 'unknown'
+    : verdicts.includes('caution')
+      ? 'caution'
+      : 'low'
+  const reasons = [...new Set(items.flatMap((item) => item.impact.reasons))]
+  const gaps = [...new Set(items.flatMap((item) => (item.impact.gap ? [item.impact.gap] : [])))]
+  return { verdict, reasons, gap: gaps.length ? gaps.join(' ') : null } as const
+}
+
+function maxSeverity(a: Severity, b: Severity): Severity {
+  const order: Record<Severity, number> = { high: 0, medium: 1, low: 2 }
+  return order[a] <= order[b] ? a : b
+}
+
+function tlsPolicy(
+  current: Record<string, unknown> | null,
+  bucket: string,
+): Record<string, unknown> {
+  const document = current
+    ? structuredClone(current)
+    : { Version: '2012-10-17', Statement: [] as Record<string, unknown>[] }
+  const statements = Array.isArray(document.Statement)
+    ? (document.Statement as Record<string, unknown>[])
+    : document.Statement
+      ? [document.Statement as Record<string, unknown>]
+      : []
+  const hasTls = statements.some(
+    (statement) =>
+      statement.Sid === 'DenyInsecureTransport' ||
+      (statement.Condition && JSON.stringify(statement.Condition).includes('aws:SecureTransport')),
+  )
+  if (!hasTls) statements.push(TLS_STATEMENT(bucket))
+  document.Statement = statements
+  return document
 }
 
 export function estateTools(deps: ToolDeps) {
@@ -114,11 +239,31 @@ export function estateTools(deps: ToolDeps) {
           const changeRows = (await deps.db.listChanges(config.id, args.since)).filter(
             (change) => !args.bucket || change.bucket === args.bucket,
           )
+          // A reading is account-wide; it has no bucket or rule to match, so it
+          // only belongs in an unfiltered history.
+          const readingRows =
+            args.bucket || args.code
+              ? []
+              : await deps.db.listReadings({
+                  providerId: config.id,
+                  since: args.since,
+                  limit: 30,
+                })
           const titleOf = (code: string) => {
             const rule = BY_CODE.get(code)
             return rule ? ruleTitle(rule, lang) : code
           }
           const rows: Table['rows'] = [
+            ...readingRows.map((reading) => [
+              reading.at.slice(0, 10),
+              reading.trigger === 'reverify'
+                ? 'rechecked'
+                : reading.trigger === 'check'
+                  ? 'checked'
+                  : 'read',
+              '—',
+              `${reading.complete ? 'complete' : 'partial'} · ${reading.processed}/${reading.visible} buckets · ${reading.open_high} high`,
+            ]),
             ...eventRows.map((event) => [
               event.at.slice(0, 10),
               event.kind,
@@ -193,7 +338,7 @@ export function estateTools(deps: ToolDeps) {
     agentTool(deps, {
       name: 'fix',
       description:
-        'Generate the fix text for Open Issues: an AWS CLI command, a Terraform resource and the API document, plus an impact preview from what the estate already knows. Omit bucket and code for every open issue, or set either to narrow the batch. Read-only; the user applies it.',
+        'Build one change plan for Open Issues: a baseline, merged steps with AWS CLI/Terraform/API text, impact from the remembered posture, manual blockers and residual findings. Omit bucket and code for every open issue, or set either to narrow the plan. Read-only; the user applies it and re-verification confirms it.',
       parameters: Type.Object({
         provider_id: providerParam,
         bucket: Type.Optional(
@@ -207,8 +352,8 @@ export function estateTools(deps: ToolDeps) {
       }),
       timeoutMs: 30_000,
       target: (args) => args.bucket ?? args.code ?? 'all issues',
-      run: async (args, _run) => {
-        const config = await deps.providers.resolve(args.provider_id)
+      run: async (args, run) => {
+        const { config, client } = await run.provider(args.provider_id)
         const issues = (
           await deps.db.listIssues({ providerId: config.id, status: 'open', limit: 500 })
         )
@@ -218,15 +363,19 @@ export function estateTools(deps: ToolDeps) {
           throw new Error(
             `No open Issue${args.code ? ` '${args.code}'` : ''}${args.bucket ? ` on ${args.bucket}` : ''}. Survey or review it first.`,
           )
-        const generated: {
+        type GeneratedItem = {
           bucket: string
           code: string
-          formats: import('@shared/contract').FixFormat[]
-          impact: import('@shared/contract').Impact
+          formats: FixFormat[]
+          impact: Impact
           notes: string[]
-          severity: string
+          severity: Severity
           title: string
-        }[] = []
+          kind: FixKind
+          document: Record<string, unknown>
+          command: string
+        }
+        const generated: GeneratedItem[] = []
         for (const issue of issues.slice(0, 20)) {
           if (
             issue.code !== 'account_public_access_block_missing' ||
@@ -251,39 +400,252 @@ export function estateTools(deps: ToolDeps) {
             notes: fix.notes,
             severity: issue.severity,
             title: ruleTitle(rule, deps.lang()),
+            kind: fix.kind,
+            document: fix.document,
+            command: fix.command,
           })
         }
         if (!generated.length)
           throw new Error(
             'No safe generated fix exists for these issues; they depend on intent the rule cannot know.',
           )
-        const first = generated[0]!
-        const lines = generated.flatMap((item) => [
-          `${item.severity} ${item.title} on ${item.bucket || 'the account'}.`,
-          item.formats[0]?.text ?? '',
-          ...item.notes.map((note) => `note: ${note}`),
-          `Impact: ${item.impact.verdict}. ${item.impact.reasons.join(' ')}`,
-        ])
+
+        const steps: FixPlanStep[] = []
+        const lifecycle = new Map<string, GeneratedItem[]>()
+        const policies = new Map<string, GeneratedItem[]>()
+        for (const item of generated) {
+          if (item.kind === 'lifecycle') {
+            const group = lifecycle.get(item.bucket) ?? []
+            group.push(item)
+            lifecycle.set(item.bucket, group)
+          } else if (item.kind === 'policy') {
+            const group = policies.get(item.bucket) ?? []
+            group.push(item)
+            policies.set(item.bucket, group)
+          } else {
+            steps.push({
+              id: `${item.kind}:${item.bucket}:${item.code}`,
+              bucket: item.bucket,
+              codes: [item.code],
+              title: item.title,
+              severity: item.severity,
+              formats: item.formats,
+              impact: item.impact,
+              notes: item.notes,
+              status: 'ready',
+              blockers: [],
+            })
+          }
+        }
+
+        for (const [bucket, items] of lifecycle) {
+          const codes = items.map((item) => item.code)
+          const severity = items.reduce<Severity>(
+            (value, item) => maxSeverity(value, item.severity),
+            'low',
+          )
+          const impact = mergeImpacts(items)
+          const newRules = items.flatMap((item) => {
+            const rules = item.document.Rules
+            return Array.isArray(rules) ? (rules as Record<string, unknown>[]) : []
+          })
+          const current = await readLifecycle(client, bucket, run.signal)
+          const lifecycleTitle =
+            codes.length > 1
+              ? deps.lang().toLowerCase().startsWith('zh')
+                ? '生命周期规则'
+                : 'Lifecycle rules'
+              : items[0]!.title
+          if (!current.ok) {
+            steps.push({
+              id: `lifecycle:${bucket}`,
+              bucket,
+              codes,
+              title: lifecycleTitle,
+              severity,
+              formats: [
+                {
+                  label: 'New rules',
+                  language: 'json',
+                  text: JSON.stringify({ Rules: newRules }, null, 2),
+                },
+              ],
+              impact,
+              notes: [
+                ...new Set(items.flatMap((item) => item.notes)),
+                current.blocker ?? 'Merge these rules into the current lifecycle configuration.',
+              ],
+              status: 'manual',
+              blockers: [current.blocker ?? 'Current lifecycle configuration was not read.'],
+            })
+            continue
+          }
+          const known = new Set(current.rules.map((rule) => String(rule.ID ?? '')))
+          const mergedRules = [
+            ...current.rules,
+            ...newRules.filter((rule) => !rule.ID || !known.has(String(rule.ID))),
+          ]
+          const document = { Rules: mergedRules }
+          const command = `aws s3api put-bucket-lifecycle-configuration --bucket ${shellQuote(bucket)} --lifecycle-configuration ${shellJson(document)}`
+          const existing = current.rules.length > 0
+          const notes = [
+            ...new Set(
+              items.flatMap((item) => item.notes).filter((note) => !note.includes('REPLACES')),
+            ),
+            'Merged with the current lifecycle configuration; existing rules are preserved.',
+          ]
+          if (existing)
+            notes.push(
+              'Terraform is omitted for a merged lifecycle configuration: the current rules contain fields this renderer cannot reproduce. Apply the CLI or JSON, or update your full Terraform configuration.',
+            )
+          const formatted = formatFix(
+            'lifecycle',
+            document,
+            bucket,
+            config.endpoint || null,
+            config.region || null,
+            command,
+            notes,
+            { terraform: !existing },
+          )
+          steps.push({
+            id: `lifecycle:${bucket}`,
+            bucket,
+            codes,
+            title: lifecycleTitle,
+            severity,
+            formats: formatted.formats,
+            impact,
+            notes: formatted.notes,
+            status: 'ready',
+            blockers: [],
+          })
+        }
+
+        for (const [bucket, items] of policies) {
+          const codes = items.map((item) => item.code)
+          const severity = items.reduce<Severity>(
+            (value, item) => maxSeverity(value, item.severity),
+            'low',
+          )
+          const impact = mergeImpacts(items)
+          const current = await readPolicy(client, bucket, run.signal)
+          const accountId = current.document ? policyHasAccountId(current.document) : false
+          if (!current.ok || accountId) {
+            const blocker = accountId
+              ? 'The current policy names an AWS account id; Storage Agent will not reproduce that policy in the window. Add the statement manually.'
+              : (current.blocker ?? 'Current bucket policy was not read.')
+            steps.push({
+              id: `policy:${bucket}`,
+              bucket,
+              codes,
+              title: items[0]!.title,
+              severity,
+              formats: [
+                {
+                  label: 'New statement',
+                  language: 'json',
+                  text: JSON.stringify(TLS_STATEMENT(bucket), null, 2),
+                },
+              ],
+              impact,
+              notes: [...new Set(items.flatMap((item) => item.notes)), blocker],
+              status: 'manual',
+              blockers: [blocker],
+            })
+            continue
+          }
+          const document = tlsPolicy(current.document, bucket)
+          const command = `aws s3api put-bucket-policy --bucket ${shellQuote(bucket)} --policy ${shellJson(document)}`
+          const formatted = formatFix(
+            'policy',
+            document,
+            bucket,
+            config.endpoint || null,
+            config.region || null,
+            command,
+            [
+              ...new Set(
+                items.flatMap((item) => item.notes).filter((note) => !note.includes('REPLACES')),
+              ),
+              'Merged with the current bucket policy; existing statements are preserved.',
+            ],
+          )
+          steps.push({
+            id: `policy:${bucket}`,
+            bucket,
+            codes,
+            title: items[0]!.title,
+            severity,
+            formats: formatted.formats,
+            impact,
+            notes: formatted.notes,
+            status: 'ready',
+            blockers: [],
+          })
+        }
+
+        steps.sort((a, b) => {
+          if (!a.bucket && b.bucket) return -1
+          if (a.bucket && !b.bucket) return 1
+          return a.bucket.localeCompare(b.bucket) || a.id.localeCompare(b.id)
+        })
+        const covered = new Set(
+          steps.flatMap((step) => step.codes.map((code) => `${step.bucket}|${code}`)),
+        )
+        const residual = issues
+          .filter((issue) => !covered.has(`${issue.bucket}|${issue.code}`))
+          .slice(0, 30)
+          .map((issue) => ({
+            bucket: issue.bucket,
+            code: issue.code,
+            title: BY_CODE.has(issue.code)
+              ? ruleTitle(BY_CODE.get(issue.code)!, deps.lang())
+              : issue.code,
+          }))
+        const reading = await deps.db.latestCompleteReading(config.id)
+        const baseline = reading
+          ? {
+              at: reading.at,
+              complete: true,
+              visible: reading.visible,
+              processed: reading.processed,
+              openHigh: reading.open_high,
+              openTotal: reading.open_total,
+            }
+          : null
+        const manual = steps.filter((step) => step.status === 'manual').length
+        const summary = `${steps.length} step${steps.length === 1 ? '' : 's'} · ${new Set(steps.map((step) => step.bucket).filter(Boolean)).size} bucket${
+          new Set(steps.map((step) => step.bucket).filter(Boolean)).size === 1 ? '' : 's'
+        }${manual ? ` · ${manual} manual` : ''}${residual.length ? ` · ${residual.length} residual` : ''}`
+        const first = steps[0]!
+        const lines = [
+          `Change plan: ${summary}.`,
+          ...steps.map(
+            (step, index) =>
+              `${index + 1}. ${step.bucket || 'account'} — ${step.title} [${step.status}] (${step.codes.join(', ')}).${
+                step.blockers.length ? ` ${step.blockers.join(' ')}` : ''
+              }`,
+          ),
+          ...residual
+            .slice(0, 10)
+            .map((item) => `residual: ${item.bucket || 'account'} — ${item.title}`),
+          baseline
+            ? `Baseline: complete reading ${baseline.at.slice(0, 10)}.`
+            : 'Baseline: no complete reading is recorded; this plan is based on remembered state.',
+        ]
+        const plan: FixPlan = { steps, baseline, residual, summary }
         return {
           model: lines.join('\n'),
-          note: generated.length === 1 ? first.impact.verdict : `${generated.length} fixes`,
+          note: summary,
           view: {
             kind: 'fix' as const,
             providerId: config.id,
             bucket: first.bucket,
-            code: first.code,
+            code: first.codes[0] ?? first.id,
             formats: first.formats,
             impact: first.impact,
-            ...(generated.length > 1
-              ? {
-                  batch: generated.slice(1).map((item) => ({
-                    bucket: item.bucket,
-                    code: item.code,
-                    formats: item.formats,
-                    impact: item.impact,
-                  })),
-                }
-              : {}),
+            plan,
           },
         }
       },

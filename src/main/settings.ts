@@ -20,8 +20,6 @@ export interface StoredSettings {
   staleDays: number
   model: StoredModel | null
   lastTaskId: string | null
-  /** Internal: when the home overview was last shown. Not part of AppSettings. */
-  lastSeenAt: string | null
 }
 
 const DEFAULTS: StoredSettings = {
@@ -31,7 +29,6 @@ const DEFAULTS: StoredSettings = {
   staleDays: 7,
   model: null,
   lastTaskId: null,
-  lastSeenAt: null,
 }
 
 const THINKING = new Set<ThinkingLevel>(['off', 'low', 'medium', 'high'])
@@ -65,11 +62,6 @@ export class Settings {
     if (typeof patch.notify === 'boolean') this.value.notify = patch.notify
     if (typeof patch.staleDays === 'number' && Number.isFinite(patch.staleDays))
       this.value.staleDays = Math.max(1, Math.min(365, Math.round(patch.staleDays)))
-    this.save()
-  }
-
-  markSeen(at = new Date().toISOString()): void {
-    this.value.lastSeenAt = at
     this.save()
   }
 
@@ -107,7 +99,6 @@ export class Settings {
             : 7,
         model,
         lastTaskId: typeof raw.lastTaskId === 'string' ? raw.lastTaskId : null,
-        lastSeenAt: typeof raw.lastSeenAt === 'string' ? raw.lastSeenAt : null,
       }
     } catch {
       return { ...DEFAULTS }

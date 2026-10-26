@@ -6,7 +6,7 @@ import type {
   Brief as BriefModel,
   BriefNotice,
 } from '@shared/brief'
-import { buildBrief } from '@shared/brief'
+import { buildBrief, readStateOfBrief } from '@shared/brief'
 import type { AuditProgress } from '@shared/contract'
 import {
   type Lang,
@@ -47,7 +47,16 @@ import {
 } from 'react'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
-import { AccessChain, ChartView, FixView, humanBytes, TableView, ToolViewBody } from './Views'
+import {
+  AccessChain,
+  ChartView,
+  FixView,
+  humanBytes,
+  PlanView,
+  planSummary,
+  TableView,
+  ToolViewBody,
+} from './Views'
 
 // Markdown is most of the renderer bundle and is only needed once an answer streams.
 const Markdown = lazy(() => import('./Markdown'))
@@ -178,15 +187,47 @@ function briefMarkdown(title: string, brief: BriefModel, t: Dict, lang: Lang): s
       brief.accepted.map((finding) => `- **${finding.bucket}** — ${finding.title}`).join('\n'),
     )
   }
-  for (const fix of brief.fixes) {
-    const view = fix.view
-    parts.push(`## ${t.fixTitle} ${view.bucket}`)
-    for (const format of view.formats) {
-      parts.push(`### ${format.label}`, `\`\`\`${format.language}\n${format.text}\n\`\`\``)
+  const plan = brief.fixes.find((fix) => fix.view.plan)?.view.plan
+  if (plan) {
+    parts.push(`## ${t.planTitle}`, planSummary(plan, t))
+    if (plan.baseline) {
+      parts.push(`> ${fill(t.planBaseline, { when: new Date(plan.baseline.at).toLocaleString() })}`)
+    } else {
+      parts.push(`> ${t.planNoBaseline}`)
     }
-    parts.push(
-      `> ${view.impact.reasons.join(' ')}${view.impact.gap ? ` ${view.impact.gap}` : ''}`.trim(),
-    )
+    for (const step of plan.steps) {
+      parts.push(
+        `### ${step.bucket || t.accountWide} — ${step.title}`,
+        `${
+          step.status === 'ready' ? t.planStatusReady : t.planStatusManual
+        }${step.blockers.length ? ` · ${step.blockers.join(' ')}` : ''}`,
+      )
+      for (const format of step.formats) {
+        parts.push(`#### ${format.label}`, `\`\`\`${format.language}\n${format.text}\n\`\`\``)
+      }
+      parts.push(
+        `> ${step.impact.reasons.join(' ')}${step.impact.gap ? ` ${step.impact.gap}` : ''}`.trim(),
+      )
+    }
+    if (plan.residual.length) {
+      parts.push(
+        `### ${t.planResidual}`,
+        plan.residual
+          .map((item) => `- **${item.bucket || t.accountWide}** — ${item.title}`)
+          .join('\n'),
+      )
+    }
+  } else {
+    for (const fix of brief.fixes) {
+      const view = fix.view
+      parts.push(`## ${t.fixTitle} ${view.bucket}`)
+      for (const format of view.formats) {
+        parts.push(`### ${format.label}`, `\`\`\`${format.language}\n${format.text}\n\`\`\``)
+      }
+      parts.push(
+        `> ${view.impact.reasons.join(' ')}${view.impact.gap ? ` ${view.impact.gap}` : ''}`.trim(),
+      )
+    }
   }
   if (brief.data) {
     const view = brief.data.view
@@ -523,6 +564,15 @@ function FixSection({
   titleOf: (fix: BriefFix) => string
   t: Dict
 }) {
+  const plan = fixes.find((fix) => fix.view.plan)?.view.plan
+  if (plan) {
+    return (
+      <section className="brief-section" aria-label={t.planTitle}>
+        <h2>{t.planTitle}</h2>
+        <PlanView plan={plan} t={t} />
+      </section>
+    )
+  }
   const [first, ...rest] = fixes
   if (!first) return null
   return (
@@ -687,64 +737,29 @@ export function Brief({
   const rememberedAt = allMemory
     ? (brief.findings.map((finding) => finding.readAt).sort()[0] ?? null)
     : null
-  const pending = brief.coverage.reduce((n, item) => n + item.pending, 0)
-  const unread = new Set(brief.coverage.flatMap((item) => [...item.denied, ...item.unknown])).size
-  const totalBuckets = brief.coverage.reduce((n, item) => n + item.visible, 0)
-  const readBuckets = brief.coverage.reduce((n, item) => n + item.processed, 0)
-  const truncated = brief.coverage.reduce(
-    (n, item) =>
-      n + (item.truncated ? Math.max(0, item.visible - item.processed - item.pending) : 0),
-    0,
-  )
+  const read = readStateOfBrief(brief)
+  const {
+    unread,
+    pending,
+    truncated,
+    failed: failedReads,
+    access: accessGaps,
+    permissions: allPermissions,
+    visible: totalBuckets,
+    processed: readBuckets,
+  } = read
+  const permissions = allPermissions.slice(0, 12)
   const scopeNames = [...new Set(brief.coverage.map((item) => item.provider))]
   const gone = brief.coverage.flatMap((item) => item.gone)
-  const permissions = [
-    ...new Map(
-      brief.checks
-        .flatMap((check) =>
-          check.view?.kind === 'survey' || check.view?.kind === 'config'
-            ? (check.view.permissions ?? [])
-            : [],
-        )
-        .map((gap) => [`${gap.bucket}:${gap.action}`, gap]),
-    ).values(),
-  ].slice(0, 12)
-  const failedReads = brief.checks.filter(
-    (check) =>
-      !['estate', 'fix', 'note'].includes(check.name) &&
-      ['failed', 'refused', 'stopped', 'timeout'].includes(check.status),
-  ).length
-  const runningReads = brief.checks.some(
-    (check) => !['estate', 'fix', 'note'].includes(check.name) && check.status === 'running',
-  )
-  const accessGapByKey = new Map<string, number>()
-  for (const check of brief.checks) {
-    const view = check.view
-    if (!view || (view.kind !== 'config' && view.kind !== 'query')) continue
-    const coverage = view.kind === 'config' ? view.accessCoverage : view.coverage
-    const blind = view.kind === 'config' ? view.accessBlind?.length : view.blind?.length
-    const gap = coverage
-      ? Math.max(0, coverage.principals - coverage.evaluated) +
-        Math.max(0, coverage.undecided) +
-        (coverage.truncated ? 1 : 0) +
-        Math.max(0, (coverage.bucketsTotal ?? 0) - (coverage.bucketsExamined ?? 0))
-      : 0
-    const key =
-      view.kind === 'config'
-        ? `config:${view.providerId ?? ''}:${view.bucket}:${view.aspect ?? 'security'}`
-        : `query:${view.providerId ?? ''}:${view.title}`
-    accessGapByKey.set(key, gap + (blind ?? 0))
-  }
-  const accessGaps = [...accessGapByKey.values()].reduce((total, gap) => total + gap, 0)
   // One deterministic read status. It names coverage, never a security verdict.
-  const blocked = unread + permissions.length + brief.blind.length + failedReads + accessGaps
-  const openReads = pending + truncated + blocked + brief.undecided.length
+  const blocked = read.blocked
+  const openReads = read.open
   const coverageStatus =
     openReads > 0
       ? `${fill(t.scopeOpen, { n: openReads })}${
           blocked > 0 ? ` · ${fill(t.scopeBlocked, { n: blocked })}` : ''
         }`
-      : brief.coverage.length > 0 && !runningReads
+      : read.complete
         ? t.scopeComplete
         : ''
   const checked = brief.lastReadAt ? ago(brief.lastReadAt, t) : null
@@ -1161,8 +1176,35 @@ export function Brief({
               <p className="quiet">{fill(t.reverifySkipped, { n: brief.reverify.skipped })}</p>
             )}
             {brief.reverify.truncated && <p className="quiet">{t.reverifyTruncated}</p>}
+            {brief.reverify.plan && (
+              <div className="reverify-plan">
+                <p className="quiet">
+                  {fill(t.planReverifySummary, {
+                    confirmed: brief.reverify.plan.confirmed,
+                    notApplied: brief.reverify.plan.notApplied,
+                    unknown: brief.reverify.plan.unknown,
+                  })}
+                </p>
+                {brief.reverify.plan.steps.map((step) => (
+                  <p className="reverify-plan-row" key={`${step.bucket}:${step.code}`}>
+                    <span className={`plan-status ${step.status}`}>
+                      {step.status === 'confirmed'
+                        ? t.planStatusConfirmed
+                        : step.status === 'not_applied'
+                          ? t.planStatusNotApplied
+                          : t.planStatusUnknown}
+                    </span>
+                    <span className="mono">{step.bucket || t.accountWide}</span> · {step.title}
+                  </p>
+                ))}
+              </div>
+            )}
             {brief.reverify.changes.length === 0 ? (
-              <p className="clean">{t.reverifyNoChange}</p>
+              brief.reverify.plan && brief.reverify.plan.notApplied > 0 ? (
+                <p className="quiet">{t.reverifyPlanPending}</p>
+              ) : (
+                <p className="clean">{t.reverifyNoChange}</p>
+              )
             ) : (
               <div className="change-list">
                 {brief.reverify.changes.slice(0, 20).map((change) => (
@@ -1279,7 +1321,7 @@ export function Brief({
           </section>
         )}
 
-        {!answered && brief.coverage.length > 0 && openReads === 0 && !live && (
+        {!answered && read.complete && !live && (
           <section className="brief-section">
             <p className="clean">{t.noFindingsClean}</p>
           </section>

@@ -61,6 +61,60 @@ describe('grounding', () => {
     expect(known.has('ghost-bucket')).toBe(false)
   })
 
+  it('grounds every bucket in a change plan and its residual list', () => {
+    const plan: UiEntry = {
+      id: 'fix',
+      kind: 'tool',
+      at: '',
+      name: 'fix',
+      target: 'all issues',
+      status: 'done',
+      note: null,
+      ms: 1,
+      view: {
+        kind: 'fix',
+        providerId: 'p1',
+        bucket: 'first',
+        code: 'public_exposure',
+        formats: [],
+        impact: { verdict: 'low', reasons: [], gap: null },
+        plan: {
+          summary: '',
+          baseline: null,
+          residual: [{ bucket: 'residual', code: 'no_encryption', title: 'No default encryption' }],
+          steps: [
+            {
+              id: 'policy:first',
+              bucket: 'first',
+              codes: ['public_exposure'],
+              title: 'Public',
+              severity: 'high',
+              formats: [],
+              impact: { verdict: 'low', reasons: [], gap: null },
+              notes: [],
+              status: 'ready',
+              blockers: [],
+            },
+            {
+              id: 'policy:second',
+              bucket: 'second',
+              codes: ['insecure_transport'],
+              title: 'TLS',
+              severity: 'medium',
+              formats: [],
+              impact: { verdict: 'low', reasons: [], gap: null },
+              notes: [],
+              status: 'ready',
+              blockers: [],
+            },
+          ],
+        },
+      },
+    }
+    const names = knownNames([plan])
+    expect(['first', 'second', 'residual'].every((name) => names.has(name))).toBe(true)
+  })
+
   it('flags backticked names no check shows', () => {
     const known = knownNames(entries)
     expect(ungrounded('`logs-bucket` holds `reports/a.csv`; `never-read` too.', known)).toEqual([

@@ -64,7 +64,7 @@ describe('schema', () => {
     `)
     const db = await AppDb.open(raw)
     const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(10)
+    expect(version?.user_version).toBe(11)
     expect((await db.getProvider('p'))?.auth).toBe('keys')
     expect((await db.getIssue('i'))?.detail).toBeNull()
   })
@@ -124,6 +124,43 @@ describe('issue lifecycle', () => {
     expect(await db.countBuckets('p')).toBe(0)
     await db.upsertBucket('p', 'b', {})
     expect(await db.countBuckets('p')).toBe(1)
+  })
+
+  it('keeps complete and partial readings apart and returns the latest complete one', async () => {
+    const db = await open()
+    await db.insertReading({
+      conversationId: 'c1',
+      providerId: 'p',
+      at: '2026-01-01T00:00:00.000Z',
+      trigger: 'check',
+      complete: true,
+      visible: 3,
+      processed: 3,
+      pending: 0,
+      denied: 0,
+      unknown: 0,
+      truncated: 0,
+      openHigh: 1,
+      openTotal: 2,
+    })
+    await db.insertReading({
+      conversationId: 'c2',
+      providerId: 'p',
+      at: '2026-01-02T00:00:00.000Z',
+      trigger: 'task',
+      complete: false,
+      visible: 3,
+      processed: 2,
+      pending: 1,
+      denied: 0,
+      unknown: 0,
+      truncated: 0,
+      openHigh: 2,
+      openTotal: 3,
+    })
+    expect((await db.listReadings({ providerId: 'p' })).map((row) => row.complete)).toEqual([0, 1])
+    expect((await db.latestCompleteReading('p'))?.at).toBe('2026-01-01T00:00:00.000Z')
+    expect(await db.listReadings({ providerId: 'p', complete: true })).toHaveLength(1)
   })
 
   it('reads Issue events with the Issue they belong to, and filters them', async () => {

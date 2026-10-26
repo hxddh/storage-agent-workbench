@@ -23,6 +23,7 @@ import {
 } from '@earendil-works/pi-durable'
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
 import { auditVerdict } from '@shared/audit'
+import { buildBrief, readStateOfBrief } from '@shared/brief'
 import type {
   AppEvent,
   AttachmentRef,
@@ -31,6 +32,7 @@ import type {
   AuditReport,
   ContextRef,
   EstateRef,
+  FixPlan,
   IssueRow,
   NoteRow,
   NoticeCode,
@@ -44,9 +46,9 @@ import type {
   UiEntry,
 } from '@shared/contract'
 import { knownExposure, knownNames } from '@shared/grounding'
-import type { AppDb } from '../db'
+import type { AppDb, ReadingTrigger } from '../db'
 import type { Estate } from '../estate/estate'
-import { aspectsOf, BY_CODE, decide, ruleTitle } from '../estate/rules'
+import { ACCOUNT_SCOPE, aspectOfCode, aspectsOf, BY_CODE, decide, ruleTitle } from '../estate/rules'
 import type { ProviderConfig, Providers } from '../providers'
 import { type AccessSession, readAccess } from '../s3/access'
 import { readAccount, UNREAD_ACCOUNT } from '../s3/account'
@@ -60,11 +62,19 @@ import { surveyTool } from '../tools/survey'
 import { type AgentState, createAgent, freshRun, maxRounds, refreshDigest, tierFor } from './agent'
 import { installModel, type ModelRef } from './model'
 import { deriveTitle, LiveTracker, mapEntries, usageOf } from './project'
+import { comparePlanToReplay, planAccountDecisions } from './reverify-plan'
 import { searchDocsFor, searchTasks } from './search'
 
 const CONTEXT = BACKGROUND_CONTEXT
 const INITIAL_ENTRIES = 200
 const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 } as const
+
+interface ReplayReading {
+  checked: number
+  skipped: number
+  unknown: number
+  truncated: boolean
+}
 
 export interface HarnessDirs {
   task: (conversationId: string) => string
@@ -370,10 +380,26 @@ export class AgentHarness {
       }
       wanted.set(providerId, buckets)
     }
+    let plan: FixPlan | null = null
+    let planProviderId: string | null = null
     for (const entry of entries) {
       if (entry.kind !== 'tool' || !entry.view) continue
       const view = entry.view
-      if (view.kind === 'survey' && view.providerId)
+      if (view.kind === 'fix' && view.plan && view.providerId) {
+        plan = view.plan
+        planProviderId = view.providerId
+        const aspects = new Set<ReplayAspect>()
+        for (const code of view.plan.steps.flatMap((step) => step.codes)) {
+          const aspect = aspectOfCode(code)
+          if (aspect) aspects.add(aspect)
+        }
+        if (!aspects.size) aspects.add('security')
+        add(
+          view.providerId,
+          view.plan.steps.map((step) => step.bucket),
+          aspects,
+        )
+      } else if (view.kind === 'survey' && view.providerId)
         add(
           view.providerId,
           view.buckets.rows.map((row) => String(row[0] ?? '')),
@@ -400,13 +426,19 @@ export class AgentHarness {
     let resolved = 0
     let undecided = 0
     let truncated = false
+    const checkedBuckets = new Set<string>()
+    const decisionsAfter = new Map<string, ReverifyChange['after']>()
     const sessions = new Map<string, AccessSession>()
+    const replayReadings = new Map<string, ReplayReading>()
     for (const [providerId, buckets] of wanted) {
       const accessSession = sessions.get(providerId) ?? {}
       sessions.set(providerId, accessSession)
+      const replay: ReplayReading = { checked: 0, skipped: 0, unknown: 0, truncated: false }
+      replayReadings.set(providerId, replay)
       const config = await this.deps.providers.config(providerId).catch(() => null)
       if (!config) {
         skipped += buckets.size
+        replay.skipped += buckets.size
         continue
       }
       const aws = this.deps.providers.isAws(config)
@@ -417,14 +449,65 @@ export class AgentHarness {
             signal,
           )
         : UNREAD_ACCOUNT
+      const accountCodes =
+        plan && planProviderId === providerId
+          ? plan.steps.filter((step) => !step.bucket).flatMap((step) => step.codes)
+          : []
+      if (accountCodes.length) {
+        const decisions = planAccountDecisions(
+          account,
+          aws,
+          accountCodes,
+          this.deps.settings.get().language,
+        )
+        const beforeIssues = new Map<string, Awaited<ReturnType<AppDb['findIssue']>>>()
+        for (const code of Object.keys(decisions))
+          beforeIssues.set(code, await this.deps.db.findIssue(config.id, ACCOUNT_SCOPE, code))
+        const applied = await this.deps.estate.apply(config.id, ACCOUNT_SCOPE, decisions, taskId)
+        opened += applied.delta.opened
+        resolved += applied.delta.resolved
+        checkedBuckets.add(`${config.id}|`)
+        for (const [code, decision] of Object.entries(decisions)) {
+          const rule = BY_CODE.get(code)
+          if (!rule) continue
+          const before = beforeIssues.get(code)
+          const previous: ReverifyChange['before'] =
+            before?.status === 'open'
+              ? 'open'
+              : before?.status === 'accepted'
+                ? 'accepted'
+                : 'clear'
+          const after: ReverifyChange['after'] =
+            decision.verdict === null
+              ? 'undecided'
+              : decision.verdict
+                ? before?.status === 'accepted'
+                  ? 'accepted'
+                  : 'open'
+                : 'clear'
+          decisionsAfter.set(`${config.id}||${code}`, after)
+          if (after === 'undecided') undecided += 1
+          if (previous !== after)
+            changes.push({
+              bucket: ACCOUNT_SCOPE,
+              code,
+              title: ruleTitle(rule, this.deps.settings.get().language),
+              before: previous,
+              after,
+            })
+        }
+      }
       const entriesForProvider = [...buckets.entries()]
       if (entriesForProvider.length > 50) {
         truncated = true
+        replay.truncated = true
         skipped += entriesForProvider.length - 50
+        replay.skipped += entriesForProvider.length - 50
       }
       for (const [bucket, aspects] of entriesForProvider.slice(0, 50)) {
         if (config.scope.buckets.length && !config.scope.buckets.includes(bucket)) {
           skipped += 1
+          replay.skipped += 1
           continue
         }
         const readAspects = new Set(
@@ -447,6 +530,7 @@ export class AgentHarness {
           })
         } catch {
           skipped += 1
+          replay.skipped += 1
           continue
         }
         const wantedCodes = new Set(
@@ -487,6 +571,8 @@ export class AgentHarness {
           }
         }
         checked += 1
+        replay.checked += 1
+        checkedBuckets.add(`${config.id}|${bucket}`)
         for (const [code, decision] of Object.entries(decisions)) {
           const rule = BY_CODE.get(code)
           if (!rule) continue
@@ -505,7 +591,11 @@ export class AgentHarness {
                   ? 'accepted'
                   : 'open'
                 : 'clear'
-          if (after === 'undecided') undecided += 1
+          decisionsAfter.set(`${config.id}|${bucket}|${code}`, after)
+          if (after === 'undecided') {
+            undecided += 1
+            replay.unknown += 1
+          }
           if (previous !== after)
             changes.push({
               bucket,
@@ -517,6 +607,14 @@ export class AgentHarness {
         }
       }
     }
+    const planReport =
+      plan && planProviderId
+        ? comparePlanToReplay(
+            plan,
+            (bucket) => checkedBuckets.has(`${planProviderId}|${bucket}`),
+            (bucket, code) => decisionsAfter.get(`${planProviderId}|${bucket}|${code}`),
+          )
+        : undefined
     const report: ReverifyReport = {
       at,
       checked,
@@ -526,10 +624,14 @@ export class AgentHarness {
       opened,
       resolved,
       undecided,
+      ...(planReport ? { plan: planReport } : {}),
     }
     await conversation
       .submit({ type: 'write', entry: { kind: 'sa.reverify', data: report as never } }, CONTEXT)
       .catch(() => undefined)
+    await this.recordReadings(taskId, 'reverify', true, [...wanted.keys()], replayReadings).catch(
+      () => undefined,
+    )
     return report
   }
 
@@ -673,6 +775,12 @@ export class AgentHarness {
       )
       await this.deps.db.touchTask(taskId)
       await this.index(taskId).catch(() => undefined)
+      await this.recordReadings(
+        taskId,
+        'check',
+        true,
+        accounts.map((account) => account.id),
+      ).catch(() => undefined)
       await this.refreshTaskList()
       await this.refreshEstateDigest()
       this.emitTask(taskId)
@@ -947,6 +1055,7 @@ export class AgentHarness {
       await this.deps.db.touchTask(taskId)
       await this.refreshTaskList()
       await this.index(taskId).catch(() => undefined)
+      if (outcome !== 'failed') await this.recordReadings(taskId, 'task').catch(() => undefined)
       await this.refreshEstateDigest()
       const meta = await this.deps.db.getTaskMeta(taskId)
       if (meta)
@@ -1049,6 +1158,81 @@ export class AgentHarness {
       this.emitTask(taskId)
     })
     this.deps.emit({ type: 'live', taskId, live: this.live.map(watch.value, taskId) })
+  }
+
+  /**
+   * A settled task can leave one durable reading per account. It stores counts,
+   * never request text, model prose or policy content. A task records only the
+   * accounts it surveyed in this turn; audit and re-verify name the accounts
+   * they actually read. Re-verification is always partial.
+   */
+  private async recordReadings(
+    taskId: string,
+    trigger: ReadingTrigger,
+    all = false,
+    providerIds?: string[],
+    replay?: ReadonlyMap<string, ReplayReading>,
+  ): Promise<void> {
+    const conversation = await this.conversation(taskId)
+    if (!conversation) return
+    const entries = await this.entries(conversation)
+    const lastUser = entries.findLastIndex((entry) => entry.kind === 'user')
+    const current = all ? entries : entries.slice(lastUser + 1)
+    const brief = buildBrief(all ? entries : current)
+    if (!brief.coverage.length) return
+    const accounts = await this.deps.providers.list()
+    const idOf = (providerId: string | undefined, provider: string) =>
+      providerId ?? accounts.find((account) => account.name === provider)?.id
+    const surveyed = new Map<string, string>()
+    if (trigger === 'task') {
+      for (const entry of current) {
+        if (entry.kind !== 'tool' || entry.view?.kind !== 'survey' || entry.view.scoped) continue
+        const id = idOf(entry.view.providerId, entry.view.provider)
+        if (id) {
+          const at = surveyed.get(id)
+          if (!at || entry.at > at) surveyed.set(id, entry.at)
+        }
+      }
+    }
+    const ids =
+      providerIds ??
+      (surveyed.size
+        ? [...surveyed.keys()]
+        : brief.coverage.flatMap((item) => {
+            const id = idOf(item.providerId, item.provider)
+            return id ? [id] : []
+          }))
+    if (!ids.length) return
+    for (const providerId of new Set(ids)) {
+      const coverage = brief.coverage.find(
+        (item) => idOf(item.providerId, item.provider) === providerId,
+      )
+      if (!coverage) continue
+      const state = readStateOfBrief(brief, providerId)
+      const replayState = replay?.get(providerId)
+      const openHigh = await this.deps.db.countOpenHigh(providerId)
+      const openTotal = await this.deps.db.countOpenIssues(providerId)
+      await this.deps.db.insertReading({
+        conversationId: taskId,
+        providerId,
+        at:
+          trigger === 'reverify'
+            ? new Date().toISOString()
+            : trigger === 'task'
+              ? (surveyed.get(providerId) ?? coverage.at) || new Date().toISOString()
+              : coverage.at || new Date().toISOString(),
+        trigger,
+        complete: trigger !== 'reverify' && state.complete,
+        visible: state.visible,
+        processed: replayState ? Math.min(state.visible, replayState.checked) : state.processed,
+        pending: replayState?.skipped ?? state.pending,
+        denied: replayState ? 0 : state.denied,
+        unknown: replayState?.unknown ?? state.unknown,
+        truncated: replayState ? (replayState.truncated ? 1 : 0) : state.truncated,
+        openHigh,
+        openTotal,
+      })
+    }
   }
 
   private async index(taskId: string): Promise<void> {

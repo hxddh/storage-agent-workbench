@@ -2,7 +2,7 @@
 
 ## Application tables (`storage-agent.db`)
 
-`user_version` is the schema version (head **10**). Migrations are append-only
+`user_version` is the schema version (head **11**). Migrations are append-only
 in `main/db.ts`; the schema is created with `CREATE TABLE IF NOT EXISTS`, then
 old databases are brought forward by version checks. There is no separate
 migration tool.
@@ -17,6 +17,7 @@ migration tool.
 | `audit` | `id`, `conversation_id`, `tool`, `target`, `outcome`, `at` |
 | `task_meta` | `conversation_id`, `title`, `created_at`, `updated_at`, `pinned` |
 | `posture_changes` | `id`, `provider_id`, `bucket`, `at`, `changes_json` |
+| `readings` | `id`, `conversation_id`, `provider_id`, `at`, `trigger` (`check`/`task`/`reverify`), `complete`, `visible`, `processed`, `pending`, `denied`, `unknown`, `truncated`, `open_high`, `open_total` |
 | `datasets` | `id`, `conversation_id`, `kind`, `path`, `rows`, `bytes`, `created_at` |
 | `search_docs` | `conversation_id`, `entry_id`, `kind`, `text`, `at` — derived index |
 
@@ -38,6 +39,13 @@ with `gone_at` is left out of every listing and the digest; seeing it again
 clears the mark. `recurred` counts reopenings of a resolved Issue.
 `AppDb.listIssueEvents` joins `issue_events` to `issues` for `estate` history;
 it is a read of these rows, not a second store.
+
+`readings` is the compact history of settled account reads. It stores counts and
+booleans, the triggering path and the current open Issue totals, never a request,
+verdict, policy document, account id or secret. `complete = 1` only for an
+unscoped, closed survey; re-verification is always partial. Home selects each
+account's latest complete row and the newest complete row overall; `estate`
+history includes up to 30 reading rows in an unfiltered view.
 
 `search_docs` is rebuilt per conversation when the task settles and backfilled
 at startup. It stores the request, the current verdict (`entry_id = 'verdict'`)
@@ -67,7 +75,7 @@ Entry kinds the window understands:
 | `pi.tool-result` | a tool result; `details` is `{ target, note, view, ms, status }` |
 | `pi.compaction` | compaction divider |
 | `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window |
-| `sa.reverify` | a model-free re-read report; data `ReverifyReport` |
+| `sa.reverify` | a model-free re-read report; data `ReverifyReport`, including plan-step status when the task has a change plan |
 | `sa.audit` | a deterministic account check without a model; data `AuditReport` (verdict + checks) |
 
 pi's `pi.usage` document supplies the task's token/cost receipt. A model-free
@@ -92,11 +100,12 @@ Deleting a task is a real purge in one transaction: `task_meta`, `search_docs`,
 the task's `pi_conversations` / `pi_entries` / `pi_tasks` / `pi_submissions` /
 `pi_documents` / `pi_document_revisions` rows, datasets, audit events, and
 `tasks/<conversation>/` on disk (uploads included). Issue events keep history
-with `conversation_id` set to null.
+with `conversation_id` set to null; reading rows remain as account history with
+the same null conversation id.
 
-Removing an account currently deletes the provider row, its bucket rows, Issues
-and posture-change rows. It does not cascade to account-scoped notes or
-`issue_events`; that is a known retention gap. There is no import from earlier
+Removing an account currently deletes the provider row, its bucket rows, Issues,
+posture-change rows and reading rows. It does not cascade to account-scoped
+notes or `issue_events`; that is a known retention gap. There is no import from earlier
 versions of the app.
 
 The sidebar reads the 500 most recently updated tasks and Settings shows the

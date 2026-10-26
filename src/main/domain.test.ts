@@ -189,7 +189,22 @@ describe('tools over the estate', () => {
     expect((await deps.db.getIssue(issue.id))?.status).toBe('accepted')
   })
 
-  it('returns Issue events and posture changes when memory history is requested', async () => {
+  it('returns Issue, posture and reading history, but omits account-wide readings from a bucket filter', async () => {
+    await deps.db.insertReading({
+      conversationId: 'c1',
+      providerId,
+      at: '2026-01-03T00:00:00.000Z',
+      trigger: 'check',
+      complete: true,
+      visible: 6,
+      processed: 6,
+      pending: 0,
+      denied: 0,
+      unknown: 0,
+      truncated: 0,
+      openHigh: 1,
+      openTotal: 2,
+    })
     await deps.db.insertChanges(providerId, 'cors-open', [
       {
         bucket: 'cors-open',
@@ -206,7 +221,11 @@ describe('tools over the estate', () => {
     expect(details.view.history?.columns).toEqual(['When', 'Event', 'Bucket', 'Evidence'])
     expect(details.view.history?.rows.some((row) => row[1] === 'accepted')).toBe(true)
     expect(details.view.history?.rows.some((row) => row[1] === 'changed')).toBe(true)
+    expect(details.view.history?.rows.some((row) => row[1] === 'checked')).toBe(false)
     expect(text).toContain('History (newest first')
+    const unfiltered = await run(estate, { history: true })
+    if (unfiltered.details.view?.kind !== 'estate') throw new Error('expected an estate view')
+    expect(unfiltered.details.view.history?.rows.some((row) => row[1] === 'checked')).toBe(true)
     const empty = await run(estate, {
       bucket: 'cors-open',
       history: true,
@@ -302,6 +321,25 @@ describe('tools over the estate', () => {
     expect(details.status).toBe('done')
     if (details.view?.kind !== 'fix') throw new Error('expected a fix view')
     expect(details.view.formats.length).toBeGreaterThan(0)
+    const plan = details.view.plan
+    if (!plan) throw new Error('expected a change plan')
+    expect(plan.steps.length).toBeGreaterThan(0)
+    expect(plan.steps.every((step) => step.codes.length > 0 && step.formats.length > 0)).toBe(true)
+    const lifecycle = plan.steps.filter((step) => step.id.startsWith('lifecycle:'))
+    expect(new Set(lifecycle.map((step) => step.bucket)).size).toBe(lifecycle.length)
+  })
+
+  it('omits Terraform rather than dropping existing lifecycle rules from a merged step', async () => {
+    fake.buckets.versioned = structuredClone(BUCKETS.versioned!)
+    await run(surveyTool(deps), {})
+    const [, fix] = estateTools(deps)
+    const { details } = await run(fix as Executable, { bucket: 'versioned' })
+    if (details.view?.kind !== 'fix' || !details.view.plan)
+      throw new Error(`expected a change plan; got ${details.status}: ${details.note ?? ''}`)
+    const merged = details.view.plan.steps.find((step) => step.id.startsWith('lifecycle:'))
+    if (!merged) throw new Error('expected a merged lifecycle step')
+    expect(merged.formats.map((format) => format.label)).not.toContain('Terraform')
+    expect(merged.notes.join(' ')).toContain('Terraform is omitted')
   })
 
   it('reports a stopped call as stopped, not failed', async () => {

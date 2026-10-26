@@ -14,8 +14,8 @@ envelope, and attaches a typed `view` and a `status` (`done`, `failed`,
 | `object` | `provider_id?`, `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`) | facts | fact list, bounded text preview |
 | `config` | `provider_id?`, `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules proved clean; for `access`, grants and coverage | finding list, observations, access chain and coverage |
 | `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`) | check outcomes | check list |
-| `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with their age, Issues with evidence, notes; with `history`, Issue events and posture changes | bucket table, Issues, notes, optional history table |
-| `fix` | `provider_id?`, `bucket?`, `code?` (omit for every open issue) | one set of CLI/notes/impact per issue (scans up to 500, emits up to 20) | CLI/Terraform/API tabs, impact, batch folds |
+| `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with their age, Issues with evidence, notes; with `history`, Issue events, posture changes and unfiltered reading events | bucket table, Issues, notes, optional history table |
+| `fix` | `provider_id?`, `bucket?`, `code?` (omit for every open issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500, emits up to 20) | plan rows; each step opens CLI/Terraform/API tabs and impact |
 | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
 | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | first 40 rows, call and listing counts, script output | table, bar chart, script, buckets read |
 
@@ -76,8 +76,17 @@ to query that dataset.
 - `survey` opens and resolves Issues through `estate`, never through prose.
 - `estate(history: true)` reads at most 80 Issue events and 200 posture
   changes, merges and orders them newest first, and keeps at most 60 rows in
-  the view. `since` is an ISO date or timestamp. History is memory evidence,
-  never raw request text, and it does not make the current reading fresh.
+  the view. An unfiltered history also includes at most 30 reading records.
+  Reading rows are account-wide, so a `bucket` or `code` filter omits them.
+  `since` is an ISO date or timestamp. History is memory evidence, never raw
+  request text, and it does not make the current reading fresh.
+- `fix` returns one plan. Lifecycle fixes are merged per bucket and a current
+  lifecycle or policy that cannot be read becomes a manual step with a blocker.
+  A current policy containing an account id is never reproduced in the window;
+  the step carries only a new statement. A merged lifecycle with existing rules
+  omits Terraform rather than rendering an incomplete authoritative resource.
+  The plan lists residual findings it cannot cover. No fix is applied by a
+  tool.
 - `access` is evidence, not an authorization decision: policy and ACL rows are
   grants; identity grants are intersected with bucket-policy Denies and, when
   read, SCPs and boundaries; action/resource forms are paired and ARNs are

@@ -300,6 +300,145 @@ describe('the brief', () => {
     expect(screen.getByText('Not every name in this answer appears in a check.')).toBeTruthy()
   })
 
+  it('shows one change plan and opens the manual step with its blocker', () => {
+    const fix: UiEntry = {
+      id: 'f',
+      kind: 'tool',
+      at: '2026-01-01T00:00:01Z',
+      name: 'fix',
+      target: 'all issues',
+      status: 'done',
+      note: '2 steps',
+      ms: 10,
+      view: {
+        kind: 'fix',
+        providerId: 'p1',
+        bucket: 'demo',
+        code: 'public_exposure',
+        formats: [
+          { label: 'AWS CLI', language: 'bash', text: 'aws s3api put-public-access-block' },
+        ],
+        impact: { verdict: 'low', reasons: ['Blocks new public grants.'], gap: null },
+        plan: {
+          summary: '2 steps · 1 bucket · 1 manual',
+          baseline: null,
+          residual: [{ bucket: 'demo', code: 'no_encryption', title: 'No default encryption' }],
+          steps: [
+            {
+              id: 'policy:demo',
+              bucket: 'demo',
+              codes: ['public_exposure'],
+              title: 'Bucket is publicly accessible',
+              severity: 'high',
+              formats: [
+                { label: 'AWS CLI', language: 'bash', text: 'aws s3api put-public-access-block' },
+              ],
+              impact: { verdict: 'low', reasons: ['Blocks new public grants.'], gap: null },
+              notes: [],
+              status: 'ready',
+              blockers: [],
+            },
+            {
+              id: 'lifecycle:demo',
+              bucket: 'demo',
+              codes: ['no_abort_mpu'],
+              title: 'Incomplete uploads are never cleaned up',
+              severity: 'medium',
+              formats: [{ label: 'New rules', language: 'json', text: '{"Rules":[]}' }],
+              impact: { verdict: 'caution', reasons: ['Rules are replaced.'], gap: null },
+              notes: [],
+              status: 'manual',
+              blockers: ['The current lifecycle configuration could not be read.'],
+            },
+            {
+              id: 'policy:private',
+              bucket: 'private',
+              codes: ['insecure_transport'],
+              title: 'Policy does not deny plain HTTP',
+              severity: 'medium',
+              formats: [{ label: 'New statement', language: 'json', text: '{}' }],
+              impact: { verdict: 'low', reasons: [], gap: null },
+              notes: [],
+              status: 'ready',
+              blockers: [],
+            },
+          ],
+        },
+      },
+    }
+    render(
+      <Brief
+        view={view([fix])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(screen.getByRole('heading', { name: 'Change plan' })).toBeTruthy()
+    expect(screen.getByText('3 steps · 2 buckets · 1 manual · 1 not covered')).toBeTruthy()
+    expect(screen.getByText('Not covered by this plan')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Incomplete uploads are never cleaned up/ }))
+    expect(screen.getByText('The current lifecycle configuration could not be read.')).toBeTruthy()
+  })
+
+  it('compares a re-verification with the plan instead of claiming the fix worked', () => {
+    const reverify: UiEntry = {
+      id: 'r',
+      kind: 'reverify',
+      at: '2026-01-02T00:00:00Z',
+      report: {
+        at: '2026-01-02T00:00:00Z',
+        checked: 3,
+        skipped: 0,
+        changes: [],
+        opened: 0,
+        resolved: 0,
+        undecided: 0,
+        plan: {
+          confirmed: 1,
+          notApplied: 1,
+          unknown: 1,
+          steps: [
+            {
+              bucket: 'demo',
+              code: 'public_exposure',
+              title: 'Bucket is publicly accessible',
+              status: 'confirmed',
+            },
+            {
+              bucket: 'demo',
+              code: 'no_encryption',
+              title: 'No default encryption',
+              status: 'not_applied',
+            },
+            {
+              bucket: 'private',
+              code: 'no_abort_mpu',
+              title: 'Incomplete uploads are never cleaned up',
+              status: 'unknown',
+            },
+          ],
+        },
+      },
+    }
+    render(
+      <Brief
+        view={view([survey, reverify])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(screen.getByText('1 confirmed · 1 not applied · 1 unknown')).toBeTruthy()
+    expect(screen.getByText('confirmed')).toBeTruthy()
+    expect(screen.getByText('not applied')).toBeTruthy()
+    expect(screen.getByText('still unknown')).toBeTruthy()
+  })
+
   it('words a stopped run in the user language and offers Continue', () => {
     const onContinue = vi.fn()
     render(

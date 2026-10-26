@@ -21,6 +21,7 @@ import type {
   IssueRow,
   NoticeCode,
   Observation,
+  PermissionGap,
   PostureChange,
   ReverifyReport,
   Severity,
@@ -84,6 +85,7 @@ export interface BriefCheck {
 
 export interface BriefCoverage {
   provider: string
+  providerId?: string
   /** The account-wide public access block: on, partial, off, unknown, or n/a off AWS. */
   accountBlock: 'on' | 'partial' | 'off' | 'unknown' | 'n/a' | null
   capacity: { bytes: number; objects: number; monthlyUsd: number; buckets: number } | null
@@ -174,6 +176,106 @@ export interface Brief {
   lastAt: string | null
   /** Open Issues across the surveyed accounts; more than `findings` when a view carried only the first ones. */
   issueTotal: number | null
+}
+
+/** The one deterministic read status shared by the window, Home and Reading records. */
+export interface BriefReadState {
+  complete: boolean
+  open: number
+  blocked: number
+  pending: number
+  unread: number
+  denied: number
+  unknown: number
+  truncated: number
+  failed: number
+  access: number
+  undecided: number
+  permissions: PermissionGap[]
+  visible: number
+  processed: number
+  running: boolean
+}
+
+export function readStateOfBrief(
+  brief: Pick<Brief, 'coverage' | 'checks' | 'blind' | 'undecided'>,
+  providerId?: string,
+): BriefReadState {
+  const coverage = providerId
+    ? brief.coverage.filter((item) => item.providerId === providerId)
+    : brief.coverage
+  const checks = providerId
+    ? brief.checks.filter((check) => {
+        const id = (check.view as { providerId?: string } | null)?.providerId
+        return !check.view || !id || id === providerId
+      })
+    : brief.checks
+  const unread = new Set(coverage.flatMap((item) => [...item.denied, ...item.unknown])).size
+  const denied = coverage.reduce((n, item) => n + item.denied.length, 0)
+  const unknown = coverage.reduce((n, item) => n + item.unknown.length, 0)
+  const pending = coverage.reduce((n, item) => n + item.pending, 0)
+  const truncated = coverage.reduce(
+    (n, item) =>
+      n + (item.truncated ? Math.max(0, item.visible - item.processed - item.pending) : 0),
+    0,
+  )
+  const permissions = [
+    ...new Map(
+      checks
+        .flatMap((check) =>
+          check.view?.kind === 'survey' || check.view?.kind === 'config'
+            ? (check.view.permissions ?? [])
+            : [],
+        )
+        .map((gap) => [`${gap.bucket}:${gap.action}`, gap]),
+    ).values(),
+  ]
+  const failed = checks.filter(
+    (check) =>
+      !['estate', 'fix', 'note'].includes(check.name) &&
+      ['failed', 'refused', 'stopped', 'timeout'].includes(check.status),
+  ).length
+  const running = checks.some(
+    (check) => !['estate', 'fix', 'note'].includes(check.name) && check.status === 'running',
+  )
+  const accessGapByKey = new Map<string, number>()
+  for (const check of checks) {
+    const view = check.view
+    if (!view || (view.kind !== 'config' && view.kind !== 'query')) continue
+    const coverageOfView = view.kind === 'config' ? view.accessCoverage : view.coverage
+    const blind = view.kind === 'config' ? view.accessBlind?.length : view.blind?.length
+    const gap = coverageOfView
+      ? Math.max(0, coverageOfView.principals - coverageOfView.evaluated) +
+        Math.max(0, coverageOfView.undecided) +
+        (coverageOfView.truncated ? 1 : 0) +
+        Math.max(0, (coverageOfView.bucketsTotal ?? 0) - (coverageOfView.bucketsExamined ?? 0))
+      : 0
+    const key =
+      view.kind === 'config'
+        ? `config:${view.providerId ?? ''}:${view.bucket}:${view.aspect ?? 'security'}`
+        : `query:${view.providerId ?? ''}:${view.title}`
+    accessGapByKey.set(key, gap + (blind ?? 0))
+  }
+  const access = [...accessGapByKey.values()].reduce((total, gap) => total + gap, 0)
+  const undecided = brief.undecided.reduce((n, item) => n + item.count, 0)
+  const blocked = unread + permissions.length + brief.blind.length + failed + access
+  return {
+    complete: coverage.length > 0 && pending + truncated + blocked + undecided === 0 && !running,
+    open: pending + truncated + blocked + undecided,
+    blocked,
+    pending,
+    unread,
+    denied,
+    unknown,
+    truncated,
+    failed,
+    access,
+    undecided,
+    permissions,
+    visible: coverage.reduce((n, item) => n + item.visible, 0),
+    processed: coverage.reduce((n, item) => n + item.processed, 0),
+    running,
+  }
 }
 
 export interface LiveInput {
@@ -511,6 +613,12 @@ export function buildBrief(
       }
     }
     if (view.kind === 'fix') {
+      if (view.plan) {
+        const key = `plan:${check.id}`
+        fixes.delete(key)
+        fixes.set(key, { key, sourceId: check.id, view, at: check.at })
+        continue
+      }
       const key = `${view.bucket}|${view.code}`
       fixes.delete(key)
       fixes.set(key, { key, sourceId: check.id, view, at: check.at })
@@ -543,6 +651,7 @@ export function buildBrief(
       if (!view.scoped) {
         coverage.set(key, {
           provider: view.provider,
+          providerId: view.providerId,
           accountBlock: view.account?.pab ?? null,
           capacity: view.capacity ?? null,
           issueTotal: view.issueTotal ?? null,

@@ -4,7 +4,7 @@ import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 import { detectProviderKind } from './s3/capabilities'
 
-export const HOST_SCHEMA_VERSION = 10
+export const HOST_SCHEMA_VERSION = 11
 
 export interface ProviderRow {
   id: string
@@ -68,6 +68,26 @@ export interface IssueEventRecord {
   severity: Severity
   status: IssueStatus
   last_seen_at: string
+}
+
+export type ReadingTrigger = 'check' | 'task' | 'reverify'
+
+/** A settled reading of an account, with its coverage and current open risk. */
+export interface ReadingRecord {
+  id: string
+  conversation_id: string | null
+  provider_id: string
+  at: string
+  trigger: ReadingTrigger
+  complete: number
+  visible: number
+  processed: number
+  pending: number
+  denied: number
+  unknown: number
+  truncated: number
+  open_high: number
+  open_total: number
 }
 
 export interface NoteRecord {
@@ -182,7 +202,25 @@ CREATE TABLE IF NOT EXISTS datasets (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS readings (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT,
+  provider_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  complete INTEGER NOT NULL DEFAULT 0,
+  visible INTEGER NOT NULL DEFAULT 0,
+  processed INTEGER NOT NULL DEFAULT 0,
+  pending INTEGER NOT NULL DEFAULT 0,
+  denied INTEGER NOT NULL DEFAULT 0,
+  unknown INTEGER NOT NULL DEFAULT 0,
+  truncated INTEGER NOT NULL DEFAULT 0,
+  open_high INTEGER NOT NULL DEFAULT 0,
+  open_total INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS issues_open ON issues (provider_id, status, severity);
+CREATE INDEX IF NOT EXISTS readings_provider_at ON readings (provider_id, complete, at);
 CREATE INDEX IF NOT EXISTS issue_events_issue ON issue_events (issue_id, at);
 CREATE INDEX IF NOT EXISTS notes_scope ON notes (scope, ref, created_at);
 CREATE INDEX IF NOT EXISTS datasets_conversation ON datasets (conversation_id);
@@ -345,20 +383,12 @@ export class AppDb {
     return row?.n ?? 0
   }
 
-  async countOpenedSince(providerId: string, since: string): Promise<number> {
-    const row = await this.raw.get<{ n: number }>(
-      "SELECT count(*) AS n FROM issues WHERE provider_id = ? AND status = 'open' AND opened_at > ?",
-      providerId,
-      since,
-    )
-    return row?.n ?? 0
-  }
-
   async deleteProvider(id: string): Promise<void> {
     await this.raw.run('DELETE FROM providers WHERE id = ?', id)
     await this.raw.run('DELETE FROM buckets WHERE provider_id = ?', id)
     await this.raw.run('DELETE FROM issues WHERE provider_id = ?', id)
     await this.raw.run('DELETE FROM posture_changes WHERE provider_id = ?', id)
+    await this.raw.run('DELETE FROM readings WHERE provider_id = ?', id)
   }
 
   // -- buckets --------------------------------------------------------------
@@ -517,6 +547,104 @@ export class AppDb {
         last_seen_at: row.last_seen_at,
       }
     })
+  }
+
+  async insertReading(input: {
+    conversationId: string | null
+    providerId: string
+    at: string
+    trigger: ReadingTrigger
+    complete: boolean
+    visible: number
+    processed: number
+    pending: number
+    denied: number
+    unknown: number
+    truncated: number
+    openHigh: number
+    openTotal: number
+  }): Promise<ReadingRecord> {
+    const record: ReadingRecord = {
+      id: randomUUID(),
+      conversation_id: input.conversationId,
+      provider_id: input.providerId,
+      at: input.at,
+      trigger: input.trigger,
+      complete: input.complete ? 1 : 0,
+      visible: Math.max(0, input.visible),
+      processed: Math.max(0, input.processed),
+      pending: Math.max(0, input.pending),
+      denied: Math.max(0, input.denied),
+      unknown: Math.max(0, input.unknown),
+      truncated: Math.max(0, input.truncated),
+      open_high: Math.max(0, input.openHigh),
+      open_total: Math.max(0, input.openTotal),
+    }
+    await this.raw.run(
+      `INSERT INTO readings
+        (id, conversation_id, provider_id, at, trigger, complete, visible, processed,
+         pending, denied, unknown, truncated, open_high, open_total)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      record.id,
+      record.conversation_id,
+      record.provider_id,
+      record.at,
+      record.trigger,
+      record.complete,
+      record.visible,
+      record.processed,
+      record.pending,
+      record.denied,
+      record.unknown,
+      record.truncated,
+      record.open_high,
+      record.open_total,
+    )
+    return record
+  }
+
+  async listReadings(
+    filter: { providerId?: string; complete?: boolean; since?: string; limit?: number } = {},
+  ): Promise<ReadingRecord[]> {
+    const where: string[] = []
+    const params: (string | number)[] = []
+    if (filter.providerId) {
+      where.push('provider_id = ?')
+      params.push(filter.providerId)
+    }
+    if (filter.complete !== undefined) {
+      where.push('complete = ?')
+      params.push(filter.complete ? 1 : 0)
+    }
+    if (filter.since) {
+      where.push('at >= ?')
+      params.push(filter.since)
+    }
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
+    params.push(Math.max(1, Math.min(filter.limit ?? 100, 500)))
+    return this.raw.all<ReadingRecord>(
+      `SELECT * FROM readings ${clause} ORDER BY at DESC, id DESC LIMIT ?`,
+      ...params,
+    )
+  }
+
+  async latestCompleteReading(providerId?: string): Promise<ReadingRecord | undefined> {
+    return providerId
+      ? this.raw.get<ReadingRecord>(
+          'SELECT * FROM readings WHERE provider_id = ? AND complete = 1 ORDER BY at DESC, id DESC LIMIT 1',
+          providerId,
+        )
+      : this.raw.get<ReadingRecord>(
+          'SELECT * FROM readings WHERE complete = 1 ORDER BY at DESC, id DESC LIMIT 1',
+        )
+  }
+
+  async countOpenedSinceAll(since: string): Promise<number> {
+    const row = await this.raw.get<{ n: number }>(
+      "SELECT count(*) AS n FROM issues WHERE status = 'open' AND opened_at > ?",
+      since,
+    )
+    return row?.n ?? 0
   }
 
   async listBuckets(providerId: string): Promise<BucketRow[]> {
@@ -921,6 +1049,7 @@ export class AppDb {
       await tx.run('DELETE FROM pi_entries WHERE conversation_id = ?', id)
       await tx.run('DELETE FROM pi_conversations WHERE id = ?', id)
       await tx.run('UPDATE issue_events SET conversation_id = NULL WHERE conversation_id = ?', id)
+      await tx.run('UPDATE readings SET conversation_id = NULL WHERE conversation_id = ?', id)
       await tx.run('DELETE FROM datasets WHERE conversation_id = ?', id)
       await tx.run('DELETE FROM audit WHERE conversation_id = ?', id)
     })

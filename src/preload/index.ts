@@ -44,7 +44,6 @@ const api: AgentApi = {
   clearModel: () => ipcRenderer.invoke('agent:clearModel'),
   testModel: (input) => ipcRenderer.invoke('agent:testModel', input),
   saveSettings: (patch) => ipcRenderer.invoke('agent:saveSettings', patch),
-  markHomeSeen: () => ipcRenderer.invoke('agent:markHomeSeen'),
   openExternal: (url) => ipcRenderer.invoke('agent:openExternal', url),
   onEvent: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, value: AppEvent) => listener(value)

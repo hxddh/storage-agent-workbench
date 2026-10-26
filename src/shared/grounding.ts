@@ -45,8 +45,12 @@ export function namesInView(
       addTable(names, view.rows.rows)
       break
     case 'config':
+      names.add(view.bucket)
+      break
     case 'fix':
       names.add(view.bucket)
+      for (const step of view.plan?.steps ?? []) if (step.bucket) names.add(step.bucket)
+      for (const item of view.plan?.residual ?? []) if (item.bucket) names.add(item.bucket)
       break
     case 'object':
       for (const [, value] of view.facts) if (NAME.test(value)) names.add(value)

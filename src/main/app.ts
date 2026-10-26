@@ -109,36 +109,30 @@ export class App {
     }
   }
 
-  markHomeSeen(): void {
-    this.settings.markSeen()
-  }
-
   /** A quiet account summary: no dashboard, no chart, no per-bucket table. */
   async overview(): Promise<EstateOverview> {
     const accounts = await this.providers.list()
-    const seen = this.settings.get().lastSeenAt
     const summary = []
-    let lastRead: string | null = null
-    let changesSince = 0
+    let lastCompleteRead: string | null = null
     for (const account of accounts) {
       const buckets = await this.db.listBuckets(account.id)
-      const read = buckets.map((row) => row.posture_at).filter((at): at is string => Boolean(at))
-      const newest = read.sort().at(-1) ?? null
-      if (newest && (!lastRead || newest > lastRead)) lastRead = newest
+      const complete = await this.db.latestCompleteReading(account.id)
+      if (complete && (!lastCompleteRead || complete.at > lastCompleteRead))
+        lastCompleteRead = complete.at
       const openTotal = await this.db.countOpenIssues(account.id)
       const openHigh = await this.db.countOpenHigh(account.id)
-      if (seen) changesSince += await this.db.countOpenedSince(account.id, seen)
       summary.push({
         id: account.id,
         name: account.name,
         kind: account.kind,
         buckets: buckets.length,
-        lastRead: newest,
+        lastCompleteRead: complete?.at ?? null,
         openHigh,
         openTotal,
       })
     }
-    return { accounts: summary, lastRead, changesSince }
+    const changesSince = lastCompleteRead ? await this.db.countOpenedSinceAll(lastCompleteRead) : 0
+    return { accounts: summary, lastCompleteRead, changesSince }
   }
 
   async testModel(input?: ModelInput): Promise<{ ok: boolean; detail: string }> {

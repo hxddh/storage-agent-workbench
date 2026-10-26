@@ -36,12 +36,12 @@ The package also exposes direct aliases: `npm run e2e`, `npm run e2e:audit`,
 twelve rules and tri-state decisions, the account rule, TLS policy detection,
 Issue lifecycle (opened, resolved, gone, accepted, recurred), schema migrations,
 scope and the tool floor, code mode (sandbox, budgets, timeout, import), demo
-storage, generated fixes and impact, log normalization and IP masking,
+storage, generated fixes, plans and impact, log normalization and IP masking,
 CSV/Parquet import and the aggregate whitelist, the search index, entry → UI
 projection, brief current-state folding, verdict grounding, the run guardrails,
 redaction, provider capabilities, posture diffs, permission diagnosis, model
-windows, access evaluation and batch fixes. `Brief.test.tsx` runs in jsdom; the
-rest use Node.
+windows, access evaluation, reading records and plan-aware re-verification.
+`Brief.test.tsx` runs in jsdom; the rest use Node.
 
 ### Domain and compatibility
 
@@ -67,8 +67,9 @@ rest use Node.
   `scripts/fake-model.mjs`. It covers model setup and test, an account check,
   a model answer, finding evidence, axe (serious/critical violations fail),
   `@` focus, re-verify, access rows, accepting a risk, applying a fix outside
-  the app and proving it, grounding correction, a generated fix, stop/continue,
-  search, code-mode rows and the demo account.
+  the app and proving it, grounding correction, a generated change plan,
+  plan-aware re-verification, stop/continue, search, code-mode rows and the demo
+  account.
 - `scripts/e2e-audit.mjs` starts with no model and no account, chooses demo
   storage explicitly, waits for the deterministic brief, checks that the
   composer stays disabled and captures the no-model state.

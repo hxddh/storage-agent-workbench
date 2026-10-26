@@ -131,8 +131,9 @@ unread", not "this is the complete set of principals who can reach the bucket".
 
 ## Not claimed
 
-- Fixes are text. Storage Agent does not verify that a fix was applied; a later
-  reading observes the result.
+- Fixes are text. Re-verification observes the account after the user applies a
+  plan and can confirm that the planned codes are now clear; it cannot prove
+  which command was run, and it never applies one.
 - The access view is not a complete IAM authorization proof. Conditions,
   service principals, federated identities and external identity policies can
   remain unread or undecided.

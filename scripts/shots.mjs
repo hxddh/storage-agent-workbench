@@ -130,6 +130,22 @@ await page.waitForTimeout(450)
 await page.screenshot({ path: join(out, '08-live-light.png') })
 await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
 
+// One deterministic change plan, then the same task re-verified against it.
+await page.getByRole('button', { name: 'New task' }).click()
+await page.locator('.composer textarea').fill('Show the fix for demo-private')
+await page.keyboard.press('Enter')
+await page.waitForSelector('.plan', { timeout: 60_000 })
+await page.locator('.plan').scrollIntoViewIfNeeded()
+await page.waitForTimeout(350)
+await page.screenshot({ path: join(out, '14-plan-light.png') })
+await page.getByRole('button', { name: 'More actions' }).click()
+await page.getByRole('menuitem', { name: 'Re-verify' }).click()
+await page.waitForSelector('.reverify-plan', { timeout: 30_000 })
+const planReverify = await page.locator('.reverify-plan').innerText()
+console.log('PLAN REVERIFY:', planReverify.replace(/\s+/g, ' ').slice(0, 200))
+await page.locator('.reverify-section').scrollIntoViewIfNeeded()
+await page.screenshot({ path: join(out, '15-plan-reverified.png') })
+
 // Narrow window: navigation must stay reachable from Home, not only tasks.
 await app.evaluate(({ BrowserWindow }) => {
   BrowserWindow.getAllWindows()[0]?.setSize(760, 820)

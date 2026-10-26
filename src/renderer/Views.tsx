@@ -3,13 +3,14 @@ import type {
   Chart,
   ConfigFinding,
   FixFormat,
+  FixPlan,
   Impact,
   IssueRow,
   NoteRow,
   Table,
   ToolView,
 } from '@shared/contract'
-import { Check, Copy, Download, TriangleAlert } from 'lucide-react'
+import { Check, ChevronRight, Copy, Download, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { type Dict, fill } from './i18n'
 import { copyText, safeFileName, toCsv } from './lib/export'
@@ -298,6 +299,94 @@ export function FixView({ formats, impact, t }: { formats: FixFormat[]; impact: 
         {impact.gap && <p className="impact-note">— {impact.gap}</p>}
       </div>
       <p className="view-sub">{t.copyHint}</p>
+    </div>
+  )
+}
+
+/** One translated line for a plan; the server summary is English prose. */
+export function planSummary(plan: FixPlan, t: Dict): string {
+  const buckets = new Set(plan.steps.map((step) => step.bucket).filter(Boolean)).size
+  const manual = plan.steps.filter((step) => step.status === 'manual').length
+  let line = `${plan.steps.length === 1 ? t.planStepsOne : fill(t.planSteps, { n: plan.steps.length })} · ${
+    buckets === 1 ? t.planBucketsOne : fill(t.planBuckets, { n: buckets })
+  }`
+  if (manual) line += ` · ${fill(t.planManualCount, { n: manual })}`
+  if (plan.residual.length) line += ` · ${fill(t.planResidualCount, { n: plan.residual.length })}`
+  return line
+}
+
+/**
+ * One deterministic change plan. It is a list of steps, not a dashboard: a
+ * selected row opens the exact command or statement the user applies.
+ */
+export function PlanView({ plan, t }: { plan: FixPlan; t: Dict }) {
+  const first = plan.steps.findIndex((step) => step.status === 'ready')
+  const [selected, setSelected] = useState(Math.max(first, 0))
+  const step = plan.steps[selected]
+  return (
+    <div className="plan">
+      <div className="plan-head">
+        <p className="plan-summary">{planSummary(plan, t)}</p>
+        <p className="quiet">
+          {plan.baseline
+            ? fill(t.planBaseline, { when: new Date(plan.baseline.at).toLocaleString() })
+            : t.planNoBaseline}
+        </p>
+      </div>
+      <div className="plan-steps">
+        {plan.steps.map((item, index) => {
+          const open = index === selected
+          const status = item.status === 'ready' ? t.planStatusReady : t.planStatusManual
+          return (
+            <div className={`plan-step ${open ? 'open' : ''}`} key={item.id}>
+              <button
+                type="button"
+                className="plan-row"
+                aria-expanded={open}
+                onClick={() => setSelected(open ? -1 : index)}
+              >
+                <span className={`plan-dot ${item.severity}`} title={item.severity}>
+                  <span className="visually-hidden">
+                    {item.severity === 'high'
+                      ? t.severityHigh
+                      : item.severity === 'medium'
+                        ? t.severityMedium
+                        : t.severityLow}
+                  </span>
+                </span>
+                <span className="plan-label">
+                  <span className="plan-bucket mono">{item.bucket || t.accountWide}</span>
+                  <span className="plan-title">{item.title}</span>
+                </span>
+                <span className={`plan-status ${item.status}`}>{status}</span>
+                <ChevronRight size={13} className={`chev ${open ? 'open' : ''}`} />
+              </button>
+              {open && (
+                <div className="plan-body">
+                  {item.blockers.map((blocker) => (
+                    <p className="plan-blocker" key={blocker}>
+                      <TriangleAlert size={13} />
+                      {blocker}
+                    </p>
+                  ))}
+                  <FixView formats={item.formats} impact={item.impact} t={t} />
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {plan.residual.length > 0 && (
+        <div className="plan-residual">
+          <p className="plan-residual-title">{t.planResidual}</p>
+          {plan.residual.map((item) => (
+            <p className="plan-residual-row" key={`${item.bucket}:${item.code}`}>
+              <span className="mono">{item.bucket || t.accountWide}</span> · {item.title}
+            </p>
+          ))}
+        </div>
+      )}
+      {step && plan.steps.length > 1 && <p className="quiet">{t.planHint}</p>}
     </div>
   )
 }

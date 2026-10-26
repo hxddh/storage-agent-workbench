@@ -1,6 +1,6 @@
 # Documentation
 
-These pages describe the behavior of the **25.0.0** tree. They are not a
+These pages describe the behavior of the **26.0.0** tree. They are not a
 roadmap and not a substitute for the code.
 
 | File | What it is |
@@ -32,7 +32,12 @@ roadmap and not a substitute for the code.
 - **Brief** — the page projected from a task's tool results.
 - **Check** — one read-only tool call, or one step of a model-free account
   check, shown as evidence under the brief.
-- **Estate** — remembered bucket posture, Issues, notes and changes.
+- **Estate** — remembered bucket posture, Issues, notes, changes and reading
+  records.
+- **Reading** — one settled account survey with its coverage and whether it was
+  complete. Re-verification is recorded as partial.
+- **Change plan** — deterministic, user-applied fix text grouped into steps,
+  with baseline, manual blockers and residual findings.
 - **Finding** — a current problem proved by a reading; an Issue is the durable
   record behind a finding.
 - **Blind spot** — a read that was denied, unsupported, failed or not attempted;

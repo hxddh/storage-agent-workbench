@@ -241,8 +241,6 @@ export function registerIpc(app: App): void {
     if (patch.theme) nativeTheme.themeSource = patch.theme
   })
 
-  ipcMain.handle('agent:markHomeSeen', () => app.markHomeSeen())
-
   ipcMain.handle('agent:notes', () => app.harness.notes())
 
   ipcMain.handle('agent:deleteNote', (_event, id: string) => app.harness.deleteNote(id))

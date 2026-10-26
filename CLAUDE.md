@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 25.0.0**. Read
+> Implementation contract for **Storage Agent 26.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes and the changelog are history.
@@ -36,7 +36,9 @@ The invariant:
    line says `Reads complete` only when account coverage, pending reads, access
    gaps and failed reads are closed; a narrowed re-read never counts as account
    coverage. A clean account claim is corrected once while reads remain open.
-6. Fixes are text the user applies. There is no Apply button.
+6. Fixes are one deterministic change plan the user applies. There is no Apply
+   button. Only re-verification may call a step confirmed; an unapplied step is
+   `not applied`, and an unread or undecided one stays `unknown`.
 7. The model never opens, resolves, re-grades or accepts an Issue. Rules open
    and resolve them from readings; accepting a risk is the user's act.
 8. Code mode runs in the QuickJS sandbox with no network, filesystem, process,
@@ -76,6 +78,8 @@ The invariant:
 - `src/main/runtime/project.ts` — entry → UI mapping, live state, usage.
 - `src/main/runtime/model.ts` — pi-ai provider installation and saved/draft
   model test.
+- `src/main/runtime/reverify-plan.ts` — compares a change plan with a model-free
+  replay; confirmed, not applied or unknown per step.
 - `src/main/runtime/search.ts` — sidebar search and the derived index rows.
 - `src/main/runtime/agent.ts` — the one extension: prompt sections, tools,
   hooks, per-run read coverage and the one clean-claim correction.
@@ -107,9 +111,9 @@ second queue, no SSE, no HTTP server. `viewState()`/`watch()` are the stream.
 ## Data
 
 Host tables in `storage-agent.db`: `providers`, `buckets`, `issues`,
-`issue_events`, `notes`, `audit`, `task_meta`, `posture_changes`, `datasets`,
-`search_docs`. pi's tables are prefixed `pi_` in the same file. Datasets live
-under `<userData>/tasks/<conversation>/datasets/<id>.sqlite`.
+`issue_events`, `notes`, `audit`, `task_meta`, `posture_changes`, `readings`,
+`datasets`, `search_docs`. pi's tables are prefixed `pi_` in the same file.
+Datasets live under `<userData>/tasks/<conversation>/datasets/<id>.sqlite`.
 
 Issues are `open`, `resolved` or `accepted`, and carry the reading's evidence
 `detail`. The account rule's Issue has the empty string as its bucket. A bucket
@@ -117,7 +121,13 @@ a complete listing no longer shows gets `gone_at` and its Issues resolve as
 `gone`. Capacity (bytes, objects, monthly estimate, growth) is remembered in
 each bucket's posture; the account posture in `providers.account_json`. Schema
 changes are append-only migrations in `db.ts`, gated by `user_version` (head
-**10**).
+**11**).
+
+`readings` records one settled account survey: trigger, coverage counts, open
+high/total and whether it was complete. It stores no request, verdict, policy,
+account id or secret. `complete` is false for any narrowed or re-verified read;
+Home's "last complete read" comes from this table. `estate(history: true)`
+includes reading rows only in an unfiltered history.
 
 `search_docs` is a derived index (title search reads `task_meta` directly). It
 is rebuilt for a conversation when that conversation settles, and backfilled at
@@ -129,8 +139,8 @@ request, so the page shows its verdict and checks without a fake question.
 
 Deleting a task purges `task_meta`, `search_docs`, its pi conversation, entries,
 tasks, submissions, documents and revisions, datasets, audit rows and
-`tasks/<conversation>/` on disk. Issue events keep history with a null
-conversation id. There is no background watch.
+`tasks/<conversation>/` on disk. Issue events and reading rows keep history with
+a null conversation id. There is no background watch.
 
 ## Agent
 
@@ -147,6 +157,12 @@ digest, language. The model writes only the verdict: at most two sentences, no
 headings, tables or restated numbers, every bucket, key and account name in
 backticks. Findings, tables, fixes and checks are projected by the window from
 `details`.
+
+`fix` returns one change plan: lifecycle rules merge per bucket, a policy fix
+is merged only when the current policy was read and contains no account id,
+and an unread or unsafe merge becomes a manual step with a blocker. The plan
+names its baseline, residual findings and unreadable dependencies. It remains
+text for the user.
 
 The method reads memory first (`estate`), surveys only when memory is empty,
 stale, or the question is about current exposure, after a fix re-reads only
@@ -169,8 +185,12 @@ emits transient progress, and writes deterministic state.
 `harness.audit()` surveys every configured account and examines access evidence
 for up to 24 buckets per account, reporting examined/total when the run covers
 fewer buckets than the account has.
-`harness.reverify()` replays reads for up to 50 buckets per account and reports
-skipped or truncated coverage. Neither path calls a model.
+`harness.reverify()` replays reads for up to 50 buckets per account, includes
+the buckets and account block in a change plan, and reports skipped or
+truncated coverage. It compares every plan step: all codes clear is confirmed,
+an open or accepted Issue is not applied, and an unread or undecided code stays
+unknown. Neither path calls a model. A settled unscoped survey writes one
+`readings` row per account; re-verify is always partial.
 
 ## Window
 
@@ -188,15 +208,17 @@ time and finding count. A failed or stopped storage read keeps the line open.
 Copy and a single overflow menu are always visible. The overflow holds save
 Markdown, check again, re-verify, copy link, export evidence and save PDF.
 `Check again` opens a new check task; re-verify writes a report in the current
-task.
+task. Home reads its "last complete read" from the reading records and never
+substitutes a single bucket's last read.
 
 A model run shows a check the moment a tool starts and folds the checks to a
 receipt (checks · time · tokens) when it ends. A model-free check shows a
 transient progress line and writes its final checks when complete. The brief
 shows the verdict, current findings grouped by bucket (merged by rule and
 bucket, severity ordered, memory marked, five visible with **N more**), what the
-task proved fixed, accepted risks folded, re-verification, changes, **Not read**,
-the fixes, one data section (folded when findings answer, except access data;
+task proved fixed, accepted risks folded, re-verification with plan status,
+changes, **Not read**, the change plan (baseline, manual blockers, residual),
+one data section (folded when findings answer, except access data;
 a query's rows and chart, the survey table with capacity, or the estate's
 remembered buckets and its Issue/posture history) and checks. The
 latest request is one quiet line above the verdict. There are no next-step

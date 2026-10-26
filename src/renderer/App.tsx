@@ -46,7 +46,6 @@ export function App() {
   } | null>(null)
   const [auditError, setAuditError] = useState<string | null>(null)
   const restored = useRef(false)
-  const seenHome = useRef(false)
 
   const lang = boot?.settings.language ?? 'en'
   const t = useMemo(() => dict(lang), [lang])
@@ -253,13 +252,6 @@ export function App() {
     if (view?.task.id === id) setView(null)
     void refresh()
   }
-
-  useEffect(() => {
-    if (!boot || view || seenHome.current) return
-    if (!restored.current && boot.lastTaskId) return
-    seenHome.current = true
-    void window.agent.markHomeSeen()
-  }, [boot, view])
 
   if (fatal) {
     return <div className="fatal">{t.fatal}</div>

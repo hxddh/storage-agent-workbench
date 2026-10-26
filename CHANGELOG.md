@@ -1,5 +1,61 @@
 # Changelog
 
+## 26.0.0
+
+From a fix on the page to a loop that can close. No new tool, no write path and
+no new panel.
+
+### Added
+
+- **One deterministic change plan.** `fix` merges lifecycle rules per bucket,
+  respects the current lifecycle and bucket policy, groups the result into
+  steps, states its baseline, marks manual merges and blockers, and lists
+  residual findings it cannot cover. A current policy containing an account
+  id, or one that cannot be read, is never reproduced in the window. A merged
+  lifecycle with existing rules omits the Terraform tab instead of rendering an
+  incomplete authoritative resource.
+- **Plan-aware re-verification.** A model-free replay now compares every plan
+  step with fresh rule decisions: `confirmed` when every code is clear,
+  `not applied` when an Issue remains open or accepted, and `still unknown`
+  when the bucket, account block or rule was not read. Re-verify includes the
+  plan's buckets and the account-wide block.
+- **Reading records.** A settled survey writes one `readings` row per account
+  with trigger, coverage and open totals; it stores no request, verdict, policy
+  or secret. Home's account line uses the latest complete reading instead of a
+  single bucket's last read. Schema version is **11**.
+- **Reading history.** `estate(history: true)` also returns `read`, `checked` and
+  `rechecked` rows. Reading rows are account-wide, so a bucket or code filter
+  omits them.
+
+### Changed
+
+- Existing installs show **no complete reading** until their next successful
+  check. There is no backfill from `buckets.posture_at`, because a bucket's
+  last posture write is not an account-wide complete survey.
+- The plan is one hairline list: one selected step shows its CLI, Terraform and
+  API text, impact and manual blocker; the residual list stays visible.
+- Re-verification renders the plan status before each step. An unapplied plan
+  no longer sits beside a green "No conclusion changed" line.
+- Home names the last complete read and counts new findings since the latest
+  one.
+- Settings separates its rail from the form with a hairline; the compact rail
+  has the same separation below the tabs.
+
+### Verification
+
+- Unit tests cover plan comparison (`confirmed`, `not applied`, `unknown`,
+  accepted and unchecked buckets), the account decision, plan grounding, the
+  plan view and plan-aware re-verification, reading schema/migration, and
+  account-wide history filtering.
+- Domain tests cover one plan from the real fix tool, merged lifecycle steps,
+  the omitted Terraform tab, and reading history in filtered and unfiltered
+  estate views.
+- Local verification: typecheck, lint, 185 tests, build, bundle budget, audit,
+  SBOM, E2E, no-model E2E, axe 0 serious violations, visual gate, 879 ms median
+  cold start, moto compatibility (4 tests) and the smoke eval (7/7).
+- The smoke eval proves the harness and scoring run; no real-model evaluation
+  or signed build was run in this checkout.
+
 ## 25.0.0
 
 Memory that can answer what happened, and a reading that says when it is

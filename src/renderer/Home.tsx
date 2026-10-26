@@ -7,13 +7,13 @@ function ago(iso: string | null, lang: 'en' | 'zh'): string {
   if (!iso) return lang === 'zh' ? '尚未读取' : 'not read yet'
   const days = Math.floor((Date.now() - Date.parse(iso)) / 86_400_000)
   if (lang === 'zh') {
-    if (days <= 0) return '今天读取'
-    if (days === 1) return '昨天读取'
-    return `${days} 天前读取`
+    if (days <= 0) return '今天'
+    if (days === 1) return '昨天'
+    return `${days} 天前`
   }
-  if (days <= 0) return 'read today'
-  if (days === 1) return 'read yesterday'
-  return `read ${days} days ago`
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  return `${days} days ago`
 }
 
 export function Home({
@@ -86,7 +86,13 @@ export function Home({
                   <span className="home-account-meta">
                     {account.buckets === 0
                       ? t.homeUnsurveyed
-                      : `${account.buckets} ${account.buckets === 1 ? t.bucketsOne : t.bucketsShort} · ${ago(account.lastRead, lang)}`}
+                      : `${account.buckets} ${account.buckets === 1 ? t.bucketsOne : t.bucketsShort} · ${
+                          account.lastCompleteRead
+                            ? fill(t.homeComplete, {
+                                when: ago(account.lastCompleteRead, lang),
+                              })
+                            : t.homeNoComplete
+                        }`}
                     {account.buckets === 0
                       ? ''
                       : account.openHigh > 0

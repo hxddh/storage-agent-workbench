@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { type BucketFacts, exposureOf } from '../s3/facts'
 import { evaluatePolicy } from '../s3/policy'
-import { BY_CODE, decide, decideAccount, RULES, reviewFindings, undecidedRules } from './rules'
+import {
+  aspectOfCode,
+  BY_CODE,
+  decide,
+  decideAccount,
+  RULES,
+  reviewFindings,
+  undecidedRules,
+} from './rules'
 
 const PRIVATE_PAB = {
   blockPublicAcls: true,
@@ -299,6 +307,13 @@ describe('rules', () => {
     expect(
       decideAccount({ pab: { status: 'not_configured', value: null } }, false).verdict,
     ).toBeNull()
+  })
+
+  it('maps a plan code to the reading that decides it', () => {
+    expect(aspectOfCode('access_logging_off')).toBe('observability')
+    expect(aspectOfCode('no_abort_mpu')).toBe('lifecycle')
+    expect(aspectOfCode('public_exposure')).toBe('security')
+    expect(aspectOfCode('account_public_access_block_missing')).toBeNull()
   })
 
   it('says an unread account block could still apply only on AWS', () => {

@@ -201,11 +201,20 @@ try {
   await page.locator('.composer textarea').fill('Show the fix for demo-private')
   await page.keyboard.press('Enter')
   await page.waitForSelector('text=AWS CLI', { timeout: 60_000 })
+  await page.waitForSelector('.plan', { timeout: 10_000 })
   const fixBody = await page.locator('body').innerText()
   console.log('FIX OK')
   console.log(fixBody.slice(0, 900))
   await page.waitForTimeout(350)
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-fix.png') })
+
+  // Re-verify compares the account with the plan; it does not assume the user applied it.
+  await page.getByRole('button', { name: 'More actions' }).click()
+  await page.getByRole('menuitem', { name: 'Re-verify' }).click()
+  await page.waitForSelector('.reverify-plan', { timeout: 30_000 })
+  const planReverify = await page.locator('.reverify-plan').innerText()
+  console.log('PLAN REVERIFY:', planReverify.replace(/\s+/g, ' ').slice(0, 200))
+  if (!planReverify.includes('not applied')) await fail('an unapplied plan step was not reported')
 
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('Check demo-private again')

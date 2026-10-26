@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateFix, impactPreview } from './fixes'
+import { generateFix, impactPreview, policyHasAccountId } from './fixes'
 import { BY_CODE } from './rules'
 
 describe('generated fixes', () => {
@@ -86,5 +86,22 @@ describe('fixes for the 19.0 rules', () => {
 
   it('never generates a bucket fix for an empty bucket name', () => {
     expect(fix('acls_enabled', '')).toBeNull()
+  })
+
+  it('detects account ids in a principal, condition or ARN before merging a policy', () => {
+    expect(policyHasAccountId({ Statement: [{ Principal: { AWS: '123456789012' } }] })).toBe(true)
+    expect(
+      policyHasAccountId({
+        Statement: [{ Condition: { StringEquals: { 'aws:SourceAccount': '123456789012' } } }],
+      }),
+    ).toBe(true)
+    expect(
+      policyHasAccountId({
+        Statement: [{ Principal: { AWS: 'arn:aws:iam::123456789012:role/reader' } }],
+      }),
+    ).toBe(true)
+    expect(policyHasAccountId({ Statement: [{ Principal: '*' }], Version: '2012-10-17' })).toBe(
+      false,
+    )
   })
 })
