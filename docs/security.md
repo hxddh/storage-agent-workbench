@@ -128,6 +128,13 @@ unread", not "this is the complete set of principals who can reach the bucket".
   and notarized and Windows is signed. Without them, macOS is ad-hoc signed and
   Windows is unsigned; the release notes say so. This is an installer trust
   limitation, not a runtime secret boundary.
+- **Keychain prompts follow the app signature**: macOS `safeStorage` protects
+  the vault key with the app's code identity. The app opens the model key only
+  when a model run starts, never while the window is opening or during a
+  model-free check. An unsigned or ad-hoc build does not have a stable trusted
+  identity, so macOS may still ask for Keychain access on first use or after an
+  update. Signing and notarizing the app is the durable fix; "Always Allow"
+  cannot be guaranteed for ad-hoc builds.
 
 ## Not claimed
 

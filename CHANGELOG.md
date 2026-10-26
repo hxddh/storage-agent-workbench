@@ -1,3 +1,14 @@
+## 27.1.1
+
+### Fixed
+
+- macOS no longer opens the model API key at startup. The harness installs the
+  model on the first model run, so opening the window and running a model-free
+  account check do not touch `safeStorage` or the Apple Keychain.
+- Added the Keychain identity limitation to the security notes: unsigned and
+  ad-hoc builds cannot rely on a stable "Always Allow" decision; Developer ID
+  signing and notarization remain the durable fix.
+
 ## 27.1.0
 
 A quieter task page, driven by the agent's report rather than display-time task

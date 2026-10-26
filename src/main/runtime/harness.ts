@@ -150,7 +150,9 @@ export class AgentHarness {
       CONTEXT,
     )
     const instance = new AgentHarness(deps, harness, state, tools)
-    instance.applyModel()
+    // Do not touch the vault at launch. On macOS safeStorage can ask for
+    // Keychain access; that prompt belongs to the first model run, not to
+    // opening the window or running a model-free check.
     // A run may start immediately after the window appears; the digest must be
     // in the prompt, not still loading. It is one small query.
     await refreshDigest(tools, state)
@@ -1023,6 +1025,7 @@ export class AgentHarness {
     input: { content: string; entry: { kind: string; data?: unknown } },
   ): Promise<void> {
     const taskId = String(conversation.id)
+    if (!this.modelRef) this.applyModel()
     if (!this.modelRef) throw new Error('Choose a model in Settings first.')
     const model = this.modelRef
     const thinking = this.deps.settings.get().model?.thinking ?? 'off'

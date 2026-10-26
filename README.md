@@ -7,7 +7,7 @@ composes a **run** from its plan, answer blocks and the evidence behind them. A
 Nothing is written, deleted or changed in storage, and the app never applies a
 fix.
 
-Current release: **27.1.0**.
+Current release: **27.1.1**.
 
 ![A run in Storage Agent](docs/screenshot.png)
 
