@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 /** Keep keyboard focus inside a dialog and give it back when it closes. */
-export function useFocusTrap<T extends HTMLElement>(onClose: () => void) {
+export function useFocusTrap<T extends HTMLElement>(onClose: () => void, initial?: string) {
   const ref = useRef<T>(null)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
@@ -17,7 +17,8 @@ export function useFocusTrap<T extends HTMLElement>(onClose: () => void) {
         ),
       ].filter((element) => element.offsetParent !== null)
 
-    focusable()[0]?.focus()
+    const preferred = initial ? node.querySelector<HTMLElement>(initial) : null
+    ;(preferred ?? focusable()[0])?.focus()
 
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -44,7 +45,7 @@ export function useFocusTrap<T extends HTMLElement>(onClose: () => void) {
       document.removeEventListener('keydown', onKey)
       previous?.focus()
     }
-  }, [])
+  }, [initial])
 
   return ref
 }

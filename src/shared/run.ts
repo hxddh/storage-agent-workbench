@@ -102,7 +102,13 @@ function hasTable(view: ToolView | null | undefined): boolean {
 }
 
 function validBlock(block: ReportBlock, evidence: readonly RunEvidence[]): boolean {
-  if (block.kind === 'summary' || block.kind === 'callout' || block.kind === 'findings') return true
+  if (
+    block.kind === 'summary' ||
+    block.kind === 'callout' ||
+    block.kind === 'markdown' ||
+    block.kind === 'findings'
+  )
+    return true
   const first = block.evidence[0]
   const source = resolveEvidence(evidence, first)
   if (!source?.view) return false
@@ -118,8 +124,14 @@ function validBlock(block: ReportBlock, evidence: readonly RunEvidence[]): boole
 
 function textOfBlocks(blocks: readonly ReportBlock[]): string {
   return blocks
-    .filter((block) => block.kind === 'summary' || block.kind === 'callout')
-    .map((block) => (block.kind === 'summary' || block.kind === 'callout' ? block.text : ''))
+    .filter(
+      (block) => block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown',
+    )
+    .map((block) =>
+      block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown'
+        ? block.text
+        : '',
+    )
     .join('\n')
 }
 
@@ -257,12 +269,58 @@ export function buildRun(
   return { question, plan, report, brief, evidence, counts, audit }
 }
 
+export interface RunTurn {
+  id: string
+  question: RunModel['question']
+  plan: RunPlan | null
+  report: RunReport | null
+  counts: Record<Severity, number>
+  checks: number
+  at: string
+}
+
+/**
+ * A task can hold several turns. The page keeps the latest expanded and offers
+ * earlier turns as a compact history; this is a projection, not a second log.
+ */
+export function turnsOf(
+  entries: readonly UiEntry[],
+  issueStatus: Record<string, IssueRow['status']> = {},
+): RunTurn[] {
+  const starts = entries
+    .map((entry, index) => (entry.kind === 'user' ? index : -1))
+    .filter((index) => index >= 0)
+  // A deterministic check has no user entry. If a later follow-up starts a
+  // model turn, the check still belongs at the top of the history.
+  if (!starts.length || starts[0]! > 0) starts.unshift(0)
+  const turns: RunTurn[] = []
+  for (let at = 0; at < starts.length; at += 1) {
+    const start = starts[at]!
+    const end = starts[at + 1] ?? entries.length
+    const slice = entries.slice(start, end)
+    if (!slice.length) continue
+    const model = buildRun(slice, null, issueStatus)
+    if (!model.question && !model.report && !model.brief.checks.length) continue
+    turns.push({
+      id: model.question?.id ?? `turn:${slice[0]!.id}`,
+      question: model.question,
+      plan: model.plan,
+      report: model.report,
+      counts: model.counts,
+      checks: model.brief.checks.length,
+      at: model.question?.at ?? model.report?.at ?? slice[0]!.at,
+    })
+  }
+  return turns
+}
+
 export function reportSearchText(run: RunModel): string {
   if (!run.report) return ''
   return [
     run.report.title,
     ...run.report.blocks.flatMap((block) => {
-      if (block.kind === 'summary' || block.kind === 'callout') return [block.text]
+      if (block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown')
+        return [block.text]
       return []
     }),
   ]

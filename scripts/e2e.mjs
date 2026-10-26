@@ -57,6 +57,26 @@ const fail = async (message) => {
   process.exit(1)
 }
 
+const checkA11y = async (label) => {
+  await page.evaluate(readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8'))
+  const axe = await page.evaluate(async () => {
+    const runner = window.axe
+    return runner.run(document, { resultTypes: ['violations'] })
+  })
+  const severe = axe.violations.filter(
+    (violation) => violation.impact === 'serious' || violation.impact === 'critical',
+  )
+  console.log(`A11Y ${label}:`, axe.violations.length, 'violations;', severe.length, 'serious')
+  for (const violation of severe)
+    console.log(
+      `A11Y ${label} NODE:`,
+      violation.id,
+      violation.nodes.map((node) => `${node.target.join(' ')} :: ${node.html}`).join(' | '),
+    )
+  if (severe.length)
+    await fail(`${label} accessibility: ${severe.map((v) => `${v.id} (${v.nodes.length})`).join(', ')}`)
+}
+
 try {
   await page.waitForTimeout(1200)
   await page.getByRole('button', { name: 'Set up a model' }).first().click()
@@ -87,10 +107,12 @@ try {
   const accounts = await page.locator('.account-name').count()
   console.log('ACCOUNTS:', accounts)
   if (accounts < 1) await fail('account was not saved')
+  await checkA11y('settings')
 
-  await page.getByRole('button', { name: 'Close' }).click()
+  await page.getByRole('button', { name: 'Done' }).click()
   await page.waitForSelector('.home-ledger-row', { timeout: 5_000 })
   console.log('HOME OVERVIEW OK')
+  await checkA11y('home')
 
   // Model-free account check: the same readers produce a brief without a model.
   await page.getByRole('button', { name: 'Check account' }).click()
@@ -98,12 +120,13 @@ try {
   const auditText = await page.locator('.brief').innerText()
   if (!/issue|problem|No open/i.test(auditText)) await fail('audit produced no conclusion')
   console.log('AUDIT OK:', auditText.replace(/\s+/g, ' ').slice(0, 180))
+  await checkA11y('audit')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-audit.png') })
 
   await page.locator('.composer textarea').fill('Which buckets are public?')
   await page.keyboard.press('Enter')
 
-  await page.waitForSelector('.check-line .pulse-icon', { timeout: 10_000 })
+  await page.waitForSelector('.run-strip .run-dot', { timeout: 10_000 })
   await page.waitForTimeout(600)
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-running.png') })
 
@@ -123,26 +146,7 @@ try {
   await page.waitForSelector('.run-block .table-block table', { timeout: 5_000 })
   console.log('EVIDENCE OK')
   await page.waitForTimeout(200)
-  await page.evaluate(readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8'))
-  const axe = await page.evaluate(async () => {
-    const runner = window.axe
-    return runner.run(document, { resultTypes: ['violations'] })
-  })
-  const severe = axe.violations.filter(
-    (violation) => violation.impact === 'serious' || violation.impact === 'critical',
-  )
-  console.log('A11Y:', axe.violations.length, 'violations;', severe.length, 'serious')
-  for (const violation of severe)
-    console.log(
-      'A11Y NODE:',
-      violation.id,
-      violation.nodes.map((node) => `${node.target.join(' ')} :: ${node.html}`).join(' | '),
-    )
-  if (severe.length) {
-    await fail(
-      `accessibility: ${severe.map((v) => `${v.id} (${v.nodes.length})`).join(', ')}`,
-    )
-  }
+  await checkA11y('answer')
   await page.waitForTimeout(350)
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-answer.png') })
 
@@ -189,6 +193,11 @@ try {
   await page.waitForSelector('.run-evidence-toggle', { timeout: 10_000 })
   await page.locator('.run-evidence-toggle').click()
   await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 5_000 })
+  await page.locator('.run-history-head').click()
+  await page.waitForSelector('.run-turn-head', { timeout: 5_000 })
+  await page.locator('.run-turn-head').first().click()
+  await page.waitForSelector('.run-turn-body', { timeout: 5_000 })
+  console.log('HISTORY OK')
   await page.waitForSelector('.fold.ok .fold-head', { timeout: 10_000 })
   const fixed = await page.locator('.fold.ok .fold-head').innerText()
   console.log('VERIFY OK:', fixed)
@@ -229,7 +238,7 @@ try {
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('Check demo-private again')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.check-line .pulse-icon', { timeout: 10_000 })
+  await page.waitForSelector('.run-strip .run-dot', { timeout: 10_000 })
   await page.getByRole('button', { name: 'Stop' }).click()
   await page.waitForSelector('text=Stopped.', { timeout: 10_000 })
   console.log('STOP OK')
@@ -310,7 +319,7 @@ try {
   if (await page.getByRole('button', { name: 'Try with demo storage' }).count())
     await fail('the demo was offered twice')
   console.log('DEMO OK')
-  await page.getByRole('button', { name: 'Close' }).click()
+  await page.getByRole('button', { name: 'Done' }).click()
 
   const db = readFileSync(join(dataDir, 'storage-agent.db'))
   console.log('DB BYTES:', db.length)

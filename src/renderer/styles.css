@@ -194,6 +194,21 @@ button {
 .brand-name {
   white-space: nowrap;
 }
+.sidebar-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border-radius: var(--r-s);
+  color: var(--ink-3);
+}
+.sidebar-close:hover,
+.sidebar-close:focus-visible {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+}
 
 .new-task {
   display: flex;
@@ -1784,6 +1799,21 @@ pre.code {
   display: flex;
   gap: 6px;
 }
+.sheet-done {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 540;
+}
+.sheet-done:hover,
+.sheet-done:focus-visible {
+  border-color: var(--ink-3);
+  background: var(--surface-2);
+}
 
 .sheet-body {
   flex: 1;
@@ -2357,6 +2387,13 @@ pre.code {
 .search-hit.active {
   background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
+.hit-kind {
+  color: var(--ink-3);
+  font-size: 10.75px;
+  font-weight: 600;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
 .hit-title {
   font-size: 13px;
   color: var(--ink);
@@ -2558,6 +2595,61 @@ pre.code {
   font-size: 14.5px;
   line-height: 1.62;
 }
+.home-recent {
+  margin-top: 32px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.home-recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.home-recent-head h2 {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 10.75px;
+  font-weight: 600;
+  letter-spacing: 0.085em;
+  text-transform: uppercase;
+}
+.home-recent-head span {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.home-recent-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+.home-recent-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  width: 100%;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+  text-align: left;
+}
+.home-recent-row:hover,
+.home-recent-row:focus-visible {
+  color: var(--ink);
+}
+.home-recent-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.home-recent-time {
+  margin-left: auto;
+  flex: none;
+  color: var(--ink-3);
+  font-size: 11px;
+}
 .home-actions {
   display: flex;
   align-items: center;
@@ -2714,6 +2806,7 @@ pre.code {
   font-size: 12.5px;
 }
 .ref-row:hover,
+.ref-row.active,
 .ref-row:focus-visible {
   background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
@@ -2906,6 +2999,28 @@ pre.code {
   }
   .run-evidence-wrap.is-collapsed {
     display: contents !important;
+  }
+  .run-draft {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 0 2px;
+    border-top: 1px solid var(--line);
+  }
+  .run-draft-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .run-draft-body {
+    max-width: 64ch;
+    color: var(--ink-2);
+    font-size: 14.5px;
+    line-height: 1.62;
+  }
+  .run-draft-body p {
+    margin: 0;
   }
   .run-evidence-toggle {
     display: none !important;
@@ -3115,6 +3230,10 @@ pre.code {
 }
 
 .run-header {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3192,6 +3311,99 @@ pre.code {
 }
 .run-tag.warn {
   color: var(--warn);
+}
+
+.run-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.run-history-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+  text-align: left;
+}
+.run-history-head:hover,
+.run-history-head:focus-visible {
+  color: var(--ink);
+}
+.run-history-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 10.5px;
+  line-height: 18px;
+  text-align: center;
+}
+.run-history-head .chev {
+  margin-left: auto;
+  color: var(--ink-3);
+  transition: transform var(--fast) var(--ease);
+}
+.run-history-head .chev.open {
+  transform: rotate(90deg);
+}
+.run-turn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.run-turn {
+  border-bottom: 1px solid var(--line);
+}
+.run-turn-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 14px;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  padding: 8px 0;
+  color: var(--ink-2);
+  text-align: left;
+}
+.run-turn-head:hover,
+.run-turn-head:focus-visible {
+  color: var(--ink);
+}
+.run-turn-question {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.run-turn-meta {
+  color: var(--ink-3);
+  font-size: 10.75px;
+  white-space: nowrap;
+}
+.run-turn-head .chev {
+  color: var(--ink-3);
+  transition: transform var(--fast) var(--ease);
+}
+.run-turn-head .chev.open {
+  transform: rotate(90deg);
+}
+.run-turn-body {
+  padding: 0 0 12px;
+}
+.run-turn-summary {
+  max-width: 64ch;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
 .run-plan {
@@ -3411,13 +3623,68 @@ pre.code {
   font-weight: 600;
   line-height: 1.4;
 }
+.run-block-note {
+  margin: 3px 0 12px;
+  color: var(--ink-3);
+  font-size: 11.75px;
+}
 
+.run-cite {
+  display: inline;
+  margin: 0 1px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 0.78em;
+  font-weight: 600;
+  vertical-align: super;
+  line-height: 0;
+}
+.run-cite:hover,
+.run-cite:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.run-markdown {
+  max-width: 66ch;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.62;
+}
+.run-markdown h2,
+.run-markdown h3 {
+  margin: 18px 0 6px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+.run-markdown h2:first-child,
+.run-markdown h3:first-child {
+  margin-top: 0;
+}
+.run-markdown ul,
+.run-markdown ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+.run-markdown li {
+  margin: 3px 0;
+}
+.run-markdown p {
+  margin: 0 0 10px;
+}
+.run-markdown p:last-child {
+  margin-bottom: 0;
+}
 .run-source {
   align-self: flex-start;
   margin: 0;
   padding: 0;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: 11.75px;
   line-height: 1.4;
 }
 

@@ -1,4 +1,4 @@
-import type { Bootstrap, LocalModel } from '@shared/contract'
+import type { Bootstrap, LocalModel, TaskSummary } from '@shared/contract'
 import { Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { dict, fill } from './i18n'
@@ -24,6 +24,8 @@ export function Home({
   onDemo,
   onAudit,
   auditing,
+  tasks,
+  onOpenTask,
 }: {
   boot: Bootstrap
   onSetup: () => void
@@ -32,6 +34,8 @@ export function Home({
   onDemo: () => void
   onAudit: () => void
   auditing: boolean
+  tasks: TaskSummary[]
+  onOpenTask: (id: string) => void
 }) {
   const lang = boot.settings.language
   const t = dict(lang)
@@ -177,6 +181,27 @@ export function Home({
             </div>
             {localError && <p className="brief-error">{localError}</p>}
           </>
+        )}
+        {tasks.length > 0 && (
+          <section className="home-recent" aria-label={t.homeRecent}>
+            <div className="home-recent-head">
+              <h2>{t.homeRecent}</h2>
+              <span>{tasks.length}</span>
+            </div>
+            <div className="home-recent-list">
+              {tasks.slice(0, 5).map((task) => (
+                <button
+                  className="home-recent-row"
+                  type="button"
+                  key={task.id}
+                  onClick={() => onOpenTask(task.id)}
+                >
+                  <span className="home-recent-title">{task.title}</span>
+                  <span className="home-recent-time">{ago(task.updatedAt, lang)}</span>
+                </button>
+              ))}
+            </div>
+          </section>
         )}
       </div>
     </div>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { IssueRow, TaskView, UiEntry } from '@shared/contract'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Run } from './Run'
 
@@ -260,6 +260,85 @@ describe('the run', () => {
     expect(screen.getByText('Buckets')).toBeTruthy()
   })
 
+  it('renders a controlled markdown block with sections and lists', async () => {
+    const markdownReport: UiEntry = {
+      ...report,
+      view: {
+        kind: 'report',
+        blocks: [
+          {
+            kind: 'markdown',
+            title: 'Details',
+            text: '## Detail\n\n- one\n- two',
+            evidence: ['ev-survey'],
+          },
+        ],
+      },
+    }
+    render(
+      <Run
+        view={view([
+          {
+            id: 'u',
+            kind: 'user',
+            at: '2026-01-01T00:00:00Z',
+            text: 'Which buckets are public?',
+            attachments: [],
+          },
+          survey,
+          markdownReport,
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(screen.getByText('Details')).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Detail' })).toBeTruthy())
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('renders an inline citation from a summary', async () => {
+    const cited: UiEntry = {
+      ...report,
+      view: {
+        kind: 'report',
+        blocks: [
+          {
+            kind: 'summary',
+            text: 'Only `demo` is public [1](#ev-1).',
+            evidence: ['ev-survey'],
+          },
+        ],
+      },
+    }
+    render(
+      <Run
+        view={view([
+          {
+            id: 'u',
+            kind: 'user',
+            at: '2026-01-01T00:00:00Z',
+            text: 'Which buckets are public?',
+            attachments: [],
+          },
+          survey,
+          cited,
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    await waitFor(() => expect(document.querySelector('.run-cite')).toBeTruthy())
+    fireEvent.click(document.querySelector('.run-cite')!)
+    expect(document.querySelector('.run-evidence-wrap')?.className).not.toContain('is-collapsed')
+  })
+
   it('does not show a stale table under a new question', () => {
     const tableReport: UiEntry = {
       ...report,
@@ -319,5 +398,32 @@ describe('the run', () => {
     )
     expect(document.querySelector('.run-question')).toBeNull()
     expect(screen.getByText('Deterministic account check')).toBeTruthy()
+  })
+
+  it('keeps an earlier model-free check when a follow-up question starts', () => {
+    render(
+      <Run
+        view={view([
+          survey,
+          { id: 'a', kind: 'answer', at: '2026-01-01T00:00:02Z', text: '`demo` is public.' },
+          {
+            id: 'u2',
+            kind: 'user',
+            at: '2026-01-01T00:00:03Z',
+            text: 'What changed?',
+            attachments: [],
+          },
+          { ...survey, id: 's2' },
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Earlier in this task/ }))
+    expect(screen.getByText('Deterministic account check')).toBeTruthy()
+    expect(document.querySelector('.run-question')?.textContent).toBe('What changed?')
   })
 })

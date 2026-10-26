@@ -1,3 +1,40 @@
+## 28.0.0
+
+A continuous, citable agent run. This is one release; the earlier proposal to
+split the work across 28.x versions is not part of the shipped product.
+
+### Added
+
+- **Earlier in this task.** Previous turns collapse into rows with the question,
+  summary and check count; one click reveals the prior answer. Search can open
+  an earlier turn. The latest turn remains the expanded run.
+- **Draft while writing.** The agent's streamed text appears as an explicitly
+  unverified draft until `report` replaces it with grounded blocks.
+- **Markdown and citations.** Report accepts a controlled markdown block for
+  sections and lists. Summary/callout/markdown prose can cite
+  `[1](#ev-1)`; the window resolves the citation to its tool result.
+- **Home recent runs and typed search hits.** Home shows up to five recent
+  runs; search marks Task, Request, Answer or Finding and suppresses a snippet
+  that only repeats the title.
+- **Dismissal system.** Settings uses Done; the compact sidebar has a visible X;
+  menus close on outside click/Escape; the `@` picker supports arrows, Enter,
+  Escape and outside click. Focus enters the active Settings rail row.
+
+### Changed
+
+- The run header is sticky. Live evidence is no longer expanded over the plan;
+  the composer carries the live phase, and the draft appears in the page.
+- Source lines are provenance only. The evidence control remains the single
+  discovery point. Secondary text is at least 11.75px; a ready task row carries
+  no state dot.
+- Settings explains the macOS Keychain behavior next to the stored-key hint.
+
+### Verification
+
+- Typecheck, Biome, 200 unit tests, build and bundle budget.
+- Full E2E and no-model E2E, axe 0 serious violations, visual baselines and the
+  harness smoke evaluation.
+
 ## 27.1.1
 
 ### Fixed

@@ -234,6 +234,12 @@ async function createWindow(): Promise<void> {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
+  // Model prose can contain links. Never navigate the trusted window to one.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url === mainWindow?.webContents.getURL()) return
+    event.preventDefault()
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+  })
 
   const devUrl = process.env.ELECTRON_RENDERER_URL
   if (devUrl) {

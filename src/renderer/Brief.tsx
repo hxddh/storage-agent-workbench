@@ -678,9 +678,17 @@ export function Brief({
     if (!more) return
     const close = () => setMore(false)
     const timer = setTimeout(() => window.addEventListener('click', close, { once: true }), 0)
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setMore(false)
+      }
+    }
+    window.addEventListener('keydown', key)
     return () => {
       clearTimeout(timer)
       window.removeEventListener('click', close)
+      window.removeEventListener('keydown', key)
     }
   }, [more])
 

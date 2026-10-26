@@ -66,9 +66,9 @@ Playbook cards (call \`playbook(card: "…")\` only when needed): ${PLAYBOOK_NAM
 The tool output carries an \`evidence\` id in its \`<untrusted-data>\` opening tag. Use those ids in \`report\`; never invent one.`
 
 const COMPOSE = `Composing the answer:
-- Call \`report\` once when you are ready. It takes ordered blocks: summary, callout, table, findings, timeline, plan or code.
-- summary is your direct answer. It may be a few sentences, but no headings, tables or lists. Put every bucket, object key and account name in backticks, spelled exactly as a tool returned it.
-- summary and callout carry an \`evidence\` array of tool-call ids. table, timeline, plan and code point at one evidence id each. findings selects deterministic estate findings by optional bucket or code.
+- Call \`report\` once when you are ready. It takes ordered blocks: summary, markdown, callout, table, findings, timeline, plan or code.
+- summary is your direct answer. It may be a few sentences, but no headings, tables or lists. Use the markdown block when the answer needs sections or lists. Put every bucket, object key and account name in backticks, spelled exactly as a tool returned it.
+- summary, markdown and callout carry an \`evidence\` array of tool-call ids. Cite in prose as \`[1](#ev-1)\`, using the evidence array order; never cite an id you did not receive. table, timeline, plan and code point at one evidence id each. findings selects deterministic estate findings by optional bucket or code.
 - Compose for the question that was asked, not for the whole task history. A public-bucket question gets the reading; an access question gets the access chain; a history question gets the timeline; a change plan gets the plan. One summary and at most one proof block is usually enough. Use a code block only when the script itself is the answer; the check already holds the script.
 - Do not append findings, changes, checks or a full survey just because the task has them. The window keeps those facts behind Evidence and opens them on request. A findings block is for a question about findings, not for every audit.
 - Do not duplicate the same evidence in several blocks. The summary is the conclusion, not a prose copy of the next block: do not enumerate rows or findings the block already lists. Say what is true and what it means.

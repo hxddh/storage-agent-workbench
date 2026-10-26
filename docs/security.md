@@ -117,7 +117,8 @@ unread", not "this is the complete set of principals who can reach the bucket".
   state. A name in the answer summary that no tool returned is marked on the page.
   A clean account claim while a run still has open reads is corrected once; the
   page's `Reads open` status remains authoritative. Tool output is wrapped as
-  untrusted data before the model sees it.
+  untrusted data before the model sees it. Links in model prose open in the
+  system browser; the trusted window never navigates to one.
 - **The vault fallback is local**: without an OS keyring, the AES key file and
   the database both live under the user profile. Copying the database without
   the key file protects the ciphertext; copying both does not. Settings does not

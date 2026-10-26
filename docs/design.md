@@ -80,8 +80,8 @@ fields, not a sequence of panels.
   column inside a 1000px frame. The rail becomes a horizontal tab row below
   860px. On the rail, version and update state sit at the foot; in the compact
   layout they sit below the tab row.
-- Below 860px the sidebar is a dismissable overlay with a scrim, and Home gains
-  the same Tasks button as a task screen.
+- Below 860px the sidebar is a dismissable overlay with a visible X, a scrim
+  and Escape, and Home gains the same Tasks button as a task screen.
 
 ## Home
 
@@ -102,11 +102,13 @@ The composer is inert until a model exists; the account can still be checked.
 
 Top to bottom: a 12.5px scope line (`Demo · Reads complete · 2/2 buckets
 checked · checked 2m ago`), the question at 24px, severity counts, Copy and the
-overflow menu, the agent's plan, the ordered answer blocks (summary, callout,
-table, findings, timeline, plan or code), then the deterministic evidence:
-findings, re-verification, changes, **Not read**, the change plan, one data
-section and the checks receipt. Save, Check again, Re-verify, Copy link, Export
-evidence and Save PDF live in the overflow.
+overflow menu, a collapsed **Earlier in this task** history, the agent's plan,
+the ordered answer blocks (summary, markdown, callout, table, findings,
+timeline, plan or code), a provisional draft while the agent is writing, then
+the deterministic evidence: findings, re-verification, changes, **Not read**,
+one data section and the checks receipt. The run header is sticky. Save, Check
+again, Re-verify, Copy link, Export evidence and Save PDF live in the overflow.
+A citation rendered from `[1](#ev-1)` opens the matching check.
 
 The scope line is the one place that makes coverage visible before the user
 reads the answer. It says `Reads open: n · m blocked` when a read failed,
@@ -195,9 +197,10 @@ reveal-on-scroll, page transition or animation library.
 
 ## Icons and states
 
-Lucide icons at 14–16px with 1.6–1.8 stroke. Task rows use a small state dot:
-working, attention or ready. Hovering a task reveals one task-actions button and
-hides its relative time, so the two never collide. The composer shows focused and
+Lucide icons at 14–16px with 1.6–1.8 stroke. Task rows use a small state dot
+only when work needs attention: working, attention or failed. A ready task has
+no dot. Hovering a task reveals one task-actions button and hides its relative
+time, so the two never collide. The composer shows focused and
 dragging states. Icons next to text are `aria-hidden`.
 
 ## Accessibility

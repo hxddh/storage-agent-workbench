@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 27.0.0**. Read
+> Implementation contract for **Storage Agent 28.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes and the changelog are history.
@@ -214,12 +214,15 @@ unknown. Neither path calls a model. A settled unscoped survey writes one
 `Sidebar · run · Composer`, plus a full-screen Settings sheet. No side pane,
 no command palette, no second window, no chat transcript.
 
-The task list groups pinned, today and earlier, with a state dot and a relative
-time. Titles may take two lines; task rows support rename, pin and delete. A
+The task list groups pinned, today and earlier, with a state dot only for
+working, attention or failed and a relative time. Titles may take two lines;
+task rows support rename, pin and delete. A
 task title appears once, in the sidebar, plus the compact top bar below 860px.
 
-A task with a plan or report is an agent run. The run header names the latest
-question (a deterministic check has no fake question), the account(s),
+A task with a plan or report is an agent run. Earlier turns appear as compact
+expandable rows under **Earlier in this task**; the latest question is the run
+header. A deterministic check has no fake question. The run header names the
+account(s),
 `Reads complete` or `Reads open: n · m blocked`, checked/total buckets and the
 read time; severity counts appear only when the task is about findings. A
 failed or stopped storage read keeps the line open. Copy and one overflow menu
@@ -229,11 +232,13 @@ report in the current task. Home reads its "last complete read" from the
 reading records.
 
 The plan section is the agent's own 3–6 steps with pending/active/done/blocked
-states; it is not a transcript. It is visible while the run is live and remains
+states; it is not a transcript. A live draft sits beside it while the agent
+writes. The plan is visible while the run is live and remains
 for a stopped run or a blocked step; a settled answer folds it away. The answer
-section renders the ordered report blocks: summary, callout, table, findings,
-timeline, plan or code. A data block resolves one evidence id to the tool view
-that proved it; a missing block is omitted with a quiet note. A report findings
+section renders the ordered report blocks: summary, markdown, callout, table,
+findings, timeline, plan or code. Markdown can carry sections and lists; `[1](#ev-1)`
+citations open the matching check. A data block resolves one evidence id to the
+tool view that proved it; a missing block is omitted with a quiet note. A report findings
 block is visible in the answer; the evidence body does not duplicate its
 current findings. A report plan block is the change plan; no task subtype
 selects it. A model task whose report is prose only shows the latest data read

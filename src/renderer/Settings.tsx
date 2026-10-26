@@ -9,7 +9,7 @@ import type {
   NoteRow,
   Theme,
 } from '@shared/contract'
-import { Brain, Cloud, Cpu, Palette, Plus, X } from 'lucide-react'
+import { Brain, Cloud, Cpu, Palette, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { dict, fill } from './i18n'
 import { useFocusTrap } from './lib/focus'
@@ -90,7 +90,7 @@ export function Settings({
   const [accountStatus, setAccountStatus] = useState<{ ok: boolean; detail: string } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [notes, setNotes] = useState<NoteRow[]>([])
-  const trap = useFocusTrap<HTMLDivElement>(onClose)
+  const trap = useFocusTrap<HTMLDivElement>(onClose, '[data-active-tab="true"]')
 
   useEffect(() => {
     void window.agent.notes().then(setNotes)
@@ -290,8 +290,8 @@ export function Settings({
         <div className="sheet-head-inner">
           <h2>{active.label}</h2>
           <div className="actions">
-            <button className="icon-btn" type="button" aria-label={t.close} onClick={onClose}>
-              <X size={16} />
+            <button className="sheet-done" type="button" onClick={onClose}>
+              {t.done}
             </button>
           </div>
         </div>
@@ -308,6 +308,7 @@ export function Settings({
                     className={`settings-tab ${pane === item.id ? 'active' : ''}`}
                     type="button"
                     aria-current={pane === item.id ? 'page' : undefined}
+                    data-active-tab={pane === item.id ? 'true' : undefined}
                     onClick={() => setPane(item.id)}
                   >
                     <Icon size={15} strokeWidth={1.7} aria-hidden="true" />
@@ -444,6 +445,7 @@ export function Settings({
                     onChange={(event) => setApiKey(event.target.value)}
                   />
                   <span className="hint">{boot.model ? t.keySaved : t.keyHint}</span>
+                  {boot.platform === 'darwin' && <span className="hint">{t.keychainHint}</span>}
                 </div>
                 <p className="hint">{t.thinkingAuto}</p>
                 <div className="account-actions">

@@ -19,6 +19,7 @@ const stepSchema = Type.Object({
 const blockSchema = Type.Object({
   kind: Type.Union([
     Type.Literal('summary'),
+    Type.Literal('markdown'),
     Type.Literal('callout'),
     Type.Literal('table'),
     Type.Literal('findings'),
@@ -92,6 +93,17 @@ function reportBlocks(value: unknown): ReportBlock[] {
           ...(title ? { title } : {}),
         })
       }
+      continue
+    }
+    if (kind === 'markdown') {
+      const body = text(item.text, 4000)
+      if (!body) continue
+      blocks.push({
+        kind,
+        text: body,
+        evidence: evidence(item.evidence),
+        ...(title ? { title } : {}),
+      })
       continue
     }
     if (kind === 'findings') {
@@ -177,7 +189,7 @@ export function reportTool() {
   return defineTool({
     name: 'report',
     description:
-      'Compose the answer the window renders. Blocks are ordered. summary and callout carry your prose and cite the tool-call ids that support it; table, timeline, plan and code point at one tool result each; findings selects deterministic estate findings. Use one summary and at most one proof block for the question; do not append findings, changes, checks or a full survey for completeness. Call it once when the investigation is ready; after it, write one short sentence at most.',
+      'Compose the answer the window renders. Blocks are ordered. summary, markdown and callout carry your prose and cite the tool-call ids that support it; table, timeline, plan and code point at one tool result each; findings selects deterministic estate findings. Use one summary and at most one proof block for the question; do not append findings, changes, checks or a full survey for completeness. Call it once when the investigation is ready; after it, write one short sentence at most.',
     parameters: Type.Object({
       title: Type.Optional(Type.String({ maxLength: 160 })),
       blocks: Type.Array(blockSchema, { minItems: 1, maxItems: 12 }),

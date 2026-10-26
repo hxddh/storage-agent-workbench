@@ -8,7 +8,14 @@ import {
   type TaskView,
   type ToolView,
 } from '@shared/contract'
-import { buildRun, type RunEvidence, type RunModel, resolveEvidence } from '@shared/run'
+import {
+  buildRun,
+  type RunEvidence,
+  type RunModel,
+  type RunTurn,
+  resolveEvidence,
+  turnsOf,
+} from '@shared/run'
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -165,6 +172,10 @@ function FindingsBlock({
   )
   const rows = all.slice(0, block.limit ?? 5)
   if (!rows.length) return <p className="quiet">{t.runNoMatch}</p>
+  const allMemory = all.length > 0 && all.every((finding) => finding.source === 'memory')
+  const rememberedAt = allMemory
+    ? ([...all].map((finding) => finding.readAt).sort()[0] ?? null)
+    : null
   const navigate = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement
     if (!target.classList.contains('finding-main')) return
@@ -185,6 +196,11 @@ function FindingsBlock({
   return (
     <>
       {block.title && <h3 className="run-block-title">{block.title}</h3>}
+      {rememberedAt && (
+        <p className="run-block-note">
+          {fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' })}
+        </p>
+      )}
       <div className="findings-list" onKeyDown={navigate}>
         {rows.map((finding) => (
           <FindingRow
@@ -193,7 +209,7 @@ function FindingsBlock({
             t={t}
             onOpen={() => onOpen(finding.sourceId)}
             onAccept={() => onAccept(finding)}
-            tagMemory
+            tagMemory={!allMemory}
             showBucket
             staleDays={staleDays}
           />
@@ -210,6 +226,84 @@ function FindingsBlock({
         )}
       </div>
     </>
+  )
+}
+
+function TurnHistory({
+  turns,
+  t,
+  open,
+  onToggle,
+  selected,
+  onSelect,
+}: {
+  turns: RunTurn[]
+  t: Dict
+  open: boolean
+  onToggle: () => void
+  selected: string | null
+  onSelect: (id: string | null) => void
+}) {
+  if (!turns.length) return null
+  return (
+    <section className="run-history" aria-label={t.runEarlier}>
+      <button className="run-history-head" type="button" aria-expanded={open} onClick={onToggle}>
+        <span className="run-section-title">{t.runEarlier}</span>
+        <span className="run-history-count">{turns.length}</span>
+        <ChevronRight size={13} className={`chev ${open ? 'open' : ''}`} />
+      </button>
+      {open && (
+        <ol className="run-turn-list">
+          {turns.map((turn) => {
+            const expanded = selected === turn.id
+            const summary = turn.report?.blocks.find(
+              (block) =>
+                block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown',
+            )
+            return (
+              <li key={turn.id} className="run-turn">
+                <button
+                  className="run-turn-head"
+                  type="button"
+                  aria-expanded={expanded}
+                  onClick={() => onSelect(expanded ? null : turn.id)}
+                >
+                  <span className="run-turn-question">
+                    {turn.question?.text ?? t.runDeterministicCheck}
+                  </span>
+                  <span className="run-turn-meta">
+                    {ago(turn.at, t) ?? ''} ·{' '}
+                    {turn.checks === 1
+                      ? t.checkOne
+                      : `${turn.checks} ${t.checksTitle.toLowerCase()}`}
+                  </span>
+                  <ChevronRight size={13} className={`chev ${expanded ? 'open' : ''}`} />
+                </button>
+                {expanded && (
+                  <div className="run-turn-body">
+                    {summary ? (
+                      <p className="run-turn-summary">
+                        {summary.kind === 'markdown'
+                          ? plain(
+                              summary.text
+                                .replace(/^#{1,6}\s+/gm, '')
+                                .replace(/^[-*]\s+/gm, '')
+                                .replace(/\s+/g, ' ')
+                                .trim(),
+                            )
+                          : plain(summary.text)}
+                      </p>
+                    ) : (
+                      <p className="quiet">{t.runNoAnswer}</p>
+                    )}
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      )}
+    </section>
   )
 }
 
@@ -341,7 +435,35 @@ export function Run({
   const [copied, setCopied] = useState(false)
   const [linked, setLinked] = useState(false)
   const [more, setMore] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [selectedTurn, setSelectedTurn] = useState<string | null>(null)
+  const turns = useMemo(
+    () => turnsOf(view.entries, view.issueStatus),
+    [view.entries, view.issueStatus],
+  )
+  const earlierTurns = useMemo(() => turns.slice(0, -1), [turns])
   const root = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!more) return
+    const close = () => setMore(false)
+    const timer = window.setTimeout(
+      () => window.addEventListener('click', close, { once: true }),
+      0,
+    )
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setMore(false)
+      }
+    }
+    window.addEventListener('keydown', key)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', key)
+    }
+  }, [more])
   const read = readStateOfBrief(run.brief)
   const scopeNames = [...new Set(run.brief.coverage.map((item) => item.provider))]
   const coverageStatus =
@@ -369,6 +491,7 @@ export function Run({
   const hasReportCode = visibleBlocks.some((block) => block.kind === 'code')
   const hasReportPlan = visibleBlocks.some((block) => block.kind === 'plan')
   const hasReportFindings = visibleBlocks.some((block) => block.kind === 'findings')
+  const hasReportMarkdown = visibleBlocks.some((block) => block.kind === 'markdown')
   const ungrounded = new Set(stale ? [] : (report?.ungrounded ?? []))
   const contradicted = new Set(stale ? [] : (report?.contradicted ?? []))
   const stopped = run.brief.notices.some((notice) => notice.code === 'stopped')
@@ -377,7 +500,7 @@ export function Run({
     stopped ||
     Boolean(run.plan?.steps.some((step) => step.status === 'blocked'))
   const showCounts = hasReportFindings
-  const evidenceVisible = Boolean(view.live) || Boolean(auditProgress) || evidenceOpen
+  const evidenceVisible = Boolean(auditProgress) || evidenceOpen
   // The agent's report is the answer. When it did not compose the proof itself,
   // the latest data read is the one view that can stand beside the summary.
   const primaryData = useMemo(() => {
@@ -407,6 +530,8 @@ export function Run({
     setEvidenceOpen(false)
     setEvidenceFocus(null)
     setMore(false)
+    setHistoryOpen(false)
+    setSelectedTurn(null)
   }, [turnKey])
 
   const openEvidence = useCallback((entryId?: string) => {
@@ -427,6 +552,12 @@ export function Run({
 
   useEffect(() => {
     if (!focusId) return
+    const prior = earlierTurns.find((turn) => turn.question?.id === focusId)
+    if (prior) {
+      setHistoryOpen(true)
+      setSelectedTurn(prior.id)
+      return
+    }
     if (focusId === 'verdict' || focusId === run.report?.id) {
       const summary = root.current?.querySelector<HTMLElement>('.run-summary')
       if (!summary) return
@@ -439,7 +570,7 @@ export function Run({
     // evidence fold. Findings and tool checks do open it.
     if (run.brief.questions.some((item) => item.id === focusId)) return
     openEvidence(focusId)
-  }, [focusId, run.report?.id, openEvidence, run.brief.questions])
+  }, [focusId, run.report?.id, openEvidence, run.brief.questions, earlierTurns])
 
   const accept = (finding: BriefFinding) => {
     if (finding.issueId)
@@ -480,6 +611,47 @@ export function Run({
       ),
       kind: 'json',
     })
+
+  const markdownComponents = (evidence: string[]) => ({
+    code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
+      const text = String(children ?? '').trim()
+      const missing = !className && ungrounded.has(text)
+      const wrong = !className && contradicted.has(text)
+      return (
+        <code
+          className={
+            [className, missing || wrong ? 'ungrounded' : ''].filter(Boolean).join(' ') || undefined
+          }
+          title={missing ? t.ungroundedHint : wrong ? t.contradictedHint : undefined}
+        >
+          {children}
+        </code>
+      )
+    },
+    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+      const match = /^#ev-(\d+)$/.exec(href ?? '')
+      const id = match ? evidence[Number(match[1]) - 1] : undefined
+      const item = resolveEvidence(run.evidence, id)
+      if (item)
+        return (
+          <button
+            className="run-cite"
+            type="button"
+            title={`${t.runEvidenceTitle} ${match?.[1]}`}
+            onClick={() => openEvidence(item.entryId)}
+          >
+            {children}
+          </button>
+        )
+      return href && /^https?:\/\//i.test(href) ? (
+        <a href={href} target="_blank" rel="noreferrer">
+          {children}
+        </a>
+      ) : (
+        children
+      )
+    },
+  })
 
   const hideData =
     Boolean(primaryData) ||
@@ -617,6 +789,15 @@ export function Run({
           )}
         </header>
 
+        <TurnHistory
+          turns={earlierTurns}
+          t={t}
+          open={historyOpen}
+          onToggle={() => setHistoryOpen((value) => !value)}
+          selected={selectedTurn}
+          onSelect={setSelectedTurn}
+        />
+
         <RunNotices notices={run.brief.notices} t={t} onRetry={onRetry} onContinue={onContinue} />
 
         {showPlan && run.plan && (
@@ -655,7 +836,7 @@ export function Run({
         >
           {report ? (
             <>
-              {!hasSummary && run.brief.verdict?.text && (
+              {!hasSummary && !hasReportMarkdown && run.brief.verdict?.text && (
                 <p className="verdict prose run-summary">{plain(run.brief.verdict.text)}</p>
               )}
               {visibleBlocks.map((block, index) => {
@@ -665,31 +846,7 @@ export function Run({
                       <Suspense fallback={<p>{plain(block.text)}</p>}>
                         <Markdown
                           text={block.text}
-                          components={{
-                            code: ({ children, className }) => {
-                              const text = String(children ?? '').trim()
-                              const missing = !className && ungrounded.has(text)
-                              const wrong = !className && contradicted.has(text)
-                              return (
-                                <code
-                                  className={
-                                    [className, missing || wrong ? 'ungrounded' : '']
-                                      .filter(Boolean)
-                                      .join(' ') || undefined
-                                  }
-                                  title={
-                                    missing
-                                      ? t.ungroundedHint
-                                      : wrong
-                                        ? t.contradictedHint
-                                        : undefined
-                                  }
-                                >
-                                  {children}
-                                </code>
-                              )
-                            },
-                          }}
+                          components={markdownComponents(block.evidence)}
                         />
                       </Suspense>
                     </div>
@@ -698,8 +855,30 @@ export function Run({
                   return (
                     <div className={`run-callout ${block.tone}`} key={index}>
                       {block.title && <p className="run-callout-title">{block.title}</p>}
-                      <p>{plain(block.text)}</p>
+                      <div className="prose">
+                        <Suspense fallback={<p>{plain(block.text)}</p>}>
+                          <Markdown
+                            text={block.text}
+                            components={markdownComponents(block.evidence)}
+                          />
+                        </Suspense>
+                      </div>
                     </div>
+                  )
+                if (block.kind === 'markdown')
+                  return (
+                    <section className="run-block" key={index}>
+                      {block.title && <h3 className="run-block-title">{block.title}</h3>}
+                      <div className="prose run-markdown">
+                        <Suspense fallback={<p>{plain(block.text)}</p>}>
+                          <Markdown
+                            text={block.text}
+                            components={markdownComponents(block.evidence)}
+                          />
+                        </Suspense>
+                      </div>
+                      <SourceLine run={run} block={block} lang={lang} />
+                    </section>
                   )
                 if (block.kind === 'table') {
                   const item = source(run, block)
@@ -792,6 +971,26 @@ export function Run({
           )}
         </section>
 
+        {view.live &&
+          (!report || report.stale) &&
+          (view.live.text || view.live.phase === 'writing') && (
+            <section className="run-draft" aria-label={t.runDraft}>
+              <div className="run-draft-head">
+                <span className="run-section-title">{t.runDraft}</span>
+                <span className="run-section-note">{t.runDraftNote}</span>
+              </div>
+              {view.live.text ? (
+                <div className="prose run-draft-body">
+                  <Suspense fallback={<p>{plain(view.live.text)}</p>}>
+                    <Markdown text={view.live.text} components={undefined} />
+                  </Suspense>
+                </div>
+              ) : (
+                <p className="quiet">{t.runComposing}</p>
+              )}
+            </section>
+          )}
+
         {primaryData && !view.live && (
           <PrimaryData data={primaryData} t={t} taskTitle={view.task.title} />
         )}
@@ -848,7 +1047,8 @@ export function runMarkdown(run: RunModel): string {
   if (!run.report) return ''
   return run.report.blocks
     .map((block) => {
-      if (block.kind === 'summary' || block.kind === 'callout') return block.text
+      if (block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown')
+        return block.text
       return ''
     })
     .filter(Boolean)

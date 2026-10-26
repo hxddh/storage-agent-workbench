@@ -96,10 +96,9 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest release is **27.1.1**. Earlier release notes may describe retired
+The latest release is **28.0.0**. Earlier release notes may describe retired
 behavior; they are history. Keep `README.md`, `CHANGELOG.md` and this paragraph
 in step with the next tag, and refresh `docs/screenshot.png` if the surface
-changed. 27.1 removes renderer-inferred task subtypes, lets report blocks decide
-the answer shape, and uses one Evidence fold for model tasks and deterministic
-checks; 27.1.1 also keeps the vault closed at launch. Its visual baselines and
-E2E cover that surface.
+changed. 28.0 adds turn history, a live draft, markdown and citation blocks, a
+single dismissal system and the recent-run Home; its visual baselines and E2E
+cover that surface.

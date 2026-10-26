@@ -311,7 +311,7 @@ async function configure(page, s3) {
   await page.getByLabel('Path-style addressing').check()
   await page.locator('.account').last().getByRole('button', { name: 'Save', exact: true }).click()
   await page.waitForTimeout(600)
-  await page.getByRole('button', { name: 'Close' }).click()
+  await page.getByRole('button', { name: 'Done' }).click()
 }
 
 async function ask(page, text) {

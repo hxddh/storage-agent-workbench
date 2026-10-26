@@ -12,8 +12,9 @@ a console, a dashboard, a ticket system or a chat product.
    deterministic account check also appears here. The task open at quit opens at
    launch.
 2. **Task** — one run, not a transcript. The page scrolls; the composer stays.
-3. **Settings** — a full-screen sheet for the model, storage accounts, memory,
-   language, theme and notifications. It is one sheet, not a wizard.
+3. **Settings** — a full-screen sheet with a labeled **Done** control, for the
+   model, storage accounts, memory, language, theme and notifications. It is one
+   sheet, not a wizard.
 
 The composer is docked at the foot of the window on Home and in a task. It sends
 a model request, a steer while a run is active, or a follow-up in the same task.
@@ -28,6 +29,7 @@ Home is a quiet estate ledger, not a dashboard:
   (or `no complete reading`) and open high/total risk;
 - a line for new findings since the latest complete reading;
 - **Check account**;
+- recent runs, five at most, as quiet one-line links;
 - the composer in its usual place.
 
 With no account, the explicit choices are **Try with demo storage** and a setup
@@ -66,10 +68,12 @@ risk. It stores no request, answer text, policy or secret.
 - The agent publishes a short plan before its first read; it updates as the
   work changes. The plan is visible while the run is in flight and folds away
   when a normal answer settles. It stays for a stopped run or a blocked step.
+- While it works, a draft answer and the current plan are visible; the finished
+  report replaces the draft.
 - When the evidence is ready, the agent calls `report` with ordered blocks. A
-  summary answers; a table, timeline, plan or code block cites the tool result
-  that proved it; a findings block selects deterministic findings. Nothing waits
-  for a single fixed paragraph.
+  summary or markdown block answers; table, timeline, plan and code blocks cite
+  the tool result that proved them; findings selects deterministic findings.
+  Summary prose can cite evidence as `[1](#ev-1)` and open the matching check.
 - **Enter** while running steers the current run. **Stop** (or ⌘.) keeps what was
   read and offers **Continue** without adding a new question.
 - A failed model run becomes one notice with **Retry**; it asks the last request
@@ -84,10 +88,11 @@ risk. It stores no request, answer text, policy or secret.
   level and context window are inferred from that model. A model-free check uses
   neither.
 
-There is no chat transcript. Earlier requests remain in the durable task, but
-the page shows the latest question in the run header. A deterministic account
-check has no question; its page starts with the scope line and the verdict, not
-a task title posing as a request.
+There is no chat transcript. Earlier requests remain in the durable task and
+appear under **Earlier in this task**: one compact row per turn, expandable to
+its question, summary and check count. The latest turn stays expanded in the run
+header. A deterministic account check has no question; its page starts with the
+scope line and the verdict, not a task title posing as a request.
 
 ## The run
 
@@ -107,9 +112,9 @@ Top to bottom:
    states. It is process, not answer: it is visible while the run is live,
    remains for a stopped run or a blocked step, and is absent on a deterministic
    check. A settled answer does not carry the finished checklist.
-4. **Answer** — the ordered blocks the agent composed: summary, callout, table,
-   findings, timeline, plan or code. A summary or callout carries prose and
-   evidence ids. A data block resolves one id to the tool view that proved it;
+4. **Answer** — the ordered blocks the agent composed: summary, markdown,
+   callout, table, findings, timeline, plan or code. A summary, markdown or
+   callout carries prose and evidence ids. A data block resolves one id to the tool view that proved it;
    the window drops a block whose evidence is missing and says how many. A
    summary is not limited to two sentences; it must stay grounded and concise.
    The window does not append a generic report after the answer.

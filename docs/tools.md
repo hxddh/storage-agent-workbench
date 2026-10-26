@@ -20,7 +20,7 @@ tools (`plan`, `report`, `playbook`) and never read storage.
 | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
 | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | first 40 rows, call and listing counts, script output | table, bar chart, script, buckets read |
 | `plan` | `steps` (3–12), `note?` | the plan was recorded | the run's plan with pending/active/done/blocked steps |
-| `report` | ordered `blocks`: summary, callout, table, findings, timeline, plan, code | the report was recorded | the answer blocks; data blocks cite an `evidenceId` |
+| `report` | ordered `blocks`: summary, markdown, callout, table, findings, timeline, plan, code | the report was recorded | the answer blocks; data blocks cite an `evidenceId` |
 | `playbook` | `card?` | one field-guide card, or the card list | not rendered; documentation for the model |
 
 ## Code mode (`query`)
@@ -57,8 +57,8 @@ to query that dataset.
 
 The agent publishes a short plan before its first read and updates it when a
 step materially changes. The run header renders it above the answer; it is not
-a transcript. `report` is the answer composition: a summary or callout carries
-prose and evidence ids; a table, timeline, plan or code block points at one tool
+a transcript. `report` is the answer composition: a summary, markdown or callout
+carries prose and evidence ids; a table, timeline, plan or code block points at one tool
 result by its `evidenceId`; a findings block selects deterministic estate
 findings. The window resolves the actual tool view, drops a block whose evidence
 is missing and says how many were omitted. `playbook` reads one of the field

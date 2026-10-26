@@ -64,6 +64,17 @@ function TaskRow({
   }, [confirming])
 
   useEffect(() => {
+    if (!menu) return
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setMenu(false)
+    }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [menu])
+
+  useEffect(() => {
     return () => {
       if (tipTimer.current !== null) window.clearTimeout(tipTimer.current)
     }
@@ -215,6 +226,7 @@ export function Sidebar({
   onOpen,
   onNew,
   onSettings,
+  onClose,
   onRename,
   onDelete,
   onPin,
@@ -228,6 +240,7 @@ export function Sidebar({
   onOpen: (id: string, focus?: string) => void
   onNew: () => void
   onSettings: () => void
+  onClose: () => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
   onPin: (id: string, pinned: boolean) => void
@@ -306,6 +319,16 @@ export function Sidebar({
       <div className="brand">
         <LogoMark size={24} />
         <span className="brand-name">Storage Agent</span>
+        {open && (
+          <button
+            className="sidebar-close"
+            type="button"
+            aria-label={t.closeTasks}
+            onClick={onClose}
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
       <button className="new-task" type="button" onClick={onNew}>
         <span className="new-task-label">
@@ -364,10 +387,21 @@ export function Sidebar({
                 onMouseEnter={() => setSelected(index)}
                 onClick={() => choose(hit)}
               >
-                <span className="hit-title">{hit.title}</span>
-                <span className="hit-snippet">
-                  <Snippet text={hit.snippet} query={query.trim()} />
+                <span className="hit-kind">
+                  {hit.kind === 'title'
+                    ? t.hitTitle
+                    : hit.kind === 'user'
+                      ? t.hitRequest
+                      : hit.kind === 'answer'
+                        ? t.hitAnswer
+                        : t.hitFinding}
                 </span>
+                <span className="hit-title">{hit.title}</span>
+                {hit.snippet.trim() !== hit.title.trim() && (
+                  <span className="hit-snippet">
+                    <Snippet text={hit.snippet} query={query.trim()} />
+                  </span>
+                )}
               </button>
             ))
           )

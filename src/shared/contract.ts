@@ -220,6 +220,7 @@ export type ReportTone = 'info' | 'warn' | 'danger' | 'ok'
  */
 export type ReportBlock =
   | { kind: 'summary'; text: string; evidence: string[] }
+  | { kind: 'markdown'; text: string; title?: string; evidence: string[] }
   | { kind: 'callout'; tone: ReportTone; text: string; title?: string; evidence: string[] }
   | { kind: 'table'; evidence: string[]; title?: string; limit?: number }
   | { kind: 'findings'; bucket?: string; code?: string; title?: string; limit?: number }

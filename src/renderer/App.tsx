@@ -284,6 +284,7 @@ export function App() {
         onOpen={(id, focus) => void openTask(id, focus)}
         onNew={newTask}
         onSettings={() => openSettings('model')}
+        onClose={() => setSidebarOpen(false)}
         onRename={(id, title) => void rename(id, title)}
         onDelete={(id) => void remove(id)}
         onPin={(id, pinned) => void window.agent.pinTask(id, pinned)}
@@ -293,7 +294,7 @@ export function App() {
         <button
           className="sidebar-scrim"
           type="button"
-          aria-label={t.close}
+          aria-label={t.closeTasks}
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -354,6 +355,8 @@ export function App() {
             onDemo={() => void startDemo()}
             onAudit={() => void audit()}
             auditing={auditing}
+            tasks={tasks}
+            onOpenTask={(id) => void openTask(id)}
           />
         ) : null}
         {auditError && <p className="brief-error audit-error">{auditError}</p>}

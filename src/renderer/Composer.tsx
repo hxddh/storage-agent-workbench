@@ -31,8 +31,10 @@ export function Composer({
   const [context, setContext] = useState<ContextRef[]>([])
   const [refs, setRefs] = useState<EstateRef[]>([])
   const [picker, setPicker] = useState<string | null>(null)
+  const [pickIndex, setPickIndex] = useState(0)
   const [now, setNow] = useState(Date.now())
   const ref = useRef<HTMLTextAreaElement>(null)
+  const composerRef = useRef<HTMLDivElement>(null)
 
   const stage = useCallback(async (list: FileList | File[]) => {
     const picked = await window.agent.stageFiles([...list])
@@ -78,6 +80,7 @@ export function Composer({
 
   useEffect(() => {
     if (picker === null) return
+    setPickIndex(0)
     let live = true
     void window.agent
       .estateRefs(picker)
@@ -88,6 +91,16 @@ export function Composer({
     return () => {
       live = false
     }
+  }, [picker])
+
+  useEffect(() => {
+    if (picker === null) return
+    const close = (event: PointerEvent) => {
+      if (composerRef.current?.contains(event.target as Node)) return
+      setPicker(null)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
   }, [picker])
 
   const pick = (item: EstateRef) => {
@@ -196,7 +209,10 @@ export function Composer({
           </span>
         </div>
       )}
-      <div className={`composer ${focused ? 'focused' : ''} ${dragging ? 'dragging' : ''}`}>
+      <div
+        className={`composer ${focused ? 'focused' : ''} ${dragging ? 'dragging' : ''}`}
+        ref={composerRef}
+      >
         {dragging && <div className="drop-hint">{t.dropHint}</div>}
         {(files.length > 0 || context.length > 0) && (
           <div className="attachments">
@@ -255,6 +271,16 @@ export function Composer({
             void stage(event.clipboardData.files)
           }}
           onKeyDown={(event) => {
+            if (picker !== null && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+              event.preventDefault()
+              if (!refs.length) return
+              setPickIndex((index) =>
+                event.key === 'ArrowDown'
+                  ? Math.min(refs.length - 1, index + 1)
+                  : Math.max(0, index - 1),
+              )
+              return
+            }
             if (event.key === 'Escape' && picker !== null) {
               event.preventDefault()
               setPicker(null)
@@ -262,8 +288,8 @@ export function Composer({
             }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault()
-              if (picker !== null && refs[0]) {
-                pick(refs[0])
+              if (picker !== null && refs[pickIndex]) {
+                pick(refs[pickIndex]!)
                 return
               }
               void send()
@@ -275,13 +301,15 @@ export function Composer({
             {refs.length === 0 ? (
               <p className="ref-empty">{t.noRefs}</p>
             ) : (
-              refs.map((item) => (
+              refs.map((item, index) => (
                 <button
                   type="button"
                   role="option"
-                  className="ref-row"
+                  aria-selected={index === pickIndex}
+                  className={`ref-row ${index === pickIndex ? 'active' : ''}`}
                   key={item.id}
                   onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setPickIndex(index)}
                   onClick={() => pick(item)}
                 >
                   <span className={`ref-kind ${item.kind}`}>{item.kind}</span>
