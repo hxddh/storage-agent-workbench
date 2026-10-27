@@ -105,7 +105,8 @@ objects is compatible with the app's scope, but it is the user's choice.
 - The app never stores an account id. ARNs in views and model text are redacted
   to `<account>` before they leave the reading.
 - The model sees bounded, redacted tool output, not a raw policy document. A
-  generated fix is text; applying it needs credentials the app does not use.
+  generated change plan is text; applying it needs credentials the app does not
+  use.
 - Access analysis is evidence, not an authorization decision. A list can be
   incomplete because a principal was not enumerated, a condition was not
   evaluated, or a read was denied; the page says so.

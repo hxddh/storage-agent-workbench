@@ -310,7 +310,6 @@ export function App() {
           >
             <Menu size={16} />
           </button>
-          <span className="task-title">{view?.task.title ?? 'Storage Agent'}</span>
         </div>
         {view ? (
           <Suspense fallback={null}>

@@ -77,8 +77,8 @@ export function auditVerdict(
   if (open.length) {
     const first =
       lang === 'zh'
-        ? `${processed} 个桶中有 ${open.length} 个未解决问题${high ? `（${high} 个高风险）` : ''}${joinNames(buckets, lang)}。`
-        : `${open.length} issue${open.length === 1 ? '' : 's'}${high ? ` (${high} high)` : ''} ${open.length === 1 ? 'is' : 'are'} open across ${processed} bucket${processed === 1 ? '' : 's'}${joinNames(buckets, lang)}.`
+        ? `${processed} 个桶中有 ${open.length} 项未解决风险${high ? `（${high} 项高风险）` : ''}${joinNames(buckets, lang)}。`
+        : `${open.length} risk${open.length === 1 ? '' : 's'}${high ? ` (${high} high)` : ''} ${open.length === 1 ? 'is' : 'are'} open across ${processed} bucket${processed === 1 ? '' : 's'}${joinNames(buckets, lang)}.`
     return [first, second.join(' ')].filter(Boolean).join(' ')
   }
   if (blind || pending || truncated) {
@@ -90,7 +90,7 @@ export function auditVerdict(
   }
   const clean =
     lang === 'zh'
-      ? `已检查 ${processed} 个桶，没有未解决的问题。`
-      : `No open issue was found across ${processed} bucket${processed === 1 ? '' : 's'}.`
+      ? `已检查 ${processed} 个桶，没有未解决的风险。`
+      : `No open risk was found across ${processed} bucket${processed === 1 ? '' : 's'}.`
   return [clean, ...(accessLine ? [accessLine] : [])].join(' ')
 }

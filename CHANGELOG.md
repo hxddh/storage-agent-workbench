@@ -1,3 +1,62 @@
+## 30.0.0
+
+An agent-native answer, not a report workbench. This is one release; the P0–P3
+work is not split across 30.x versions.
+
+### Added
+
+- **`answer`.** The agent writes the answer as Markdown and may show up to two
+  evidence views with it. Inline `[1](#ev-1)` citations resolve to the check
+  that proved the claim. The tool is optional; a prose-only finish remains
+  valid, and the old forced “you must call report” correction is gone.
+- **One `Sources` index.** Risks, Data, Change plan, Tool calls, Not checked,
+  Checked again, Changes and Methods live behind one disclosure, with one
+  section open at a time. The previous Brief page is deleted.
+- **`skill` methods.** Four field cards — access, change, inventory and
+  capacity — are pulled on demand under Sources → Methods. `playbook` is gone.
+- **`change_plan`.** The deterministic change plan is named for what it is;
+  legacy `fix` entries still project.
+- **Primary proof.** When the answer shows no data, one survey, query, access
+  chain or remembered history stands beside it. A task with risks and no proof
+  shows the current risks instead of an empty frame.
+- **Opt-in schedules and memory controls** remain available from 29.0 and now
+  sit inside the unified run surface.
+
+### Changed
+
+- Every citation and shown evidence id is checked against the task's tool
+  results. A missing view is skipped and counted; a missing citation produces
+  one quiet warning. The run guard offers one grounding correction.
+- The plan is optional and its copy says 1–6 steps, commonly 3–6; schema and
+  prompt agree.
+- The scope line is one sentence: `All n buckets checked`, `All n buckets
+  checked · x open questions · y blocked`, `Not fully checked: n`,
+  `From memory · …`, `Live read · …`, `Based on a reading · …` or `No live
+  read`. `Reads complete` and header severity counts are gone. A complete bucket
+  survey with access gaps no longer reads as both complete and incomplete.
+- Settings closes with an X at the top-left, not Done at the top-right. The
+  task title appears once in the narrow top bar. Closing overlays returns focus.
+- Print and Save PDF expand every Sources section, including tool calls.
+- The estate digest names truncation instead of presenting 12 of N as complete.
+- English and Chinese product copy are still written separately, not
+  translated key-for-key. Audit prose says “risks”, not “issues”.
+
+### Fixed
+
+- A sent draft no longer reappears in the next composer.
+- An answer with a findings block no longer hides every other current risk.
+- Legacy `N more risks` expands in place instead of leaving the answer.
+- A deterministic audit no longer claims `Open findings` when it found none.
+- Deterministic summaries no longer use developer-facing `Issue` language.
+- The composer, Sources focus and Settings close behavior keep keyboard focus
+  inside the active surface.
+
+### Verification
+
+- Typecheck, Biome, unit tests, build, contrast, bundle budget, full E2E,
+  no-model E2E, axe serious/critical gate, visual baselines and the harness
+  smoke evaluation.
+
 ## 29.0.0
 
 One run surface, ranked memory and opt-in read-only checks. This is one release;

@@ -2,7 +2,7 @@
  * First-run proof: no model, no account, one click.
  *
  * The window must offer the in-process demo account explicitly, run the
- * deterministic account check, and render a brief whose sentences come only
+ * deterministic account check, and render a run whose sentences come only
  * from the reading. The Composer stays disabled because free-form questions
  * still need a model.
  */
@@ -38,16 +38,19 @@ try {
   await demo.click()
   await page.waitForSelector('.brief .verdict', { timeout: 120_000 })
   const text = await page.locator('.brief').innerText()
-  if (!/issue|problem|No open|could not read/i.test(text)) await fail('audit produced no conclusion')
+  if (!/risk|problem|No open|could not be read/i.test(text))
+    await fail('audit produced no conclusion')
   const scope = await page.locator('.run-scope').innerText()
-  if (!/Reads open/.test(scope) || !/blocked/.test(scope))
+  if (!/open questions?|Not fully checked/.test(scope) || !/blocked/.test(scope))
     await fail(`partial reads are not named in the scope line: ${scope}`)
   if (await page.locator('.verdict code.ungrounded').count())
     await fail('a model-free verdict named something no check returned')
   if (!(await page.locator('.composer textarea').isDisabled()))
     await fail('the composer accepted free-form input without a model')
-  if ((await page.locator('.brief .finding-main').count()) === 0)
-    await fail('the demo account produced no findings')
+  await page.locator('.run-evidence-toggle').click()
+  await page.locator('[data-source="risks"]').click()
+  if ((await page.locator('.finding-main').count()) === 0)
+    await fail('the demo account produced no risks')
 
   await page.screenshot({ path: out })
   console.log('NO-MODEL AUDIT OK:', text.replace(/\s+/g, ' ').slice(0, 180))

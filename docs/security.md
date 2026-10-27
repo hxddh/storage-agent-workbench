@@ -4,7 +4,7 @@
 
 1. **Read-only.** No product tool calls a mutating S3 API. There is no generic
    shell, raw HTTP proxy for storage, write endpoint or apply action. Generated
-   fix text is data for the user, not a command the app runs.
+   change-plan text is data for the user, not a command the app runs.
 2. **Scope.** A provider may name a bucket allow-list. `assertInScope()` runs in
    the main process before every bucket-scoped read and refuses anything outside
    it. An empty list means every bucket the credentials can see. Composer focus
@@ -62,7 +62,8 @@
     dialog. PDF uses the same redacted page. Re-verify never calls a write API.
 12. **Account id.** The account-wide block needs the account id (STS); it is
     passed to S3 Control and SCP lookup and dropped. It is never stored, shown,
-    sent to the model or put in a fix. Fixes use `<account-id>`.
+    sent to the model or put in a change plan. Change plans use
+    `<account-id>`.
 13. **Demo storage** answers in process through an SDK request handler: no port
     is opened and nothing leaves the machine. The demo account is added only by
     the explicit demo action.
@@ -100,9 +101,9 @@ unread", not "this is the complete set of principals who can reach the bucket".
 
 - **A hostile S3-compatible endpoint** can return huge XML, hostile bucket names
   or error text. Responses are read through the AWS SDK's typed shapes, posture
-  is projected onto enums and booleans, and generated fix text only accepts a
+  is projected onto enums and booleans, and generated change-plan text only accepts a
   bucket name matching `[A-Za-z0-9][A-Za-z0-9._-]{0,254}` — anything else has no
-  generated fix because no single quoting rule is safe across POSIX shells,
+  generated change because no single quoting rule is safe across POSIX shells,
   PowerShell and cmd.exe.
 - **A hostile attached file** can be enormous or malformed. Imports stream, cap
   rows at 2,000,000, cap each string, and treat a giant line as data rather than
@@ -112,13 +113,14 @@ unread", not "this is the complete set of principals who can reach the bucket".
 - **The renderer is sandboxed**: `contextIsolation`, sandbox and no
   `nodeIntegration`, a CJS preload, and a CSP that forbids remote scripts. It
   never receives a credential, a raw provider message or a filesystem handle.
-- **The model is untrusted**: it can propose a fix, never apply one; it cannot
-  open, resolve or accept Issues, and its prose is never parsed as product
-  state. A name in the answer summary that no tool returned is marked on the page.
-  A clean account claim while a run still has open reads is corrected once; the
-  page's `Reads open` status remains authoritative. Tool output is wrapped as
-  untrusted data before the model sees it. Links in model prose open in the
-  system browser; the trusted window never navigates to one.
+- **The model is untrusted**: it can propose a change plan, never apply one; it
+  cannot open, resolve or accept Issues, and its prose is never parsed as
+  product state. A name in the answer that no tool returned is marked on the
+  page. A clean account claim while a run still has open reads is corrected
+  once; the page's scope line (`Not fully checked` or `open questions`) remains
+  authoritative. Tool output is wrapped as untrusted data before the model sees
+  it. Links in model prose open in the system browser; the trusted window never
+  navigates to one.
 - **The vault fallback is local**: without an OS keyring, the AES key file and
   the database both live under the user profile. Copying the database without
   the key file protects the ciphertext; copying both does not. Settings does not
@@ -139,12 +141,13 @@ unread", not "this is the complete set of principals who can reach the bucket".
 
 ## Not claimed
 
-- Fixes are text. Re-verification observes the account after the user applies a
-  plan and can confirm that the planned codes are now clear; it cannot prove
-  which command was run, and it never applies one.
+- Change plans are text. Re-verification observes the account after the user
+  applies a plan and can confirm that the planned codes are now clear; it cannot
+  prove which command was run, and it never applies one.
 - The access view is not a complete IAM authorization proof. Conditions,
   service principals, federated identities and external identity policies can
   remain unread or undecided.
-- No automated contrast or full accessibility certification is claimed; the
-  E2E runs axe and fails on serious or critical violations only.
+- No full accessibility certification is claimed. `scripts/contrast.mjs` guards
+  the named secondary-text token pairs, and the E2E axe gate fails serious or
+  critical violations only.
 - No import from the previous app's database exists. A new install starts empty.

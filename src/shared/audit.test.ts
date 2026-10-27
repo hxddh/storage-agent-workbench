@@ -49,7 +49,7 @@ describe('audit verdict', () => {
       'en',
     )
     expect(text).toMatch(/cannot close|incomplete/i)
-    expect(text).not.toMatch(/^No open issue/i)
+    expect(text).not.toMatch(/^No open risk/i)
   })
 
   it('names the issue count, severity and buckets it actually read', () => {
@@ -63,7 +63,7 @@ describe('audit verdict', () => {
       { examined: 2, total: 2 },
       'en',
     )
-    expect(text).toContain('2 issues')
+    expect(text).toContain('2 risks')
     expect(text).toContain('(1 high)')
     expect(text).toContain('`demo-public`')
     expect(text).toContain('`demo-private`')
@@ -87,7 +87,7 @@ describe('audit verdict', () => {
       'en',
     )
     expect(text).toMatch(/outside this run/i)
-    expect(text).not.toMatch(/^No open issue/i)
+    expect(text).not.toMatch(/^No open risk/i)
   })
 
   it('states the reverse-query access coverage when it is partial', () => {

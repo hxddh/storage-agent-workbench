@@ -216,6 +216,12 @@ const SCENARIOS = [
     expect: { mentions: ['shared'], maxCalls: 5 },
   },
   {
+    name: 'method-routing',
+    buckets: { shared: { public: true, encryption: true } },
+    turns: [{ ask: 'Load the access method, then tell me who can read shared.' }],
+    expect: { method: 'Access evidence', mentions: ['shared'], maxCalls: 6 },
+  },
+  {
     name: 'empty-account',
     buckets: {},
     turns: [{ ask: 'Is anything public?' }],
@@ -311,7 +317,7 @@ async function configure(page, s3) {
   await page.getByLabel('Path-style addressing').check()
   await page.locator('.account').last().getByRole('button', { name: 'Save', exact: true }).click()
   await page.waitForTimeout(600)
-  await page.getByRole('button', { name: 'Done' }).click()
+  await page.getByRole('button', { name: 'Close settings' }).click()
 }
 
 async function ask(page, text) {
@@ -323,31 +329,83 @@ async function ask(page, text) {
 }
 
 async function readBrief(page) {
-  return page.evaluate(() => {
+  const openSources = async () => {
+    const toggle = page.locator('.run-evidence-toggle')
+    if ((await toggle.count()) && (await toggle.getAttribute('aria-expanded')) === 'false')
+      await toggle.click()
+    await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 5_000 })
+  }
+  const openSection = async (name) => {
+    const row = page.locator(`[data-source="${name}"]`)
+    if (!(await row.count())) return false
+    if ((await row.getAttribute('aria-expanded')) === 'false') await row.click()
+    await page.waitForTimeout(80)
+    return true
+  }
+
+  await openSources()
+  const base = await page.evaluate(() => {
     const text = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
-    // Fold every disclosure so the checks are in the DOM.
-    const checksHead = document.querySelector('.checks-head')
-    if (checksHead?.getAttribute('aria-expanded') === 'false') checksHead.click()
     return {
       verdict: text(document.querySelector('.verdict')),
       ungrounded: [...document.querySelectorAll('.verdict code.ungrounded')].map(text),
-      findings: [...document.querySelectorAll('.findings-list .finding-row')].map((row) => ({
-        title: text(row.querySelector('.finding-title')),
-        bucket: text(row.querySelector('.finding-meta .mono')),
-      })),
-      resolvedFold: Boolean(document.querySelector('.fold.ok')),
-      blindShown: Boolean(document.querySelector('.blind-section')),
-      fixShown: Boolean(document.querySelector('.brief-section .tabs')),
-      receipt: text(document.querySelector('.checks-head [role=status]')),
+      fixShown: Boolean(document.querySelector('.plan')) || Boolean(document.querySelector('.brief-section .tabs')),
     }
   })
+
+  const findings = []
+  let resolvedFold = false
+  if (await openSection('risks')) {
+    const risks = await page.evaluate(() => {
+      const text = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
+      return {
+        findings: [...document.querySelectorAll('.findings-list .finding-row')].map((row) => ({
+          title: text(row.querySelector('.finding-title')),
+          bucket: text(row.querySelector('.finding-meta .mono')),
+        })),
+        resolvedFold: Boolean(document.querySelector('.fold.ok')),
+      }
+    })
+    findings.push(...risks.findings)
+    resolvedFold = risks.resolvedFold
+  }
+
+  let blindShown = false
+  if (await openSection('notChecked'))
+    blindShown = (await page.locator('.blind-section').count()) > 0
+
+  let receipt = ''
+  if (await openSection('checks'))
+    receipt = await page.locator('.source-receipt').innerText().catch(() => '')
+
+  let methods = []
+  if (await openSection('methods'))
+    methods = await page.locator('.method-title').allInnerTexts()
+
+  let fixShown = base.fixShown
+  if (await openSection('change')) {
+    fixShown = fixShown || (await page.locator('.plan, .brief-section .tabs').count()) > 0
+  }
+
+  return {
+    verdict: base.verdict,
+    ungrounded: base.ungrounded,
+    findings,
+    resolvedFold,
+    blindShown,
+    fixShown,
+    receipt,
+    methods,
+  }
 }
 
 async function checks(page) {
-  await page.evaluate(() => {
-    const head = document.querySelector('.checks-head')
-    if (head?.getAttribute('aria-expanded') === 'false') head.click()
-  })
+  const toggle = page.locator('.run-evidence-toggle')
+  if ((await toggle.count()) && (await toggle.getAttribute('aria-expanded')) === 'false')
+    await toggle.click()
+  const row = page.locator('[data-source="checks"]')
+  if ((await row.count()) && (await row.getAttribute('aria-expanded')) === 'false')
+    await row.click()
   await page.waitForTimeout(100)
   return page.$$eval('.check-row', (rows) =>
     rows.map((row) => ({
@@ -371,6 +429,7 @@ function score(scenario, brief, allChecks, lastTurnChecks, elapsedMs) {
     check('verdict says the question is open', HONEST.test(brief.verdict))
     check('verdict never claims clean', !CLEAN_CLAIM.test(brief.verdict))
   }
+  if (e.method) check(`loads method ${e.method}`, brief.methods.includes(e.method))
   if (e.blindShown) check('brief shows the blind spot', brief.blindShown)
   if (e.resolvedFold) check('brief shows what was fixed', brief.resolvedFold)
   if (e.fixShown) check('brief shows the fix', brief.fixShown)

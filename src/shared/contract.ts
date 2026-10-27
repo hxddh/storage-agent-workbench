@@ -20,11 +20,15 @@ export type ToolName =
   | 'config'
   | 'probe'
   | 'estate'
-  | 'fix'
+  | 'change_plan'
   | 'note'
   | 'query'
-  | 'playbook'
+  | 'skill'
   | 'plan'
+  | 'answer'
+  // Read legacy tasks created before 30.0.0.
+  | 'fix'
+  | 'playbook'
   | 'report'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
@@ -343,8 +347,27 @@ export type ToolView =
       blind?: { source: string; status: string }[]
     }
   | { kind: 'playbook'; cards: { name: string; body: string }[] }
+  | {
+      kind: 'skill'
+      name: string
+      title: string
+      description: string
+      body: string
+    }
   | { kind: 'plan'; steps: PlanStep[]; note?: string }
-  | { kind: 'report'; title?: string; blocks: ReportBlock[]; append?: boolean }
+  /**
+   * 30.0.0 answers are Markdown with evidence ids. `blocks` remains for tasks
+   * created by the 27–29 report protocol.
+   */
+  | {
+      kind: 'report'
+      title?: string
+      text?: string
+      /** Evidence ids the answer may cite as [1](#ev-1), in array order. */
+      show?: string[]
+      blocks: ReportBlock[]
+      append?: boolean
+    }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'
 
@@ -709,10 +732,36 @@ export const TOOL_LABEL: Record<ToolName, string> = {
   config: 'Reviewed configuration',
   probe: 'Probed endpoint',
   estate: 'Checked memory',
-  fix: 'Prepared fix',
+  change_plan: 'Prepared a change plan',
   note: 'Remembered',
   query: 'Ran a read-only query',
-  playbook: 'Read the playbook',
+  skill: 'Read a method',
   plan: 'Published a plan',
-  report: 'Composed the answer',
+  answer: 'Answered',
+  fix: 'Prepared a change plan',
+  playbook: 'Read a method',
+  report: 'Answered',
+}
+
+/** Capability groups used by the prompt and documentation, not another tool. */
+export const TOOL_GROUP: Record<
+  ToolName,
+  'read' | 'query' | 'memory' | 'change_plan' | 'answer' | 'plan' | 'skill'
+> = {
+  survey: 'read',
+  buckets: 'read',
+  objects: 'read',
+  object: 'read',
+  config: 'read',
+  probe: 'read',
+  estate: 'memory',
+  change_plan: 'change_plan',
+  note: 'memory',
+  query: 'query',
+  skill: 'skill',
+  plan: 'plan',
+  answer: 'answer',
+  fix: 'change_plan',
+  playbook: 'skill',
+  report: 'answer',
 }

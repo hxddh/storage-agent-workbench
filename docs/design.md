@@ -71,15 +71,17 @@ fields, not a sequence of panels.
 - Sidebar 252px, `--bg-sunken`: mark and wordmark, New task, search, pinned /
   today / earlier task rows, Settings at the foot. There are no boxes around
   New task or search; the active task is one quiet surface.
-- Run column 720px with 24px gutters, centred. The question or task title is
-  the run's largest line; it also appears in the sidebar and, below 860px, the
-  compact top bar.
+- Run column 720px with 24px gutters, centred. The question is the run's largest
+  line. The task title appears once, in the sidebar; below 860px it appears only
+  in the compact top bar, not twice on the page.
 - Composer docked at the bottom on Home and task screens, 720px wide, with the
   run status strip immediately above it.
 - Settings is a full-screen surface: a 200px navigation rail and a 620px form
-  column inside a 1000px frame. The rail becomes a horizontal tab row below
-  860px. On the rail, version and update state sit at the foot; in the compact
-  layout they sit below the tab row.
+  column inside a 1000px frame. Its close control is an X at the top-left, not a
+  Done button at the top-right: the sheet reads as a page that recedes, and the
+  exit stays clear of the form's primary actions. The rail becomes a horizontal
+  tab row below 860px. On the rail, version and update state sit at the foot; in
+  the compact layout they sit below the tab row.
 - Below 860px the sidebar is a dismissable overlay with a visible X, a scrim
   and Escape, and Home gains the same Tasks button as a task screen.
 
@@ -87,61 +89,74 @@ fields, not a sequence of panels.
 
 A quiet estate ledger: a 30–36px heading, one row per account with remembered
 bucket count, the last complete reading and high/total risk, a line for new
-findings since the latest complete reading, and **Check account**. The compact
+risks since the latest complete reading, and **Check account**. The compact
 layout stacks the row's metadata; the bucket count carries its unit. With no
 account, the explicit choices are **Try with demo storage**
 and **Add an account**; **Set up a model** is a secondary text action and the
 composer explains that a model is only needed to ask a question. A configured
 account with no model still offers Check account and model setup. Local models
-appear as quiet one-click chips, not a dashboard.
+appear as quiet one-click chips, not a dashboard. On desktop the sidebar owns
+the task list, so Home does not repeat recent runs; below 860px, where the
+sidebar is an overlay, Home shows at most five one-line recent runs.
 
 No cards, charts, suggestion pills, follow-up prompts or large illustration.
 The composer is inert until a model exists; the account can still be checked.
 
 ## The run
 
-Top to bottom: a 12.5px scope line (`Demo · Reads complete · 2/2 buckets
-checked · checked 2m ago`), the question at 24px, severity counts, Copy and the
-overflow menu, a collapsed **Earlier in this task** history, the agent's plan,
-the ordered answer blocks (summary, markdown, compare, callout, table,
-findings, timeline, plan or code), a provisional draft while the agent is writing, then
-the deterministic evidence: findings, re-verification, changes, **Not read**,
-one data section and the checks receipt. The run header is sticky. Save, Check
-again, Re-verify, Copy link, Export evidence and Save PDF live in the overflow.
-A citation rendered from `[1](#ev-1)` opens the matching check.
+Top to bottom: a 12.5px scope line (`Demo · All 2 buckets checked · 2m ago`),
+the question at 24px, Copy and the overflow menu, a collapsed **Earlier in this
+task** history, an optional plan, the answer in prose, one primary proof or the
+primary risk list, one **Sources** disclosure and the checks receipt. The run
+header is sticky. Save, Check again, Re-verify, Copy link, Export evidence and
+Save PDF live in the overflow.
 
 The scope line is the one place that makes coverage visible before the user
-reads the answer. It says `Reads open: n · m blocked` when a read failed,
-stopped, was blind, is pending, was truncated or left an access question
-undecided; those details stay in **Not read**. A narrowed re-read never turns an
-account-wide gap into `Reads complete`. There is no next-step row and no chat
-transcript. When a task has more than the initial 200 entries, **Load earlier
-entries** fetches the next slice on demand.
+reads the answer. It says `Not fully checked: n` (plus `m blocked` when some
+reads were denied) for a failed, stopped, blind, pending or truncated read. When
+every bucket was surveyed but access questions remain, it says
+`All n buckets checked · x open questions · y blocked` instead of pairing
+`Not fully checked` with a complete bucket count. Those details stay in
+**Not read**. It says
+`From memory · …`, `Live read · …`, `Based on a reading · …` or `No live read`
+when there is no account-wide check to report. It never says
+`Reads complete` or counts severity. A narrowed re-read never turns an
+account-wide gap into `All n buckets checked`. There is no next-step row and no
+chat transcript. When a task has more than the initial 200 entries, **Load
+earlier entries** fetches the next slice on demand.
 
 Estate history stays inside the existing Data section: the remembered bucket
 table, then a quiet `HISTORY` label and a four-column evidence table. It is not
 a second panel or a timeline.
 
-Findings group by bucket, with a hairline between groups. A group heading is
-12px mono; each finding is a 14px title with a 12px meta line, a severity dot
-and no pill. **Accept risk** appears on hover or keyboard focus at the row's
-end as quiet text. A memory finding carries a hairline `remembered · 3d ago`
-tag, or the group meta line says it once when every finding is memory. **N more
-findings** is a bordered disclosure control with a chevron, not body text.
-Accepted risks and proved-fixed findings are one-line folds; the fixed fold and
-success status text use `--ok`.
+Risks group by bucket, with a hairline between groups. A group heading is 12px
+mono; each risk is a 14px title with a 12px meta line, a severity dot and no
+pill. **Accept risk** appears on hover or keyboard focus at the row's end as
+quiet text. A memory risk carries a hairline `remembered · 3d ago` tag, or the
+group meta line says it once when every risk is memory. **N more risks** is a
+bordered disclosure that expands in place, not a link to another page. Accepted
+risks and proved-fixed risks are one-line folds; the fixed fold and success
+status text use `--ok`.
 
 A name the checks never showed gets a dashed `--warn` underline and one quiet
-line under the answer. Names in the answer summary are prose, not boxed code
-chips.
+line under the answer. Names in the answer are prose, not boxed code chips. A
+citation the task cannot resolve produces one quiet warning; a missing shown
+view is skipped and counted rather than rendering an empty frame.
 
-A change plan is one hairline list, not a stack of cards. Its summary names
-steps, buckets, manual merges and residual findings; the baseline is one quiet
-line; a step row carries a severity dot, bucket, title and ready/manual status.
-Only the selected step opens the exact tabs, code and impact. A manual step
-shows its blocker above the code. Re-verification uses the same hairline rows
-with a short status before the step: confirmed uses `--ok`, not applied uses
-`--danger`, still unknown uses `--warn`.
+**Sources** is a compact index, not a second answer. It lists only the rows that
+exist: Risks, Data, Change plan, Tool calls, Not checked, Checked again, Changes
+and Methods. Each row carries a count; a hairline separates rows; one chevron
+marks the open row. Opening one section closes the previous one. The whole index
+folds behind one `Sources` toggle. The primary risk list and Sources Risks are
+not both open by default.
+
+A change plan is one hairline list, not a stack of cards. Its summary names the
+baseline, steps, buckets, manual merges and residual risks; the baseline is one
+quiet line; a step row carries a severity dot, bucket, title and ready/manual
+status. Only the selected step opens the exact tabs, code and impact. A manual
+step shows its blocker above the code. Re-verification uses the same hairline
+rows with a short status before the step: confirmed uses `--ok`, not applied
+uses `--danger`, still unknown uses `--warn`.
 The `Markdown` chunk is lazy; while it loads, backticks are stripped rather than
 flashing raw syntax.
 
@@ -149,10 +164,9 @@ A code-mode result shows its rows and chart in the data section; the script and
 output open under the query's check as the evidence. Byte columns render as
 human sizes; CSV keeps raw numbers.
 
-Data and Checks are disclosures. The data section is open when findings do not
-already answer or when it is the access view; otherwise it is folded. Checks
-fold to a receipt showing the number of checks, elapsed time and tokens/cost
-when known. Checks that were blocked before execution are not listed.
+Tool calls fold to a receipt showing the number of checks, elapsed time and
+tokens/cost when known. Checks that were blocked before execution are not
+listed. Printing expands every Sources section and includes tool calls.
 
 ### Running
 
@@ -162,8 +176,8 @@ section opens as work happens and folds to a receipt when the task settles.
 
 ### Keyboard and pointer
 
-- `j` / `k` or arrow keys move between findings.
-- `Enter` opens the evidence for a focused finding.
+- `j` / `k` or arrow keys move between risks.
+- `Enter` opens the evidence for a focused risk.
 - `a` accepts or reopens the focused risk.
 - `⌘K` focuses sidebar search.
 - `⌘N` starts a new task.
@@ -184,7 +198,8 @@ chips. Accounts list read-only credentials and open one inline form for add or
 edit; the key fields are never pre-filled. Each account has an opt-in
 off/daily/weekly read-only check schedule.
 
-Memory controls freshness and lists forgettable notes and the 100-row limit.
+Memory controls freshness and lists the 100 most recent forgettable notes; the
+store itself is capped at 500.
 Appearance holds language, theme and the background-notification switch.
 
 Inputs and selects are styled consistently with visible focus rings; selects use
@@ -222,4 +237,4 @@ not a certification.
 English and Chinese are written separately, not translated word for word. The
 summary is direct: no heading, no table and no restated table; the block
 carries the detail. The interface never says "Let me know if…", "Here is what I found:" or
-"Next steps". A fix is text; there is no Apply button.
+"Next steps". A change plan is text; there is no Apply button.

@@ -32,11 +32,18 @@ export interface RunReport {
   id: string
   at: string
   title: string | null
+  /** 30.0.0 prose answer. Null on a legacy block report. */
+  text: string | null
+  /** Evidence ids cited as [1](#ev-1) in order. */
+  show: string[]
+  /** Legacy 27–29 block report, kept for existing tasks. */
   blocks: ReportBlock[]
   stale: boolean
   synthesized: boolean
-  /** Blocks whose evidence id or view did not resolve; they are omitted. */
+  /** Blocks or show ids whose evidence did not resolve; they are omitted. */
   unresolved: number
+  /** Citation numbers in prose that do not resolve. */
+  unresolvedCitations: number
   ungrounded: string[]
   contradicted: string[]
 }
@@ -127,6 +134,25 @@ function validBlock(block: ReportBlock, evidence: readonly RunEvidence[]): boole
   return false
 }
 
+function citationNumbers(text: string): number[] {
+  return [...text.matchAll(/#ev-(\d+)/g)]
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isInteger(value) && value > 0)
+}
+
+/** Citation numbers that do not point at a resolved evidence view. */
+function badCitations(
+  text: string,
+  ids: readonly string[],
+  evidence: readonly RunEvidence[],
+): number {
+  let count = 0
+  for (const number of citationNumbers(text)) {
+    if (number > ids.length || !resolveEvidence(evidence, ids[number - 1])?.view) count += 1
+  }
+  return count
+}
+
 function textOfBlocks(blocks: readonly ReportBlock[]): string {
   return blocks
     .filter(
@@ -151,11 +177,37 @@ function normalize(
   exposure: ReadonlyMap<string, boolean>,
   previous: RunReport | null,
 ): RunReport {
+  const body = report.text?.trim() ?? ''
+  const show = (report.show ?? []).slice(0, 2)
+  if (body || show.length) {
+    const missing = show.filter((item) => !resolveEvidence(evidence, item)?.view).length
+    const names = body ? ungrounded(body, known) : []
+    const wrong = body ? contradicted(body, exposure) : []
+    return {
+      id,
+      at,
+      title: report.title ?? previous?.title ?? null,
+      text: body || null,
+      show,
+      blocks: [],
+      stale,
+      synthesized,
+      unresolved: missing,
+      unresolvedCitations: body ? badCitations(body, show, evidence) : 0,
+      ungrounded: names,
+      contradicted: wrong,
+    }
+  }
+
   const blocks: ReportBlock[] = []
   let unresolved = 0
+  let unresolvedCitations = 0
   for (const block of report.blocks) {
     if (validBlock(block, evidence)) blocks.push(block)
     else unresolved += 1
+    if (block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown') {
+      unresolvedCitations += badCitations(block.text, block.evidence, evidence)
+    }
   }
   const text = textOfBlocks(blocks)
   const names = text ? ungrounded(text, known) : []
@@ -165,10 +217,13 @@ function normalize(
     id,
     at,
     title: report.title ?? previous?.title ?? null,
+    text: null,
+    show: [],
     blocks: merged,
     stale,
     synthesized,
     unresolved,
+    unresolvedCitations,
     ungrounded: names,
     contradicted: wrong,
   }
@@ -176,43 +231,29 @@ function normalize(
 
 function synthesize(brief: BriefModel, entries: readonly UiEntry[]): RunReport | null {
   if (!brief.verdict?.text && !brief.findings.length && !brief.data) return null
-  const blocks: ReportBlock[] = []
-  if (brief.verdict?.text) blocks.push({ kind: 'summary', text: brief.verdict.text, evidence: [] })
   const dataCheck = entries.findLast(
     (entry) => entry.kind === 'tool' && entry.id === brief.data?.sourceId,
   )
   const dataEvidence = dataCheck?.kind === 'tool' ? evidenceOf(dataCheck) : null
-  if (dataEvidence && brief.data?.view) {
-    if (
-      brief.data.view.kind === 'survey' ||
-      brief.data.view.kind === 'buckets' ||
-      brief.data.view.kind === 'objects'
-    )
-      blocks.push({ kind: 'table', evidence: [dataEvidence.id], limit: 8 })
-    else if (brief.data.view.kind === 'query')
-      blocks.push(
-        { kind: 'table', evidence: [dataEvidence.id], limit: 8 },
-        { kind: 'code', evidence: [dataEvidence.id] },
-      )
-  }
-  if (brief.findings.length) blocks.push({ kind: 'findings', title: 'Open findings', limit: 5 })
   const fix = brief.fixes[0]
-  if (fix) {
-    const fixEvidence = entries.findLast(
-      (entry) => entry.kind === 'tool' && entry.id === fix.sourceId,
-    )
-    if (fixEvidence?.kind === 'tool' && fix.view.plan)
-      blocks.push({ kind: 'plan', evidence: [evidenceOf(fixEvidence).id] })
-  }
-  if (!blocks.length) return null
+  const fixEvidence = fix
+    ? entries.findLast((entry) => entry.kind === 'tool' && entry.id === fix.sourceId)
+    : null
+  const show = [
+    ...(dataEvidence && brief.data?.view ? [dataEvidence.id] : []),
+    ...(fixEvidence?.kind === 'tool' && fix?.view.plan ? [evidenceOf(fixEvidence).id] : []),
+  ].slice(0, 2)
   return {
     id: `audit:${brief.lastReadAt ?? 'answer'}`,
     at: brief.verdict?.at ?? brief.lastReadAt ?? '',
     title: null,
-    blocks,
+    text: brief.verdict?.text ?? null,
+    show,
+    blocks: [],
     stale: false,
     synthesized: true,
     unresolved: 0,
+    unresolvedCitations: 0,
     ungrounded: brief.verdict?.ungrounded ?? [],
     contradicted: brief.verdict?.contradicted ?? [],
   }
@@ -324,6 +365,7 @@ export function reportSearchText(run: RunModel): string {
   if (!run.report) return ''
   return [
     run.report.title,
+    run.report.text,
     ...run.report.blocks.flatMap((block) => {
       if (block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown')
         return [block.text]

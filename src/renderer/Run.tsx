@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   ArrowDownToLine,
   Check,
+  ChevronDown,
   ChevronRight,
   Circle,
   Copy,
@@ -28,9 +29,9 @@ import {
   Radar,
 } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Brief, briefMarkdown, FindingRow, noticeText } from './Brief'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
+import { briefMarkdown, FindingRow, noticeText, Sources } from './Sources'
 import { scopeText } from './scope'
 import { ago } from './time'
 import { AccessChain, ChartView, PlanView, TableView, ToolViewBody } from './Views'
@@ -117,6 +118,37 @@ function TableBlock({
   return <ToolViewBody view={view} t={t} taskTitle={taskTitle} />
 }
 
+function ProofView({
+  item,
+  t,
+  lang,
+  taskTitle,
+}: {
+  item: RunEvidence
+  t: Dict
+  lang: Lang
+  taskTitle: string
+}) {
+  if (!item.view) return null
+  const view = item.view
+  return (
+    <section className="run-proof">
+      <div className="run-proof-head">
+        <span className="run-section-title">
+          {toolLabel(item.name, lang)} · {item.target}
+        </span>
+      </div>
+      {view.kind === 'fix' && view.plan ? (
+        <PlanView plan={view.plan} t={t} />
+      ) : view.kind === 'estate' && view.history ? (
+        <TimelineBlock view={view} limit={8} t={t} />
+      ) : (
+        <TableBlock view={view} limit={8} t={t} taskTitle={taskTitle} />
+      )}
+    </section>
+  )
+}
+
 function CompareBlock({
   run,
   block,
@@ -189,17 +221,21 @@ function FindingsBlock({
   staleDays: number
   expand?: boolean
 }) {
+  const [expanded, setExpanded] = useState(false)
   const all = run.brief.findings.filter(
     (finding) =>
       (!block.bucket || finding.bucket === block.bucket) &&
       (!block.code || finding.code === block.code) &&
       finding.status === 'open',
   )
-  const rows = expand ? all : all.slice(0, block.limit ?? 5)
+  const rows = expand || expanded ? all : all.slice(0, block.limit ?? 5)
   if (!rows.length) return <p className="quiet">{t.runNoMatch}</p>
   const allMemory = all.length > 0 && all.every((finding) => finding.source === 'memory')
   const rememberedAt = allMemory
-    ? ([...all].map((finding) => finding.readAt).sort()[0] ?? null)
+    ? ([...all]
+        .map((finding) => finding.readAt)
+        .sort()
+        .at(-1) ?? null)
     : null
   const navigate = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement
@@ -243,10 +279,11 @@ function FindingsBlock({
           <button
             className="more-toggle"
             type="button"
-            onClick={() => rows[0] && onOpen(rows[0].sourceId)}
+            aria-expanded={expanded}
+            onClick={() => setExpanded(true)}
           >
             {fill(t.moreFindings, { n: all.length - rows.length })}
-            <ChevronRight size={13} />
+            <ChevronDown size={13} />
           </button>
         )}
       </div>
@@ -493,7 +530,7 @@ export function Run({
       window.removeEventListener('keydown', key)
     }
   }, [more])
-  const question = run.audit ? null : (run.question?.text ?? view.task.title)
+  const question = run.audit ? null : (run.question?.text ?? null)
   const report = run.report
   // Tasks created before the report protocol still carry a durable verdict in
   // their answer entry. The unified Run shows that answer instead of sending
@@ -514,7 +551,31 @@ export function Run({
   const hasReportPlan = visibleBlocks.some((block) => block.kind === 'plan')
   const hasReportFindings = visibleBlocks.some((block) => block.kind === 'findings')
   const hasReportMarkdown = visibleBlocks.some((block) => block.kind === 'markdown')
+  const reportText = report?.text ?? ''
+  const reportShow = stale ? [] : (report?.show ?? [])
+  const reportEvidence = reportShow
+    .map((id) => resolveEvidence(run.evidence, id))
+    .filter((item): item is RunEvidence => Boolean(item?.view))
+  const proofHasData = reportEvidence.some((item) => {
+    const kind = item.view?.kind
+    return (
+      kind === 'survey' ||
+      kind === 'query' ||
+      kind === 'buckets' ||
+      kind === 'objects' ||
+      (kind === 'config' && Boolean(item.view?.access)) ||
+      (kind === 'estate' && Boolean(item.view?.history))
+    )
+  })
+  const proofHasFix = reportEvidence.some((item) => item.view?.kind === 'fix')
   const legacyFindings = Boolean(legacyVerdict && run.brief.findings.length)
+  const primaryFindings =
+    !reportShow.length &&
+    !hasReportFindings &&
+    !view.live &&
+    !stale &&
+    !legacyFindings &&
+    run.brief.findings.length > 0
   const ungrounded = new Set(stale ? [] : (report?.ungrounded ?? []))
   const contradicted = new Set(stale ? [] : (report?.contradicted ?? []))
   const stopped = run.brief.notices.some((notice) => notice.code === 'stopped')
@@ -522,12 +583,11 @@ export function Run({
     Boolean(view.live) ||
     stopped ||
     Boolean(run.plan?.steps.some((step) => step.status === 'blocked'))
-  const showCounts = hasReportFindings || legacyFindings
   const evidenceVisible = Boolean(auditProgress) || evidenceOpen
   // The agent's report is the answer. When it did not compose the proof itself,
   // the latest data read is the one view that can stand beside the summary.
   const primaryData = useMemo(() => {
-    if (view.live || stale) return null
+    if (view.live || stale || reportShow.length > 0) return null
     if (hasReportTable || hasReportTimeline || hasReportFindings || hasReportPlan) return null
     const data = run.brief.data
     if (!data) return null
@@ -544,6 +604,7 @@ export function Run({
     hasReportTimeline,
     hasReportFindings,
     hasReportPlan,
+    reportShow.length,
     run.brief.data,
   ])
 
@@ -579,7 +640,7 @@ export function Run({
 
   const reverify = async () => {
     await onReverify()
-    openEvidence()
+    openEvidence('reverify')
   }
 
   useEffect(() => {
@@ -695,9 +756,28 @@ export function Run({
     Boolean(primaryData) ||
     hasReportTable ||
     hasReportTimeline ||
-    hasReportFindings ||
     hasReportPlan ||
-    hasReportCode
+    hasReportCode ||
+    proofHasData
+  const hideFix = hasReportPlan || proofHasFix
+  const hasSources =
+    run.brief.findings.length + run.brief.accepted.length > 0 ||
+    (!hideData && Boolean(run.brief.data)) ||
+    (!hideFix && run.brief.fixes.length > 0) ||
+    run.brief.checks.length > 0 ||
+    Boolean(run.brief.reverify) ||
+    run.brief.changes.length > 0 ||
+    run.brief.methods.length > 0 ||
+    run.brief.blind.length > 0 ||
+    run.brief.undecided.length > 0 ||
+    run.brief.coverage.some(
+      (item) =>
+        item.pending > 0 ||
+        item.denied.length > 0 ||
+        item.unknown.length > 0 ||
+        item.truncated ||
+        item.gone.length > 0,
+    )
 
   return (
     <div className="scroll" ref={root}>
@@ -706,7 +786,7 @@ export function Run({
 
         <header className="run-header">
           <div className="run-headline">
-            <p className="run-scope">{scopeText(run.brief, t) || t.runNoScope}</p>
+            <p className="run-scope">{scopeText(run.brief, t)}</p>
             <span className="run-actions">
               <button className="text-action" type="button" onClick={() => void copy()}>
                 <Copy size={12} aria-hidden="true" />
@@ -797,19 +877,8 @@ export function Run({
             </span>
           </div>
           {question && <h2 className="run-question">{question}</h2>}
-          {(showCounts || report?.synthesized || report?.stale) && (
+          {(report?.synthesized || report?.stale) && (
             <div className="run-facts">
-              {showCounts && run.counts.high > 0 && (
-                <span className="run-count high">{fill(t.runHigh, { n: run.counts.high })}</span>
-              )}
-              {showCounts && run.counts.medium > 0 && (
-                <span className="run-count medium">
-                  {fill(t.runMedium, { n: run.counts.medium })}
-                </span>
-              )}
-              {showCounts && run.counts.low > 0 && (
-                <span className="run-count low">{fill(t.runLow, { n: run.counts.low })}</span>
-              )}
               {report?.synthesized && <span className="run-tag">{t.runSynthesized}</span>}
               {report?.stale && <span className="run-tag warn">{t.runStale}</span>}
             </div>
@@ -874,135 +943,162 @@ export function Run({
         >
           {report ? (
             <>
-              {!hasSummary && !hasReportMarkdown && run.brief.verdict?.text && (
+              {reportText ? (
+                <>
+                  <div className="verdict prose run-summary" data-verdict>
+                    <Suspense fallback={<p>{plain(reportText)}</p>}>
+                      <Markdown text={reportText} components={markdownComponents(reportShow)} />
+                    </Suspense>
+                  </div>
+                  {reportEvidence.map((item) => (
+                    <ProofView
+                      key={`${item.id}:${item.entryId}`}
+                      item={item}
+                      t={t}
+                      lang={lang}
+                      taskTitle={view.task.title}
+                    />
+                  ))}
+                </>
+              ) : null}
+              {!reportText && !hasSummary && !hasReportMarkdown && run.brief.verdict?.text && (
                 <p className="verdict prose run-summary">{plain(run.brief.verdict.text)}</p>
               )}
-              {visibleBlocks.map((block, index) => {
-                if (block.kind === 'summary')
-                  return (
-                    <div className="verdict prose run-summary" data-verdict key={index}>
-                      <Suspense fallback={<p>{plain(block.text)}</p>}>
-                        <Markdown
-                          text={block.text}
-                          components={markdownComponents(block.evidence)}
+              {!reportText &&
+                visibleBlocks.map((block, index) => {
+                  if (block.kind === 'summary')
+                    return (
+                      <div className="verdict prose run-summary" data-verdict key={index}>
+                        <Suspense fallback={<p>{plain(block.text)}</p>}>
+                          <Markdown
+                            text={block.text}
+                            components={markdownComponents(block.evidence)}
+                          />
+                        </Suspense>
+                      </div>
+                    )
+                  if (block.kind === 'callout')
+                    return (
+                      <div className={`run-callout ${block.tone}`} key={index}>
+                        {block.title && <p className="run-callout-title">{block.title}</p>}
+                        <div className="prose">
+                          <Suspense fallback={<p>{plain(block.text)}</p>}>
+                            <Markdown
+                              text={block.text}
+                              components={markdownComponents(block.evidence)}
+                            />
+                          </Suspense>
+                        </div>
+                      </div>
+                    )
+                  if (block.kind === 'markdown')
+                    return (
+                      <section className="run-block" key={index}>
+                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
+                        <div className="prose run-markdown">
+                          <Suspense fallback={<p>{plain(block.text)}</p>}>
+                            <Markdown
+                              text={block.text}
+                              components={markdownComponents(block.evidence)}
+                            />
+                          </Suspense>
+                        </div>
+                        <SourceLine run={run} block={block} lang={lang} />
+                      </section>
+                    )
+                  if (block.kind === 'compare')
+                    return (
+                      <section className="run-block" key={index}>
+                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
+                        <CompareBlock
+                          run={run}
+                          block={block}
+                          t={t}
+                          lang={lang}
+                          taskTitle={view.task.title}
                         />
-                      </Suspense>
-                    </div>
-                  )
-                if (block.kind === 'callout')
-                  return (
-                    <div className={`run-callout ${block.tone}`} key={index}>
-                      {block.title && <p className="run-callout-title">{block.title}</p>}
-                      <div className="prose">
-                        <Suspense fallback={<p>{plain(block.text)}</p>}>
-                          <Markdown
-                            text={block.text}
-                            components={markdownComponents(block.evidence)}
-                          />
-                        </Suspense>
-                      </div>
-                    </div>
-                  )
-                if (block.kind === 'markdown')
-                  return (
-                    <section className="run-block" key={index}>
-                      {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                      <div className="prose run-markdown">
-                        <Suspense fallback={<p>{plain(block.text)}</p>}>
-                          <Markdown
-                            text={block.text}
-                            components={markdownComponents(block.evidence)}
-                          />
-                        </Suspense>
-                      </div>
-                      <SourceLine run={run} block={block} lang={lang} />
-                    </section>
-                  )
-                if (block.kind === 'compare')
-                  return (
-                    <section className="run-block" key={index}>
-                      {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                      <CompareBlock
-                        run={run}
-                        block={block}
-                        t={t}
-                        lang={lang}
-                        taskTitle={view.task.title}
-                      />
-                    </section>
-                  )
-                if (block.kind === 'table') {
-                  const item = source(run, block)
-                  if (!item?.view) return null
-                  return (
-                    <section className="run-block" key={index}>
-                      {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                      <TableBlock
-                        view={item.view}
-                        limit={block.limit}
-                        t={t}
-                        taskTitle={view.task.title}
-                      />
-                      <SourceLine run={run} block={block} lang={lang} />
-                    </section>
-                  )
-                }
-                if (block.kind === 'timeline') {
-                  const item = source(run, block)
-                  if (!item?.view) return null
-                  return (
-                    <section className="run-block" key={index}>
-                      {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                      <TimelineBlock view={item.view} limit={block.limit} t={t} />
-                      <SourceLine run={run} block={block} lang={lang} />
-                    </section>
-                  )
-                }
-                if (block.kind === 'findings')
-                  return (
-                    <section className="run-block" key={index}>
-                      <FindingsBlock
-                        run={run}
-                        block={block}
-                        t={t}
-                        onOpen={openEvidence}
-                        onAccept={accept}
-                        staleDays={staleDays}
-                        expand={printing}
-                      />
-                    </section>
-                  )
-                if (block.kind === 'plan') {
-                  const item = source(run, block)
-                  const planView = item?.view
-                  if (planView?.kind !== 'fix' || !planView.plan) return null
-                  return (
-                    <section className="run-block" key={index}>
-                      {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                      <PlanView plan={planView.plan} t={t} />
-                      <SourceLine run={run} block={block} lang={lang} />
-                    </section>
-                  )
-                }
-                if (block.kind === 'code') {
-                  const item = source(run, block)
-                  const codeView = item?.view
-                  if (codeView?.kind !== 'query') return null
-                  return (
-                    <section className="run-block" key={index}>
-                      {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                      <pre className="code">{codeView.code}</pre>
-                      <SourceLine run={run} block={block} lang={lang} />
-                    </section>
-                  )
-                }
-                return null
-              })}
+                      </section>
+                    )
+                  if (block.kind === 'table') {
+                    const item = source(run, block)
+                    if (!item?.view) return null
+                    return (
+                      <section className="run-block" key={index}>
+                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
+                        <TableBlock
+                          view={item.view}
+                          limit={block.limit}
+                          t={t}
+                          taskTitle={view.task.title}
+                        />
+                        <SourceLine run={run} block={block} lang={lang} />
+                      </section>
+                    )
+                  }
+                  if (block.kind === 'timeline') {
+                    const item = source(run, block)
+                    if (!item?.view) return null
+                    return (
+                      <section className="run-block" key={index}>
+                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
+                        <TimelineBlock view={item.view} limit={block.limit} t={t} />
+                        <SourceLine run={run} block={block} lang={lang} />
+                      </section>
+                    )
+                  }
+                  if (block.kind === 'findings')
+                    return (
+                      <section className="run-block" key={index}>
+                        <FindingsBlock
+                          run={run}
+                          block={block}
+                          t={t}
+                          onOpen={openEvidence}
+                          onAccept={accept}
+                          staleDays={staleDays}
+                          expand={printing}
+                        />
+                      </section>
+                    )
+                  if (block.kind === 'plan') {
+                    const item = source(run, block)
+                    const planView = item?.view
+                    if (planView?.kind !== 'fix' || !planView.plan) return null
+                    return (
+                      <section className="run-block" key={index}>
+                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
+                        <PlanView plan={planView.plan} t={t} />
+                        <SourceLine run={run} block={block} lang={lang} />
+                      </section>
+                    )
+                  }
+                  if (block.kind === 'code') {
+                    const item = source(run, block)
+                    const codeView = item?.view
+                    if (codeView?.kind !== 'query') return null
+                    return (
+                      <section className="run-block" key={index}>
+                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
+                        <pre className="code">{codeView.code}</pre>
+                        <SourceLine run={run} block={block} lang={lang} />
+                      </section>
+                    )
+                  }
+                  return null
+                })}
               {!stale && report.unresolved > 0 && (
                 <p className="quiet run-unresolved">
                   {report.unresolved === 1
                     ? t.runUnresolvedOne
                     : fill(t.runUnresolved, { n: report.unresolved })}
+                </p>
+              )}
+              {!stale && report.unresolvedCitations > 0 && (
+                <p className="quiet run-unresolved">
+                  <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
+                  {report.unresolvedCitations === 1
+                    ? t.runUnresolvedCitationsOne
+                    : fill(t.runUnresolvedCitations, { n: report.unresolvedCitations })}
                 </p>
               )}
               {!stale && ungrounded.size > 0 && (
@@ -1064,7 +1160,24 @@ export function Run({
           <PrimaryData data={primaryData} t={t} taskTitle={view.task.title} />
         )}
 
-        {!view.live && !auditProgress && (
+        {primaryFindings && (
+          <section className="run-proof run-primary-risks">
+            <div className="run-proof-head">
+              <span className="run-section-title">{t.findingsTitle}</span>
+            </div>
+            <FindingsBlock
+              run={run}
+              block={{ kind: 'findings', limit: 5 }}
+              t={t}
+              onOpen={openEvidence}
+              onAccept={accept}
+              staleDays={staleDays}
+              expand={printing}
+            />
+          </section>
+        )}
+
+        {!view.live && !auditProgress && hasSources && (
           <button
             className={`run-evidence-toggle ${evidenceOpen ? 'open' : ''}`}
             type="button"
@@ -1074,37 +1187,19 @@ export function Run({
             <span className="run-section-title">
               {evidenceOpen ? t.runHideEvidence : t.runEvidenceTitle}
             </span>
-            <span className="run-evidence-count">
-              {run.brief.checks.length > 0
-                ? run.brief.checks.length === 1
-                  ? t.checkOne
-                  : `${run.brief.checks.length} ${t.checksTitle.toLowerCase()}`
-                : ''}
-            </span>
             <ChevronRight size={13} className={`chev ${evidenceOpen ? 'open' : ''}`} />
           </button>
         )}
 
         <div className={`run-evidence-wrap ${evidenceVisible ? '' : 'is-collapsed'}`}>
-          <Brief
+          <Sources
             key={turnKey}
             view={view}
             lang={lang}
             focusId={evidenceFocus ?? focusId}
-            onRetry={onRetry}
-            onContinue={onContinue}
-            onReverify={onReverify}
-            onAudit={onAudit}
-            auditing={auditing}
             staleDays={staleDays}
-            auditProgress={auditProgress}
-            evidenceOnly
             hideData={hideData}
-            hideFix={hasReportPlan}
-            hideNotices
-            hideVerdict={Boolean(legacyVerdict)}
-            hideFindings={hasReportFindings || legacyFindings}
-            prefixMarkdown={runMarkdown(run)}
+            hideFix={hideFix}
           />
         </div>
       </article>
@@ -1115,12 +1210,14 @@ export function Run({
 // Keep the report markdown reachable for the window's copy/export path.
 export function runMarkdown(run: RunModel): string {
   if (!run.report) return ''
-  return run.report.blocks
-    .map((block) => {
+  return [
+    run.report.text,
+    ...run.report.blocks.map((block) => {
       if (block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown')
         return block.text
       return ''
-    })
+    }),
+  ]
     .filter(Boolean)
     .join('\n\n')
 }

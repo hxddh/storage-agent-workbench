@@ -78,7 +78,7 @@ export function namesInView(
   }
 }
 
-const CONTROL = new Set(['playbook', 'plan', 'report'])
+const CONTROL = new Set(['playbook', 'skill', 'plan', 'answer', 'report'])
 
 export function knownNames(entries: readonly UiEntry[]): Set<string> {
   const names = new Set<string>()

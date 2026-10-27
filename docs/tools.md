@@ -1,33 +1,52 @@
 # Tools
 
-Thirteen tools in one pi extension (`runtime/agent.ts`). Ten are read-only
-storage reads; every one goes through `agentTool()`, which applies the account
-scope, a timeout, an audit row, redaction and the untrusted-data envelope, and
-attaches a typed `view`, a `status` (`done`, `failed`, `refused`, `timeout`,
-`stopped`) and an `evidenceId` for the model and the window. Three are control
-tools (`plan`, `report`, `playbook`) and never read storage.
+Thirteen tools in one pi extension (`runtime/agent.ts`), grouped by capability:
+**read**, **query**, **memory**, **change_plan**, **answer**, **plan** and
+**skill**. Read tools go through `agentTool()`, which applies account scope, a
+timeout, an audit row, redaction and the untrusted-data envelope, and attaches a
+typed `view`, a `status` (`done`, `failed`, `refused`, `timeout`, `stopped`) and
+an `evidenceId`.
 
-| Tool | Input | Model output | View |
-|---|---|---|---|
-| `survey` | `provider_id?`, `buckets?` (≤50), `limit?` (≤5000) | buckets read, public, account block, capacity and largest buckets, undecided rules, Issue delta, what was not read | bucket table with capacity, open and accepted Issues (first 1,000 and the total), resolutions, account block, coverage |
-| `buckets` | `provider_id?` | names | name + created |
-| `objects` | `provider_id?`, `bucket`, `prefix?`, `kind?` (`keys`/`versions`/`uploads`), `limit?` (≤200; default 50) | one page count | key table with truncation |
-| `object` | `provider_id?`, `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`) | facts | fact list, bounded text preview |
-| `config` | `provider_id?`, `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules proved clean; for `access`, grants and coverage | finding list, observations, access chain and coverage |
-| `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`) | check outcomes | check list |
-| `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with their age, Issues with evidence, notes; with `history`, Issue events, posture changes and unfiltered reading events | bucket table, Issues, notes, optional history table |
-| `fix` | `provider_id?`, `bucket?`, `code?` (omit for every open issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
-| `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
-| `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | first 40 rows, call and listing counts, script output | table, bar chart, script, buckets read |
-| `plan` | `steps` (3–6), `note?` | the plan was recorded | the run's plan with pending/active/done/blocked steps |
-| `report` | ordered `blocks`: summary, markdown, compare, callout, table, findings, timeline, plan, code; optional `append` | the report was recorded | the answer blocks; data blocks cite an `evidenceId` |
-| `playbook` | `card?` | one field-guide card, or the card list | not rendered; documentation for the model |
+`answer`, `plan` and `skill` are control tools. They shape the answer and never
+read storage. `change_plan` generates text from remembered Issues; the app never
+applies it.
+
+| Group | Tool | Input | Model output | View |
+|---|---|---|---|---|
+| read | `survey` | `provider_id?`, `buckets?` (≤50), `limit?` (≤5000) | buckets read, public, account block, capacity and largest buckets, undecided rules, Issue delta, what was not read | bucket table with capacity, open and accepted Issues, resolutions, account block, coverage |
+| read | `buckets` | `provider_id?` | names | name + created |
+| read | `objects` | `provider_id?`, `bucket`, `prefix?`, `kind?` (`keys`/`versions`/`uploads`), `limit?` (≤200; default 50) | one page count | key table with truncation |
+| read | `object` | `provider_id?`, `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`) | facts | fact list, bounded text preview |
+| read | `config` | `provider_id?`, `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules proved clean; for `access`, grants and coverage | finding list, observations, access chain and coverage |
+| read | `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`) | check outcomes | check list |
+| read | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | first 40 rows, call/listing counts, script output | table, bar chart, script, buckets read |
+| memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with age, Issues, notes; with `history`, Issue events, posture changes and reading events | bucket table, Issues, notes, optional history table |
+| memory | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
+| change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
+| answer | `answer` | `title?`, `text` (Markdown, ≤8,000 chars), `show?` (≤2 evidence ids) | answer recorded | Markdown answer; `show` resolves the cited tool views |
+| plan | `plan` | `steps` (1–6), `note?` | optional plan recorded | pending/active/done/blocked steps |
+| skill | `skill` | `name?` | one method, or the four methods | not a check; shown under Methods |
+
+## Answer and sources
+
+`answer` accepts normal Markdown. The model cites `show` in prose as
+`[1](#ev-1)`, `[2](#ev-2)` in array order. The window validates every citation
+and every `show` id against the task's tool results. It omits a missing view with
+a quiet note and renders the actual tool columns; the model never writes a table
+of facts. An answer without `answer` is also valid: the final message is the
+answer, and the window shows the current risk list when no proof is supplied.
+
+`Sources` is one compact index below the answer. Risks, Data, Change plan, Tool
+calls, Not checked, Checked again, Changes and Methods appear only when they have
+content; one row opens one section. The old 27–29 `report` blocks remain readable
+for existing tasks.
 
 ## Code mode (`query`)
 
 The script runs in a QuickJS sandbox (`@earendil-works/pi-codemode`): no
 `fetch`, `require`, `process`, timers or modules, and model access stays off.
-Its only capabilities are ten read-only primitives, all scoped to the account:
+Its only capabilities are the scoped read-only primitives, all under the
+account:
 
 | Primitive | Reads |
 |---|---|
@@ -53,17 +72,19 @@ every manifest file is imported into a local dataset, bounded to 1,000 files,
 128 MiB per file, 512 MiB total and 2,000,000 rows. `aggregate` is the only way
 to query that dataset.
 
-## Control tools
+## Skills
 
-The agent publishes a short plan before its first read and updates it when a
-step materially changes. The run header renders it above the answer; it is not
-a transcript. `report` is the answer composition: a summary, markdown or callout
-carries prose and evidence ids; compare takes two evidence ids; a table, timeline, plan or code block points at one tool
-result by its `evidenceId`; a findings block selects deterministic estate
-findings. The window resolves the actual tool view, drops a block whose evidence
-is missing and says how many were omitted. `playbook` reads one of the field
-cards in `src/main/playbooks.ts`; the cards are no longer pasted into every
-system prompt.
+Four on-demand methods: `access`, `change`, `inventory`, `capacity`. Skills are
+documentation for the model, not storage evidence and not checks. A method the
+agent loads appears under **Methods** in Sources; it does not consume a Tool
+calls row.
+
+## Plan
+
+`plan` is optional. Use it when the work has several distinct steps; omit it for
+a short read. It renders 1–6 steps with pending/active/done/blocked states and
+folds away when a normal answer settles. A stopped run keeps it and offers
+Continue.
 
 ## Rules the tools enforce
 
@@ -81,8 +102,8 @@ system prompt.
   estimate, not a bill. An S3-compatible endpoint has neither, and the rules
   that need them stay undecided.
 - The harness blocks a storage read repeated with the same arguments in one run
-  (`estate`, `fix`, `note` and `survey` may repeat) and every call after the
-  model tier's round budget (**14 small, 24 mid, 32 large**).
+  (`estate`, `change_plan`, `note` and `survey` may repeat) and every call after
+  the model tier's round budget (**14 small, 24 mid, 32 large**).
 - `object.preview` reads at most 8 KiB and only for text-like content types under
   1 MiB; the body of a large object is never downloaded.
 - `dataset` imports at most 2,000,000 rows and `aggregate` answers only
@@ -96,12 +117,12 @@ system prompt.
   Reading rows are account-wide, so a `bucket` or `code` filter omits them.
   `since` is an ISO date or timestamp. History is memory evidence, never raw
   request text, and it does not make the current reading fresh.
-- `fix` returns one plan. Lifecycle fixes are merged per bucket and a current
+- `change_plan` returns one plan. Lifecycle rules are merged per bucket and a current
   lifecycle or policy that cannot be read becomes a manual step with a blocker.
   A current policy containing an account id is never reproduced in the window;
   the step carries only a new statement. A merged lifecycle with existing rules
   omits Terraform rather than rendering an incomplete authoritative resource.
-  The plan lists residual findings it cannot cover. No fix is applied by a
+  The plan lists residual findings it cannot cover. No change is applied by a
   tool.
 - `access` is evidence, not an authorization decision: policy and ACL rows are
   grants; identity grants are intersected with bucket-policy Denies and, when

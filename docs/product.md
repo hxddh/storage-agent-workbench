@@ -11,11 +11,12 @@ a console, a dashboard, a ticket system or a chat product.
    relative time, rename, pin, delete and Settings. A new task starts empty; a
    deterministic account check also appears here. The task open at quit opens at
    launch.
-2. **Task** — one run, not a transcript. The page scrolls; the composer stays. The evidence component is always folded
-inside this one page; there is no separate Brief page.
-3. **Settings** — a full-screen sheet with a labeled **Done** control, for the
-   model, storage accounts, memory, language, theme and notifications. It is one
-   sheet, not a wizard.
+2. **Task** — one run, not a transcript. The page scrolls; the composer stays.
+   The evidence index is folded inside this one page; there is no separate
+   Brief page.
+3. **Settings** — a full-screen sheet closed with the **X** at its top-left, for
+   the model, storage accounts, memory, language, theme and notifications. It is
+   one sheet, not a wizard.
 
 The composer is docked at the foot of the window on Home and in a task. It sends
 a model request, a steer while a run is active, or a follow-up in the same task.
@@ -29,9 +30,10 @@ Home is a quiet estate ledger, not a dashboard:
 
 - one row per account with remembered bucket count, the last complete reading
   (or `no complete reading`) and open high/total risk;
-- a line for new findings since the latest complete reading;
+- a line for new risks since the latest complete reading;
 - **Check account**;
-- recent runs, five at most, as quiet one-line links;
+- on narrow windows, where the task list is an overlay, recent runs, five at
+  most, as quiet one-line links; the desktop sidebar already holds them;
 - the composer in its usual place.
 
 With no account, the explicit choices are **Try with demo storage** and a setup
@@ -48,8 +50,8 @@ Home or Settings.
 1. It creates a task immediately with a title such as
    `Check · Demo · 2026-10-25 05:45`.
 2. It surveys every configured account and emits transient survey progress.
-3. It reads access evidence for up to 24 buckets per account, preferring open
-   Issue buckets. When that is fewer than the account has, it reports
+3. It reads access evidence for up to 24 buckets per account, preferring buckets
+   with open risks. When that is fewer than the account has, it reports
    `examined / total`.
 4. It writes one durable `sa.audit` entry. The final checks and the deterministic
    summary are synthesized into the ordinary run surface; the page carries a
@@ -71,15 +73,19 @@ risk. It stores no request, answer text, policy or secret.
 - While it runs, a check appears when a tool starts and shows its real progress
   (`3 of 12 buckets`). The check settles in place. The Checks section opens
   while work is happening and folds to a receipt when it ends.
-- The agent publishes a short plan before its first read; it updates as the
-  work changes. The plan is visible while the run is in flight and folds away
-  when a normal answer settles. It stays for a stopped run or a blocked step.
+- The agent may publish a short plan; it updates as the work changes. The plan
+  is visible while the run is in flight and folds away when a normal answer
+  settles. It stays for a stopped run or a blocked step. A plan is optional: a
+  direct answer does not need one.
 - While it works, a draft answer and the current plan are visible; the finished
-  report replaces the draft.
-- When the evidence is ready, the agent calls `report` with ordered blocks. A
-  summary or markdown block answers; table, timeline, plan and code blocks cite
-  the tool result that proved them; findings selects deterministic findings.
-  Summary prose can cite evidence as `[1](#ev-1)` and open the matching check.
+  answer replaces the draft.
+- When the evidence is ready, the agent may call `answer` with Markdown and up
+  to two evidence ids. Its prose can cite evidence as `[1](#ev-1)`; the window
+  opens the matching check. Every citation and shown view is checked against
+  the task's tool results. A missing one produces a quiet warning rather than a
+  broken link. The agent may instead finish with prose alone.
+- A deterministic findings block and the legacy ordered report blocks remain
+  readable for tasks created by earlier versions. New runs do not need them.
 - **Enter** while running steers the current run. **Stop** (or ⌘.) keeps what was
   read and offers **Continue** without adding a new question.
 - A failed model run becomes one notice with **Retry**; it asks the last request
@@ -107,55 +113,55 @@ The page is composed for the question, not for every fact the task has read.
 Top to bottom:
 
 1. **Run header** — the latest question (never the task title posing as one),
-   account name(s), a deterministic `Reads complete` or
-   `Reads open: n · m blocked` status, `checked / total` buckets and the last
-   read time. Copy and one overflow menu sit here. Severity counts appear on an
-   account check, or when the answer carries a findings block. A failed
-   or stopped storage read keeps the status open. A narrowed re-read never turns
-   an account-wide gap into a complete reading.
+   account name(s), a scope line, `checked / total` buckets and the last read
+   time when they apply. The scope line is one of `All n buckets checked`,
+   `All n buckets checked · x open questions · y blocked`,
+   `Not fully checked: n`, `From memory · …`, `Live read · …`,
+   `Based on a reading · …` or `No live read`. Copy and one overflow menu sit
+   here. A failed or stopped storage read keeps the line open. A narrowed
+   re-read never turns an account-wide gap into a complete reading. Severity
+   counts live with the risk list, not in the header.
 2. **Notices** — stopped, failed, no-answer, model-missing and budget notices,
-   with Retry or Continue where they apply. They sit outside the evidence fold.
-3. **Plan** — the agent's own 3–6 steps, with pending, active, done and blocked
-   states. It is process, not answer: it is visible while the run is live,
-   remains for a stopped run or a blocked step, and is absent on a deterministic
-   check. A settled answer does not carry the finished checklist.
-4. **Answer** — the ordered blocks the agent composed: summary, markdown,
-   compare, callout, table, findings, timeline, plan or code. A summary,
-   markdown or callout carries prose and evidence ids; compare names two. A data block resolves one id to the tool view that proved it;
-   the window drops a block whose evidence is missing and says how many. A
-   summary is not limited to two sentences; it must stay grounded and concise.
-   The window does not append a generic report after the answer.
-5. **Additional evidence** — when the agent's report is prose only, the latest
-   data read is shown as one preview: a survey, a query table and chart, an
-   access chain, or a remembered history. Up to three or five rows; the table
-   keeps its copy/save actions, and the Evidence control below opens the full
-   check. When the agent already composed a table, timeline, findings or plan,
-   that block is the answer and is not repeated here.
-6. **Evidence** — one control on a settled task, labelled with its check count.
-   It opens outside the answer, not interleaved with it. A report's findings
-   block is already visible in the answer, so the evidence body does not
-   duplicate current findings; accepted and fixed folds remain available. A
-   report's plan block is the change plan and stays in the answer — the window
-   does not assign the task a type to decide that. A deterministic check
-   synthesizes a report with its findings and uses the same evidence fold for
-   checks. The full evidence body still carries findings, re-verification,
-   changed posture, **Not read** and checks when they exist.
-7. **Checks** — every executed tool call in order, with target, result note and
-   duration, folded to checks · time · tokens. Plan, report and playbook calls
-   are control tools, not checks. They live with the rest of Evidence on every
-   task, including a deterministic check.
-
-A report's own table, timeline, plan or findings block is part of the answer and
-is not folded. The deterministic sections underneath are evidence, not a second
-answer.
+   with Retry or Continue where they apply. They sit outside the sources fold.
+3. **Plan** — the agent's own 1–6 steps, commonly 3–6, with pending, active,
+   done and blocked states. It is process, not answer: it is visible
+   while the run is live, remains for a stopped run or a blocked step, and is
+   absent when the agent did not publish one. A settled answer does not carry
+   the finished checklist.
+4. **Answer** — Markdown composed by the agent. A `show` list of up to two
+   evidence ids lets its data views stand with the prose. Inline citations use
+   `[1](#ev-1)`. The window resolves every citation and shown view against the
+   task's tool evidence, omits a missing view and adds a quiet warning. It does
+   not append a generic report after the answer. For tasks created by earlier
+   versions, the ordered report blocks remain readable.
+5. **Primary proof** — when the answer did not show data itself, one view can
+   stand beside it: a survey, query rows, an access chain or a remembered
+   history. When there is no proof and the task has risks, the current risk list
+   is shown here instead. It is not duplicated below unless the user opens
+   Sources.
+6. **Sources** — one compact index, not a second page. Its rows are
+   **Risks**, **Data**, **Change plan**, **Tool calls**, **Not checked**,
+   **Checked again**, **Changes** and **Methods** when they exist. Only one
+   section opens at a time. The index appears with its counts, and opening a
+   section is a disclosure, not navigation. A deterministic check uses the same
+   component.
+7. **Checks** — every executed storage, query, memory or change-plan call in
+   order, with target, result note and duration, folded to
+   checks · time · tokens. `answer`, `plan` and `skill` are control calls, not
+   checks; they appear with the rest of the run's activity.
 
 Copy and a single overflow menu are always visible in the run header. The
 overflow contains save Markdown, check again, re-verify, copy task link, export
-evidence and save PDF. Evidence and PDF include the current findings, controls,
-read timestamps and redacted views; there is no secret or unredacted provider
-document in them.
+evidence and save PDF. Sources and PDF include the current risks, accepted and
+fixed folds, read timestamps and redacted views; there is no secret or
+unredacted provider document in them. Printing or saving a PDF expands every
+Sources section first.
 
-### Findings and Issues
+A deterministic check has no model question; its page starts with the scope
+line and a synthesized answer, and uses the same Sources index. It carries the
+`Deterministic account check` tag.
+
+### Findings and risks
 
 Findings are current state, not history. Results fold in order: a survey
 replaces what the task knew about its account, a review replaces what it knew
@@ -164,18 +170,20 @@ finding. The estate's current acceptance status is laid over the result. A
 finding from memory says when it was read and is marked possibly stale after the
 Settings threshold.
 
-Findings are merged by rule and bucket, ordered by severity, and grouped by
-bucket. Five are shown; the rest open with one **N more** control. Each finding
-names its rule, severity, bucket and evidence. Clicking it opens the check that
-proved it. **Accept risk** appears on hover or keyboard focus. Accepted risks are
-folded, with **Reopen**. A finding the task saw open and then proved fixed goes
-into one green one-line fold. If the survey view carries fewer Issues than the
-account has, the page says how many.
+Findings become the page's **Risks**. They are merged by rule and bucket,
+ordered by severity and grouped by bucket. Five are shown; the rest expand in
+place with one **N more risks** control. Each risk names its rule, severity,
+bucket and evidence. Clicking it opens the check that proved it. **Accept risk**
+appears on hover or keyboard focus. Accepted risks are folded, with
+**Reopen**. A finding the task saw open and then proved fixed goes into one green
+one-line fold. If the survey view carries fewer risks than the account has, the
+page says how many.
 
-An Issue is `open`, `resolved` or `accepted`. Rules open and close it; the model
-never does. Accepting is the user's decision and survives later readings while
-the risk is still observed. A bucket that a complete listing no longer shows
-gets `gone_at`; its Issues resolve as `gone`.
+Internally the durable entity is still an `Issue`, in `open`, `resolved` or
+`accepted` state. Rules open and close it; the model never does. Accepting is
+the user's decision and survives later readings while the risk is still
+observed. A bucket that a complete listing no longer shows gets `gone_at`; its
+Issues resolve as `gone`.
 
 ### Open questions
 
@@ -263,9 +271,9 @@ the app measures with `query` instead and does not invent a number.
 
 ## Search
 
-⌘K focuses the sidebar search. It covers task titles, requests, findings and the
-report summary. A finding hit opens its task with the finding highlighted; a
-summary hit opens the run and scrolls to the answer. Title search reads `task_meta`; the rest reads the
+⌘K focuses the sidebar search. It covers task titles, requests, risks and the
+answer summary. A risk hit opens its task with the risk highlighted; a summary
+hit opens the run and scrolls to the answer. Title search reads `task_meta`; the rest reads the
 derived `search_docs` index. Search uses FTS5 trigram ranking, with a LIKE fallback for short CJK queries, and returns
 at most 20 hits.
 
@@ -274,8 +282,9 @@ at most 20 hits.
 The provider reports the model list in Settings. The context window is inferred
 (unknown models fall back to 128k), and reasoning is on at medium for known
 reasoning models, off otherwise. Context below 64k is a small model, below 200k
-mid, otherwise large. Small gets shorter method cards and a 14-round budget;
-mid gets 24 and large 32. The answer format does not change.
+mid, otherwise large. Small gets a 14-round budget, mid 24 and large 32. The
+agent asks for one of the four method cards with `skill`; they are not injected
+into every prompt. The answer format does not change.
 
 ## Settings
 
@@ -301,9 +310,10 @@ mid gets 24 and large 32. The answer format does not change.
 - CloudTrail covers 90 days and is attributed for at most six changed buckets
   per survey; only management events are considered.
 - Re-verification replays at most 50 buckets per account, has a 120-second
-  budget, and reports skipped or truncated buckets. A plan covers the selected open Issues (at most 500) and reports any
-  residual rule that has no generated fix. A merged lifecycle omits Terraform
-  when existing rules contain fields the renderer cannot reproduce.
+  budget, and reports skipped or truncated buckets. A change plan covers the
+  selected open risks (at most 500) and reports any residual rule that has no
+  generated change. A merged lifecycle omits Terraform when existing rules contain
+  fields the renderer cannot reproduce.
 - A code-mode script is bounded to 6,000 characters and the budgets above.
 - Notes are capped at 500; each note is at most 1,000 characters.
 - Attachments are limited to ten files and 4 GiB each.
@@ -337,27 +347,28 @@ or account level can cancel exposure. A bucket is never called clean because a
 read failed; an unread policy, ACL or configuration leaves the matching rule
 undecided.
 
-## Fixes
+## Change plans
 
-`fix` returns one deterministic change plan. Each step carries AWS CLI,
-Terraform and API document text plus an impact preview from the remembered
-posture. It can target one bucket and code, or every open Issue (it scans up to
-500 and generates up to 20). Lifecycle fixes for one bucket merge into one
-document; when existing rules are present, the Terraform tab is omitted rather
-than rendering an incomplete authoritative resource. A policy fix is merged
-with the current policy only when that policy was read and names no account id.
-Otherwise the step is marked manual
-and keeps its blocker; the plan never reproduces an unread or account-bearing
-policy in the window. The plan states its baseline (the latest
-complete reading or remembered state), lists residual findings it does not
-cover, and is text the user applies. The bucket name must match
-`[A-Za-z0-9][A-Za-z0-9._-]{0,254}`; otherwise no safe fix is generated. The
-app never applies the text.
+`change_plan` returns one deterministic change plan. It is the tool behind the
+**Change plan** row in Sources; the legacy `fix` name still projects for tasks
+created by earlier versions, and the stored view kind remains `fix`. Each step
+carries AWS CLI, Terraform and API document text plus an impact preview from the
+remembered posture. It can target one bucket and code, or every open risk (it
+scans up to 500). Lifecycle changes for one bucket merge into one document; when
+existing rules are present, the Terraform tab is omitted rather than rendering
+an incomplete authoritative resource. A policy change is merged with the
+current policy only when that policy was read and names no account id.
+Otherwise the step is marked manual and keeps its blocker; the plan never
+reproduces an unread or account-bearing policy in the window. The plan states
+its baseline (the latest complete reading or remembered state), lists residual
+risks it does not cover, and is text the user applies. The bucket name must
+match `[A-Za-z0-9][A-Za-z0-9._-]{0,254}`; otherwise no safe change is generated.
+The app never applies the text and there is no Apply button.
 
 **Re-verify** is the only path that confirms a plan step. It re-reads the plan's
 buckets and the account-wide block, applies the same rules, and reports
 `confirmed` only when every code in the step is now clear. An open or accepted
-Issue is `not applied`; an unchecked bucket or undecided rule is `still unknown`.
+risk is `not applied`; an unchecked bucket or undecided rule is `still unknown`.
 
 ## Memory and retention
 

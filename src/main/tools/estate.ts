@@ -336,7 +336,7 @@ export function estateTools(deps: ToolDeps) {
     }),
 
     agentTool(deps, {
-      name: 'fix',
+      name: 'change_plan',
       description:
         'Build one change plan for Open Issues: a baseline, merged steps with AWS CLI/Terraform/API text, impact from the remembered posture, manual blockers and residual findings. Omit bucket and code for every open issue, or set either to narrow the plan. Read-only; the user applies it and re-verification confirms it.',
       parameters: Type.Object({

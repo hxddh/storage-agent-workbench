@@ -9,13 +9,31 @@ import type {
   NoteRow,
   Theme,
 } from '@shared/contract'
-import { Brain, Cloud, Cpu, Palette, Plus } from 'lucide-react'
+import { Brain, Cloud, Cpu, Palette, Plus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { dict, fill } from './i18n'
+import { type Dict, dict, fill } from './i18n'
 import { useFocusTrap } from './lib/focus'
 
 type Provider = ModelProvider
 export type SettingsPane = 'model' | 'accounts' | 'memory' | 'appearance'
+
+/** Map the provider layer's fixed test messages; pass other provider errors through. */
+function testDetail(detail: string, t: Dict): string {
+  switch (detail.trim()) {
+    case 'Connection error.':
+      return t.testConnectionError
+    case 'The model is not available.':
+      return t.testModelUnavailable
+    case 'The model returned an error.':
+      return t.testModelError
+    case 'A model id is required.':
+      return t.testModelRequired
+    case 'Enter an API key first.':
+      return t.testKeyRequired
+    default:
+      return detail
+  }
+}
 
 const EMPTY_ACCOUNT: AccountInput = {
   name: '',
@@ -325,12 +343,16 @@ export function Settings({
     <div className="sheet" role="dialog" aria-modal="true" aria-label={t.settings} ref={trap}>
       <div className="sheet-head">
         <div className="sheet-head-inner">
+          <button
+            className="sheet-close"
+            type="button"
+            aria-label={t.closeSettings}
+            title={t.closeSettings}
+            onClick={onClose}
+          >
+            <X size={16} strokeWidth={1.8} />
+          </button>
           <h2>{active.label}</h2>
-          <div className="actions">
-            <button className="sheet-done" type="button" onClick={onClose}>
-              {t.done}
-            </button>
-          </div>
         </div>
       </div>
       <div className="sheet-body">
@@ -504,7 +526,7 @@ export function Settings({
                   </button>
                   {modelStatus && (
                     <span className={modelStatus.ok ? 'ok-text' : 'error-text'}>
-                      {modelStatus.detail}
+                      {testDetail(modelStatus.detail, t)}
                     </span>
                   )}
                 </div>
@@ -569,7 +591,7 @@ export function Settings({
                     </div>
                     {accountTest?.id === account.id && (
                       <div className={accountTest.ok ? 'ok-text' : 'error-text'}>
-                        {accountTest.detail}
+                        {testDetail(accountTest.detail, t)}
                       </div>
                     )}
                   </div>

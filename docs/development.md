@@ -36,12 +36,13 @@ The package also exposes direct aliases: `npm run e2e`, `npm run e2e:audit`,
 twelve rules and tri-state decisions, the account rule, TLS policy detection,
 Issue lifecycle (opened, resolved, gone, accepted, recurred), schema migrations,
 scope and the tool floor, code mode (sandbox, budgets, timeout, import), demo
-storage, generated fixes, plans and impact, log normalization and IP masking,
+storage, generated change plans and impact, log normalization and IP masking,
 CSV/Parquet import and the aggregate whitelist, the search index, entry → UI
-projection, run/evidence folding, answer grounding, the run guardrails,
-redaction, provider capabilities, posture diffs, permission diagnosis, model
-windows, access evaluation, reading records and plan-aware re-verification.
-`Brief.test.tsx` runs in jsdom; the rest use Node.
+projection, the run and Sources index, answer grounding and citation
+resolution, the run guardrails, redaction, provider capabilities, posture
+diffs, permission diagnosis, model windows, access evaluation, reading records
+and plan-aware re-verification. `Run.test.tsx` and `Sources.test.tsx` run in
+jsdom; the rest use Node.
 
 ### Domain and compatibility
 
@@ -65,11 +66,12 @@ windows, access evaluation, reading records and plan-aware re-verification.
 - `scripts/e2e.mjs` builds the app and drives the real Electron window against
   `scripts/fake-s3.mjs` (delayed so a running check is observable) and
   `scripts/fake-model.mjs`. It covers model setup and test, an account check,
-  a model answer, finding evidence, axe (serious/critical violations fail),
-  `@` focus, re-verify, access rows, accepting a risk, applying a fix outside
-  the app and proving it, grounding correction, a generated change plan,
+  a model answer and `Sources` index, a primary risk list, `N more risks`
+  disclosure, citation resolution, axe (serious/critical violations fail), `@`
+  focus, re-verify, access rows, accepting a risk, applying a change outside the
+  app and proving it, grounding correction, a generated change plan,
   plan-aware re-verification, stop/continue, search, code-mode rows and the demo
-  account.
+  account. The audit E2E exercises the same run surface without a model.
 - `scripts/e2e-audit.mjs` starts with no model and no account, chooses demo
   storage explicitly, waits for the deterministic run, checks that the
   composer stays disabled and captures the no-model state.
@@ -85,10 +87,11 @@ windows, access evaluation, reading records and plan-aware re-verification.
 
 ### Evaluation
 
-`scripts/eval.mjs` has 28 scenarios. It scores findings, grounded answers,
+`scripts/eval.mjs` has 29 scenarios. It scores findings, grounded answers,
 blind-spot honesty, memory-first and estate-history behavior, open-read
-closure, verify-after-fix, code mode, access questions, prompt-injection-shaped
-object names and call counts. The script runs the real window against fake S3.
+closure, verify-after-fix, code mode, access questions, method routing,
+prompt-injection-shaped object names and call counts. The script runs the real
+window against fake S3.
 
 ```bash
 xvfb-run -a node scripts/eval.mjs --smoke
@@ -137,8 +140,8 @@ tagged release builds all three platforms or publishes nothing.
   packaging without them, but must not present that as a quality or signing
   claim.
 - There is no automated native-dialog test for the file picker or save dialog.
-- Search indexes titles, requests, findings and the report summary only; it
-  does not index attachments or every object name. FTS5 trigram ranks longer
+- Search indexes titles, requests, risks and the answer summary only; it does
+  not index attachments or every object name. FTS5 trigram ranks longer
   queries; short CJK queries use LIKE. It returns at most 20 hits.
 - The sidebar shows the 500 most recently updated tasks; Settings lists the 100
   most recent notes. Older rows remain in SQLite but are not shown.

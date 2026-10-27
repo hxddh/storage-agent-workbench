@@ -142,10 +142,10 @@ describe('the run', () => {
     expect(document.querySelector('.run-question')?.textContent).toBe('Which buckets are public?')
     expect(screen.queryByText('Read the account')).toBeNull()
     expect(screen.getByText(/Only/)).toBeTruthy()
-    expect(screen.getByText('Bucket is publicly accessible')).toBeTruthy()
     expect(document.querySelector('.verdict code.ungrounded')).toBeNull()
+    expect(screen.getAllByText('Bucket is publicly accessible').length).toBeGreaterThan(0)
     expect(document.querySelector('.run-evidence-wrap')?.className).toContain('is-collapsed')
-    fireEvent.click(screen.getByRole('button', { name: /Evidence/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Sources/ }))
     expect(document.querySelector('.run-evidence-wrap')?.className).not.toContain('is-collapsed')
   })
 
@@ -177,7 +177,7 @@ describe('the run', () => {
         onReverify={async () => undefined}
       />,
     )
-    expect(screen.getByText(/had no matching evidence/)).toBeTruthy()
+    expect(screen.getByText(/no matching result/)).toBeTruthy()
     expect(screen.queryByText('Buckets in the reading')).toBeNull()
   })
 
@@ -197,6 +197,8 @@ describe('the run', () => {
     )
     expect(screen.getByText('Deterministic account check')).toBeTruthy()
     expect(screen.getAllByText(/demo is public/).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: /Sources/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Risks/ }))
     expect(screen.getByText('Bucket is publicly accessible')).toBeTruthy()
   })
   it('renders a table block from the evidence it cites', () => {
@@ -456,5 +458,166 @@ describe('the run', () => {
     expect(document.querySelector('.run-summary')?.textContent).toContain('Only demo is public.')
     expect(screen.queryByText('The agent has not composed an answer yet.')).toBeNull()
     expect(screen.getByText('Bucket is publicly accessible')).toBeTruthy()
+  })
+
+  it('keeps current risks outside a findings block in Sources', () => {
+    const two: UiEntry = {
+      ...survey,
+      id: 'two',
+      view: {
+        ...(survey.view as Extract<
+          NonNullable<Extract<UiEntry, { kind: 'tool' }>['view']>,
+          { kind: 'survey' }
+        >),
+        buckets: {
+          columns: ['Bucket', 'Public'],
+          rows: [
+            ['demo-a', 'public'],
+            ['demo-b', 'public'],
+          ],
+        },
+        issues: [
+          { ...issue('i1', 'public_exposure', 'A is public'), bucket: 'demo-a' },
+          { ...issue('i2', 'public_exposure', 'B is public'), bucket: 'demo-b' },
+        ],
+        coverage: {
+          visible: 2,
+          processed: 2,
+          truncated: false,
+          pending: 0,
+          denied: [],
+          unknown: [],
+          gone: [],
+        },
+      },
+    }
+    const filtered: UiEntry = {
+      ...report,
+      view: {
+        kind: 'report',
+        blocks: [{ kind: 'findings', bucket: 'demo-a', limit: 1 }],
+      },
+    }
+    render(
+      <Run
+        view={view([
+          {
+            id: 'u',
+            kind: 'user',
+            at: '2026-01-01T00:00:00Z',
+            text: 'Which risk?',
+            attachments: [],
+          },
+          two,
+          filtered,
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(screen.getByText('A is public')).toBeTruthy()
+    expect(screen.queryByText('B is public')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Sources/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Risks/ }))
+    expect(screen.getByText('B is public')).toBeTruthy()
+  })
+
+  it('expands more risks in place instead of opening Sources', () => {
+    const many: UiEntry = {
+      ...survey,
+      id: 'many',
+      view: {
+        ...(survey.view as Extract<
+          NonNullable<Extract<UiEntry, { kind: 'tool' }>['view']>,
+          { kind: 'survey' }
+        >),
+        issues: Array.from({ length: 6 }, (_, index) => ({
+          ...issue(`i${index}`, 'public_exposure', `Risk ${index + 1}`),
+          bucket: `demo-${index}`,
+        })),
+      },
+    }
+    const one: UiEntry = {
+      ...report,
+      view: { kind: 'report', blocks: [{ kind: 'findings', limit: 1 }] },
+    }
+    render(
+      <Run
+        view={view([
+          {
+            id: 'u',
+            kind: 'user',
+            at: '2026-01-01T00:00:00Z',
+            text: 'Which risks?',
+            attachments: [],
+          },
+          many,
+          one,
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(document.querySelectorAll('.findings-list .finding-row').length).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: /5 more risks/ }))
+    expect(document.querySelectorAll('.findings-list .finding-row').length).toBe(6)
+    expect(document.querySelector('.run-evidence-wrap')?.className).toContain('is-collapsed')
+  })
+
+  it('warns when a prose citation does not resolve', () => {
+    const cited: UiEntry = {
+      ...report,
+      view: {
+        kind: 'report',
+        blocks: [
+          {
+            kind: 'summary',
+            text: 'Only `demo` is public [1](#ev-99).',
+            evidence: ['ev-survey'],
+          },
+        ],
+      },
+    }
+    render(
+      <Run
+        view={view([
+          { id: 'u', kind: 'user', at: '2026-01-01T00:00:00Z', text: 'Public?', attachments: [] },
+          survey,
+          cited,
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(screen.getByText(/One citation did not resolve/)).toBeTruthy()
+    expect(document.querySelector('.run-cite')).toBeNull()
+  })
+
+  it('words a deterministic check without a hard-coded English title', () => {
+    render(
+      <Run
+        view={view([
+          survey,
+          { id: 'a', kind: 'answer', at: '2026-01-01T00:00:02Z', text: '`demo` 是公开的。' },
+        ])}
+        lang="zh"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(screen.queryByText('Open findings')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /来源/ }))
+    expect(screen.getByRole('button', { name: /风险/ })).toBeTruthy()
   })
 })

@@ -126,6 +126,15 @@ export interface BriefQuestion {
   context?: import('./contract').ContextRef[]
 }
 
+/** A method the agent consulted. Documentation, not a storage check. */
+export interface BriefMethod {
+  id: string
+  name: string
+  title: string
+  description: string
+  at: string
+}
+
 export interface BriefNotice {
   id: string
   code?: NoticeCode
@@ -155,6 +164,8 @@ export interface Brief {
   data: BriefData | null
   fixes: BriefFix[]
   checks: BriefCheck[]
+  /** Methods the agent loaded. They shape the answer but are not evidence checks. */
+  methods: BriefMethod[]
   coverage: BriefCoverage[]
   questions: BriefQuestion[]
   changes: PostureChange[]
@@ -232,11 +243,12 @@ export function readStateOfBrief(
   ]
   const failed = checks.filter(
     (check) =>
-      !['estate', 'fix', 'note'].includes(check.name) &&
+      !['estate', 'fix', 'change_plan', 'note'].includes(check.name) &&
       ['failed', 'refused', 'stopped', 'timeout'].includes(check.status),
   ).length
   const running = checks.some(
-    (check) => !['estate', 'fix', 'note'].includes(check.name) && check.status === 'running',
+    (check) =>
+      !['estate', 'fix', 'change_plan', 'note'].includes(check.name) && check.status === 'running',
   )
   const accessGapByKey = new Map<string, number>()
   for (const check of checks) {
@@ -517,6 +529,7 @@ export function buildBrief(
 ): Brief {
   const questions: BriefQuestion[] = []
   const checks: BriefCheck[] = []
+  const methods: BriefMethod[] = []
   const notices: BriefNotice[] = []
   const answers: { text: string; at: string; index: number }[] = []
   let lastAt: string | null = null
@@ -542,8 +555,36 @@ export function buildBrief(
     } else if (entry.kind === 'answer') {
       if (entry.text.trim()) answers.push({ text: entry.text.trim(), at: entry.at, index })
     } else if (entry.kind === 'tool') {
-      // plan/report/playbook shape the answer; they are not storage checks.
-      if (entry.name === 'plan' || entry.name === 'report' || entry.name === 'playbook') return
+      // The answer and plan are protocol, not checks. A skill is a method the
+      // user may inspect, but it never counts as a storage read.
+      if (
+        entry.name === 'plan' ||
+        entry.name === 'answer' ||
+        entry.name === 'report' ||
+        entry.name === 'skill' ||
+        entry.name === 'playbook'
+      ) {
+        if (entry.status === 'done' && entry.view) {
+          if (entry.view.kind === 'skill')
+            methods.push({
+              id: entry.id,
+              name: entry.view.name,
+              title: entry.view.title,
+              description: entry.view.description,
+              at: entry.at,
+            })
+          else if (entry.view.kind === 'playbook')
+            for (const card of entry.view.cards)
+              methods.push({
+                id: `${entry.id}:${card.name}`,
+                name: card.name,
+                title: card.name,
+                description: card.body.slice(0, 180),
+                at: entry.at,
+              })
+        }
+        return
+      }
       checks.push({
         id: entry.id,
         name: entry.name,
@@ -764,6 +805,7 @@ export function buildBrief(
     data,
     fixes: shownFixes,
     checks,
+    methods,
     coverage: [...coverage.values()],
     questions,
     changes,

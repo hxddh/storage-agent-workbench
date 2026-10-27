@@ -129,7 +129,7 @@ export function Home({
               >
                 {auditing ? t.checkingAccount : t.checkAccount}
               </button>
-              <button className="btn" type="button" onClick={onAddAccount}>
+              <button className="home-link" type="button" onClick={onAddAccount}>
                 {t.addAccount}
               </button>
               {!hasModel && (

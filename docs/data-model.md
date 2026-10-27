@@ -49,11 +49,11 @@ account's latest complete row and the newest complete row overall; `estate`
 history includes up to 30 reading rows in an unfiltered view.
 
 `search_docs` is rebuilt per conversation when the task settles and backfilled
-at startup; its FTS5 trigram mirror is rebuilt with it. It stores the request, the current report summary
-(`entry_id = 'verdict'`)
-and one row per finding (`entry_id = 'f:<source entry>:<finding key>'`). The
-source entry id lets a search hit load the evidence even when it is outside the
-window's initial page. Title search reads `task_meta` directly.
+at startup; its FTS5 trigram mirror is rebuilt with it. It stores the request,
+the current answer summary (`entry_id = 'verdict'`) and one row per risk
+(`entry_id = 'f:<source entry>:<finding key>'`). The source entry id lets a
+search hit load the evidence even when it is outside the window's initial page.
+Title search reads `task_meta` directly.
 
 `audit` records executed tool calls: tool, redacted target, outcome and
 conversation. A model-free check writes one durable `sa.audit` entry; its

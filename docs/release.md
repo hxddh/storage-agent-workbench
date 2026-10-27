@@ -8,11 +8,11 @@ manual dispatch with an existing tag.
 
 The normal CI workflow runs on `main` and pull requests:
 
-- typecheck, Biome lint, Vitest, build, bundle budget, production dependency
-  audit and SBOM;
+- typecheck, Biome lint, Vitest, build, bundle budget, secondary-text contrast,
+  production dependency audit and SBOM;
 - the real-window E2E with fake S3 and a fake OpenAI-compatible model;
 - the no-model first-run E2E;
-- the smoke eval, cold-start budget, screenshots and visual comparison;
+- the smoke eval, cold-start performance, screenshots and visual comparison;
 - the moto compatibility suite.
 
 The Release workflow itself does not run typecheck, lint or unit tests. Tag a
@@ -55,7 +55,7 @@ application itself still has the read-only, scope and secret boundaries in
 
 Real-model evaluation is valuable but not guaranteed by the repository alone:
 it needs a provider key and model variables. The release records a smoke result
-when they are absent. A full run covers 28 scenarios and fails on a must-pass
+when they are absent. A full run covers 29 scenarios and fails on a must-pass
 regression; the report is attached and named after the model, never the key.
 
 For an open-model baseline, point the same eval at Ollama. The local server
@@ -96,9 +96,12 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest release is **29.0.0**. Earlier release notes may describe retired
+The latest release is **30.0.0**. Earlier release notes may describe retired
 behavior; they are history. Keep `README.md`, `CHANGELOG.md` and this paragraph
 in step with the next tag, and refresh `docs/screenshot.png` if the surface
-changed. 29.0 unifies Run and evidence, adds FTS and older-entry loading,
-compare/append report blocks, opt-in scheduled checks and the v29 quality
-surfaces; its visual baselines and E2E cover that surface.
+changed. 30.0 makes the agent's prose the answer (`answer` with optional shown
+evidence), replaces the Brief page with one compact `Sources` index, makes the
+plan optional, turns `fix` into `change_plan` and `playbook` into four
+on-demand `skill` methods, tightens citation resolution and scope copy, and
+completes the P0–P3 interaction debt. Its visual baselines and E2E cover the new
+surface.

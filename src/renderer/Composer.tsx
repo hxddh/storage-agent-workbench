@@ -163,15 +163,22 @@ export function Composer({
     }
     if (!value && files.length === 0) return
     setBusy(true)
+    // Clear the persisted draft before creating the task. The composer is
+    // keyed by task id and unmounts immediately after onSend, so clearing it
+    // after the await would leave the sent question in the next task's draft.
+    const key = `sa.draft:${draftKey}`
+    window.localStorage.removeItem(key)
+    setText('')
     try {
       await onSend(
         value,
         files.map((file) => file.token),
         context,
       )
-      setText('')
       setFiles([])
       setContext([])
+    } catch {
+      setText(value)
     } finally {
       setBusy(false)
     }

@@ -2,12 +2,12 @@
 
 A local, read-only agent for S3-compatible object storage. You ask a question;
 the agent plans what to read, reads the account, remembers what it saw, and
-composes a **run** from its plan, answer blocks and the evidence behind them. A
+composes a **run** from its answer and the sources behind it. A
 **task** is the window's object, and the **estate** is the agent's memory.
 Nothing is written, deleted or changed in storage, and the app never applies a
-fix.
+change plan.
 
-Current release: **29.0.0**.
+Current release: **30.0.0**.
 
 ![A run in Storage Agent](docs/screenshot.png)
 
@@ -18,7 +18,7 @@ Current release: **29.0.0**.
   account-wide public access block and, on AWS, CloudWatch capacity. A survey
   reads up to 5,000 buckets, longest-unread first, and stops before its 300-second
   timeout rather than pretending it finished. Twelve deterministic rules turn
-  those readings into current findings; a blind read leaves its rule undecided.
+  those readings into current risks; a blind read leaves its rule undecided.
 - **Check account without a model or an API key.** Home can survey and read
   access evidence, then write one deterministic `sa.audit` entry. The task opens
   immediately and progress is visible. On a first run, demo storage is an
@@ -34,13 +34,10 @@ Current release: **29.0.0**.
 - **Explain changes.** A survey compares the reading with the last remembered
   posture. On AWS it asks CloudTrail who changed the bucket over a stated
   90-day window. A denied lookup leaves the actor unknown, never "nobody".
-- **Ask what happened.** `estate(history: true)` reads remembered Issue events
+- **Ask what happened.** `estate(history: true)` reads remembered risk events
   and posture changes, optionally narrowed by bucket, rule or date. It is the
   same estate and the same Data section, not a new transcript or tool.
-- **Know when the reading is closed.** The scope line says `Reads complete` or
-  `Reads open: n · m blocked`, and the Not read section names failed, blind,
-  partial and pending reads. A narrowed re-read never substitutes for account
-  coverage.
+- **Know when the reading is closed.** The scope line says `All n buckets checked`, `All n buckets checked · x open questions · y blocked`, `Not fully checked: n`, `From memory · …` or `Live read · …`; Sources → Not read names failed, blind, partial and pending reads. A narrowed re-read never substitutes for account coverage.
 - **Answer open questions with code mode.** `query` runs a short read-only
   script in a QuickJS sandbox for questions over many objects or buckets:
   largest prefixes, data untouched for two years, versions piling up. There is
@@ -49,7 +46,7 @@ Current release: **29.0.0**.
 - **Import logs and inventories.** Attach an access log or S3 Inventory, then
   use `dataset`, `aggregate`, `inventory` or `principal`. A full Inventory can
   be imported into a local dataset; raw rows never reach the model.
-- **Turn findings into one change plan.** The agent produces AWS CLI, Terraform
+- **Turn risks into one change plan.** `change_plan` produces AWS CLI, Terraform
   and API document text with an impact preview built from what the estate
   remembers. A batch plan merges lifecycle rules per bucket, checks the current
   policy/lifecycle before replacing it, states its baseline, marks manual
@@ -58,13 +55,8 @@ Current release: **29.0.0**.
 - **Close the loop without a model.** Re-read the buckets a task touched and
   compare the result with its plan: confirmed, not applied or still unknown,
   plus skipped and truncated coverage. A reading record on Home keeps the last
-  complete read and the new findings since it.
-- **Keep the agent visible.** A task is a run: the agent's own short plan, the
-  answer blocks it composed, the evidence each block cites, then the findings,
-  changes, open questions, fixes, data and checks. The model can choose a table,
-  timeline, plan or code block; it cannot invent the facts behind it. Copy,
-  save Markdown, check again, re-verify, copy a task link, export the evidence
-  pack and save PDF live behind a visible overflow menu. Tables copy as CSV.
+  complete read and the new risks since it.
+- **Keep the agent visible.** A task is a run: the agent's own optional plan, its Markdown answer, one proof view, and a compact **Sources** index for risks, data, the change plan, tool calls, checked-again results, changes, methods and not-read coverage. The model writes prose; the window resolves every cited evidence id and renders the tool view. Copy, save Markdown, check again, re-check, copy a task link, export sources and save PDF live behind a visible overflow menu. Tables copy as CSV.
 - **Use the model you have.** Pick OpenAI, Anthropic or an OpenAI-compatible
   endpoint; paste a key and the provider's models are fetched. Context window
   and reasoning effort are inferred. Models already running in Ollama or LM
@@ -81,8 +73,8 @@ notifications.
 ┌──────────────────────────── Electron ────────────────────────────┐
 │ renderer (React, sandboxed)        main                          │
 │ tasks · run · composer      ⇄ IPC ⇄  pi-durable harness          │
-│                                         ├ 10 storage tools       │
-│                                         ├ plan/report/playbook   │
+│                                         ├ 7 read tools           │
+│                                         ├ answer / skill / plan  │
 │                                         ├ estate (rules/issues)  │
 │                                         ├ s3 (readers/access)    │
 │                                         └ pi-ai → model          │
@@ -138,8 +130,8 @@ fallbacks.
 
 ## Safety and honest limits
 
-- No storage put, delete or mutate call exists. Fix commands are text for the
-  user to apply.
+- No storage put, delete or mutate call exists. Change-plan commands are text
+  for the user to apply.
 - Secrets are sealed with Electron `safeStorage`, or a local AES-256-GCM file
   when no OS keyring exists. Profile accounts store a profile name, never a key.
   The renderer receives masked metadata, never a credential.

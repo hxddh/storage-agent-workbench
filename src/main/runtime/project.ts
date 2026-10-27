@@ -50,11 +50,15 @@ const TOOL_NAMES = new Set<ToolName>([
   'config',
   'probe',
   'estate',
-  'fix',
+  'change_plan',
   'note',
   'query',
-  'playbook',
+  'skill',
   'plan',
+  'answer',
+  // Legacy task rows.
+  'fix',
+  'playbook',
   'report',
 ])
 

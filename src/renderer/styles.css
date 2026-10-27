@@ -1786,7 +1786,8 @@ pre.code {
   padding: 0 32px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 12px;
 }
 .sheet-head h2 {
   font-size: 15px;
@@ -1794,25 +1795,23 @@ pre.code {
   letter-spacing: -0.015em;
   margin: 0;
 }
-.sheet-head .actions {
+.sheet-close {
   -webkit-app-region: no-drag;
-  display: flex;
-  gap: 6px;
-}
-.sheet-done {
+  width: 30px;
   height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-s);
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 12.5px;
-  font-weight: 540;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
 }
-.sheet-done:hover,
-.sheet-done:focus-visible {
-  border-color: var(--ink-3);
+.sheet-close:hover,
+.sheet-close:focus-visible {
+  border-color: var(--line-strong);
   background: var(--surface-2);
+  color: var(--ink);
 }
 
 .sheet-body {
@@ -2994,7 +2993,7 @@ pre.code {
   .dragbar,
   .brief-meta,
   .brief-actions,
-  .checks-section {
+  .source-index {
     display: none !important;
   }
   .run-evidence-wrap.is-collapsed {
@@ -3831,5 +3830,133 @@ pre.code {
   .home-ledger-meta,
   .home-ledger-risk {
     grid-column: 1 / -1;
+  }
+}
+
+/* ---------- 30.0.0 Sources ---------- */
+.run-sources {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.source-index {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+.source-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) 16px;
+  align-items: baseline;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: var(--ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.source-row:hover,
+.source-row:focus-visible,
+.source-row.open {
+  color: var(--ink);
+}
+.source-label {
+  font-size: 12.5px;
+  font-weight: 560;
+}
+.source-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 11.75px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-row .chev {
+  align-self: center;
+  color: var(--ink-3);
+  transition: transform 140ms ease;
+}
+.source-row .chev.open {
+  transform: rotate(90deg);
+}
+
+.source-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.run-proof {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 18px;
+}
+.run-proof-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.source-receipt {
+  margin: 0;
+}
+
+.method-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.4fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.method-row:last-child {
+  border-bottom: 0;
+}
+.method-title {
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 560;
+}
+.method-desc {
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.source-empty {
+  margin: 0;
+  padding: 12px 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+@media (max-width: 620px) {
+  .method-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .source-row {
+    gap: 10px;
+  }
+}
+
+@media (min-width: 861px) {
+  .sidebar-close {
+    display: none;
+  }
+  /* The sidebar already lists these tasks; Home stays a ledger on desktop. */
+  .home-recent {
+    display: none;
   }
 }

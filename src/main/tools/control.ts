@@ -1,7 +1,7 @@
 import { Type } from '@earendil-works/pi-ai'
 import { defineTool } from '@earendil-works/pi-durable'
-import type { PlanStep, ReportBlock, ReportTone, ToolDetails } from '@shared/contract'
-import { PLAYBOOK_NAMES, PLAYBOOKS } from '../playbooks'
+import type { PlanStep, ToolDetails } from '@shared/contract'
+import { SKILL_NAMES, SKILLS } from '../skills'
 
 const STEP_STATUS = Type.Union([
   Type.Literal('pending'),
@@ -14,39 +14,6 @@ const stepSchema = Type.Object({
   title: Type.String({ maxLength: 160, description: 'One short step.' }),
   status: Type.Optional(STEP_STATUS),
   detail: Type.Optional(Type.String({ maxLength: 320 })),
-})
-
-const blockSchema = Type.Object({
-  kind: Type.Union([
-    Type.Literal('summary'),
-    Type.Literal('markdown'),
-    Type.Literal('compare'),
-    Type.Literal('callout'),
-    Type.Literal('table'),
-    Type.Literal('findings'),
-    Type.Literal('timeline'),
-    Type.Literal('plan'),
-    Type.Literal('code'),
-  ]),
-  text: Type.Optional(Type.String({ maxLength: 1400 })),
-  title: Type.Optional(Type.String({ maxLength: 160 })),
-  tone: Type.Optional(
-    Type.Union([
-      Type.Literal('info'),
-      Type.Literal('warn'),
-      Type.Literal('danger'),
-      Type.Literal('ok'),
-    ]),
-  ),
-  evidence: Type.Optional(
-    Type.Array(Type.String({ maxLength: 240 }), {
-      maxItems: 8,
-      description: 'Tool call ids from the <untrusted-data evidence="…"> attribute.',
-    }),
-  ),
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
-  bucket: Type.Optional(Type.String({ maxLength: 255 })),
-  code: Type.Optional(Type.String({ maxLength: 120 })),
 })
 
 function details(view: ToolDetails['view'], target: string, note: string | null): ToolDetails {
@@ -65,91 +32,16 @@ function evidence(value: unknown): string[] {
         .filter((item): item is string => typeof item === 'string')
         .map((item) => item.trim())
         .filter(Boolean)
-        .slice(0, 8),
+        .slice(0, 2),
     ),
   ]
-}
-
-function reportBlocks(value: unknown): ReportBlock[] {
-  if (!Array.isArray(value)) return []
-  const blocks: ReportBlock[] = []
-  for (const raw of value.slice(0, 12)) {
-    if (!raw || typeof raw !== 'object') continue
-    const item = raw as Record<string, unknown>
-    const kind = item.kind
-    const title = text(item.title, 160) || undefined
-    if (kind === 'summary' || kind === 'callout') {
-      const body = text(item.text, kind === 'summary' ? 1400 : 700)
-      if (!body) continue
-      const ids = evidence(item.evidence)
-      if (kind === 'summary') blocks.push({ kind, text: body, evidence: ids })
-      else {
-        const tone: ReportTone =
-          item.tone === 'warn' || item.tone === 'danger' || item.tone === 'ok' ? item.tone : 'info'
-        blocks.push({
-          kind,
-          tone,
-          text: body,
-          evidence: ids,
-          ...(title ? { title } : {}),
-        })
-      }
-      continue
-    }
-    if (kind === 'markdown') {
-      const body = text(item.text, 4000)
-      if (!body) continue
-      blocks.push({
-        kind,
-        text: body,
-        evidence: evidence(item.evidence),
-        ...(title ? { title } : {}),
-      })
-      continue
-    }
-    if (kind === 'compare') {
-      const ids = evidence(item.evidence).slice(0, 2)
-      if (ids.length < 2) continue
-      blocks.push({ kind, evidence: ids, ...(title ? { title } : {}) })
-      continue
-    }
-    if (kind === 'findings') {
-      const limit =
-        typeof item.limit === 'number' && Number.isFinite(item.limit)
-          ? Math.max(1, Math.min(20, Math.trunc(item.limit)))
-          : undefined
-      blocks.push({
-        kind,
-        ...(text(item.bucket, 255) ? { bucket: text(item.bucket, 255) } : {}),
-        ...(text(item.code, 120) ? { code: text(item.code, 120) } : {}),
-        ...(title ? { title } : {}),
-        ...(limit ? { limit } : {}),
-      })
-      continue
-    }
-    if (kind === 'table' || kind === 'timeline' || kind === 'plan' || kind === 'code') {
-      const ids = evidence(item.evidence)
-      if (!ids.length) continue
-      const limit =
-        typeof item.limit === 'number' && Number.isFinite(item.limit)
-          ? Math.max(1, Math.min(20, Math.trunc(item.limit)))
-          : undefined
-      blocks.push({
-        kind,
-        evidence: ids,
-        ...(title ? { title } : {}),
-        ...(kind === 'table' || kind === 'timeline' ? (limit ? { limit } : {}) : {}),
-      } as ReportBlock)
-    }
-  }
-  return blocks
 }
 
 export function planTool() {
   return defineTool({
     name: 'plan',
     description:
-      'Publish or update the investigation plan the user sees. Call it before the first read and after a step materially changes. Keep it to 3–6 short steps; the plan is a promise, not a transcript.',
+      'Publish or update the investigation plan the user sees. Use it when the work has several distinct steps; omit it for a short read. Keep it to 1–6 short steps. The plan is process, not a transcript.',
     parameters: Type.Object({
       steps: Type.Array(stepSchema, { minItems: 1, maxItems: 6 }),
       note: Type.Optional(Type.String({ maxLength: 300 })),
@@ -173,13 +65,13 @@ export function planTool() {
           }
         })
         .filter((step) => step.title)
-        .slice(0, 12)
+        .slice(0, 6)
       const note = text(args.note, 300) || undefined
       return {
         output: [
           {
             type: 'text' as const,
-            text: `Plan recorded with ${steps.length} step${steps.length === 1 ? '' : 's'}. The window shows it above your answer.`,
+            text: `Plan recorded with ${steps.length} step${steps.length === 1 ? '' : 's'}. The window shows it while you work.`,
           },
         ],
         details: details(
@@ -192,102 +84,131 @@ export function planTool() {
   })
 }
 
-export function reportTool() {
+export function answerTool() {
   return defineTool({
-    name: 'report',
+    name: 'answer',
     description:
-      'Compose the answer the window renders. Blocks are ordered. summary, markdown and callout carry your prose and cite the tool-call ids that support it; compare takes exactly two evidence ids and renders them side by side; table, timeline, plan and code point at one tool result each; findings selects deterministic estate findings. Use one summary and at most one proof block for the question; do not append findings, changes, checks or a full survey for completeness. Call it once when the investigation is ready; after it, write one short sentence at most.',
+      'Submit the answer the window renders. Write normal Markdown in `text`; cite the `show` array as [1](#ev-1), [2](#ev-2). Put at most two evidence ids in `show`, first the one proof that answers the question. Never write a table of facts yourself. Omit this tool and write the answer as your final message when no rendered evidence is needed.',
     parameters: Type.Object({
       title: Type.Optional(Type.String({ maxLength: 160 })),
-      blocks: Type.Array(blockSchema, { minItems: 1, maxItems: 12 }),
-      append: Type.Optional(
-        Type.Boolean({ description: 'Append these blocks to the previous report in this task.' }),
+      text: Type.String({ maxLength: 8000 }),
+      show: Type.Optional(
+        Type.Array(Type.String({ maxLength: 240 }), {
+          maxItems: 2,
+          description: 'Tool-call ids from the <untrusted-data evidence="…"> attribute.',
+        }),
       ),
     }),
     execute: async (args) => {
-      const title = text(args.title, 160) || undefined
-      const blocks = reportBlocks(args.blocks)
-      if (!blocks.length) {
-        const failed: ToolDetails = {
-          target: 'answer',
-          note: 'A report needs a summary, a callout or an evidence block.',
-          view: null,
-          ms: 0,
-          status: 'failed',
-        }
+      const body = text(args.text, 8000)
+      const show = evidence(args.show)
+      if (!body && !show.length) {
         return {
           output: [
             {
               type: 'text' as const,
-              text: 'A report needs at least one valid block. Every data block needs the evidence id from a tool result.',
-            },
-          ],
-          isError: true,
-          details: failed as never,
-        }
-      }
-      return {
-        output: [
-          {
-            type: 'text' as const,
-            text: `Report recorded with ${blocks.length} block${blocks.length === 1 ? '' : 's'}. The window renders it; do not repeat it in prose.`,
-          },
-        ],
-        details: details(
-          {
-            kind: 'report',
-            blocks,
-            ...(title ? { title } : {}),
-            ...(args.append ? { append: true } : {}),
-          },
-          'answer',
-          `${blocks.length} blocks`,
-        ) as never,
-      }
-    },
-  })
-}
-
-export function playbookTool() {
-  return defineTool({
-    name: 'playbook',
-    description:
-      'Read a field-guide card when the question needs a method, a compatibility rule or a safety detail. Omit card to list the available cards. This is documentation, not a storage read.',
-    parameters: Type.Object({
-      card: Type.Optional(Type.String({ maxLength: 80 })),
-    }),
-    execute: async (args) => {
-      const wanted = text(args.card, 80).toLowerCase()
-      const cards = wanted
-        ? PLAYBOOKS[wanted]
-          ? [{ name: wanted, body: PLAYBOOKS[wanted] }]
-          : []
-        : PLAYBOOK_NAMES.map((name) => ({ name, body: PLAYBOOKS[name] ?? '' }))
-      if (wanted && !cards.length) {
-        return {
-          output: [
-            {
-              type: 'text' as const,
-              text: `No card named "${wanted}". Available: ${PLAYBOOK_NAMES.join(', ')}.`,
+              text: 'An answer needs Markdown text or one evidence id.',
             },
           ],
           isError: true,
           details: {
-            target: wanted,
-            note: 'Unknown playbook card',
+            target: 'answer',
+            note: 'Empty answer',
             view: null,
             ms: 0,
             status: 'failed',
           } as never,
         }
       }
-      const body = cards.map((card) => `## ${card.name}\n${card.body}`).join('\n\n')
+      const title = text(args.title, 160) || undefined
       return {
-        output: [{ type: 'text' as const, text: body }],
+        output: [
+          {
+            type: 'text' as const,
+            text: 'Answer recorded. The window renders it; do not repeat it in prose.',
+          },
+        ],
         details: details(
-          { kind: 'playbook', cards },
-          wanted || 'playbook',
-          cards.length === 1 ? wanted : `${cards.length} cards`,
+          {
+            kind: 'report',
+            ...(title ? { title } : {}),
+            ...(body ? { text: body } : {}),
+            ...(show.length ? { show } : {}),
+            blocks: [],
+          },
+          'answer',
+          show.length ? `${show.length} evidence id${show.length === 1 ? '' : 's'}` : null,
+        ) as never,
+      }
+    },
+  })
+}
+
+export function skillTool() {
+  return defineTool({
+    name: 'skill',
+    description:
+      'Load one method when the question needs a workflow, a compatibility rule or a safety detail. Omit name to list the four methods. This returns documentation, not storage evidence.',
+    parameters: Type.Object({
+      name: Type.Optional(Type.String({ maxLength: 80 })),
+    }),
+    execute: async (args) => {
+      const wanted = text(args.name, 80).toLowerCase()
+      const skill = wanted ? SKILLS[wanted] : undefined
+      if (wanted && !skill) {
+        return {
+          output: [
+            {
+              type: 'text' as const,
+              text: `No method named "${wanted}". Available: ${SKILL_NAMES.join(', ')}.`,
+            },
+          ],
+          isError: true,
+          details: {
+            target: wanted,
+            note: 'Unknown method',
+            view: null,
+            ms: 0,
+            status: 'failed',
+          } as never,
+        }
+      }
+      if (!skill) {
+        return {
+          output: [
+            {
+              type: 'text' as const,
+              text: SKILL_NAMES.map((name) => {
+                const item = SKILLS[name]!
+                return `${item.name} — ${item.title}: ${item.description}`
+              }).join('\n'),
+            },
+          ],
+          details: details(
+            {
+              kind: 'skill',
+              name: 'index',
+              title: 'Methods',
+              description: 'Available methods',
+              body: SKILL_NAMES.join(', '),
+            },
+            'methods',
+            `${SKILL_NAMES.length} methods`,
+          ) as never,
+        }
+      }
+      return {
+        output: [{ type: 'text' as const, text: skill.body }],
+        details: details(
+          {
+            kind: 'skill',
+            name: skill.name,
+            title: skill.title,
+            description: skill.description,
+            body: skill.body,
+          },
+          skill.name,
+          skill.title,
         ) as never,
       }
     },

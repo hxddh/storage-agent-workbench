@@ -69,6 +69,10 @@ function plan(body) {
     return { text: 'The readings do not show that name.' }
   }
 
+  if (ask.includes('access method') && !called.has('skill')) {
+    return { tool: call('call_skill_1', 'skill', { name: 'access' }) }
+  }
+
   if (!called.has('plan')) {
     return {
       tool: call('call_plan_1', 'plan', {
@@ -87,7 +91,7 @@ function plan(body) {
     !called.has('estate') &&
     !called.has('config') &&
     !called.has('query') &&
-    !called.has('fix')
+    !called.has('change_plan')
   ) {
     if (ask.includes('applied')) {
       return { tool: call('call_survey_1', 'survey', { buckets: ['demo-public'] }) }
@@ -104,7 +108,7 @@ function plan(body) {
       }
     }
     if (ask.includes('fix')) {
-      return { tool: call('call_fix_1', 'fix', { bucket: 'demo-private', code: 'no_abort_mpu' }) }
+      return { tool: call('call_change_1', 'change_plan', { bucket: 'demo-private', code: 'no_abort_mpu' }) }
     }
     if (ask.includes('history') || ask.includes('changed')) {
       return { tool: call('call_history_1', 'estate', { history: true }) }
@@ -132,7 +136,7 @@ function plan(body) {
     }
   }
 
-  if (called.has('report') && planCalls < 3) {
+  if (called.has('answer') && planCalls < 3) {
     return {
       tool: call('call_plan_3', 'plan', {
         note: 'The answer is composed.',
@@ -145,7 +149,7 @@ function plan(body) {
     }
   }
 
-  if (planCalls === 1 && !called.has('report')) {
+  if (planCalls === 1 && !called.has('answer')) {
     return {
       tool: call('call_plan_2', 'plan', {
         note: 'The reads are in; compose next.',
@@ -158,7 +162,7 @@ function plan(body) {
     }
   }
 
-  if (!called.has('report')) {
+  if (!called.has('answer')) {
     let text =
       'Only `demo-public` is public. `demo-private` is private and blocks public access.'
     if (ask.includes('applied')) text = '`demo-public` is no longer public.'
@@ -167,37 +171,37 @@ function plan(body) {
     else if (ask.includes('largest')) text = '`reports/` holds everything in `demo-public`.'
     else if (ask.includes('fix')) text = 'Add an abort rule for incomplete uploads on `demo-private`.'
     else if (ask.includes('history') || ask.includes('changed'))
-      text = 'The history records open issues on `demo-public` and `demo-private`.'
+      text = 'The history records open risks on `demo-public` and `demo-private`.'
     else if (ask.includes('issue'))
       text =
-        'Eight issues are open; the highest severity is public exposure on `demo-public`.'
+        '8 risks are open; the highest severity is public exposure on `demo-public`.'
     else if (ask.includes('ghost'))
       text = '`demo-public` is public and so is `ghost-bucket`.'
     else if (publicBucket && publicBucket !== 'demo-public')
       text = `\`${publicBucket}\` is publicly accessible.`
 
-    const blocks = [{ kind: 'summary', text, evidence: [] }]
-    if (ask.includes('issue')) blocks.push({ kind: 'findings', title: 'Open findings' })
-    else if (ask.includes('history') || ask.includes('changed')) {
+    const show = []
+    if (ask.includes('history') || ask.includes('changed')) {
       const id = evidence('estate')
-      if (id) blocks.push({ kind: 'timeline', title: 'History', evidence: [id], limit: 5 })
+      if (id) show.push(id)
     } else if (ask.includes('largest')) {
       const id = evidence('query')
-      if (id) blocks.push({ kind: 'table', title: 'Largest prefixes', evidence: [id], limit: 5 })
+      if (id) show.push(id)
     } else if (ask.includes('who can read')) {
       const id = evidence('config')
-      if (id) blocks.push({ kind: 'table', title: 'Access', evidence: [id] })
+      if (id) show.push(id)
     } else if (ask.includes('fix')) {
-      const id = evidence('fix')
-      if (id) blocks.push({ kind: 'plan', title: 'Change plan', evidence: [id] })
+      const id = evidence('change_plan')
+      if (id) show.push(id)
     } else if (ask.includes('public')) {
       const id = evidence('survey')
-      if (id) blocks.push({ kind: 'table', title: 'Buckets', evidence: [id], limit: 5 })
+      if (id) show.push(id)
     }
     return {
-      tool: call('call_report_1', 'report', {
+      tool: call('call_answer_1', 'answer', {
         title: 'Answer',
-        blocks,
+        text,
+        ...(show.length ? { show } : {}),
       }),
     }
   }
