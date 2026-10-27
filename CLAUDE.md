@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 30.0.0**. Read
+> Implementation contract for **Storage Agent 31.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes and the changelog are history.
@@ -72,11 +72,11 @@ The invariant:
   builds only, with a visible missing-feed state.
 - `src/preload/index.ts` — `contextBridge` surface, sandboxed, CJS.
 - `src/shared/contract.ts` — the single type contract; both sides import it.
-- `src/shared/brief.ts` — the deterministic source projection from `UiEntry[]`:
+- `src/shared/facts.ts` — the deterministic facts projection from `UiEntry[]`:
   risks, methods, coverage, change plans, data and tool calls.
 - `src/shared/run.ts` — the agent-native projection: the latest optional plan,
-  the Markdown answer and its `show` ids, evidence resolution, citation
-  validation, grounding and deterministic synthesis.
+  the final Markdown answer, evidence resolution, citation validation and
+  grounding.
 - `src/shared/audit.ts` — the deterministic summary for a model-free account
   check; it names only buckets and counts already present in survey views.
 - `src/shared/grounding.ts` — which names and exposure a task's results show;
@@ -95,7 +95,7 @@ The invariant:
   hooks, per-run read coverage and the one clean-claim correction.
 - `src/main/tools/*` — read-only storage tools through `agentTool()`, which
   owns scope, bounds, timeout, audit, redaction, status, evidence ids and the
-  untrusted envelope; plus the control tools `plan`, `answer` and `skill` in
+  untrusted envelope; plus the control tools `plan` and `skill` in
   `tools/control.ts`. `estate` returns current memory and, with `history`,
   Issue events and posture changes filtered by account, bucket, code or
   `since`. `change_plan` returns deterministic change text.
@@ -147,13 +147,12 @@ includes reading rows only in an unfiltered history.
 to LIKE; title search reads `task_meta` directly). It
 is rebuilt for a conversation when that conversation settles, and backfilled at
 startup for tasks without rows. It stores the request, the current answer summary
-(`entry_id = 'verdict'`) and one row per risk (`f:<source entry>:<key>`).
+(`entry_id = 'answer'`) and one row per risk (`f:<source entry>:<key>`).
 A model-free check writes one `sa.audit` entry; its `survey` and `access`
 progress events are transient and never persisted. It has no `sa.user`
 request, so the page shows its synthesized answer and Sources index without a fake
-question. Its search rows are written from the final answer (or a legacy report)
-directly, because a `write` submission may not have reached the active view when
-indexing runs.
+question. Its search rows are derived from the same durable entries as the run, after
+the active watch and durable view settle.
 
 Deleting a task purges `task_meta`, `search_docs`, its pi conversation, entries,
 tasks, submissions, documents and revisions, datasets, audit rows and
@@ -163,12 +162,11 @@ opt into daily or weekly read-only checks while the app is open.
 
 ## Agent
 
-One extension, thirteen tools, six capability groups. Seven reads (`survey`,
+One extension, twelve tools, six capability groups. Seven reads (`survey`,
 `buckets`, `objects`, `object`, `config`, `probe`, `query`) cover storage;
 `estate` and `note` cover memory; `change_plan` returns deterministic change
-text; `answer` submits Markdown with up to two evidence ids; `plan` publishes an
-optional investigation plan; `skill` loads one of four methods. Legacy task
-entries named `fix`, `report` and `playbook` still project for older tasks.
+text; `plan` publishes an optional investigation plan; `skill` loads one of four
+methods. The final assistant message is the answer; there is no answer tool.
 `query` exists because questions over many objects or buckets (largest prefixes,
 data untouched for a year, buckets by size) cannot be carried to the model by a
 fixed tool without flooding its context or adding one tool per question. It also
@@ -178,13 +176,12 @@ no separate analyze tool. Adding another storage tool requires saying why
 
 Prompt sections: identity, today, policy, capabilities, compose, estate digest,
 language. The model owns the investigation and writes normal Markdown. It does
-not have to call `plan`; the plan is optional and appears only when useful. It
-calls `answer` when the window should render proof, passing at most two evidence
-ids in `show`; citations in the text are `[1](#ev-1)` in that array order. The
-window resolves the actual tool view, validates every citation, drops a missing
-view with a quiet note, and marks names the task never showed. The model never
-authors a table of facts or an Issue transition. The final message without
-`answer` is also a valid answer.
+not have to call `plan`; the plan is optional and appears only when useful. Its
+final message is the answer. It cites a tool result by actual evidence id as
+`[1](#ev-<id>)`; the window resolves the tool view, validates every citation,
+drops a missing view with a quiet note, and marks names the task never showed.
+The model never authors a table of facts or an Issue transition. There is no
+answer tool and no forced report protocol.
 
 `skill` is a real on-demand method, not a check: access evidence, change
 planning, inventory/logs and capacity/cost. The model sees the four descriptions
@@ -244,7 +241,7 @@ Every task is an agent run page. Earlier turns appear as compact expandable
 rows under **Earlier in this task**; the latest question is the run header. A
 deterministic check has no fake question. The run header names the account(s),
 the scope line (`All n buckets checked`, `Not fully checked: n`,
-`From memory · …`, `Live read · …`, or `No live read`), checked/total buckets
+`From memory · …`, `Live read · …`, or `Not read yet`), checked/total buckets
 and read time. A failed or stopped storage read keeps the line open. Copy and
 one overflow menu sit in the header: save Markdown, check again, re-check,
 copy link, export sources and save PDF. `Check again` opens a new check task;
@@ -254,11 +251,11 @@ Home reads its "last complete read" from the reading records.
 The plan section is the agent's own 1–6 steps (commonly 3–6) with
 pending/active/done/blocked states; it is optional and not a transcript. It is visible while the run is
 live and remains for a stopped run or a blocked step; a settled answer folds it
-away. The answer is normal Markdown with citations; the agent may show one
-proof view from tool evidence. An answer without a proof falls back to the
-current risk list when risks exist. A `show` view is rendered with its actual
-tool columns; a missing id is omitted with a quiet note. A legacy 27–29 report
-entry still renders its ordered blocks for old tasks.
+away. The answer is normal Markdown with citations. The window shows one proof
+view: the first cited tool result, otherwise the latest data read, otherwise the
+latest change plan. When there is no proof, the current risk list stands in its
+place. A missing citation is shown as plain text with a quiet note. There is no
+report block renderer and no legacy entry path.
 
 **Sources** is one compact index below the answer: Risks, Data, Change plan,
 Tool calls, Not checked, Checked again, Changes and Methods, each row only when

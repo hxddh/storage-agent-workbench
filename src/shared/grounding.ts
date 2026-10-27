@@ -47,7 +47,7 @@ export function namesInView(
     case 'config':
       names.add(view.bucket)
       break
-    case 'fix':
+    case 'change':
       names.add(view.bucket)
       for (const step of view.plan?.steps ?? []) if (step.bucket) names.add(step.bucket)
       for (const item of view.plan?.residual ?? []) if (item.bucket) names.add(item.bucket)
@@ -78,7 +78,7 @@ export function namesInView(
   }
 }
 
-const CONTROL = new Set(['playbook', 'skill', 'plan', 'answer', 'report'])
+const CONTROL = new Set(['skill', 'plan'])
 
 export function knownNames(entries: readonly UiEntry[]): Set<string> {
   const names = new Set<string>()
@@ -92,7 +92,7 @@ export function knownNames(entries: readonly UiEntry[]): Set<string> {
   return names
 }
 
-/** Backticked names in the verdict that no tool result in the task shows. */
+/** Backticked names in the answer that no tool result in the task shows. */
 export function ungrounded(verdict: string, known: ReadonlySet<string>): string[] {
   const out = new Set<string>()
   for (const match of verdict.matchAll(/`([^`\n]{1,256})`/g)) {

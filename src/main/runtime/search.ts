@@ -1,11 +1,11 @@
-import { briefSearchText, buildBrief } from '@shared/brief'
 import type { SearchHit, UiEntry } from '@shared/contract'
-import { buildRun, reportSearchText } from '@shared/run'
+import { deriveFacts, factsSearchText } from '@shared/facts'
+import { buildRun } from '@shared/run'
 import type { AppDb } from '../db'
 
 /**
  * Sidebar search over titles (read from `task_meta`) and the derived
- * `search_docs` index: requests, findings and the current verdict. `LIKE`
+ * `search_docs` index: requests, findings and the current answer. `LIKE`
  * handles Chinese substrings that a trigram index cannot.
  */
 export async function searchTasks(db: AppDb, query: string): Promise<SearchHit[]> {
@@ -62,7 +62,7 @@ export function searchDocsFor(
     if (entry.kind === 'user')
       docs.push({ entryId: entry.id, kind: 'user', text: entry.text, at: entry.at })
   }
-  // A report is compositional; an older/partial task may not project one. The
+  // The projection may be partial while a task is still working; the
   // deterministic evidence must still be searchable even then.
   let run: ReturnType<typeof buildRun> | null = null
   try {
@@ -70,14 +70,6 @@ export function searchDocsFor(
   } catch {
     run = null
   }
-  docs.push(...briefSearchText(run?.brief ?? buildBrief(entries)))
-  const report = run ? reportSearchText(run) : ''
-  if (report)
-    docs.push({
-      entryId: 'verdict',
-      kind: 'answer',
-      text: report,
-      at: run?.report?.at ?? '',
-    })
+  docs.push(...factsSearchText(run?.facts ?? deriveFacts(entries)))
   return docs
 }

@@ -96,12 +96,12 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest release is **30.0.0**. Earlier release notes may describe retired
-behavior; they are history. Keep `README.md`, `CHANGELOG.md` and this paragraph
-in step with the next tag, and refresh `docs/screenshot.png` if the surface
-changed. 30.0 makes the agent's prose the answer (`answer` with optional shown
-evidence), replaces the Brief page with one compact `Sources` index, makes the
-plan optional, turns `fix` into `change_plan` and `playbook` into four
-on-demand `skill` methods, tightens citation resolution and scope copy, and
-completes the P0–P3 interaction debt. Its visual baselines and E2E cover the new
-surface.
+The latest published release is **31.0.0** (2026-10-27). Earlier release notes
+may describe retired behavior; they are history. Keep `README.md`,
+`CHANGELOG.md` and this paragraph in step with the next tag, and refresh
+`docs/screenshot.png` if the surface changed. 31.0 removes the report block
+protocol and the answer tool: the final assistant message is the answer, tool
+results are the only evidence, and a citation points at the actual evidence id.
+It also removes fix/playbook and all pre-30 compatibility views, renames the
+deterministic projection to `facts`, and renames the change plan model. Its
+visual baselines and E2E cover the new surface.

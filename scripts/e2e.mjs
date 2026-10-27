@@ -212,24 +212,24 @@ try {
     await fail('a fixed finding is still on the page')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-verified.png') })
 
-  // A verdict naming a bucket no tool returned is corrected once, then marked.
+  // An answer naming a bucket no tool returned is corrected once; the correction replaces it.
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('Is ghost-bucket exposed?')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.verdict code.ungrounded', { timeout: 60_000 })
-  if (!seen.has('correction')) await fail('the harness did not ask for a grounded verdict')
+  await page.waitForSelector('.verdict:has-text("readings do not show")', { timeout: 60_000 })
+  if (!seen.has('correction')) await fail('the harness did not ask for a grounded answer')
   console.log('GROUNDING OK')
 
   await page.getByRole('button', { name: 'New task' }).click()
-  await page.locator('.composer textarea').fill('Show the fix for demo-private')
+  await page.locator('.composer textarea').fill('Show the change plan for demo-private')
   await page.keyboard.press('Enter')
   await page.waitForSelector('text=AWS CLI', { timeout: 60_000 })
   await page.waitForSelector('.plan', { timeout: 10_000 })
-  const fixBody = await page.locator('body').innerText()
-  console.log('FIX OK')
-  console.log(fixBody.slice(0, 900))
+  const changeBody = await page.locator('body').innerText()
+  console.log('CHANGE OK')
+  console.log(changeBody.slice(0, 900))
   await page.waitForTimeout(350)
-  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-fix.png') })
+  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-change.png') })
 
   // Re-verify compares the account with the plan; it does not assume the user applied it.
   await page.getByRole('button', { name: 'More actions' }).click()

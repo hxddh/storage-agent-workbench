@@ -145,7 +145,7 @@ await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout:
 
 // One deterministic change plan, then the same task re-verified against it.
 await page.getByRole('button', { name: 'New task' }).click()
-await page.locator('.composer textarea').fill('Show the fix for demo-private')
+await page.locator('.composer textarea').fill('Show the change plan for demo-private')
 await page.keyboard.press('Enter')
 await page.waitForSelector('.plan', { timeout: 60_000 })
 await page.locator('.plan').scrollIntoViewIfNeeded()

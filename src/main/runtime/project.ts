@@ -55,11 +55,6 @@ const TOOL_NAMES = new Set<ToolName>([
   'query',
   'skill',
   'plan',
-  'answer',
-  // Legacy task rows.
-  'fix',
-  'playbook',
-  'report',
 ])
 
 function iso(timestamp: number | undefined): string {

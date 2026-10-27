@@ -2,12 +2,12 @@
 
 A local, read-only agent for S3-compatible object storage. You ask a question;
 the agent plans what to read, reads the account, remembers what it saw, and
-composes a **run** from its answer and the sources behind it. A
+composes a **run** from its final answer and the evidence behind it. A
 **task** is the window's object, and the **estate** is the agent's memory.
 Nothing is written, deleted or changed in storage, and the app never applies a
 change plan.
 
-Current release: **30.0.0**.
+Version in this tree: **31.0.0**.
 
 ![A run in Storage Agent](docs/screenshot.png)
 
@@ -56,7 +56,7 @@ Current release: **30.0.0**.
   compare the result with its plan: confirmed, not applied or still unknown,
   plus skipped and truncated coverage. A reading record on Home keeps the last
   complete read and the new risks since it.
-- **Keep the agent visible.** A task is a run: the agent's own optional plan, its Markdown answer, one proof view, and a compact **Sources** index for risks, data, the change plan, tool calls, checked-again results, changes, methods and not-read coverage. The model writes prose; the window resolves every cited evidence id and renders the tool view. Copy, save Markdown, check again, re-check, copy a task link, export sources and save PDF live behind a visible overflow menu. Tables copy as CSV.
+- **Keep the agent visible.** A task is a run: the agent's own optional plan, its final Markdown answer, one proof view, and a compact **Sources** index for risks, data, the change plan, tool calls, checked-again results, changes, methods and not-read coverage. The model writes normal prose and cites a tool result by its evidence id; the window resolves the actual view. Copy, save Markdown, check again, re-check, copy a task link, export sources and save PDF live behind a visible overflow menu. Tables copy as CSV.
 - **Use the model you have.** Pick OpenAI, Anthropic or an OpenAI-compatible
   endpoint; paste a key and the provider's models are fetched. Context window
   and reasoning effort are inferred. Models already running in Ollama or LM
@@ -74,7 +74,7 @@ notifications.
 │ renderer (React, sandboxed)        main                          │
 │ tasks · run · composer      ⇄ IPC ⇄  pi-durable harness          │
 │                                         ├ 7 read tools           │
-│                                         ├ answer / skill / plan  │
+│                                         ├ skill / plan           │
 │                                         ├ estate (rules/issues)  │
 │                                         ├ s3 (readers/access)    │
 │                                         └ pi-ai → model          │

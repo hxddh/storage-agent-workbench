@@ -106,8 +106,10 @@ The composer is inert until a model exists; the account can still be checked.
 
 Top to bottom: a 12.5px scope line (`Demo · All 2 buckets checked · 2m ago`),
 the question at 24px, Copy and the overflow menu, a collapsed **Earlier in this
-task** history, an optional plan, the answer in prose, one primary proof or the
-primary risk list, one **Sources** disclosure and the checks receipt. The run
+task** history, an optional plan, the final answer in Markdown, one primary
+proof or the primary risk list, one **Sources** disclosure and the checks
+receipt. The first cited tool result is the proof; without one, the latest data
+read or change plan stands in. The run
 header is sticky. Save, Check again, Re-verify, Copy link, Export evidence and
 Save PDF live in the overflow.
 
@@ -118,7 +120,7 @@ every bucket was surveyed but access questions remain, it says
 `All n buckets checked · x open questions · y blocked` instead of pairing
 `Not fully checked` with a complete bucket count. Those details stay in
 **Not read**. It says
-`From memory · …`, `Live read · …`, `Based on a reading · …` or `No live read`
+`From memory · …`, `Live read · …`, `Based on a reading · …` or `Not read yet`
 when there is no account-wide check to report. It never says
 `Reads complete` or counts severity. A narrowed re-read never turns an
 account-wide gap into `All n buckets checked`. There is no next-step row and no
@@ -140,8 +142,8 @@ status text use `--ok`.
 
 A name the checks never showed gets a dashed `--warn` underline and one quiet
 line under the answer. Names in the answer are prose, not boxed code chips. A
-citation the task cannot resolve produces one quiet warning; a missing shown
-view is skipped and counted rather than rendering an empty frame.
+citation the task cannot resolve is left as plain text with one quiet warning;
+no empty evidence frame is rendered.
 
 **Sources** is a compact index, not a second answer. It lists only the rows that
 exist: Risks, Data, Change plan, Tool calls, Not checked, Checked again, Changes

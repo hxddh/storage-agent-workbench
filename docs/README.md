@@ -1,6 +1,6 @@
 # Documentation
 
-These pages describe the behavior of the **30.0.0** tree. They are not a
+These pages describe the behavior of the **31.0.0** tree. They are not a
 roadmap and not a substitute for the code.
 
 | File | What it is |
@@ -8,7 +8,7 @@ roadmap and not a substitute for the code.
 | [product.md](product.md) | Tasks, runs, the optional plan, Markdown answers, Sources and the model-free check |
 | [architecture.md](architecture.md) | Processes, runtime flow, modules and storage layout |
 | [data-model.md](data-model.md) | Host tables, pi tables, datasets and retention |
-| [tools.md](tools.md) | The thirteen tools grouped by capability, answer/skill/change_plan, code mode and limits |
+| [tools.md](tools.md) | The twelve tools grouped by capability, final answer citations, change_plan, code mode and limits |
 | [security.md](security.md) | Secrets, scope, redaction, evidence and the trust boundary |
 | [iam.md](iam.md) | The read-only IAM actions and what each one enables |
 | [capabilities.md](capabilities.md) | Provider capability matrix |
@@ -31,9 +31,9 @@ roadmap and not a substitute for the code.
   check, with durable entries and one run.
 - **Run** — the agent's optional plan, its answer, one proof view and the
   evidence behind it.
-- **Answer** — normal Markdown the agent writes, optionally submitted through
-  `answer` with up to two evidence ids. The window renders the cited tool view;
-  the model never authors a fact table.
+- **Answer** — the agent's final assistant message, normal Markdown. It cites a
+  tool result by its evidence id; the window renders the cited tool view. The
+  model never authors a fact table.
 - **Sources** — the one compact evidence index below the answer: Risks, Data,
   Change plan, Tool calls, Not checked, Checked again, Changes and Methods.
 - **Method** — a `skill` workflow the agent loaded (access, change, inventory,

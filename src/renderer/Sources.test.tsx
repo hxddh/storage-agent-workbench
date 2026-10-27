@@ -193,7 +193,7 @@ describe('sources', () => {
   })
 
   it('shows one change plan with its manual blocker', () => {
-    const fix: UiEntry = {
+    const change: UiEntry = {
       id: 'f',
       kind: 'tool',
       at: '2026-01-01T00:00:01Z',
@@ -203,7 +203,7 @@ describe('sources', () => {
       note: '2 steps',
       ms: 10,
       view: {
-        kind: 'fix',
+        kind: 'change',
         providerId: 'p1',
         bucket: 'demo',
         code: 'public_exposure',
@@ -246,7 +246,7 @@ describe('sources', () => {
         },
       },
     }
-    render(<Sources view={view([fix])} lang="en" focusId={null} />)
+    render(<Sources view={view([change])} lang="en" focusId={null} />)
     fireEvent.click(screen.getByRole('button', { name: /Change plan/ }))
     expect(screen.getByRole('heading', { name: 'Change plan' })).toBeTruthy()
     expect(screen.getByText('2 steps · 1 bucket · 1 manual · 1 not covered')).toBeTruthy()
@@ -254,7 +254,7 @@ describe('sources', () => {
     expect(screen.getByText('The current lifecycle configuration could not be read.')).toBeTruthy()
   })
 
-  it('compares a re-check with the plan instead of claiming the fix worked', () => {
+  it('compares a re-check with the plan instead of claiming the change worked', () => {
     const reverify: UiEntry = {
       id: 'r',
       kind: 'reverify',

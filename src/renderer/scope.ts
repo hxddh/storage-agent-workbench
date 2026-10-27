@@ -1,5 +1,5 @@
-import type { Brief } from '@shared/brief'
-import { readStateOfBrief } from '@shared/brief'
+import type { RunFacts } from '@shared/facts'
+import { readState } from '@shared/facts'
 import { type Dict, fill } from './i18n'
 import { ago } from './time'
 
@@ -15,8 +15,8 @@ export interface ScopeOptions {
  * User-facing copy avoids "reads complete": it says which buckets were checked,
  * or that the answer came from memory and when that memory was written.
  */
-export function scopeText(brief: Brief, t: Dict, options: ScopeOptions = {}): string {
-  const read = readStateOfBrief(brief)
+export function scopeText(brief: RunFacts, t: Dict, options: ScopeOptions = {}): string {
+  const read = readState(brief)
   const dataName = brief.data?.view.kind === 'estate' ? brief.data.title : null
   const names = [
     ...new Set([
@@ -54,7 +54,8 @@ export function scopeText(brief: Brief, t: Dict, options: ScopeOptions = {}): st
     : brief.data?.memory
       ? brief.data.at
       : null
-  const planBaseline = brief.fixes.find((fix) => fix.view.plan?.baseline)?.view.plan?.baseline
+  const planBaseline = brief.changePlans.find((plan) => plan.view.plan?.baseline)?.view.plan
+    ?.baseline
   const freshness = rememberedAt
     ? fill(t.scopeMemory, { when: ago(rememberedAt, t) ?? t.justNow })
     : read.open > 0 || read.complete

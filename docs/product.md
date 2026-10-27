@@ -13,7 +13,7 @@ a console, a dashboard, a ticket system or a chat product.
    launch.
 2. **Task** — one run, not a transcript. The page scrolls; the composer stays.
    The evidence index is folded inside this one page; there is no separate
-   Brief page.
+   evidence page.
 3. **Settings** — a full-screen sheet closed with the **X** at its top-left, for
    the model, storage accounts, memory, language, theme and notifications. It is
    one sheet, not a wizard.
@@ -79,13 +79,12 @@ risk. It stores no request, answer text, policy or secret.
   direct answer does not need one.
 - While it works, a draft answer and the current plan are visible; the finished
   answer replaces the draft.
-- When the evidence is ready, the agent may call `answer` with Markdown and up
-  to two evidence ids. Its prose can cite evidence as `[1](#ev-1)`; the window
-  opens the matching check. Every citation and shown view is checked against
-  the task's tool results. A missing one produces a quiet warning rather than a
-  broken link. The agent may instead finish with prose alone.
-- A deterministic findings block and the legacy ordered report blocks remain
-  readable for tasks created by earlier versions. New runs do not need them.
+- When the evidence is ready, the agent writes its final response in normal
+  Markdown. It cites a tool result by its evidence id as `[1](#ev-<id>)`; the
+  window resolves the actual view and opens the matching check. Every citation
+  is checked against the task's tool results. A missing one produces a quiet
+  warning rather than a broken link. There is no answer tool and no report
+  block language.
 - **Enter** while running steers the current run. **Stop** (or ⌘.) keeps what was
   read and offers **Continue** without adding a new question.
 - A failed model run becomes one notice with **Retry**; it asks the last request
@@ -117,7 +116,7 @@ Top to bottom:
    time when they apply. The scope line is one of `All n buckets checked`,
    `All n buckets checked · x open questions · y blocked`,
    `Not fully checked: n`, `From memory · …`, `Live read · …`,
-   `Based on a reading · …` or `No live read`. Copy and one overflow menu sit
+   `Based on a reading · …` or `Not read yet`. Copy and one overflow menu sit
    here. A failed or stopped storage read keeps the line open. A narrowed
    re-read never turns an account-wide gap into a complete reading. Severity
    counts live with the risk list, not in the header.
@@ -128,17 +127,15 @@ Top to bottom:
    while the run is live, remains for a stopped run or a blocked step, and is
    absent when the agent did not publish one. A settled answer does not carry
    the finished checklist.
-4. **Answer** — Markdown composed by the agent. A `show` list of up to two
-   evidence ids lets its data views stand with the prose. Inline citations use
-   `[1](#ev-1)`. The window resolves every citation and shown view against the
-   task's tool evidence, omits a missing view and adds a quiet warning. It does
-   not append a generic report after the answer. For tasks created by earlier
-   versions, the ordered report blocks remain readable.
-5. **Primary proof** — when the answer did not show data itself, one view can
-   stand beside it: a survey, query rows, an access chain or a remembered
-   history. When there is no proof and the task has risks, the current risk list
-   is shown here instead. It is not duplicated below unless the user opens
-   Sources.
+4. **Answer** — the agent's final response, normal Markdown. Inline citations
+   use `[1](#ev-<evidence id>)`. The window resolves every citation against the
+   task's tool evidence, leaves a broken one as plain text and adds a quiet
+   warning. There is no answer tool and no report block language. A final
+   response with no citation is still a complete answer.
+5. **Primary proof** — the first cited tool result stands beside the answer;
+   without a citation, the latest data read, otherwise the latest change plan.
+   When there is no proof and the task has risks, the current risk list is shown
+   here instead. It is not duplicated below unless the user opens Sources.
 6. **Sources** — one compact index, not a second page. Its rows are
    **Risks**, **Data**, **Change plan**, **Tool calls**, **Not checked**,
    **Checked again**, **Changes** and **Methods** when they exist. Only one
@@ -147,7 +144,7 @@ Top to bottom:
    component.
 7. **Checks** — every executed storage, query, memory or change-plan call in
    order, with target, result note and duration, folded to
-   checks · time · tokens. `answer`, `plan` and `skill` are control calls, not
+   checks · time · tokens. `plan` and `skill` are control calls, not
    checks; they appear with the rest of the run's activity.
 
 Copy and a single overflow menu are always visible in the run header. The
@@ -350,8 +347,7 @@ undecided.
 ## Change plans
 
 `change_plan` returns one deterministic change plan. It is the tool behind the
-**Change plan** row in Sources; the legacy `fix` name still projects for tasks
-created by earlier versions, and the stored view kind remains `fix`. Each step
+**Change plan** row in Sources. Each step
 carries AWS CLI, Terraform and API document text plus an impact preview from the
 remembered posture. It can target one bucket and code, or every open risk (it
 scans up to 500). Lifecycle changes for one bucket merge into one document; when

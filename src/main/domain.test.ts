@@ -316,10 +316,10 @@ describe('tools over the estate', () => {
 
   it('generates a batch when no bucket or code narrows it', async () => {
     await run(surveyTool(deps), {})
-    const [, fix] = estateTools(deps)
-    const { details } = await run(fix as Executable, {})
+    const [, change] = estateTools(deps)
+    const { details } = await run(change as Executable, {})
     expect(details.status).toBe('done')
-    if (details.view?.kind !== 'fix') throw new Error('expected a fix view')
+    if (details.view?.kind !== 'change') throw new Error('expected a change view')
     expect(details.view.formats.length).toBeGreaterThan(0)
     const plan = details.view.plan
     if (!plan) throw new Error('expected a change plan')
@@ -332,9 +332,9 @@ describe('tools over the estate', () => {
   it('omits Terraform rather than dropping existing lifecycle rules from a merged step', async () => {
     fake.buckets.versioned = structuredClone(BUCKETS.versioned!)
     await run(surveyTool(deps), {})
-    const [, fix] = estateTools(deps)
-    const { details } = await run(fix as Executable, { bucket: 'versioned' })
-    if (details.view?.kind !== 'fix' || !details.view.plan)
+    const [, change] = estateTools(deps)
+    const { details } = await run(change as Executable, { bucket: 'versioned' })
+    if (details.view?.kind !== 'change' || !details.view.plan)
       throw new Error(`expected a change plan; got ${details.status}: ${details.note ?? ''}`)
     const merged = details.view.plan.steps.find((step) => step.id.startsWith('lifecycle:'))
     if (!merged) throw new Error('expected a merged lifecycle step')
@@ -349,11 +349,14 @@ describe('tools over the estate', () => {
     expect(details.status).toBe('stopped')
   })
 
-  it('generates a fix only for an open Issue', async () => {
-    const [, fix] = estateTools(deps)
-    const ok = await run(fix as Executable, { bucket: 'compat-public', code: 'public_exposure' })
+  it('generates a change only for an open Issue', async () => {
+    const [, change] = estateTools(deps)
+    const ok = await run(change as Executable, { bucket: 'compat-public', code: 'public_exposure' })
     expect(ok.details.status).toBe('done')
-    const resolved = await run(fix as Executable, { bucket: 'aws-public', code: 'public_exposure' })
+    const resolved = await run(change as Executable, {
+      bucket: 'aws-public',
+      code: 'public_exposure',
+    })
     expect(resolved.details.status).toBe('failed')
   })
 })

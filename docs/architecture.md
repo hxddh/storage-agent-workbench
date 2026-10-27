@@ -9,7 +9,7 @@ Electron main                              Renderer (sandboxed)
   ipc.ts      the only IPC surface           Settings (lazy)
   preload     contextBridge, CJS
   harness     pi-durable tasks, entries, watches
-  tools       read-only tools + answer/skill/plan
+  tools       read-only tools + skill/plan
   estate      rules, Issues, change plans
   s3          readers, policy, access, changes
   analysis    one SQLite file per dataset
@@ -46,8 +46,8 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
    `afterTool` records the names, exposure and evidence id a result shows.
    `onYield` asks once for a corrected answer when the answer text or final
    prose names something no result showed or contradicts what the readings
-   proved (`shared/grounding.ts`). `answer`, `skill` and `plan` are control
-   tools, not storage reads.
+   proved (`shared/grounding.ts`). `skill` and `plan` are control tools, not
+   storage reads. The final assistant message is the answer.
 6. The open task is streamed with `conversation.watch()`. Each frame appends
    new entries and pushes live state and `pi.usage` to the window through
    `agent:event`.
@@ -59,7 +59,7 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
 9. pi compacts when the model context fills; a compaction entry appears as a
    divider. The model's provider-facing messages never reach the renderer.
 10. When a task settles, its request, answer summary, risks and evidence are
-    written to `search_docs` from the same run/brief projection the window
+    written to `search_docs` from the same run/facts projection the window
     uses.
     A settled account reading also writes one `readings` row per account: the
     trigger, coverage counts, open totals and whether the read was complete.
@@ -90,9 +90,9 @@ with `posture_changes` under the same `agentTool()` bounds, redaction and
 untrusted-data envelope as every other tool result. It never reads raw requests
 or `search_docs`.
 
-Read closure is deterministic too. `buildBrief()` keeps account coverage across
-a narrowed re-read instead of replacing it. `readStateOfBrief()` is the one
-calculation used by the scope line, Home and the reading record; it says
+Read closure is deterministic too. `deriveFacts()` keeps account coverage across
+a narrowed re-read instead of replacing it. `readState()` is the one calculation
+used by the scope line, Home and the reading record; it says
 `All n buckets checked` only when account coverage, pending reads, access evidence,
 failed reads and undecided rules are closed. The agent keeps a per-run set of
 the same coverage signals; a clean account claim while that set is non-empty
@@ -152,11 +152,11 @@ and truncation stay in the view.
 | `main/runtime/project.ts` | entries → `UiEntry`, live state, usage |
 | `main/runtime/search.ts` | sidebar search and index rows |
 | `shared/audit.ts` | deterministic account-check summary from survey views |
-| `shared/brief.ts` | entries → deterministic sources (risks, methods, coverage, change plans, data, tool calls) |
-| `shared/run.ts` | optional plan + Markdown answer/show + citation and evidence resolution + audit synthesis |
+| `shared/facts.ts` | entries → deterministic facts (risks, methods, coverage, change plans, data, tool calls) |
+| `shared/run.ts` | optional plan + final Markdown answer + citation and evidence resolution |
 | `shared/grounding.ts` | names and exposure a task's results show; correction input |
 | `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details, evidence id |
-| `main/tools/control.ts` | `plan`, `answer`, `skill` control tools |
+| `main/tools/control.ts` | `plan` and `skill` control tools |
 | `main/s3/facts.ts` | one reading per bucket, exposure, rememberable posture |
 | `main/s3/policy.ts` | local policy evaluation, TLS enforcement |
 | `main/s3/account.ts` | account-wide public access block (STS, S3 Control) |
@@ -170,13 +170,13 @@ and truncation stay in the view.
 | `main/local-models.ts` | Ollama and LM Studio detection on loopback |
 | `main/estate/rules.ts` | twelve rules over facts, Security Hub controls, review findings |
 | `main/estate/estate.ts` | applying decisions, gone buckets, Issue rows |
-| `main/estate/fixes.ts` | fix formats and impact preview |
+| `main/estate/changes.ts` | change formats and impact preview |
 | `main/analysis/*` | bounded import and whitelisted aggregates |
 | `main/app.ts` | service wiring, model install, home overview |
 | `main/window-state.ts` | window bounds in `window.json`, clamped to a display |
 | `renderer/Sidebar.tsx` | task list, search, rename, pin, delete |
 | `renderer/Home.tsx` | account summary, demo/local-model entry |
-| `renderer/Run.tsx` | run header, optional plan, Markdown answer, proof, Sources, copy/save/export |
+| `renderer/Run.tsx` | run header, optional plan, final Markdown answer, cited proof, Sources, copy/save/export |
 | `renderer/Sources.tsx` | one compact source index: risks, data, change plan, tool calls, not read, re-check, changes, methods |
 | `main/skills.ts` | four on-demand methods; documentation, not checks |
 | `renderer/Composer.tsx` | request, steer, stop, @ focus, files |
@@ -202,10 +202,11 @@ pi rows, host task rows, search rows, datasets, audit rows and task directory.
 
 ## Deliberate absences
 
-No event-sourcing layer, no second queue, no SSE, no fixed report DSL,
-no MCP bridge, no subagents, no approval UI, no follow-up prompts, no automatic
-background watch, no second window and no dashboard. Four methods load through
-`skill`; there is no separate skills runtime. An account may opt into a daily or weekly read-only check while the app runs. The
-agent writes Markdown and may cite up to two evidence views; the app resolves
-those views to tool results. pi owns the durable loop; the product owns storage semantics,
+No event-sourcing layer, no second queue, no SSE, no report DSL and no answer
+tool, no MCP bridge, no subagents, no approval UI, no follow-up prompts, no
+automatic background watch, no second window and no dashboard. Four methods load
+through `skill`; there is no separate skills runtime. An account may opt into a
+daily or weekly read-only check while the app runs. The agent writes one final
+Markdown answer and cites evidence ids; the app resolves those citations to
+tool results. pi owns the durable loop; the product owns storage semantics,
 evidence and validation.

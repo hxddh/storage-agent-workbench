@@ -1,7 +1,7 @@
-import type { FixFormat, Impact } from '@shared/contract'
+import type { ChangeFormat, Impact } from '@shared/contract'
 import { ACCOUNT_SCOPE } from './rules'
 
-/** A fix only needs the rule's code. */
+/** A change only needs the rule's code. */
 type Rule = { code: string }
 
 const SAFE_BUCKET = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/
@@ -61,7 +61,7 @@ export const TLS_STATEMENT = (bucket: string) => ({
   Condition: { Bool: { 'aws:SecureTransport': 'false' } },
 })
 
-export type FixKind =
+export type ChangeKind =
   | 'public_access_block'
   | 'default_encryption'
   | 'lifecycle'
@@ -70,14 +70,14 @@ export type FixKind =
   | 'logging'
   | 'account_public_access_block'
 
-interface Fix {
-  kind: FixKind
+interface Change {
+  kind: ChangeKind
   document: Record<string, unknown>
   command: string
   notes: string[]
 }
 
-function build(code: string, bucket: string): Fix | null {
+function build(code: string, bucket: string): Change | null {
   const b = quote(bucket)
   if (code === 'account_public_access_block_missing') {
     return {
@@ -202,7 +202,7 @@ function build(code: string, bucket: string): Fix | null {
 }
 
 function terraform(
-  fix: Fix,
+  change: Change,
   bucket: string,
   endpoint: string | null,
   region: string | null,
@@ -210,31 +210,31 @@ function terraform(
   const name = tfName(bucket)
   const b = tfString(bucket)
   let body: string
-  if (fix.kind === 'public_access_block') {
+  if (change.kind === 'public_access_block') {
     body =
       `resource "aws_s3_bucket_public_access_block" "${name}" {\n  bucket = ${b}\n\n` +
       '  block_public_acls       = true\n  ignore_public_acls      = true\n' +
       '  block_public_policy     = true\n  restrict_public_buckets = true\n}'
-  } else if (fix.kind === 'account_public_access_block') {
+  } else if (change.kind === 'account_public_access_block') {
     body =
       'resource "aws_s3_account_public_access_block" "account" {\n' +
       '  block_public_acls       = true\n  ignore_public_acls      = true\n' +
       '  block_public_policy     = true\n  restrict_public_buckets = true\n}'
-  } else if (fix.kind === 'policy') {
+  } else if (change.kind === 'policy') {
     body =
       `# Merge into the bucket's existing policy document when there is one.\n` +
-      `resource "aws_s3_bucket_policy" "${name}" {\n  bucket = ${b}\n  policy = jsonencode(${JSON.stringify(fix.document, null, 2).replace(/\n/g, '\n  ')})\n}`
-  } else if (fix.kind === 'ownership') {
+      `resource "aws_s3_bucket_policy" "${name}" {\n  bucket = ${b}\n  policy = jsonencode(${JSON.stringify(change.document, null, 2).replace(/\n/g, '\n  ')})\n}`
+  } else if (change.kind === 'ownership') {
     body = `resource "aws_s3_bucket_ownership_controls" "${name}" {\n  bucket = ${b}\n\n  rule {\n    object_ownership = "BucketOwnerEnforced"\n  }\n}`
-  } else if (fix.kind === 'logging') {
+  } else if (change.kind === 'logging') {
     body = `resource "aws_s3_bucket_logging" "${name}" {\n  bucket        = ${b}\n  target_bucket = "<log-bucket>"\n  target_prefix = ${tfString(`${bucket}/`)}\n}`
-  } else if (fix.kind === 'default_encryption') {
+  } else if (change.kind === 'default_encryption') {
     body =
       `resource "aws_s3_bucket_server_side_encryption_configuration" "${name}" {\n  bucket = ${b}\n\n` +
       '  rule {\n    apply_server_side_encryption_by_default {\n      sse_algorithm = "AES256"\n    }\n' +
       '    bucket_key_enabled = true\n  }\n}'
   } else {
-    const rules = (fix.document.Rules as Record<string, unknown>[]) ?? []
+    const rules = (change.document.Rules as Record<string, unknown>[]) ?? []
     const rendered = rules.map((rule) => {
       const lines = [
         `    id     = ${tfString(String(rule.ID ?? 'rule'))}`,
@@ -275,17 +275,17 @@ function terraform(
   return `${head.join('\n')}\n\n${body}`
 }
 
-export interface GeneratedFix {
-  formats: FixFormat[]
+export interface GeneratedChange {
+  formats: ChangeFormat[]
   notes: string[]
-  kind: FixKind
+  kind: ChangeKind
   document: Record<string, unknown>
   command: string
 }
 
 function targetCommand(
   command: string,
-  kind: FixKind,
+  kind: ChangeKind,
   endpoint: string | null,
   region: string | null,
 ): string {
@@ -303,26 +303,26 @@ function targetCommand(
 }
 
 function formatsFor(
-  fix: Fix,
+  change: Change,
   bucket: string,
   endpoint: string | null,
   region: string | null,
   includeTerraform: boolean,
-): FixFormat[] {
-  const formats: FixFormat[] = [{ label: 'AWS CLI', language: 'bash', text: fix.command }]
-  const tf = includeTerraform ? terraform(fix, bucket, endpoint, region) : null
+): ChangeFormat[] {
+  const formats: ChangeFormat[] = [{ label: 'AWS CLI', language: 'bash', text: change.command }]
+  const tf = includeTerraform ? terraform(change, bucket, endpoint, region) : null
   if (tf) formats.push({ label: 'Terraform', language: 'hcl', text: tf })
   formats.push({
     label: 'API document',
     language: 'json',
-    text: JSON.stringify(fix.document, null, 2),
+    text: JSON.stringify(change.document, null, 2),
   })
   return formats
 }
 
 /** Format a merged document, or a manual statement, without re-deriving the rule. */
-export function formatFix(
-  kind: FixKind,
+export function formatChange(
+  kind: ChangeKind,
   document: Record<string, unknown>,
   bucket: string,
   endpoint: string | null,
@@ -330,13 +330,13 @@ export function formatFix(
   command: string,
   notes: string[] = [],
   options: { terraform?: boolean } = {},
-): GeneratedFix {
+): GeneratedChange {
   const finalCommand = targetCommand(command, kind, endpoint, region)
-  const fix: Fix = { kind, document, command: finalCommand, notes }
+  const change: Change = { kind, document, command: finalCommand, notes }
   const allNotes = [...notes]
   if (endpoint) allNotes.unshift(`Runs against ${endpoint} — use credentials for that account.`)
   return {
-    formats: formatsFor(fix, bucket, endpoint, region, options.terraform !== false),
+    formats: formatsFor(change, bucket, endpoint, region, options.terraform !== false),
     notes: allNotes,
     kind,
     document,
@@ -344,17 +344,25 @@ export function formatFix(
   }
 }
 
-export function generateFix(
+export function generateChange(
   rule: Rule,
   bucket: string,
   endpoint: string | null,
   region: string | null,
-): GeneratedFix | null {
+): GeneratedChange | null {
   const account = bucket === ACCOUNT_SCOPE && rule.code === 'account_public_access_block_missing'
   if (!account && !SAFE_BUCKET.test(bucket)) return null
-  const fix = build(rule.code, bucket)
-  if (!fix) return null
-  return formatFix(fix.kind, fix.document, bucket, endpoint, region, fix.command, fix.notes)
+  const change = build(rule.code, bucket)
+  if (!change) return null
+  return formatChange(
+    change.kind,
+    change.document,
+    bucket,
+    endpoint,
+    region,
+    change.command,
+    change.notes,
+  )
 }
 
 export function impactPreview(
@@ -433,7 +441,7 @@ export function impactPreview(
     return {
       verdict,
       reasons,
-      gap: 'The target log bucket is your choice; the fix leaves it as <log-bucket>.',
+      gap: 'The target log bucket is your choice; the change leaves it as <log-bucket>.',
     }
   } else if (rule.code === 'large_standard_only') {
     if (hasLifecycle) {

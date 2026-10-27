@@ -1,9 +1,9 @@
 import type {
   AccessCoverage,
+  ChangeFormat,
+  ChangePlan,
   Chart,
   ConfigFinding,
-  FixFormat,
-  FixPlan,
   Impact,
   IssueRow,
   NoteRow,
@@ -205,17 +205,33 @@ export function AccessChain({
 
 function Issues({ issues, t }: { issues: IssueRow[]; t: Dict }) {
   if (issues.length === 0) return <p className="view-sub">{t.noIssues}</p>
+  const shown = issues.slice(0, 12)
+  const groups = new Map<string, IssueRow[]>()
+  for (const issue of shown) {
+    const bucket = issue.bucket || ''
+    const group = groups.get(bucket)
+    if (group) group.push(issue)
+    else groups.set(bucket, [issue])
+  }
   return (
     <div className="issue-list">
-      {issues.slice(0, 12).map((issue) => (
-        <div className="issue" key={issue.id}>
-          <span className={`sev ${issue.severity}`} />
-          <span className="bucket">{issue.bucket}</span>
-          <span>{issue.title}</span>
-          {issue.status === 'accepted' && <span className="code">{t.accepted}</span>}
-          {issue.recurred > 0 && <span className="code">×{issue.recurred + 1}</span>}
+      {[...groups].map(([bucket, rows]) => (
+        <div className="issue-group" key={bucket || 'account'}>
+          {groups.size > 1 && <p className="issue-group-title mono">{bucket || t.accountWide}</p>}
+          {rows.map((issue) => (
+            <div className="issue" key={issue.id}>
+              <span className={`sev ${issue.severity}`} />
+              {groups.size === 1 && <span className="bucket">{issue.bucket}</span>}
+              <span>{issue.title}</span>
+              {issue.status === 'accepted' && <span className="code">{t.accepted}</span>}
+              {issue.recurred > 0 && <span className="code">×{issue.recurred + 1}</span>}
+            </div>
+          ))}
         </div>
       ))}
+      {issues.length > shown.length && (
+        <p className="view-sub">{fill(t.moreFindings, { n: issues.length - shown.length })}</p>
+      )}
     </div>
   )
 }
@@ -245,7 +261,15 @@ export function ChartView({ chart }: { chart: Chart }) {
   )
 }
 
-export function FixView({ formats, impact, t }: { formats: FixFormat[]; impact: Impact; t: Dict }) {
+export function ChangeTextView({
+  formats,
+  impact,
+  t,
+}: {
+  formats: ChangeFormat[]
+  impact: Impact
+  t: Dict
+}) {
   const [active, setActive] = useState(0)
   const [copied, setCopied] = useState(false)
   const format = formats[active]
@@ -304,7 +328,7 @@ export function FixView({ formats, impact, t }: { formats: FixFormat[]; impact: 
 }
 
 /** One translated line for a plan; the server summary is English prose. */
-export function planSummary(plan: FixPlan, t: Dict): string {
+export function planSummary(plan: ChangePlan, t: Dict): string {
   const buckets = new Set(plan.steps.map((step) => step.bucket).filter(Boolean)).size
   const manual = plan.steps.filter((step) => step.status === 'manual').length
   let line = `${plan.steps.length === 1 ? t.planStepsOne : fill(t.planSteps, { n: plan.steps.length })} · ${
@@ -319,7 +343,7 @@ export function planSummary(plan: FixPlan, t: Dict): string {
  * One deterministic change plan. It is a list of steps, not a dashboard: a
  * selected row opens the exact command or statement the user applies.
  */
-export function PlanView({ plan, t }: { plan: FixPlan; t: Dict }) {
+export function ChangePlanView({ plan, t }: { plan: ChangePlan; t: Dict }) {
   const first = plan.steps.findIndex((step) => step.status === 'ready')
   const [selected, setSelected] = useState(Math.max(first, 0))
   const step = plan.steps[selected]
@@ -369,7 +393,7 @@ export function PlanView({ plan, t }: { plan: FixPlan; t: Dict }) {
                       {blocker}
                     </p>
                   ))}
-                  <FixView formats={item.formats} impact={item.impact} t={t} />
+                  <ChangeTextView formats={item.formats} impact={item.impact} t={t} />
                 </div>
               )}
             </div>
@@ -524,8 +548,8 @@ export function ToolViewBody({
       </div>
     )
   }
-  if (view.kind === 'fix') {
-    return <FixView formats={view.formats} impact={view.impact} t={t} />
+  if (view.kind === 'change') {
+    return <ChangeTextView formats={view.formats} impact={view.impact} t={t} />
   }
   if (view.kind === 'query') {
     return (

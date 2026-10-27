@@ -1,13 +1,13 @@
-import type {
-  BriefCheck,
-  BriefData,
-  BriefFinding,
-  BriefFix,
-  Brief as BriefModel,
-  BriefNotice,
-} from '@shared/brief'
-import { buildBrief, readStateOfBrief } from '@shared/brief'
 import type { Lang, Table, TaskView, ToolName, ToolView, Usage } from '@shared/contract'
+import type {
+  CallFact,
+  ChangePlanFact,
+  DataFact,
+  RunFacts as FactsModel,
+  NoticeFact,
+  RiskFact,
+} from '@shared/facts'
+import { deriveFacts, readState } from '@shared/facts'
 import {
   Activity,
   BookOpen,
@@ -29,10 +29,10 @@ import { type Dict, dict, fill, toolLabel } from './i18n'
 import { ago } from './time'
 import {
   AccessChain,
+  ChangePlanView,
+  ChangeTextView,
   ChartView,
-  FixView,
   humanBytes,
-  PlanView,
   planSummary,
   TableView,
   ToolViewBody,
@@ -47,14 +47,10 @@ const ICONS: Record<ToolName, typeof Radar> = {
   probe: Activity,
   estate: StickyNote,
   change_plan: Wrench,
-  fix: Wrench,
   note: StickyNote,
   query: Code2,
   skill: BookOpen,
-  playbook: BookOpen,
   plan: ListChecks,
-  answer: FileText,
-  report: FileText,
 }
 
 const FINDINGS_SHOWN = 5
@@ -99,7 +95,7 @@ function stateLabel(value: 'open' | 'accepted' | 'clear' | 'undecided', t: Dict)
         : t.stateUndecided
 }
 
-function severityLabel(finding: BriefFinding, t: Dict): string {
+function severityLabel(finding: RiskFact, t: Dict): string {
   return finding.severity === 'high'
     ? t.severityHigh
     : finding.severity === 'medium'
@@ -107,7 +103,7 @@ function severityLabel(finding: BriefFinding, t: Dict): string {
       : t.severityLow
 }
 
-export function noticeText(notice: BriefNotice, t: Dict): string {
+export function noticeText(notice: NoticeFact, t: Dict): string {
   const base =
     notice.code === 'stopped'
       ? t.noticeStopped
@@ -133,9 +129,9 @@ function tableMarkdown(table: Table, limit = 50): string {
   return `${head}\n${body}${table.rows.length > rows.length ? '\n\n…' : ''}`
 }
 
-export function briefMarkdown(title: string, brief: BriefModel, t: Dict, lang: Lang): string {
+export function factsMarkdown(title: string, brief: FactsModel, t: Dict, lang: Lang): string {
   const parts: string[] = [`# ${title}`]
-  if (brief.verdict?.text) parts.push(brief.verdict.text)
+  if (brief.answer?.text) parts.push(brief.answer.text)
   if (brief.findings.length) {
     parts.push(
       `## ${t.findingsTitle}`,
@@ -155,7 +151,7 @@ export function briefMarkdown(title: string, brief: BriefModel, t: Dict, lang: L
       brief.accepted.map((finding) => `- **${finding.bucket}** — ${finding.title}`).join('\n'),
     )
   }
-  const plan = brief.fixes.find((fix) => fix.view.plan)?.view.plan
+  const plan = brief.changePlans.find((plan) => plan.view.plan)?.view.plan
   if (plan) {
     parts.push(`## ${t.planTitle}`, planSummary(plan, t))
     if (plan.baseline) {
@@ -186,9 +182,9 @@ export function briefMarkdown(title: string, brief: BriefModel, t: Dict, lang: L
       )
     }
   } else {
-    for (const fix of brief.fixes) {
-      const view = fix.view
-      parts.push(`## ${t.fixTitle} ${view.bucket}`)
+    for (const plan of brief.changePlans) {
+      const view = plan.view
+      parts.push(`## ${t.changePlanTitle} ${view.bucket}`)
       for (const format of view.formats) {
         parts.push(`### ${format.label}`, `\`\`\`${format.language}\n${format.text}\n\`\`\``)
       }
@@ -244,7 +240,7 @@ export function FindingRow({
   showBucket = true,
   staleDays = 7,
 }: {
-  finding: BriefFinding
+  finding: RiskFact
   t: Dict
   onOpen: () => void
   onAccept?: () => void
@@ -326,7 +322,7 @@ function Fold({ label, tone, children }: { label: string; tone?: 'ok'; children:
   )
 }
 
-function DataSection({ data, t }: { data: BriefData; t: Dict }) {
+function DataSection({ data, t }: { data: DataFact; t: Dict }) {
   const view = data.view
   if (view.kind === 'query') {
     const coverage = view.coverage
@@ -450,7 +446,7 @@ function bucketCount(n: number, t: Dict): string {
   return `${n} ${n === 1 ? t.bucketsOne : t.bucketsShort}`
 }
 
-function dataSummary(data: BriefData, t: Dict): string {
+function dataSummary(data: DataFact, t: Dict): string {
   const view = data.view
   if (view.kind === 'query') return view.title
   if (view.kind === 'survey')
@@ -484,7 +480,7 @@ function CheckRow({
   t,
   taskTitle,
 }: {
-  check: BriefCheck
+  check: CallFact
   open: boolean
   onToggle: () => void
   lang: Lang
@@ -492,7 +488,7 @@ function CheckRow({
   taskTitle: string
 }) {
   const Icon = ICONS[check.name] ?? Activity
-  // Views already rendered on the page (findings, the data table, chart, fixes)
+  // Views already rendered on the page (findings, the data table, chart, change plans)
   // do not open again here; the check row is their provenance.
   const inline = check.view
     ? // A query's rows are on the page; its script, the evidence, opens here.
@@ -529,41 +525,41 @@ function CheckRow({
   )
 }
 
-function FixSection({
-  fixes,
+function ChangeSection({
+  changePlans,
   titleOf,
   t,
 }: {
-  fixes: BriefFix[]
-  titleOf: (fix: BriefFix) => string
+  changePlans: ChangePlanFact[]
+  titleOf: (plan: ChangePlanFact) => string
   t: Dict
 }) {
-  const plan = fixes.find((fix) => fix.view.plan)?.view.plan
+  const plan = changePlans.find((plan) => plan.view.plan)?.view.plan
   if (plan) {
     return (
       <section className="brief-section" aria-label={t.planTitle}>
         <h2>{t.planTitle}</h2>
-        <PlanView plan={plan} t={t} />
+        <ChangePlanView plan={plan} t={t} />
       </section>
     )
   }
-  const [first, ...rest] = fixes
+  const [first, ...rest] = changePlans
   if (!first) return null
   return (
-    <section className="brief-section" aria-label={t.fixTitle}>
+    <section className="brief-section" aria-label={t.changePlanTitle}>
       <h2>
-        {t.fixTitle} <span className="section-target mono">{first.view.bucket}</span>
+        {t.changePlanTitle} <span className="section-target mono">{first.view.bucket}</span>
         <span className="section-sub">{titleOf(first)}</span>
       </h2>
-      <FixView formats={first.view.formats} impact={first.view.impact} t={t} />
+      <ChangeTextView formats={first.view.formats} impact={first.view.impact} t={t} />
       {rest.length > 0 && (
-        <Fold label={fill(t.moreFixes, { n: rest.length })}>
-          {rest.map((fix) => (
-            <div className="fix-more" key={fix.key}>
+        <Fold label={fill(t.moreChangeSteps, { n: rest.length })}>
+          {rest.map((plan) => (
+            <div className="change-more" key={plan.key}>
               <h3>
-                <span className="mono">{fix.view.bucket}</span> · {titleOf(fix)}
+                <span className="mono">{plan.view.bucket}</span> · {titleOf(plan)}
               </h3>
-              <FixView formats={fix.view.formats} impact={fix.view.impact} t={t} />
+              <ChangeTextView formats={plan.view.formats} impact={plan.view.impact} t={t} />
             </div>
           ))}
         </Fold>
@@ -572,7 +568,7 @@ function FixSection({
   )
 }
 
-function receipt(brief: BriefModel, usage: Usage | null, t: Dict): string {
+function receipt(brief: FactsModel, usage: Usage | null, t: Dict): string {
   const running = brief.checks.filter((check) => check.status === 'running').length
   if (running > 0) return fill(t.checksRunning, { n: running })
   const parts = [
@@ -633,18 +629,18 @@ export function Sources({
   focusId,
   staleDays = 7,
   hideData = false,
-  hideFix = false,
+  hideChange = false,
 }: {
   view: TaskView
   lang: Lang
   focusId: string | null
   staleDays?: number
   hideData?: boolean
-  hideFix?: boolean
+  hideChange?: boolean
 }) {
   const t = dict(lang)
   const brief = useMemo(
-    () => buildBrief(view.entries, view.live, view.issueStatus),
+    () => deriveFacts(view.entries, view.live, view.issueStatus),
     [view.entries, view.live, view.issueStatus],
   )
   const [open, setOpen] = useState<SourceSection | null>(null)
@@ -653,14 +649,14 @@ export function Sources({
   const [printing, setPrinting] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const focused = useRef<string | null>(null)
-  const read = readStateOfBrief(brief)
+  const read = readState(brief)
   const gone = brief.coverage.flatMap((item) => item.gone)
   const visibleFindings = allFindings ? brief.findings : brief.findings.slice(0, FINDINGS_SHOWN)
   const findingGroups = [
     ...new Map(
       visibleFindings.map((finding) => [
         finding.bucket || '',
-        { bucket: finding.bucket, items: [] as BriefFinding[] },
+        { bucket: finding.bucket, items: [] as RiskFact[] },
       ]),
     ).values(),
   ]
@@ -671,11 +667,11 @@ export function Sources({
   const allMemory =
     brief.findings.length > 0 && brief.findings.every((finding) => finding.source === 'memory')
   const shownRisks = brief.findings.length + brief.accepted.length
-  const ruleTitle = (fix: BriefFix) =>
+  const ruleTitle = (plan: ChangePlanFact) =>
     [...brief.findings, ...brief.accepted, ...brief.resolved].find(
-      (finding) => finding.bucket === fix.view.bucket && finding.code === fix.view.code,
-    )?.title ?? fix.view.code.replace(/_/g, ' ')
-  const accept = (finding: BriefFinding) =>
+      (finding) => finding.bucket === plan.view.bucket && finding.code === plan.view.code,
+    )?.title ?? plan.view.code.replace(/_/g, ' ')
+  const accept = (finding: RiskFact) =>
     finding.issueId
       ? () => void window.agent.acceptIssue(finding.issueId!, finding.status !== 'accepted')
       : undefined
@@ -772,7 +768,7 @@ export function Sources({
           onToggle={() => setOpen(open === 'data' ? null : 'data')}
         />
       )}
-      {!hideFix && brief.fixes.length > 0 && (
+      {!hideChange && brief.changePlans.length > 0 && (
         <SourceRow
           section="change"
           label={t.planTitle}
@@ -1105,7 +1101,7 @@ export function Sources({
   const hasRows =
     shownRisks > 0 ||
     (!hideData && brief.data) ||
-    (!hideFix && brief.fixes.length > 0) ||
+    (!hideChange && brief.changePlans.length > 0) ||
     brief.checks.length > 0 ||
     read.open > 0 ||
     gone.length > 0 ||
@@ -1120,7 +1116,9 @@ export function Sources({
       {rows}
       {show('risks') && risks}
       {show('data') && brief.data && <DataSection data={brief.data} t={t} />}
-      {show('change') && !hideFix && <FixSection fixes={brief.fixes} titleOf={ruleTitle} t={t} />}
+      {show('change') && !hideChange && (
+        <ChangeSection changePlans={brief.changePlans} titleOf={ruleTitle} t={t} />
+      )}
       {show('checks') && checks}
       {show('notChecked') && notChecked}
       {show('reverify') && reverify}

@@ -1,4 +1,4 @@
-import type { FixPlan } from '@shared/contract'
+import type { ChangePlan } from '@shared/contract'
 import { describe, expect, it } from 'vitest'
 import { comparePlanToReplay, planAccountDecisions } from './reverify-plan'
 
@@ -15,7 +15,7 @@ const step = (id: string, bucket: string, codes: string[]) => ({
   blockers: [],
 })
 
-const plan: FixPlan = {
+const plan: ChangePlan = {
   summary: '',
   baseline: null,
   residual: [],

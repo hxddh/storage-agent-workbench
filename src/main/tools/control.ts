@@ -24,19 +24,6 @@ function text(value: unknown, max: number): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
 }
 
-function evidence(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return [
-    ...new Set(
-      value
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(0, 2),
-    ),
-  ]
-}
-
 export function planTool() {
   return defineTool({
     name: 'plan',
@@ -78,66 +65,6 @@ export function planTool() {
           { kind: 'plan', steps, ...(note ? { note } : {}) },
           'investigation',
           steps.length ? `${steps.length} steps` : null,
-        ) as never,
-      }
-    },
-  })
-}
-
-export function answerTool() {
-  return defineTool({
-    name: 'answer',
-    description:
-      'Submit the answer the window renders. Write normal Markdown in `text`; cite the `show` array as [1](#ev-1), [2](#ev-2). Put at most two evidence ids in `show`, first the one proof that answers the question. Never write a table of facts yourself. Omit this tool and write the answer as your final message when no rendered evidence is needed.',
-    parameters: Type.Object({
-      title: Type.Optional(Type.String({ maxLength: 160 })),
-      text: Type.String({ maxLength: 8000 }),
-      show: Type.Optional(
-        Type.Array(Type.String({ maxLength: 240 }), {
-          maxItems: 2,
-          description: 'Tool-call ids from the <untrusted-data evidence="…"> attribute.',
-        }),
-      ),
-    }),
-    execute: async (args) => {
-      const body = text(args.text, 8000)
-      const show = evidence(args.show)
-      if (!body && !show.length) {
-        return {
-          output: [
-            {
-              type: 'text' as const,
-              text: 'An answer needs Markdown text or one evidence id.',
-            },
-          ],
-          isError: true,
-          details: {
-            target: 'answer',
-            note: 'Empty answer',
-            view: null,
-            ms: 0,
-            status: 'failed',
-          } as never,
-        }
-      }
-      const title = text(args.title, 160) || undefined
-      return {
-        output: [
-          {
-            type: 'text' as const,
-            text: 'Answer recorded. The window renders it; do not repeat it in prose.',
-          },
-        ],
-        details: details(
-          {
-            kind: 'report',
-            ...(title ? { title } : {}),
-            ...(body ? { text: body } : {}),
-            ...(show.length ? { show } : {}),
-            blocks: [],
-          },
-          'answer',
-          show.length ? `${show.length} evidence id${show.length === 1 ? '' : 's'}` : null,
         ) as never,
       }
     },

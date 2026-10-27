@@ -34,16 +34,11 @@ const survey: UiEntry = {
   },
 }
 
-const answer = (text: string, show: string[]): UiEntry => ({
+const answer = (text: string): UiEntry => ({
   id: 'answer',
-  kind: 'tool',
+  kind: 'answer',
   at,
-  name: 'answer',
-  target: 'answer',
-  status: 'done',
-  note: null,
-  ms: 0,
-  view: { kind: 'report', text, show, blocks: [] },
+  text,
 })
 
 const user: UiEntry = {
@@ -55,37 +50,20 @@ const user: UiEntry = {
 }
 
 describe('answer protocol', () => {
-  it('keeps normal Markdown and resolves its evidence', () => {
-    const run = buildRun([user, survey, answer('Only `demo` is public [1](#ev-1).', ['ev-survey'])])
-    expect(run.report?.text).toContain('Only `demo` is public')
-    expect(run.report?.show).toEqual(['ev-survey'])
-    expect(run.report?.unresolved).toBe(0)
-    expect(run.report?.unresolvedCitations).toBe(0)
-  })
-
-  it('omits a missing show id and counts it', () => {
-    const run = buildRun([user, survey, answer('The bucket is `demo`.', ['missing'])])
-    expect(run.report?.unresolved).toBe(1)
-    expect(run.report?.show).toEqual(['missing'])
+  it('keeps normal Markdown and resolves its cited evidence', () => {
+    const run = buildRun([user, survey, answer('Only `demo` is public [1](#ev-ev-survey).')])
+    expect(run.answer?.text).toContain('Only `demo` is public')
+    expect(run.answer?.unresolvedCitations).toBe(0)
   })
 
   it('reports a citation that does not resolve', () => {
-    const run = buildRun([user, survey, answer('Only `demo` is public [1](#ev-9).', ['ev-survey'])])
-    expect(run.report?.unresolvedCitations).toBe(1)
+    const run = buildRun([user, survey, answer('Only `demo` is public [1](#ev-missing).')])
+    expect(run.answer?.unresolvedCitations).toBe(1)
   })
 
-  it('keeps a legacy answer as a block report for older tasks', () => {
-    const legacy: UiEntry = {
-      ...survey,
-      id: 'legacy',
-      name: 'report',
-      view: {
-        kind: 'report',
-        blocks: [{ kind: 'summary', text: 'Only `demo` is public.', evidence: ['ev-survey'] }],
-      },
-    }
-    const run = buildRun([user, survey, legacy])
-    expect(run.report?.text).toBeNull()
-    expect(run.report?.blocks).toHaveLength(1)
+  it('does not treat a pre-question answer as current', () => {
+    const run = buildRun([answer('Old answer.'), user, survey])
+    expect(run.answer?.text).toBe('Old answer.')
+    expect(run.answer?.stale).toBe(true)
   })
 })

@@ -1,18 +1,18 @@
-import type { Brief } from '@shared/brief'
+import type { RunFacts } from '@shared/facts'
 import { describe, expect, it } from 'vitest'
 import { dict } from './i18n'
 import { scopeText } from './scope'
 
-function brief(overrides: Partial<Brief>): Brief {
+function brief(overrides: Partial<RunFacts>): RunFacts {
   return {
-    verdict: null,
+    answer: null,
     findings: [],
     accepted: [],
     resolved: [],
     blind: [],
     undecided: [],
     data: null,
-    fixes: [],
+    changePlans: [],
     checks: [],
     methods: [],
     coverage: [],

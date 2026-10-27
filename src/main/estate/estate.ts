@@ -8,7 +8,7 @@ export interface Delta {
   recurred: number
 }
 
-/** What one reading decided about one bucket, for the brief's current-state view. */
+/** What one reading decided about one bucket, for the run's current-state view. */
 export interface Observation {
   provider: string
   bucket: string
@@ -44,7 +44,7 @@ export class Estate {
       if (result.event === 'opened') delta.opened += 1
       else if (result.event === 'resolved') delta.resolved += 1
       else if (result.event === 'recurred') delta.recurred += 1
-      // Only a resolution changes what the brief already shows; open Issues travel in the view.
+      // Only a resolution changes what the run already shows; open Issues travel in the view.
       if (result.event === 'resolved')
         observations.push({ provider: providerId, bucket, code, verdict: false })
     }

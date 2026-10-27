@@ -10,7 +10,6 @@ import {
   maxRounds,
   readGapTotals,
   recordReadGaps,
-  reportTextOf,
   tierFor,
 } from './agent'
 
@@ -19,20 +18,6 @@ function state(known: string[] = []): AgentState {
 }
 
 describe('model tiers', () => {
-  it('includes markdown prose in the grounding candidate', () => {
-    expect(
-      reportTextOf({
-        kind: 'report',
-        text: 'The summary.\n\n## Detail\n\nThe markdown.',
-        show: [],
-        blocks: [
-          { kind: 'summary', text: 'The summary.', evidence: [] },
-          { kind: 'markdown', text: '## Detail\n\nThe markdown.', evidence: [] },
-        ],
-      }),
-    ).toContain('The markdown.')
-  })
-
   it('gives a small context model fewer rounds', () => {
     expect(tierFor(32_000)).toBe('small')
     expect(tierFor(128_000)).toBe('mid')

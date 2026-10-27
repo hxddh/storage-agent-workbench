@@ -1,9 +1,9 @@
 /**
- * One task, one brief.
+ * One task, one run.
  *
  * The window does not replay a chat: it projects the task's tool results into a
- * page — a verdict, the findings those results prove now, one data section, the
- * fixes, and the checks that produced them. The model writes the verdict;
+ * page — the answer, the findings those results prove now, one data section,
+ * the change plans, and the checks that produced them. The model writes the answer;
  * everything else here is deterministic, so the page cannot contradict the
  * tools.
  *
@@ -32,7 +32,7 @@ import type {
 } from './contract'
 import { contradicted, knownExposure, knownNames, ungrounded } from './grounding'
 
-export interface BriefFinding {
+export interface RiskFact {
   key: string
   provider: string | null
   bucket: string
@@ -55,7 +55,7 @@ export interface BriefFinding {
   at: string
 }
 
-export interface BriefData {
+export interface DataFact {
   key: string
   kind: ToolView['kind']
   title: string
@@ -65,14 +65,14 @@ export interface BriefData {
   memory: boolean
 }
 
-export interface BriefFix {
+export interface ChangePlanFact {
   key: string
   sourceId: string
-  view: Extract<ToolView, { kind: 'fix' }>
+  view: Extract<ToolView, { kind: 'change' }>
   at: string
 }
 
-export interface BriefCheck {
+export interface CallFact {
   id: string
   name: ToolName
   target: string
@@ -83,7 +83,7 @@ export interface BriefCheck {
   view: ToolView | null
 }
 
-export interface BriefCoverage {
+export interface CoverageFact {
   provider: string
   providerId?: string
   /** The account-wide public access block: on, partial, off, unknown, or n/a off AWS. */
@@ -101,7 +101,7 @@ export interface BriefCoverage {
   at: string
 }
 
-export interface BriefBlind {
+export interface BlindFact {
   key: string
   bucket: string
   title: string
@@ -110,7 +110,7 @@ export interface BriefBlind {
   sourceId: string
 }
 
-export interface BriefUndecided {
+export interface UndecidedFact {
   code: string
   title: string
   /** Up to 20 bucket names; `count` is the full number. */
@@ -118,7 +118,7 @@ export interface BriefUndecided {
   count: number
 }
 
-export interface BriefQuestion {
+export interface QuestionFact {
   id: string
   text: string
   at: string
@@ -127,7 +127,7 @@ export interface BriefQuestion {
 }
 
 /** A method the agent consulted. Documentation, not a storage check. */
-export interface BriefMethod {
+export interface MethodFact {
   id: string
   name: string
   title: string
@@ -135,7 +135,7 @@ export interface BriefMethod {
   at: string
 }
 
-export interface BriefNotice {
+export interface NoticeFact {
   id: string
   code?: NoticeCode
   text: string
@@ -143,31 +143,31 @@ export interface BriefNotice {
   action?: 'retry' | 'continue'
 }
 
-export interface Brief {
-  verdict: {
+export interface RunFacts {
+  answer: {
     text: string
     at: string
     streaming: boolean
-    /** The verdict answers an earlier question than the latest one. */
+    /** The answer belongs to an earlier question than the latest one. */
     stale: boolean
     /** Backticked names no tool result in the task shows. */
     ungrounded: string[]
-    /** Buckets the verdict calls public, or not, against what the readings proved. */
+    /** Buckets the answer calls public, or not, against what the readings proved. */
     contradicted: string[]
   } | null
-  findings: BriefFinding[]
-  accepted: BriefFinding[]
+  findings: RiskFact[]
+  accepted: RiskFact[]
   /** Findings this task saw open and then proved fixed. */
-  resolved: BriefFinding[]
-  blind: BriefBlind[]
-  undecided: BriefUndecided[]
-  data: BriefData | null
-  fixes: BriefFix[]
-  checks: BriefCheck[]
+  resolved: RiskFact[]
+  blind: BlindFact[]
+  undecided: UndecidedFact[]
+  data: DataFact | null
+  changePlans: ChangePlanFact[]
+  checks: CallFact[]
   /** Methods the agent loaded. They shape the answer but are not evidence checks. */
-  methods: BriefMethod[]
-  coverage: BriefCoverage[]
-  questions: BriefQuestion[]
+  methods: MethodFact[]
+  coverage: CoverageFact[]
+  questions: QuestionFact[]
   changes: PostureChange[]
   reverify: ReverifyReport | null
   attribution: {
@@ -178,7 +178,7 @@ export interface Brief {
     days?: number
     truncated?: boolean
   } | null
-  notices: BriefNotice[]
+  notices: NoticeFact[]
   /** Sum of the current turn's tool durations; null while it has none. */
   durationMs: number | null
   /** The freshest successful storage read in the task, for the "checked …" line. */
@@ -190,7 +190,7 @@ export interface Brief {
 }
 
 /** The one deterministic read status shared by the window, Home and Reading records. */
-export interface BriefReadState {
+export interface ReadState {
   complete: boolean
   open: number
   blocked: number
@@ -208,19 +208,19 @@ export interface BriefReadState {
   running: boolean
 }
 
-export function readStateOfBrief(
-  brief: Pick<Brief, 'coverage' | 'checks' | 'blind' | 'undecided'>,
+export function readState(
+  facts: Pick<RunFacts, 'coverage' | 'checks' | 'blind' | 'undecided'>,
   providerId?: string,
-): BriefReadState {
+): ReadState {
   const coverage = providerId
-    ? brief.coverage.filter((item) => item.providerId === providerId)
-    : brief.coverage
+    ? facts.coverage.filter((item) => item.providerId === providerId)
+    : facts.coverage
   const checks = providerId
-    ? brief.checks.filter((check) => {
+    ? facts.checks.filter((check) => {
         const id = (check.view as { providerId?: string } | null)?.providerId
         return !check.view || !id || id === providerId
       })
-    : brief.checks
+    : facts.checks
   const unread = new Set(coverage.flatMap((item) => [...item.denied, ...item.unknown])).size
   const denied = coverage.reduce((n, item) => n + item.denied.length, 0)
   const unknown = coverage.reduce((n, item) => n + item.unknown.length, 0)
@@ -243,12 +243,12 @@ export function readStateOfBrief(
   ]
   const failed = checks.filter(
     (check) =>
-      !['estate', 'fix', 'change_plan', 'note'].includes(check.name) &&
+      !['estate', 'change_plan', 'note'].includes(check.name) &&
       ['failed', 'refused', 'stopped', 'timeout'].includes(check.status),
   ).length
   const running = checks.some(
     (check) =>
-      !['estate', 'fix', 'change_plan', 'note'].includes(check.name) && check.status === 'running',
+      !['estate', 'change_plan', 'note'].includes(check.name) && check.status === 'running',
   )
   const accessGapByKey = new Map<string, number>()
   for (const check of checks) {
@@ -269,8 +269,8 @@ export function readStateOfBrief(
     accessGapByKey.set(key, gap + (blind ?? 0))
   }
   const access = [...accessGapByKey.values()].reduce((total, gap) => total + gap, 0)
-  const undecided = brief.undecided.reduce((n, item) => n + item.count, 0)
-  const blocked = unread + permissions.length + brief.blind.length + failed + access
+  const undecided = facts.undecided.reduce((n, item) => n + item.count, 0)
+  const blocked = unread + permissions.length + facts.blind.length + failed + access
   return {
     complete: coverage.length > 0 && pending + truncated + blocked + undecided === 0 && !running,
     open: pending + truncated + blocked + undecided,
@@ -329,8 +329,8 @@ function later(a: string | null, b: string): string {
 
 /** Findings keyed by account, bucket and rule; an unknown account matches any. */
 class FindingSet {
-  private readonly map = new Map<string, BriefFinding>()
-  readonly resolved = new Map<string, BriefFinding>()
+  private readonly map = new Map<string, RiskFact>()
+  readonly resolved = new Map<string, RiskFact>()
 
   private static key(provider: string | null, bucket: string, code: string): string {
     return `${provider ?? '*'}|${bucket}|${code}`
@@ -346,7 +346,7 @@ class FindingSet {
     return undefined
   }
 
-  set(finding: BriefFinding): void {
+  set(finding: RiskFact): void {
     const existing = this.find(finding.provider, finding.bucket, finding.code)
     const previous = existing ? this.map.get(existing) : undefined
     if (existing) this.map.delete(existing)
@@ -382,7 +382,7 @@ class FindingSet {
     }
   }
 
-  values(): BriefFinding[] {
+  values(): RiskFact[] {
     return [...this.map.values()]
   }
 
@@ -398,7 +398,7 @@ class FindingSet {
   }
 }
 
-function issueFinding(issue: IssueRow, check: BriefCheck, source: 'read' | 'memory'): BriefFinding {
+function issueFinding(issue: IssueRow, check: CallFact, source: 'read' | 'memory'): RiskFact {
   return {
     key: `issue:${issue.id}`,
     provider: issue.provider || null,
@@ -423,9 +423,9 @@ function reviewFinding(
   finding: ConfigFinding,
   bucket: string,
   provider: string | null,
-  check: BriefCheck,
+  check: CallFact,
   issue?: IssueRow,
-): BriefFinding {
+): RiskFact {
   const code = finding.code ?? finding.title.toLowerCase()
   return {
     key: `config:${bucket}:${code}`,
@@ -457,9 +457,9 @@ type UndecidedAccumulator = Map<string, { code: string; title: string; buckets: 
 
 function fold(
   set: FindingSet,
-  blind: Map<string, BriefBlind>,
+  blind: Map<string, BlindFact>,
   undecided: UndecidedAccumulator,
-  check: BriefCheck,
+  check: CallFact,
 ): void {
   const view = check.view
   if (!view) return
@@ -522,20 +522,20 @@ function fold(
   }
 }
 
-export function buildBrief(
+export function deriveFacts(
   entries: readonly UiEntry[],
   live?: LiveInput | null,
   issueStatus: Record<string, IssueRow['status']> = {},
-): Brief {
-  const questions: BriefQuestion[] = []
-  const checks: BriefCheck[] = []
-  const methods: BriefMethod[] = []
-  const notices: BriefNotice[] = []
+): RunFacts {
+  const questions: QuestionFact[] = []
+  const checks: CallFact[] = []
+  const methods: MethodFact[] = []
+  const notices: NoticeFact[] = []
   const answers: { text: string; at: string; index: number }[] = []
   let lastAt: string | null = null
   let boundary = -1
   let lastQuestionIndex = -1
-  const pending: { index: number; notice: BriefNotice }[] = []
+  const pending: { index: number; notice: NoticeFact }[] = []
 
   let reverify: ReverifyReport | null = null
   entries.forEach((entry, index) => {
@@ -555,34 +555,16 @@ export function buildBrief(
     } else if (entry.kind === 'answer') {
       if (entry.text.trim()) answers.push({ text: entry.text.trim(), at: entry.at, index })
     } else if (entry.kind === 'tool') {
-      // The answer and plan are protocol, not checks. A skill is a method the
-      // user may inspect, but it never counts as a storage read.
-      if (
-        entry.name === 'plan' ||
-        entry.name === 'answer' ||
-        entry.name === 'report' ||
-        entry.name === 'skill' ||
-        entry.name === 'playbook'
-      ) {
-        if (entry.status === 'done' && entry.view) {
-          if (entry.view.kind === 'skill')
-            methods.push({
-              id: entry.id,
-              name: entry.view.name,
-              title: entry.view.title,
-              description: entry.view.description,
-              at: entry.at,
-            })
-          else if (entry.view.kind === 'playbook')
-            for (const card of entry.view.cards)
-              methods.push({
-                id: `${entry.id}:${card.name}`,
-                name: card.name,
-                title: card.name,
-                description: card.body.slice(0, 180),
-                at: entry.at,
-              })
-        }
+      // The plan is process, and a skill is documentation. Neither is a check.
+      if (entry.name === 'plan' || entry.name === 'skill') {
+        if (entry.status === 'done' && entry.view?.kind === 'skill')
+          methods.push({
+            id: entry.id,
+            name: entry.view.name,
+            title: entry.view.title,
+            description: entry.view.description,
+            at: entry.at,
+          })
         return
       }
       checks.push({
@@ -627,13 +609,13 @@ export function buildBrief(
   }
 
   const set = new FindingSet()
-  const blind = new Map<string, BriefBlind>()
+  const blind = new Map<string, BlindFact>()
   const undecided: UndecidedAccumulator = new Map()
-  const fixes = new Map<string, BriefFix>()
-  const coverage = new Map<string, BriefCoverage>()
-  let data: BriefData | null = null
+  const changePlans = new Map<string, ChangePlanFact>()
+  const coverage = new Map<string, CoverageFact>()
+  let data: DataFact | null = null
   let changes: PostureChange[] = []
-  let attribution: Brief['attribution'] = null
+  let attribution: RunFacts['attribution'] = null
   let lastReadAt: string | null = null
   for (const check of checks) {
     if (check.status !== 'done' || !check.view) continue
@@ -655,20 +637,20 @@ export function buildBrief(
         memory: view.kind === 'estate',
       }
     }
-    if (view.kind === 'fix') {
+    if (view.kind === 'change') {
       if (view.plan) {
         const key = `plan:${check.id}`
-        fixes.delete(key)
-        fixes.set(key, { key, sourceId: check.id, view, at: check.at })
+        changePlans.delete(key)
+        changePlans.set(key, { key, sourceId: check.id, view, at: check.at })
         continue
       }
       const key = `${view.bucket}|${view.code}`
-      fixes.delete(key)
-      fixes.set(key, { key, sourceId: check.id, view, at: check.at })
+      changePlans.delete(key)
+      changePlans.set(key, { key, sourceId: check.id, view, at: check.at })
       for (const item of view.batch ?? []) {
         const batchKey = `${item.bucket}|${item.code}`
-        fixes.delete(batchKey)
-        fixes.set(batchKey, {
+        changePlans.delete(batchKey)
+        changePlans.set(batchKey, {
           key: batchKey,
           sourceId: check.id,
           view: {
@@ -739,7 +721,7 @@ export function buildBrief(
   set.overlay(issueStatus)
 
   const all = set.values()
-  const order = (a: BriefFinding, b: BriefFinding) =>
+  const order = (a: RiskFact, b: RiskFact) =>
     SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
     (a.source === b.source ? 0 : a.source === 'read' ? -1 : 1) ||
     Date.parse(b.at) - Date.parse(a.at) ||
@@ -747,12 +729,12 @@ export function buildBrief(
   const findings = all.filter((finding) => finding.status === 'open').sort(order)
   const accepted = all.filter((finding) => finding.status === 'accepted').sort(order)
 
-  // A fix stops being shown once the task proved its problem fixed.
+  // A change plan stops being shown once the task proved its problem fixed.
   const fixed = new Set(
     [...set.resolved.values()].map((finding) => `${finding.bucket}|${finding.code}`),
   )
   for (const finding of all) fixed.delete(`${finding.bucket}|${finding.code}`)
-  const shownFixes = [...fixes.values()].filter((fix) => !fixed.has(fix.key)).reverse()
+  const shownPlans = [...changePlans.values()].filter((plan) => !fixed.has(plan.key)).reverse()
 
   const current = checks.filter((check) => {
     const question = questions.at(-1)
@@ -768,7 +750,7 @@ export function buildBrief(
   const exposure = knownExposure(entries)
   const streamed = live?.text?.trim() ? live.text.trim() : null
   const lastAnswer = answers.at(-1) ?? null
-  const verdict = streamed
+  const answer = streamed
     ? {
         text: streamed,
         at: live?.startedAt ?? new Date().toISOString(),
@@ -789,7 +771,7 @@ export function buildBrief(
       : null
 
   return {
-    verdict,
+    answer,
     findings,
     accepted,
     resolved: [...set.resolved.values()],
@@ -803,7 +785,7 @@ export function buildBrief(
       }))
       .sort((a, b) => b.count - a.count || a.title.localeCompare(b.title)),
     data,
-    fixes: shownFixes,
+    changePlans: shownPlans,
     checks,
     methods,
     coverage: [...coverage.values()],
@@ -821,12 +803,12 @@ export function buildBrief(
   }
 }
 
-/** Text the search index stores for a task's brief. */
-export function briefSearchText(
-  brief: Brief,
+/** Text the search index stores for a task's facts. */
+export function factsSearchText(
+  facts: RunFacts,
 ): { entryId: string; kind: string; text: string; at: string }[] {
   const docs: { entryId: string; kind: string; text: string; at: string }[] = []
-  for (const finding of [...brief.findings, ...brief.accepted]) {
+  for (const finding of [...facts.findings, ...facts.accepted]) {
     docs.push({
       // The source check id travels with the finding so a search hit can load
       // the entry even when it is older than the window's first page.
@@ -836,13 +818,13 @@ export function briefSearchText(
       at: finding.at,
     })
   }
-  if (brief.verdict) {
-    const latest = brief.checks.reduce<string | null>((at, check) => later(at, check.at), null)
+  if (facts.answer) {
+    const latest = facts.checks.reduce<string | null>((at, check) => later(at, check.at), null)
     docs.push({
-      entryId: 'verdict',
+      entryId: 'answer',
       kind: 'answer',
-      text: brief.verdict.text,
-      at: latest ?? brief.verdict.at,
+      text: facts.answer.text,
+      at: latest ?? facts.answer.at,
     })
   }
   return docs

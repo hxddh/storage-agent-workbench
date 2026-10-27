@@ -63,7 +63,6 @@ function plan(body) {
   }
 
   // The harness asks once when the answer names something no read returned.
-  // The composed report is already on the page; a short coda is enough.
   if (/no tool result in this task shows|which no tool result/i.test(ask)) {
     console.log('GROUNDING_CORRECTION')
     return { text: 'The readings do not show that name.' }
@@ -107,7 +106,7 @@ function plan(body) {
         }),
       }
     }
-    if (ask.includes('fix')) {
+    if (ask.includes('fix') || ask.includes('change plan')) {
       return { tool: call('call_change_1', 'change_plan', { bucket: 'demo-private', code: 'no_abort_mpu' }) }
     }
     if (ask.includes('history') || ask.includes('changed')) {
@@ -136,20 +135,8 @@ function plan(body) {
     }
   }
 
-  if (called.has('answer') && planCalls < 3) {
-    return {
-      tool: call('call_plan_3', 'plan', {
-        note: 'The answer is composed.',
-        steps: [
-          { title: 'Recall the estate', status: 'done' },
-          { title: 'Read the account', status: 'done' },
-          { title: 'Compose the answer', status: 'done' },
-        ],
-      }),
-    }
-  }
 
-  if (planCalls === 1 && !called.has('answer')) {
+  if (planCalls === 1) {
     return {
       tool: call('call_plan_2', 'plan', {
         note: 'The reads are in; compose next.',
@@ -162,53 +149,37 @@ function plan(body) {
     }
   }
 
-  if (!called.has('answer')) {
-    let text =
-      'Only `demo-public` is public. `demo-private` is private and blocks public access.'
-    if (ask.includes('applied')) text = '`demo-public` is no longer public.'
-    else if (ask.includes('who can read'))
-      text = 'The public bucket policy is the anonymous grant on `demo-public`.'
-    else if (ask.includes('largest')) text = '`reports/` holds everything in `demo-public`.'
-    else if (ask.includes('fix')) text = 'Add an abort rule for incomplete uploads on `demo-private`.'
-    else if (ask.includes('history') || ask.includes('changed'))
-      text = 'The history records open risks on `demo-public` and `demo-private`.'
-    else if (ask.includes('issue'))
-      text =
-        '8 risks are open; the highest severity is public exposure on `demo-public`.'
-    else if (ask.includes('ghost'))
-      text = '`demo-public` is public and so is `ghost-bucket`.'
-    else if (publicBucket && publicBucket !== 'demo-public')
-      text = `\`${publicBucket}\` is publicly accessible.`
-
-    const show = []
-    if (ask.includes('history') || ask.includes('changed')) {
-      const id = evidence('estate')
-      if (id) show.push(id)
-    } else if (ask.includes('largest')) {
-      const id = evidence('query')
-      if (id) show.push(id)
-    } else if (ask.includes('who can read')) {
-      const id = evidence('config')
-      if (id) show.push(id)
-    } else if (ask.includes('fix')) {
-      const id = evidence('change_plan')
-      if (id) show.push(id)
-    } else if (ask.includes('public')) {
-      const id = evidence('survey')
-      if (id) show.push(id)
-    }
-    return {
-      tool: call('call_answer_1', 'answer', {
-        title: 'Answer',
-        text,
-        ...(show.length ? { show } : {}),
-      }),
-    }
+  let text = 'Only `demo-public` is public. `demo-private` is private and blocks public access.'
+  let source = 'survey'
+  if (ask.includes('applied')) {
+    text = '`demo-public` is no longer public.'
+    source = 'survey'
+  } else if (ask.includes('who can read')) {
+    text = 'The public bucket policy is the anonymous grant on `demo-public`.'
+    source = 'config'
+  } else if (ask.includes('largest')) {
+    text = '`reports/` holds everything in `demo-public`.'
+    source = 'query'
+  } else if (ask.includes('fix') || ask.includes('change plan')) {
+    text = 'Add an abort rule for incomplete uploads on `demo-private`.'
+    source = 'change_plan'
+  } else if (ask.includes('history') || ask.includes('changed')) {
+    text = 'The history records open risks on `demo-public` and `demo-private`.'
+    source = 'estate'
+  } else if (ask.includes('issue')) {
+    text = '8 risks are open; the highest severity is public exposure on `demo-public`.'
+    source = 'estate'
+  } else if (ask.includes('ghost')) {
+    text = '`demo-public` is public and so is `ghost-bucket`.'
+    source = 'survey'
+  } else if (publicBucket && publicBucket !== 'demo-public') {
+    text = `\`${publicBucket}\` is publicly accessible.`
+    source = 'survey'
   }
+  const id = evidence(source)
+  if (id) text += ` [1](#ev-${id})`
+  return { text }
 
-  // The report is the answer. An empty coda keeps the page free of a second
-  // generated paragraph while still letting the run settle.
-  return { text: '' }
 }
 
 function chunk(res, payload) {

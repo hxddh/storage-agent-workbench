@@ -23,16 +23,15 @@ import {
 } from '@earendil-works/pi-durable'
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
 import { auditVerdict } from '@shared/audit'
-import { buildBrief, readStateOfBrief } from '@shared/brief'
 import type {
   AppEvent,
   AttachmentRef,
   AuditCheck,
   AuditProgress,
   AuditReport,
+  ChangePlan,
   ContextRef,
   EstateRef,
-  FixPlan,
   IssueRow,
   NoteRow,
   NoticeCode,
@@ -45,6 +44,7 @@ import type {
   ToolView,
   UiEntry,
 } from '@shared/contract'
+import { deriveFacts, readState } from '@shared/facts'
 import { knownExposure, knownNames } from '@shared/grounding'
 import type { AppDb, ReadingTrigger } from '../db'
 import type { Estate } from '../estate/estate'
@@ -382,12 +382,12 @@ export class AgentHarness {
       }
       wanted.set(providerId, buckets)
     }
-    let plan: FixPlan | null = null
+    let plan: ChangePlan | null = null
     let planProviderId: string | null = null
     for (const entry of entries) {
       if (entry.kind !== 'tool' || !entry.view) continue
       const view = entry.view
-      if (view.kind === 'fix' && view.plan && view.providerId) {
+      if (view.kind === 'change' && view.plan && view.providerId) {
         plan = view.plan
         planProviderId = view.providerId
         const aspects = new Set<ReplayAspect>()
@@ -640,7 +640,7 @@ export class AgentHarness {
   /**
    * A deterministic account check. It runs the same survey and access readers
    * as the tools, without a model, and stores one durable audit entry that the
-   * window projects into the ordinary brief.
+   * window projects into ordinary run facts.
    */
   async audit(taskId: string, providerIds?: string[]): Promise<void> {
     const conversation = await this.require(taskId)
@@ -783,7 +783,7 @@ export class AgentHarness {
       // hit can load the task and reveal its check.
       const auditId = `audit:${taskId}`
       const auditDocs: { entryId: string; kind: string; text: string; at: string }[] = [
-        { entryId: 'verdict', kind: 'answer', text: report.verdict, at: report.at },
+        { entryId: 'answer', kind: 'answer', text: report.verdict, at: report.at },
       ]
       report.checks.forEach((check, index) => {
         if (check.view?.kind !== 'survey') return
@@ -1204,8 +1204,8 @@ export class AgentHarness {
     const entries = await this.entries(conversation)
     const lastUser = entries.findLastIndex((entry) => entry.kind === 'user')
     const current = all ? entries : entries.slice(lastUser + 1)
-    const brief = buildBrief(all ? entries : current)
-    if (!brief.coverage.length) return
+    const facts = deriveFacts(all ? entries : current)
+    if (!facts.coverage.length) return
     const accounts = await this.deps.providers.list()
     const idOf = (providerId: string | undefined, provider: string) =>
       providerId ?? accounts.find((account) => account.name === provider)?.id
@@ -1224,17 +1224,17 @@ export class AgentHarness {
       providerIds ??
       (surveyed.size
         ? [...surveyed.keys()]
-        : brief.coverage.flatMap((item) => {
+        : facts.coverage.flatMap((item) => {
             const id = idOf(item.providerId, item.provider)
             return id ? [id] : []
           }))
     if (!ids.length) return
     for (const providerId of new Set(ids)) {
-      const coverage = brief.coverage.find(
+      const coverage = facts.coverage.find(
         (item) => idOf(item.providerId, item.provider) === providerId,
       )
       if (!coverage) continue
-      const state = readStateOfBrief(brief, providerId)
+      const state = readState(facts, providerId)
       const replayState = replay?.get(providerId)
       const openHigh = await this.deps.db.countOpenHigh(providerId)
       const openTotal = await this.deps.db.countOpenIssues(providerId)
@@ -1264,11 +1264,17 @@ export class AgentHarness {
   private async index(taskId: string): Promise<void> {
     const conversation = await this.conversation(taskId)
     if (!conversation) return
-    // Read the durable view, not the active watch cache: a just-written audit
-    // entry may not have reached the cache yet, and an empty index is worse
-    // than a slightly later one.
+    // The durable view is the source of truth, but the last assistant message
+    // can land in the active watch a beat before viewState observes it. Keep the
+    // longer of the two projections so search sees the answer, not an empty
+    // suffix.
     const state = await conversation.viewState(CONTEXT)
-    await this.deps.db.replaceSearchDocs(taskId, searchDocsFor(mapEntries(state.value.entries)))
+    const durable = mapEntries(state.value.entries)
+    const watched =
+      this.active?.id === taskId && this.active.entries.length > durable.length
+        ? this.active.entries
+        : durable
+    await this.deps.db.replaceSearchDocs(taskId, searchDocsFor(watched))
   }
 
   private async backfillSearch(): Promise<void> {

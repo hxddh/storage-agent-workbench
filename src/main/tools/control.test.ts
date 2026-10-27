@@ -1,6 +1,5 @@
-import type { ReportBlock } from '@shared/contract'
 import { describe, expect, it } from 'vitest'
-import { answerTool, planTool, skillTool } from './control'
+import { planTool, skillTool } from './control'
 
 type Executable = {
   execute: (
@@ -36,30 +35,6 @@ describe('agent control tools', () => {
       { title: 'Read the account', status: 'done' },
       { title: 'Compose', status: 'pending' },
     ])
-  })
-
-  it('records prose with at most two evidence ids', async () => {
-    const result = await execute(answerTool(), {
-      title: 'Answer',
-      text: 'Only `demo` is public.',
-      show: ['ev-1', 'ev-2', 'ev-3'],
-    })
-    const view = result.details?.view as {
-      kind: string
-      text?: string
-      show?: string[]
-      blocks: ReportBlock[]
-    }
-    expect(view.kind).toBe('report')
-    expect(view.text).toBe('Only `demo` is public.')
-    expect(view.show).toEqual(['ev-1', 'ev-2'])
-    expect(view.blocks).toEqual([])
-  })
-
-  it('rejects an empty answer', async () => {
-    const result = await execute(answerTool(), { text: '   ' })
-    expect(result.isError).toBe(true)
-    expect(result.details?.status).toBe('failed')
   })
 
   it('loads one method or lists the four methods', async () => {

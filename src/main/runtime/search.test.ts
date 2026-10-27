@@ -62,5 +62,6 @@ describe('search docs', () => {
     ])
     expect(docs.some((doc) => doc.text.includes('publicly accessible'))).toBe(true)
     expect(docs.some((doc) => doc.text === 'One issue is open.')).toBe(true)
+    expect(new Set(docs.map((doc) => doc.entryId)).size).toBe(docs.length)
   })
 })

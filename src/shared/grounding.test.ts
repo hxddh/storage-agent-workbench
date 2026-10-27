@@ -63,16 +63,16 @@ describe('grounding', () => {
 
   it('grounds every bucket in a change plan and its residual list', () => {
     const plan: UiEntry = {
-      id: 'fix',
+      id: 'change',
       kind: 'tool',
       at: '',
-      name: 'fix',
+      name: 'change_plan',
       target: 'all issues',
       status: 'done',
       note: null,
       ms: 1,
       view: {
-        kind: 'fix',
+        kind: 'change',
         providerId: 'p1',
         bucket: 'first',
         code: 'public_exposure',

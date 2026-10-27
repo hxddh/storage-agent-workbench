@@ -1,35 +1,35 @@
 import { describe, expect, it } from 'vitest'
-import { generateFix, impactPreview, policyHasAccountId } from './fixes'
+import { generateChange, impactPreview, policyHasAccountId } from './changes'
 import { BY_CODE } from './rules'
 
-describe('generated fixes', () => {
+describe('generated changes', () => {
   it('produces CLI, Terraform and API formats', () => {
-    const fix = generateFix(BY_CODE.get('public_exposure')!, 'logs-prod', null, 'eu-west-1')
-    expect(fix?.formats.map((format) => format.label)).toEqual([
+    const change = generateChange(BY_CODE.get('public_exposure')!, 'logs-prod', null, 'eu-west-1')
+    expect(change?.formats.map((format) => format.label)).toEqual([
       'AWS CLI',
       'Terraform',
       'API document',
     ])
-    expect(fix?.formats[0]?.text).toContain("--region 'eu-west-1'")
-    expect(fix?.formats[0]?.text).toContain('put-public-access-block')
-    expect(fix?.formats[1]?.text).toContain('aws_s3_bucket_public_access_block')
+    expect(change?.formats[0]?.text).toContain("--region 'eu-west-1'")
+    expect(change?.formats[0]?.text).toContain('put-public-access-block')
+    expect(change?.formats[1]?.text).toContain('aws_s3_bucket_public_access_block')
   })
 
   it('points the command at a custom endpoint', () => {
-    const fix = generateFix(
+    const change = generateChange(
       BY_CODE.get('no_default_encryption')!,
       'bucket-a',
       'https://minio.example:9000',
       'us-east-1',
     )
-    expect(fix?.formats[0]?.text).toContain("--endpoint-url 'https://minio.example:9000'")
-    expect(fix?.notes[0]).toContain('minio.example')
+    expect(change?.formats[0]?.text).toContain("--endpoint-url 'https://minio.example:9000'")
+    expect(change?.notes[0]).toContain('minio.example')
   })
 
   it('refuses a bucket name no shell can quote safely', () => {
-    expect(generateFix(BY_CODE.get('public_exposure')!, 'x; rm -rf ~', null, null)).toBeNull()
+    expect(generateChange(BY_CODE.get('public_exposure')!, 'x; rm -rf ~', null, null)).toBeNull()
     expect(
-      generateFix(BY_CODE.get('public_exposure')!, 'ok.bucket-name_1', null, null),
+      generateChange(BY_CODE.get('public_exposure')!, 'ok.bucket-name_1', null, null),
     ).not.toBeNull()
   })
 
@@ -50,12 +50,12 @@ describe('generated fixes', () => {
   })
 })
 
-describe('fixes for the 19.0 rules', () => {
-  const fix = (code: string, bucket = 'demo') =>
-    generateFix(BY_CODE.get(code)!, bucket, null, 'us-east-1')
+describe('changes for the 19.0 rules', () => {
+  const change = (code: string, bucket = 'demo') =>
+    generateChange(BY_CODE.get(code)!, bucket, null, 'us-east-1')
 
   it('asks for the account id instead of storing it', () => {
-    const out = fix('account_public_access_block_missing', '')
+    const out = change('account_public_access_block_missing', '')
     expect(out?.formats[0]?.text).toContain(
       "aws --region 'us-east-1' s3control put-public-access-block --account-id <account-id>",
     )
@@ -65,7 +65,7 @@ describe('fixes for the 19.0 rules', () => {
   })
 
   it('denies plain HTTP with a statement to merge', () => {
-    const out = fix('insecure_transport')
+    const out = change('insecure_transport')
     expect(out?.formats.find((f) => f.label === 'API document')?.text).toContain(
       'aws:SecureTransport',
     )
@@ -73,19 +73,19 @@ describe('fixes for the 19.0 rules', () => {
   })
 
   it('turns ACLs off and leaves the log bucket to the user', () => {
-    expect(fix('acls_enabled')?.formats[0]?.text).toContain('BucketOwnerEnforced')
-    expect(fix('access_logging_off')?.formats[0]?.text).toContain('<log-bucket>')
+    expect(change('acls_enabled')?.formats[0]?.text).toContain('BucketOwnerEnforced')
+    expect(change('access_logging_off')?.formats[0]?.text).toContain('<log-bucket>')
   })
 
   it('moves a large Standard bucket to Intelligent-Tiering', () => {
-    const out = fix('large_standard_only')
+    const out = change('large_standard_only')
     expect(out?.formats.find((f) => f.label === 'Terraform')?.text).toContain(
       'storage_class = "INTELLIGENT_TIERING"',
     )
   })
 
-  it('never generates a bucket fix for an empty bucket name', () => {
-    expect(fix('acls_enabled', '')).toBeNull()
+  it('never generates a bucket change for an empty bucket name', () => {
+    expect(change('acls_enabled', '')).toBeNull()
   })
 
   it('detects account ids in a principal, condition or ARN before merging a policy', () => {

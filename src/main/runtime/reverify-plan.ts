@@ -1,4 +1,4 @@
-import type { FixPlan, ReverifyPlan, ReverifyPlanStep } from '@shared/contract'
+import type { ChangePlan, ReverifyPlan, ReverifyPlanStep } from '@shared/contract'
 import { type Decision, decideAccount } from '../estate/rules'
 import type { AccountFacts } from '../s3/account'
 
@@ -24,7 +24,7 @@ export function planAccountDecisions(
  * conservative: a missing reading is not evidence that a fix worked.
  */
 export function comparePlanToReplay(
-  plan: FixPlan,
+  plan: ChangePlan,
   checked: (bucket: string) => boolean,
   after: (bucket: string, code: string) => After | undefined,
 ): ReverifyPlan {

@@ -1,15 +1,13 @@
 # Tools
 
-Thirteen tools in one pi extension (`runtime/agent.ts`), grouped by capability:
-**read**, **query**, **memory**, **change_plan**, **answer**, **plan** and
-**skill**. Read tools go through `agentTool()`, which applies account scope, a
-timeout, an audit row, redaction and the untrusted-data envelope, and attaches a
-typed `view`, a `status` (`done`, `failed`, `refused`, `timeout`, `stopped`) and
-an `evidenceId`.
+Twelve tools in one pi extension (`runtime/agent.ts`), grouped by capability:
+**read**, **query**, **memory**, **change_plan**, **plan** and **skill**. Read
+tools go through `agentTool()`, which applies account scope, a timeout, an audit
+row, redaction and the untrusted-data envelope, and attaches a typed `view`, a
+`status` (`done`, `failed`, `refused`, `timeout`, `stopped`) and an `evidenceId`.
 
-`answer`, `plan` and `skill` are control tools. They shape the answer and never
-read storage. `change_plan` generates text from remembered Issues; the app never
-applies it.
+`plan` and `skill` are control tools. They shape the run and never read storage.
+`change_plan` generates text from remembered Issues; the app never applies it.
 
 | Group | Tool | Input | Model output | View |
 |---|---|---|---|---|
@@ -23,23 +21,24 @@ applies it.
 | memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with age, Issues, notes; with `history`, Issue events, posture changes and reading events | bucket table, Issues, notes, optional history table |
 | memory | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
 | change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
-| answer | `answer` | `title?`, `text` (Markdown, ≤8,000 chars), `show?` (≤2 evidence ids) | answer recorded | Markdown answer; `show` resolves the cited tool views |
 | plan | `plan` | `steps` (1–6), `note?` | optional plan recorded | pending/active/done/blocked steps |
 | skill | `skill` | `name?` | one method, or the four methods | not a check; shown under Methods |
 
 ## Answer and sources
 
-`answer` accepts normal Markdown. The model cites `show` in prose as
-`[1](#ev-1)`, `[2](#ev-2)` in array order. The window validates every citation
-and every `show` id against the task's tool results. It omits a missing view with
-a quiet note and renders the actual tool columns; the model never writes a table
-of facts. An answer without `answer` is also valid: the final message is the
-answer, and the window shows the current risk list when no proof is supplied.
+The final assistant message is the answer. It is normal Markdown; there is no
+answer tool and no report block protocol. The model cites a tool result by the
+actual evidence id from the `<untrusted-data evidence="…">` tag, for example
+`[1](#ev-call_survey_1)`. The window resolves that id to the tool view, validates
+every citation, leaves an unresolved one as plain text and shows a quiet note.
+The model never writes a table of facts.
 
-`Sources` is one compact index below the answer. Risks, Data, Change plan, Tool
-calls, Not checked, Checked again, Changes and Methods appear only when they have
-content; one row opens one section. The old 27–29 `report` blocks remain readable
-for existing tasks.
+The window shows one proof: the first cited tool result, otherwise the latest
+data read, otherwise the latest change plan. When there is no proof, the current
+risk list stands in its place. `Sources` is one compact index below the answer.
+Risks, Data, Change plan, Tool calls, Not checked, Checked again, Changes and
+Methods appear only when they have content; one row opens one section. There is
+no legacy report block path.
 
 ## Code mode (`query`)
 

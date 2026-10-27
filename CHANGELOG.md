@@ -1,3 +1,39 @@
+## 31.0.0 — 2026-10-27
+
+The report system is gone. The agent answers in its final message, tools are the
+only evidence, and there is no compatibility layer for pre-30 tasks.
+
+### Changed
+
+- **One answer.** The `answer` tool and the ordered report-block protocol are
+  removed. The final assistant message is the answer; a response with no
+  citation is still complete.
+- **Citations point at the evidence.** The model cites the actual
+  `<untrusted-data evidence="…">` id as `[1](#ev-<id>)`. The window resolves the
+  tool view, validates every citation, and leaves an unresolved one as plain
+  text with a quiet note.
+- **One proof.** The first cited tool result stands beside the answer. Without a
+  citation, the latest data read or change plan is used. Only when there is no
+  proof does the current risk list stand in.
+- **Twelve tools.** Seven reads, two memory tools, `change_plan`, `plan` and
+  `skill`. There is no answer or playbook tool. `change_plan` is the only
+  remediation vocabulary; the stored change view is `change`.
+- **The projection is facts, not a brief.** `shared/facts.ts` derives risks,
+  coverage, change plans, data, methods and tool calls. `shared/run.ts` projects
+  only the optional plan, the final answer and resolved evidence.
+- **No compatibility path.** Old `report`, `fix`, `playbook` and block entries
+  are not rendered. The `answer` tool is not registered, and the old seeded
+  answer text is gone.
+- **Search and runtime indexing** use one answer entry and no duplicate
+  `answer` document. A long-running task indexes its final answer from the
+  active watch when the durable view has not caught up.
+
+### Verification
+
+- Typecheck, Biome, 209 unit tests, build, contrast, bundle budget, full E2E,
+  no-model E2E, smoke eval, axe, cold-start performance and the 26-state visual
+  suite.
+
 ## 30.0.0
 
 An agent-native answer, not a report workbench. This is one release; the P0–P3

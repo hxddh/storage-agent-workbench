@@ -383,7 +383,7 @@ export const ACCOUNT_RULE: AccountRule = {
   },
 }
 
-/** Every rule by code, the account rule included, for titles, severities and fixes. */
+/** Every rule by code, the account rule included, for titles, severities and change plans. */
 export const BY_CODE = new Map<string, Rule | AccountRule>([
   ...RULES.map((rule) => [rule.code, rule] as const),
   [ACCOUNT_RULE.code, ACCOUNT_RULE],

@@ -3,15 +3,22 @@ import {
   GetBucketPolicyCommand,
   type S3Client,
 } from '@aws-sdk/client-s3'
-import type { FixFormat, FixPlan, FixPlanStep, Impact, Severity, Table } from '@shared/contract'
+import type {
+  ChangeFormat,
+  ChangePlan,
+  ChangePlanStep,
+  Impact,
+  Severity,
+  Table,
+} from '@shared/contract'
 import {
-  type FixKind,
-  formatFix,
-  generateFix,
+  type ChangeKind,
+  formatChange,
+  generateChange,
   impactPreview,
   policyHasAccountId,
   TLS_STATEMENT,
-} from '../estate/fixes'
+} from '../estate/changes'
 import { ACCOUNT_SCOPE, BY_CODE, ruleTitle } from '../estate/rules'
 import { redact } from '../security/redact'
 import { agentTool, assertInScope, providerParam, type ToolDeps, Type } from './policy'
@@ -366,12 +373,12 @@ export function estateTools(deps: ToolDeps) {
         type GeneratedItem = {
           bucket: string
           code: string
-          formats: FixFormat[]
+          formats: ChangeFormat[]
           impact: Impact
           notes: string[]
           severity: Severity
           title: string
-          kind: FixKind
+          kind: ChangeKind
           document: Record<string, unknown>
           command: string
         }
@@ -384,33 +391,33 @@ export function estateTools(deps: ToolDeps) {
             assertInScope(config, issue.bucket)
           const rule = BY_CODE.get(issue.code)
           if (!rule) continue
-          const fix = generateFix(
+          const change = generateChange(
             rule,
             issue.bucket,
             config.endpoint || null,
             config.region || null,
           )
-          if (!fix) continue
+          if (!change) continue
           const posture = await deps.estate.postureOf(config.id, issue.bucket)
           generated.push({
             bucket: issue.bucket,
             code: issue.code,
-            formats: fix.formats,
+            formats: change.formats,
             impact: impactPreview(rule, posture, posture?.lifecycle_status === 'available'),
-            notes: fix.notes,
+            notes: change.notes,
             severity: issue.severity,
             title: ruleTitle(rule, deps.lang()),
-            kind: fix.kind,
-            document: fix.document,
-            command: fix.command,
+            kind: change.kind,
+            document: change.document,
+            command: change.command,
           })
         }
         if (!generated.length)
           throw new Error(
-            'No safe generated fix exists for these issues; they depend on intent the rule cannot know.',
+            'No safe generated change exists for these issues; they depend on intent the rule cannot know.',
           )
 
-        const steps: FixPlanStep[] = []
+        const steps: ChangePlanStep[] = []
         const lifecycle = new Map<string, GeneratedItem[]>()
         const policies = new Map<string, GeneratedItem[]>()
         for (const item of generated) {
@@ -498,7 +505,7 @@ export function estateTools(deps: ToolDeps) {
             notes.push(
               'Terraform is omitted for a merged lifecycle configuration: the current rules contain fields this renderer cannot reproduce. Apply the CLI or JSON, or update your full Terraform configuration.',
             )
-          const formatted = formatFix(
+          const formatted = formatChange(
             'lifecycle',
             document,
             bucket,
@@ -557,7 +564,7 @@ export function estateTools(deps: ToolDeps) {
           }
           const document = tlsPolicy(current.document, bucket)
           const command = `aws s3api put-bucket-policy --bucket ${shellQuote(bucket)} --policy ${shellJson(document)}`
-          const formatted = formatFix(
+          const formatted = formatChange(
             'policy',
             document,
             bucket,
@@ -633,12 +640,12 @@ export function estateTools(deps: ToolDeps) {
             ? `Baseline: complete reading ${baseline.at.slice(0, 10)}.`
             : 'Baseline: no complete reading is recorded; this plan is based on remembered state.',
         ]
-        const plan: FixPlan = { steps, baseline, residual, summary }
+        const plan: ChangePlan = { steps, baseline, residual, summary }
         return {
           model: lines.join('\n'),
           note: summary,
           view: {
-            kind: 'fix' as const,
+            kind: 'change' as const,
             providerId: config.id,
             bucket: first.bucket,
             code: first.codes[0] ?? first.id,

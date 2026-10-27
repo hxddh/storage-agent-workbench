@@ -1,5 +1,5 @@
-import { briefSearchText, buildBrief } from '@shared/brief'
 import type { IssueRow, Observation, ToolView, UiEntry } from '@shared/contract'
+import { deriveFacts, factsSearchText } from '@shared/facts'
 import { describe, expect, it } from 'vitest'
 
 const at = (minute: number) => new Date(Date.UTC(2026, 0, 1, 10, minute)).toISOString()
@@ -74,8 +74,8 @@ const answer = (id: string, time: string, text: string): UiEntry => ({
   text,
 })
 
-const fix = (bucket: string, code: string): ToolView => ({
-  kind: 'fix',
+const change = (bucket: string, code: string): ToolView => ({
+  kind: 'change',
   providerId: 'p1',
   bucket,
   code,
@@ -83,9 +83,9 @@ const fix = (bucket: string, code: string): ToolView => ({
   impact: { verdict: 'caution', reasons: ['reads break'], gap: null },
 })
 
-describe('brief projection', () => {
+describe('facts projection', () => {
   it('orders findings by severity and indexes each once', () => {
-    const brief = buildBrief([
+    const facts = deriveFacts([
       user('u1', at(0)),
       tool(
         't1',
@@ -95,18 +95,18 @@ describe('brief projection', () => {
       ),
       answer('a1', at(3), 'Two buckets need attention.'),
     ])
-    expect(brief.findings.map((finding) => finding.key)).toEqual(['issue:b', 'issue:a'])
-    const docs = briefSearchText(brief).filter((doc) => doc.kind === 'finding')
+    expect(facts.findings.map((finding) => finding.key)).toEqual(['issue:b', 'issue:a'])
+    const docs = factsSearchText(facts).filter((doc) => doc.kind === 'finding')
     expect(new Set(docs.map((doc) => doc.entryId)).size).toBe(2)
-    expect(brief.verdict).toMatchObject({ text: 'Two buckets need attention.', streaming: false })
+    expect(facts.answer).toMatchObject({ text: 'Two buckets need attention.', streaming: false })
   })
 
   it('removes a finding a later survey proved fixed, and says so', () => {
     const exposed = issue('x', 'high', 'demo', 'public_exposure')
-    const brief = buildBrief([
+    const facts = deriveFacts([
       user('u1', at(0)),
       tool('t1', 'survey', at(1), survey([exposed])),
-      tool('t2', 'fix', at(2), fix('demo', 'public_exposure')),
+      tool('t2', 'change_plan', at(2), change('demo', 'public_exposure')),
       user('u2', at(3), 'I applied it, check again'),
       tool(
         't3',
@@ -120,14 +120,14 @@ describe('brief projection', () => {
         }),
       ),
     ])
-    expect(brief.findings).toHaveLength(0)
-    expect(brief.resolved.map((finding) => finding.key)).toEqual(['issue:x'])
-    expect(brief.fixes).toHaveLength(0)
+    expect(facts.findings).toHaveLength(0)
+    expect(facts.resolved.map((finding) => finding.key)).toEqual(['issue:x'])
+    expect(facts.changePlans).toHaveLength(0)
   })
 
   it('collapses the review finding that produced an issue into that issue', () => {
     const exposed = issue('x', 'high', 'demo', 'public_exposure')
-    const brief = buildBrief([
+    const facts = deriveFacts([
       user('u1', at(0)),
       tool('t1', 'survey', at(1), survey([exposed])),
       tool('t2', 'config', at(2), {
@@ -145,8 +145,8 @@ describe('brief projection', () => {
         observations: [{ provider: 'p1', bucket: 'demo', code: 'public_exposure', verdict: true }],
       }),
     ])
-    expect(brief.findings).toHaveLength(1)
-    expect(brief.findings[0]).toMatchObject({
+    expect(facts.findings).toHaveLength(1)
+    expect(facts.findings[0]).toMatchObject({
       issueId: 'x',
       detail: 'The policy lets anyone read objects',
       provider: 'p1',
@@ -154,7 +154,7 @@ describe('brief projection', () => {
   })
 
   it('marks memory and fresh reads apart', () => {
-    const brief = buildBrief([
+    const facts = deriveFacts([
       user('u1', at(0)),
       tool('t1', 'estate', at(1), {
         kind: 'estate',
@@ -164,8 +164,8 @@ describe('brief projection', () => {
         notes: [],
       }),
     ])
-    expect(brief.findings[0]?.source).toBe('memory')
-    expect(brief.findings[0]?.readAt).toBe(at(1))
+    expect(facts.findings[0]?.source).toBe('memory')
+    expect(facts.findings[0]?.readAt).toBe(at(1))
   })
 
   it('folds an Issue the user accepted and drops one resolved elsewhere', () => {
@@ -178,19 +178,19 @@ describe('brief projection', () => {
         survey([issue('a', 'high', 'demo'), issue('b', 'medium', 'prod')]),
       ),
     ]
-    const brief = buildBrief(entries, null, { a: 'accepted', b: 'resolved' })
-    expect(brief.findings).toHaveLength(0)
-    expect(brief.accepted.map((finding) => finding.key)).toEqual(['issue:a'])
-    expect(brief.resolved.map((finding) => finding.key)).toEqual(['issue:b'])
+    const facts = deriveFacts(entries, null, { a: 'accepted', b: 'resolved' })
+    expect(facts.findings).toHaveLength(0)
+    expect(facts.accepted.map((finding) => finding.key)).toEqual(['issue:a'])
+    expect(facts.resolved.map((finding) => finding.key)).toEqual(['issue:b'])
   })
 
   it('keeps coverage per account, with the buckets a stopped survey did not read', () => {
-    const brief = buildBrief([
+    const facts = deriveFacts([
       user('u1', at(0)),
       tool('t1', 'survey', at(1), survey([], { denied: ['secret'], pending: 4 })),
     ])
-    expect(brief.coverage).toHaveLength(1)
-    expect(brief.coverage[0]).toMatchObject({ denied: ['secret'], pending: 4 })
+    expect(facts.coverage).toHaveLength(1)
+    expect(facts.coverage[0]).toMatchObject({ denied: ['secret'], pending: 4 })
   })
 
   it('does not replace account coverage with a one-bucket re-read', () => {
@@ -219,13 +219,13 @@ describe('brief projection', () => {
         gone: [],
       },
     } as ToolView
-    const brief = buildBrief([
+    const facts = deriveFacts([
       user('u1', at(0)),
       tool('t1', 'survey', at(1), account),
       tool('t2', 'survey', at(2), scoped),
     ])
-    expect(brief.coverage).toHaveLength(1)
-    expect(brief.coverage[0]).toMatchObject({
+    expect(facts.coverage).toHaveLength(1)
+    expect(facts.coverage[0]).toMatchObject({
       visible: 4,
       processed: 3,
       pending: 2,
@@ -233,7 +233,7 @@ describe('brief projection', () => {
       denied: ['secret'],
     })
     expect(
-      buildBrief([user('u1', at(0)), tool('t1', 'survey', at(1), scoped)]).coverage,
+      deriveFacts([user('u1', at(0)), tool('t1', 'survey', at(1), scoped)]).coverage,
     ).toHaveLength(0)
   })
 
@@ -245,9 +245,9 @@ describe('brief projection', () => {
         { severity: 'blind', title: 'Access denied reading CORS', detail: '', code: 'blind:CORS' },
       ],
     }
-    expect(buildBrief([tool('t1', 'config', at(1), blindReview)]).blind).toHaveLength(1)
+    expect(deriveFacts([tool('t1', 'config', at(1), blindReview)]).blind).toHaveLength(1)
     expect(
-      buildBrief([
+      deriveFacts([
         tool('t1', 'config', at(1), blindReview),
         tool('t2', 'survey', at(2), survey([])),
       ]).blind,
@@ -255,47 +255,47 @@ describe('brief projection', () => {
   })
 
   it('measures only the current turn', () => {
-    const brief = buildBrief([
+    const facts = deriveFacts([
       tool('t0', 'buckets', at(0), { kind: 'buckets', rows: { columns: ['B'], rows: [] } }, 9000),
       user('u1', at(10)),
       tool('t1', 'config', at(11), { kind: 'config', bucket: 'demo', findings: [] }, 400),
       tool('t2', 'survey', at(12), survey([]), 600),
       answer('a1', at(13), 'Clean.'),
     ])
-    expect(brief.durationMs).toBe(1000)
-    expect(brief.data?.sourceId).toBe('t2')
+    expect(facts.durationMs).toBe(1000)
+    expect(facts.data?.sourceId).toBe('t2')
   })
 
-  it('puts a streaming verdict above the last settled one', () => {
-    const brief = buildBrief([user('u1', at(0)), answer('a1', at(1), 'Old answer.')], {
+  it('puts a streaming answer above the last settled one', () => {
+    const facts = deriveFacts([user('u1', at(0)), answer('a1', at(1), 'Old answer.')], {
       tools: [{ callId: 'c1', name: 'survey', target: 'acme', note: '3 of 12', startedAt: at(2) }],
       text: 'New answer',
       startedAt: at(2),
     })
-    expect(brief.verdict).toMatchObject({ text: 'New answer', streaming: true })
-    expect(brief.checks.at(-1)).toMatchObject({ status: 'running', note: '3 of 12' })
+    expect(facts.answer).toMatchObject({ text: 'New answer', streaming: true })
+    expect(facts.checks.at(-1)).toMatchObject({ status: 'running', note: '3 of 12' })
   })
 
-  it('marks a verdict that names a bucket no tool returned', () => {
-    const brief = buildBrief([
+  it('marks an answer that names a bucket no tool returned', () => {
+    const facts = deriveFacts([
       user('u1', at(0)),
       tool('t1', 'survey', at(1), survey([issue('a', 'high', 'demo')])),
       answer('a1', at(2), '`demo` is public and `imaginary` is too.'),
     ])
-    expect(brief.verdict?.ungrounded).toEqual(['imaginary'])
+    expect(facts.answer?.ungrounded).toEqual(['imaginary'])
   })
 
-  it('marks a verdict that answers an earlier question as stale', () => {
-    const brief = buildBrief([
+  it('marks an answer that answers an earlier question as stale', () => {
+    const facts = deriveFacts([
       user('u1', at(0)),
       answer('a1', at(1), 'First.'),
       user('u2', at(2), 'and now?'),
     ])
-    expect(brief.verdict).toMatchObject({ text: 'First.', stale: true })
+    expect(facts.answer).toMatchObject({ text: 'First.', stale: true })
   })
 
   it('clears an old notice once the user continues', () => {
-    const brief = buildBrief([
+    const facts = deriveFacts([
       user('u1', at(0)),
       {
         id: 'n1',
@@ -308,31 +308,31 @@ describe('brief projection', () => {
       },
       { id: 'r1', kind: 'resume', at: at(2) },
     ])
-    expect(brief.notices).toHaveLength(0)
-    expect(brief.questions).toHaveLength(1)
+    expect(facts.notices).toHaveLength(0)
+    expect(facts.questions).toHaveLength(1)
   })
 
-  it('keeps the latest fix per bucket and rule, newest first', () => {
-    const brief = buildBrief([
-      tool('t1', 'fix', at(1), fix('demo', 'no_default_encryption')),
-      tool('t2', 'fix', at(2), fix('prod', 'public_access_block_missing')),
-      tool('t3', 'fix', at(3), fix('demo', 'no_default_encryption')),
+  it('keeps the latest change plan per bucket and rule, newest first', () => {
+    const facts = deriveFacts([
+      tool('t1', 'change_plan', at(1), change('demo', 'no_default_encryption')),
+      tool('t2', 'change_plan', at(2), change('prod', 'public_access_block_missing')),
+      tool('t3', 'change_plan', at(3), change('demo', 'no_default_encryption')),
     ])
-    expect(brief.fixes.map((item) => item.sourceId)).toEqual(['t3', 't2'])
+    expect(facts.changePlans.map((item) => item.sourceId)).toEqual(['t3', 't2'])
   })
 
   it('ignores a check that did not finish', () => {
-    const brief = buildBrief([
+    const facts = deriveFacts([
       tool('t1', 'survey', at(1), null, 10, 'timeout'),
       tool('t2', 'survey', at(2), null, 10, 'stopped'),
     ])
-    expect(brief.data).toBeNull()
-    expect(brief.checks.map((check) => check.status)).toEqual(['timeout', 'stopped'])
+    expect(facts.data).toBeNull()
+    expect(facts.checks.map((check) => check.status)).toEqual(['timeout', 'stopped'])
   })
 
   it('keeps findings a survey view left out when its Issue list was cut short', () => {
     const many = { ...survey([issue('a', 'high', 'demo')]), issueTotal: 1200 }
-    const brief = buildBrief([
+    const facts = deriveFacts([
       tool('t1', 'estate', at(1), {
         kind: 'estate',
         providerId: 'p1',
@@ -342,12 +342,12 @@ describe('brief projection', () => {
       }),
       tool('t2', 'survey', at(2), many as ToolView),
     ])
-    expect(brief.findings.map((finding) => finding.key).sort()).toEqual(['issue:a', 'issue:z'])
-    expect(brief.issueTotal).toBe(1200)
+    expect(facts.findings.map((finding) => finding.key).sort()).toEqual(['issue:a', 'issue:z'])
+    expect(facts.issueTotal).toBe(1200)
   })
 
-  it('marks a verdict that calls a proved-private bucket public', () => {
-    const brief = buildBrief([
+  it('marks an answer that calls a proved-private bucket public', () => {
+    const facts = deriveFacts([
       user('u1', at(0)),
       tool('t1', 'survey', at(1), {
         ...survey([]),
@@ -355,11 +355,11 @@ describe('brief projection', () => {
       } as ToolView),
       answer('a1', at(2), '`demo` is publicly accessible.'),
     ])
-    expect(brief.verdict?.contradicted).toEqual(['demo'])
+    expect(facts.answer?.contradicted).toEqual(['demo'])
   })
 })
 
-describe('v20 brief additions', () => {
+describe('v20 facts additions', () => {
   it('keeps the latest re-verification report on the page', () => {
     const report = {
       at: at(5),
@@ -378,8 +378,8 @@ describe('v20 brief additions', () => {
       resolved: 1,
       undecided: 0,
     }
-    const brief = buildBrief([{ id: 'r1', kind: 'reverify', at: at(5), report }])
-    expect(brief.reverify).toEqual(report)
+    const facts = deriveFacts([{ id: 'r1', kind: 'reverify', at: at(5), report }])
+    expect(facts.reverify).toEqual(report)
   })
 
   it('carries posture changes from the latest survey', () => {
@@ -389,7 +389,7 @@ describe('v20 brief additions', () => {
         { bucket: 'demo', field: 'public exposure', before: 'off', after: 'on', at: at(2) },
       ],
     } as ToolView
-    const brief = buildBrief([tool('t1', 'survey', at(2), view)])
-    expect(brief.changes[0]?.field).toBe('public exposure')
+    const facts = deriveFacts([tool('t1', 'survey', at(2), view)])
+    expect(facts.changes[0]?.field).toBe('public exposure')
   })
 })

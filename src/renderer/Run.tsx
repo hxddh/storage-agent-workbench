@@ -1,12 +1,11 @@
-import type { BriefData, BriefFinding, BriefNotice } from '@shared/brief'
 import {
   type AuditProgress,
   type Lang,
-  type ReportBlock,
   TASK_LINK_PREFIX,
   type TaskView,
   type ToolView,
 } from '@shared/contract'
+import type { NoticeFact, RiskFact } from '@shared/facts'
 import {
   buildRun,
   type RunEvidence,
@@ -31,31 +30,15 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
-import { briefMarkdown, FindingRow, noticeText, Sources } from './Sources'
+import { FindingRow, factsMarkdown, noticeText, Sources } from './Sources'
 import { scopeText } from './scope'
 import { ago } from './time'
-import { AccessChain, ChartView, PlanView, TableView, ToolViewBody } from './Views'
+import { AccessChain, ChangePlanView, ChartView, TableView, ToolViewBody } from './Views'
 
 const Markdown = lazy(() => import('./Markdown'))
 
 function plain(text: string): string {
   return text.replace(/`([^`]*)`/g, '$1')
-}
-
-function source(run: RunModel, block: ReportBlock): RunEvidence | undefined {
-  if (!('evidence' in block)) return undefined
-  return resolveEvidence(run.evidence, block.evidence[0])
-}
-
-function SourceLine({ run, block, lang }: { run: RunModel; block: ReportBlock; lang: Lang }) {
-  const item = source(run, block)
-  if (!item) return null
-  return (
-    <p className="run-source">
-      {toolLabel(item.name, lang)}
-      {item.target ? ` · ${item.target}` : ''}
-    </p>
-  )
 }
 
 function TableBlock({
@@ -93,10 +76,10 @@ function TableBlock({
     return (
       <TableView
         table={view.buckets}
-        name="remembered-buckets"
+        name={`${taskTitle || 'estate'}-buckets`}
         empty={t.emptyEstate}
         t={t}
-        limit={limit ?? 10}
+        limit={limit ?? 8}
       />
     )
   if (view.kind === 'query')
@@ -116,69 +99,6 @@ function TableBlock({
       />
     )
   return <ToolViewBody view={view} t={t} taskTitle={taskTitle} />
-}
-
-function ProofView({
-  item,
-  t,
-  lang,
-  taskTitle,
-}: {
-  item: RunEvidence
-  t: Dict
-  lang: Lang
-  taskTitle: string
-}) {
-  if (!item.view) return null
-  const view = item.view
-  return (
-    <section className="run-proof">
-      <div className="run-proof-head">
-        <span className="run-section-title">
-          {toolLabel(item.name, lang)} · {item.target}
-        </span>
-      </div>
-      {view.kind === 'fix' && view.plan ? (
-        <PlanView plan={view.plan} t={t} />
-      ) : view.kind === 'estate' && view.history ? (
-        <TimelineBlock view={view} limit={8} t={t} />
-      ) : (
-        <TableBlock view={view} limit={8} t={t} taskTitle={taskTitle} />
-      )}
-    </section>
-  )
-}
-
-function CompareBlock({
-  run,
-  block,
-  t,
-  lang,
-  taskTitle,
-}: {
-  run: RunModel
-  block: Extract<ReportBlock, { kind: 'compare' }>
-  t: Dict
-  lang: Lang
-  taskTitle: string
-}) {
-  const items = block.evidence
-    .slice(0, 2)
-    .map((id) => resolveEvidence(run.evidence, id))
-    .filter((item): item is RunEvidence => Boolean(item?.view))
-  if (items.length < 2) return null
-  return (
-    <div className="run-compare">
-      {items.map((item) => (
-        <section className="run-compare-item" key={item.id}>
-          <h4>
-            {toolLabel(item.name, lang)} · {item.target}
-          </h4>
-          <ToolViewBody view={item.view!} t={t} taskTitle={taskTitle} />
-        </section>
-      ))}
-    </div>
-  )
 }
 
 function TimelineBlock({ view, limit, t }: { view: ToolView; limit?: number; t: Dict }) {
@@ -204,9 +124,39 @@ function TimelineBlock({ view, limit, t }: { view: ToolView; limit?: number; t: 
   )
 }
 
-function FindingsBlock({
+function ProofView({
+  item,
+  t,
+  lang,
+  taskTitle,
+}: {
+  item: RunEvidence
+  t: Dict
+  lang: Lang
+  taskTitle: string
+}) {
+  if (!item.view) return null
+  const view = item.view
+  return (
+    <section className="run-proof">
+      <div className="run-proof-head">
+        <span className="run-section-title">
+          {toolLabel(item.name, lang)} · {item.target}
+        </span>
+      </div>
+      {view.kind === 'change' && view.plan ? (
+        <ChangePlanView plan={view.plan} t={t} />
+      ) : view.kind === 'estate' && view.history ? (
+        <TimelineBlock view={view} limit={8} t={t} />
+      ) : (
+        <TableBlock view={view} limit={8} t={t} taskTitle={taskTitle} />
+      )}
+    </section>
+  )
+}
+
+function RiskList({
   run,
-  block,
   t,
   onOpen,
   onAccept,
@@ -214,21 +164,15 @@ function FindingsBlock({
   expand = false,
 }: {
   run: RunModel
-  block: Extract<ReportBlock, { kind: 'findings' }>
   t: Dict
   onOpen: (id: string) => void
-  onAccept: (finding: BriefFinding) => void
+  onAccept: (finding: RiskFact) => void
   staleDays: number
   expand?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
-  const all = run.brief.findings.filter(
-    (finding) =>
-      (!block.bucket || finding.bucket === block.bucket) &&
-      (!block.code || finding.code === block.code) &&
-      finding.status === 'open',
-  )
-  const rows = expand || expanded ? all : all.slice(0, block.limit ?? 5)
+  const all = run.facts.findings.filter((finding) => finding.status === 'open')
+  const rows = expand || expanded ? all : all.slice(0, 5)
   if (!rows.length) return <p className="quiet">{t.runNoMatch}</p>
   const allMemory = all.length > 0 && all.every((finding) => finding.source === 'memory')
   const rememberedAt = allMemory
@@ -256,7 +200,6 @@ function FindingsBlock({
   }
   return (
     <>
-      {block.title && <h3 className="run-block-title">{block.title}</h3>}
       {rememberedAt && (
         <p className="run-block-note">
           {fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' })}
@@ -318,10 +261,15 @@ function TurnHistory({
         <ol className="run-turn-list">
           {turns.map((turn) => {
             const expanded = selected === turn.id
-            const summary = turn.report?.blocks.find(
-              (block) =>
-                block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown',
-            )
+            const summary = turn.answer?.text
+              ? plain(
+                  turn.answer.text
+                    .replace(/^#{1,6}\s+/gm, '')
+                    .replace(/^[-*]\s+/gm, '')
+                    .replace(/\s+/g, ' ')
+                    .trim(),
+                )
+              : null
             return (
               <li key={turn.id} className="run-turn">
                 <button
@@ -344,17 +292,7 @@ function TurnHistory({
                 {expanded && (
                   <div className="run-turn-body">
                     {summary ? (
-                      <p className="run-turn-summary">
-                        {summary.kind === 'markdown'
-                          ? plain(
-                              summary.text
-                                .replace(/^#{1,6}\s+/gm, '')
-                                .replace(/^[-*]\s+/gm, '')
-                                .replace(/\s+/g, ' ')
-                                .trim(),
-                            )
-                          : plain(summary.text)}
-                      </p>
+                      <p className="run-turn-summary">{summary.slice(0, 700)}</p>
                     ) : (
                       <p className="quiet">{t.runNoAnswer}</p>
                     )}
@@ -375,7 +313,7 @@ function RunNotices({
   onRetry,
   onContinue,
 }: {
-  notices: BriefNotice[]
+  notices: NoticeFact[]
   t: Dict
   onRetry: () => void
   onContinue: () => void
@@ -403,64 +341,6 @@ function RunNotices({
         </div>
       ))}
     </div>
-  )
-}
-
-/** The one evidence view that directly answers the question; the rest is in the fold. */
-function PrimaryData({ data, t, taskTitle }: { data: BriefData; t: Dict; taskTitle: string }) {
-  const view = data.view
-  let title = t.dataTitle
-  let body: React.ReactNode = null
-  if (view.kind === 'survey') {
-    title = t.buckets
-    body = (
-      <TableView
-        table={view.buckets}
-        name={`${view.provider}-buckets`}
-        empty={t.noBuckets}
-        t={t}
-        limit={3}
-      />
-    )
-  } else if (view.kind === 'config' && view.access) {
-    title = t.accessTitle
-    body = (
-      <AccessChain
-        paths={view.access}
-        blind={view.accessBlind}
-        coverage={view.accessCoverage}
-        t={t}
-      />
-    )
-  } else if (view.kind === 'query') {
-    body = (
-      <>
-        {view.chart && <ChartView chart={view.chart} />}
-        <TableView table={view.rows} name={view.title} empty={t.noRows} t={t} limit={5} />
-      </>
-    )
-  } else if (view.kind === 'estate' && view.history) {
-    title = t.history
-    body = <TimelineBlock view={view} limit={5} t={t} />
-  } else if (view.kind === 'buckets' || view.kind === 'objects') {
-    body = (
-      <TableView
-        table={view.rows}
-        name={taskTitle || view.kind}
-        empty={view.kind === 'buckets' ? t.noBuckets : t.noObjects}
-        t={t}
-        limit={5}
-      />
-    )
-  }
-  if (!body) return null
-  return (
-    <section className="run-preview">
-      <div className="run-preview-head">
-        <span className="run-section-title">{title}</span>
-      </div>
-      {body}
-    </section>
   )
 }
 
@@ -530,83 +410,48 @@ export function Run({
       window.removeEventListener('keydown', key)
     }
   }, [more])
+
   const question = run.audit ? null : (run.question?.text ?? null)
-  const report = run.report
-  // Tasks created before the report protocol still carry a durable verdict in
-  // their answer entry. The unified Run shows that answer instead of sending
-  // the task back to a second page.
-  const legacyVerdict = !report && !view.live ? run.brief.verdict : null
-  const stale = Boolean(report?.stale)
-  // A stale report belongs to the previous question. Keep its prose as context,
-  // but do not let its tables or plan masquerade as the current answer.
-  const visibleBlocks = report
-    ? stale
-      ? report.blocks.filter((block) => block.kind === 'summary' || block.kind === 'callout')
-      : report.blocks
-    : []
-  const hasSummary = visibleBlocks.some((block) => block.kind === 'summary')
-  const hasReportTable = visibleBlocks.some((block) => block.kind === 'table')
-  const hasReportTimeline = visibleBlocks.some((block) => block.kind === 'timeline')
-  const hasReportCode = visibleBlocks.some((block) => block.kind === 'code')
-  const hasReportPlan = visibleBlocks.some((block) => block.kind === 'plan')
-  const hasReportFindings = visibleBlocks.some((block) => block.kind === 'findings')
-  const hasReportMarkdown = visibleBlocks.some((block) => block.kind === 'markdown')
-  const reportText = report?.text ?? ''
-  const reportShow = stale ? [] : (report?.show ?? [])
-  const reportEvidence = reportShow
-    .map((id) => resolveEvidence(run.evidence, id))
-    .filter((item): item is RunEvidence => Boolean(item?.view))
-  const proofHasData = reportEvidence.some((item) => {
-    const kind = item.view?.kind
-    return (
-      kind === 'survey' ||
-      kind === 'query' ||
-      kind === 'buckets' ||
-      kind === 'objects' ||
-      (kind === 'config' && Boolean(item.view?.access)) ||
-      (kind === 'estate' && Boolean(item.view?.history))
-    )
-  })
-  const proofHasFix = reportEvidence.some((item) => item.view?.kind === 'fix')
-  const legacyFindings = Boolean(legacyVerdict && run.brief.findings.length)
-  const primaryFindings =
-    !reportShow.length &&
-    !hasReportFindings &&
-    !view.live &&
-    !stale &&
-    !legacyFindings &&
-    run.brief.findings.length > 0
-  const ungrounded = new Set(stale ? [] : (report?.ungrounded ?? []))
-  const contradicted = new Set(stale ? [] : (report?.contradicted ?? []))
-  const stopped = run.brief.notices.some((notice) => notice.code === 'stopped')
+  const answer = run.answer
+  const stale = Boolean(answer?.stale)
+  const answerText = answer?.text ?? ''
+  const ungrounded = new Set(stale ? [] : (answer?.ungrounded ?? []))
+  const contradicted = new Set(stale ? [] : (answer?.contradicted ?? []))
+  const stopped = run.facts.notices.some((notice) => notice.code === 'stopped')
   const showPlan =
     Boolean(view.live) ||
     stopped ||
     Boolean(run.plan?.steps.some((step) => step.status === 'blocked'))
   const evidenceVisible = Boolean(auditProgress) || evidenceOpen
-  // The agent's report is the answer. When it did not compose the proof itself,
-  // the latest data read is the one view that can stand beside the summary.
-  const primaryData = useMemo(() => {
-    if (view.live || stale || reportShow.length > 0) return null
-    if (hasReportTable || hasReportTimeline || hasReportFindings || hasReportPlan) return null
-    const data = run.brief.data
-    if (!data) return null
-    const kind = data.view.kind
-    if (kind === 'survey' || kind === 'query' || kind === 'buckets' || kind === 'objects')
-      return data
-    if (kind === 'config' && data.view.access) return data
-    if (kind === 'estate' && data.view.history) return data
+  const primaryProof = useMemo(() => {
+    if (view.live || stale) return null
+    for (const match of answerText.matchAll(/#ev-([^)\s"'<>]+)/g)) {
+      const item = resolveEvidence(run.evidence, decodeURIComponent(match[1]!))
+      if (item?.view) return item
+    }
+    const data = run.facts.data
+    if (data) {
+      const item = run.evidence.find((entry) => entry.entryId === data.sourceId)
+      if (item?.view) return item
+    }
+    const change = run.facts.changePlans[0]
+    if (change) {
+      const item = run.evidence.find((entry) => entry.entryId === change.sourceId)
+      if (item?.view) return item
+    }
     return null
-  }, [
-    view.live,
-    stale,
-    hasReportTable,
-    hasReportTimeline,
-    hasReportFindings,
-    hasReportPlan,
-    reportShow.length,
-    run.brief.data,
-  ])
+  }, [view.live, stale, answerText, run.evidence, run.facts.data, run.facts.changePlans])
+  const primaryData =
+    primaryProof?.view &&
+    (primaryProof.view.kind === 'survey' ||
+      primaryProof.view.kind === 'query' ||
+      primaryProof.view.kind === 'buckets' ||
+      primaryProof.view.kind === 'objects' ||
+      (primaryProof.view.kind === 'config' && Boolean(primaryProof.view.access)) ||
+      (primaryProof.view.kind === 'estate' && Boolean(primaryProof.view.history)))
+  const primaryChange = primaryProof?.view?.kind === 'change'
+  const primaryRisks =
+    !primaryProof && !view.live && !stale && !answer?.synthesized && run.facts.findings.length > 0
 
   const turnKey = run.question?.id ?? view.task.id
   useEffect(() => {
@@ -618,6 +463,75 @@ export function Run({
     setSelectedTurn(null)
   }, [turnKey])
 
+  const openEvidence = useCallback((entryId?: string) => {
+    setEvidenceOpen(true)
+    if (entryId) setEvidenceFocus(entryId)
+    setTimeout(() => {
+      const element = entryId
+        ? root.current?.querySelector<HTMLElement>(`[data-check-id="${CSS.escape(entryId)}"]`)
+        : root.current?.querySelector<HTMLElement>('.run-evidence-wrap')
+      element?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }, 40)
+  }, [])
+
+  const reverify = async () => {
+    await onReverify()
+    openEvidence('reverify')
+  }
+
+  const accept = (finding: RiskFact) => {
+    if (!finding.issueId) return
+    void window.agent.acceptIssue(finding.issueId, finding.status !== 'accepted')
+  }
+
+  useEffect(() => {
+    if (!focusId) return
+    if (focusId === 'answer' || focusId === run.answer?.id) {
+      openEvidence()
+      return
+    }
+    openEvidence(focusId)
+  }, [focusId, run.answer?.id, openEvidence])
+
+  const copy = async () => {
+    if (
+      await copyText(`${runMarkdown(run)}\n\n${factsMarkdown(view.task.title, run.facts, t, lang)}`)
+    ) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }
+  }
+  const save = () =>
+    void window.agent.saveText({
+      name: safeFileName(view.task.title, 'md'),
+      content: `${runMarkdown(run)}\n\n${factsMarkdown(view.task.title, run.facts, t, lang)}`,
+      kind: 'markdown',
+    })
+  const exportEvidence = () =>
+    void window.agent.saveText({
+      name: safeFileName(`${view.task.title}-evidence`, 'json'),
+      content: JSON.stringify(
+        {
+          task: view.task,
+          answer: run.answer,
+          checks: run.facts.checks,
+          findings: run.facts.findings,
+          accepted: run.facts.accepted,
+          changePlans: run.facts.changePlans,
+          coverage: run.facts.coverage,
+          reverify: run.facts.reverify,
+          changes: run.facts.changes,
+        },
+        null,
+        2,
+      ),
+      kind: 'json',
+    })
+  const savePdf = () => {
+    setPrinting(true)
+    window.dispatchEvent(new Event('sa:prepare-print'))
+    setTimeout(() => void window.agent.exportPdf(), 80)
+  }
   const loadOlder = async () => {
     setLoadingOlder(true)
     try {
@@ -627,116 +541,16 @@ export function Run({
     }
   }
 
-  const openEvidence = useCallback((entryId?: string) => {
-    setEvidenceOpen(true)
-    if (entryId) setEvidenceFocus(entryId)
-    window.setTimeout(() => {
-      const target = entryId
-        ? root.current?.querySelector<HTMLElement>(`[data-check-id="${CSS.escape(entryId)}"]`)
-        : root.current?.querySelector<HTMLElement>('.run-evidence-wrap')
-      target?.scrollIntoView({ block: 'center' })
-    }, 40)
-  }, [])
-
-  const reverify = async () => {
-    await onReverify()
-    openEvidence('reverify')
-  }
-
-  useEffect(() => {
-    if (!focusId) return
-    const prior = earlierTurns.find((turn) => turn.question?.id === focusId)
-    if (prior) {
-      setHistoryOpen(true)
-      setSelectedTurn(prior.id)
-      return
-    }
-    if (focusId === 'verdict' || focusId === run.report?.id) {
-      const summary = root.current?.querySelector<HTMLElement>('.run-summary')
-      if (!summary) return
-      summary.scrollIntoView({ block: 'center' })
-      summary.classList.add('flash')
-      const timer = setTimeout(() => summary.classList.remove('flash'), 1600)
-      return () => clearTimeout(timer)
-    }
-    // A search hit on the request is a highlight, not a reason to open the
-    // evidence fold. Findings and tool checks do open it.
-    if (run.brief.questions.some((item) => item.id === focusId)) return
-    openEvidence(focusId)
-  }, [focusId, run.report?.id, openEvidence, run.brief.questions, earlierTurns])
-
-  const accept = (finding: BriefFinding) => {
-    if (finding.issueId)
-      void window.agent.acceptIssue(finding.issueId, finding.status !== 'accepted')
-  }
-
-  const fullMarkdown = () =>
-    [runMarkdown(run), briefMarkdown(view.task.title, run.brief, t, lang)]
-      .filter(Boolean)
-      .join('\n\n')
-
-  const copy = async () => {
-    if (await copyText(fullMarkdown())) {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    }
-  }
-
-  const save = () =>
-    void window.agent.saveText({
-      name: safeFileName(view.task.title, 'md'),
-      content: fullMarkdown(),
-      kind: 'markdown',
-    })
-
-  const savePdf = () => {
-    setPrinting(true)
-    window.dispatchEvent(new Event('sa:prepare-print'))
-    window.setTimeout(() => void window.agent.exportPdf(), 80)
-  }
-
-  const exportEvidence = () =>
-    void window.agent.saveText({
-      name: safeFileName(`${view.task.title}-evidence`, 'json'),
-      content: JSON.stringify(
-        {
-          generatedAt: new Date().toISOString(),
-          task: view.task,
-          report: run.report,
-          brief: run.brief,
-        },
-        null,
-        2,
-      ),
-      kind: 'json',
-    })
-
-  const markdownComponents = (evidence: string[]) => ({
-    code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
-      const text = String(children ?? '').trim()
-      const missing = !className && ungrounded.has(text)
-      const wrong = !className && contradicted.has(text)
-      return (
-        <code
-          className={
-            [className, missing || wrong ? 'ungrounded' : ''].filter(Boolean).join(' ') || undefined
-          }
-          title={missing ? t.ungroundedHint : wrong ? t.contradictedHint : undefined}
-        >
-          {children}
-        </code>
-      )
-    },
+  const markdownComponents = {
     a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
-      const match = /^#ev-(\d+)$/.exec(href ?? '')
-      const id = match ? evidence[Number(match[1]) - 1] : undefined
-      const item = resolveEvidence(run.evidence, id)
+      const raw = href?.match(/^#ev-(.+)$/)?.[1]
+      const item = raw ? resolveEvidence(run.evidence, decodeURIComponent(raw)) : undefined
       if (item)
         return (
           <button
             className="run-cite"
             type="button"
-            title={`${t.runEvidenceTitle} ${match?.[1]}`}
+            title={`${t.runEvidenceTitle} ${item.target}`}
             onClick={() => openEvidence(item.entryId)}
           >
             {children}
@@ -750,27 +564,32 @@ export function Run({
         children
       )
     },
-  })
+  }
 
-  const hideData =
-    Boolean(primaryData) ||
-    hasReportTable ||
-    hasReportTimeline ||
-    hasReportPlan ||
-    hasReportCode ||
-    proofHasData
-  const hideFix = hasReportPlan || proofHasFix
+  const hideData = Boolean(primaryData)
+  const hideChange = primaryChange
+  const evidenceCount = [
+    run.facts.findings.length > 0 ? fill(t.findingsCount, { n: run.facts.findings.length }) : '',
+    run.facts.checks.length > 0
+      ? run.facts.checks.length === 1
+        ? t.checkOneShort
+        : `${run.facts.checks.length} ${t.checks}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
   const hasSources =
-    run.brief.findings.length + run.brief.accepted.length > 0 ||
-    (!hideData && Boolean(run.brief.data)) ||
-    (!hideFix && run.brief.fixes.length > 0) ||
-    run.brief.checks.length > 0 ||
-    Boolean(run.brief.reverify) ||
-    run.brief.changes.length > 0 ||
-    run.brief.methods.length > 0 ||
-    run.brief.blind.length > 0 ||
-    run.brief.undecided.length > 0 ||
-    run.brief.coverage.some(
+    run.facts.findings.length + run.facts.accepted.length > 0 ||
+    (!hideData && Boolean(run.facts.data)) ||
+    (!hideChange && run.facts.changePlans.length > 0) ||
+    run.facts.checks.length > 0 ||
+    Boolean(run.facts.reverify) ||
+    run.facts.changes.length > 0 ||
+    run.facts.methods.length > 0 ||
+    run.facts.blind.length > 0 ||
+    run.facts.undecided.length > 0 ||
+    run.facts.coverage.some(
       (item) =>
         item.pending > 0 ||
         item.denied.length > 0 ||
@@ -786,11 +605,11 @@ export function Run({
 
         <header className="run-header">
           <div className="run-headline">
-            <p className="run-scope">{scopeText(run.brief, t)}</p>
+            <p className="run-scope">{scopeText(run.facts, t)}</p>
             <span className="run-actions">
               <button className="text-action" type="button" onClick={() => void copy()}>
                 <Copy size={12} aria-hidden="true" />
-                {copied ? t.copied : t.copyBrief}
+                {copied ? t.copied : t.copyPage}
               </button>
               <div className="brief-more">
                 <button
@@ -813,7 +632,7 @@ export function Run({
                       }}
                     >
                       <ArrowDownToLine size={13} aria-hidden="true" />
-                      {t.saveBrief}
+                      {t.savePage}
                     </button>
                     <button
                       type="button"
@@ -877,10 +696,10 @@ export function Run({
             </span>
           </div>
           {question && <h2 className="run-question">{question}</h2>}
-          {(report?.synthesized || report?.stale) && (
+          {(answer?.synthesized || answer?.stale) && (
             <div className="run-facts">
-              {report?.synthesized && <span className="run-tag">{t.runSynthesized}</span>}
-              {report?.stale && <span className="run-tag warn">{t.runStale}</span>}
+              {answer?.synthesized && <span className="run-tag">{t.runSynthesized}</span>}
+              {answer?.stale && <span className="run-tag warn">{t.runStale}</span>}
             </div>
           )}
         </header>
@@ -905,7 +724,7 @@ export function Run({
           onSelect={setSelectedTurn}
         />
 
-        <RunNotices notices={run.brief.notices} t={t} onRetry={onRetry} onContinue={onContinue} />
+        <RunNotices notices={run.facts.notices} t={t} onRetry={onRetry} onContinue={onContinue} />
 
         {showPlan && run.plan && (
           <section className="run-plan" aria-label={t.runPlanTitle}>
@@ -941,203 +760,43 @@ export function Run({
           aria-live="polite"
           aria-atomic="false"
         >
-          {report ? (
-            <>
-              {reportText ? (
-                <>
-                  <div className="verdict prose run-summary" data-verdict>
-                    <Suspense fallback={<p>{plain(reportText)}</p>}>
-                      <Markdown text={reportText} components={markdownComponents(reportShow)} />
-                    </Suspense>
-                  </div>
-                  {reportEvidence.map((item) => (
-                    <ProofView
-                      key={`${item.id}:${item.entryId}`}
-                      item={item}
-                      t={t}
-                      lang={lang}
-                      taskTitle={view.task.title}
-                    />
-                  ))}
-                </>
-              ) : null}
-              {!reportText && !hasSummary && !hasReportMarkdown && run.brief.verdict?.text && (
-                <p className="verdict prose run-summary">{plain(run.brief.verdict.text)}</p>
-              )}
-              {!reportText &&
-                visibleBlocks.map((block, index) => {
-                  if (block.kind === 'summary')
-                    return (
-                      <div className="verdict prose run-summary" data-verdict key={index}>
-                        <Suspense fallback={<p>{plain(block.text)}</p>}>
-                          <Markdown
-                            text={block.text}
-                            components={markdownComponents(block.evidence)}
-                          />
-                        </Suspense>
-                      </div>
-                    )
-                  if (block.kind === 'callout')
-                    return (
-                      <div className={`run-callout ${block.tone}`} key={index}>
-                        {block.title && <p className="run-callout-title">{block.title}</p>}
-                        <div className="prose">
-                          <Suspense fallback={<p>{plain(block.text)}</p>}>
-                            <Markdown
-                              text={block.text}
-                              components={markdownComponents(block.evidence)}
-                            />
-                          </Suspense>
-                        </div>
-                      </div>
-                    )
-                  if (block.kind === 'markdown')
-                    return (
-                      <section className="run-block" key={index}>
-                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                        <div className="prose run-markdown">
-                          <Suspense fallback={<p>{plain(block.text)}</p>}>
-                            <Markdown
-                              text={block.text}
-                              components={markdownComponents(block.evidence)}
-                            />
-                          </Suspense>
-                        </div>
-                        <SourceLine run={run} block={block} lang={lang} />
-                      </section>
-                    )
-                  if (block.kind === 'compare')
-                    return (
-                      <section className="run-block" key={index}>
-                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                        <CompareBlock
-                          run={run}
-                          block={block}
-                          t={t}
-                          lang={lang}
-                          taskTitle={view.task.title}
-                        />
-                      </section>
-                    )
-                  if (block.kind === 'table') {
-                    const item = source(run, block)
-                    if (!item?.view) return null
-                    return (
-                      <section className="run-block" key={index}>
-                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                        <TableBlock
-                          view={item.view}
-                          limit={block.limit}
-                          t={t}
-                          taskTitle={view.task.title}
-                        />
-                        <SourceLine run={run} block={block} lang={lang} />
-                      </section>
-                    )
-                  }
-                  if (block.kind === 'timeline') {
-                    const item = source(run, block)
-                    if (!item?.view) return null
-                    return (
-                      <section className="run-block" key={index}>
-                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                        <TimelineBlock view={item.view} limit={block.limit} t={t} />
-                        <SourceLine run={run} block={block} lang={lang} />
-                      </section>
-                    )
-                  }
-                  if (block.kind === 'findings')
-                    return (
-                      <section className="run-block" key={index}>
-                        <FindingsBlock
-                          run={run}
-                          block={block}
-                          t={t}
-                          onOpen={openEvidence}
-                          onAccept={accept}
-                          staleDays={staleDays}
-                          expand={printing}
-                        />
-                      </section>
-                    )
-                  if (block.kind === 'plan') {
-                    const item = source(run, block)
-                    const planView = item?.view
-                    if (planView?.kind !== 'fix' || !planView.plan) return null
-                    return (
-                      <section className="run-block" key={index}>
-                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                        <PlanView plan={planView.plan} t={t} />
-                        <SourceLine run={run} block={block} lang={lang} />
-                      </section>
-                    )
-                  }
-                  if (block.kind === 'code') {
-                    const item = source(run, block)
-                    const codeView = item?.view
-                    if (codeView?.kind !== 'query') return null
-                    return (
-                      <section className="run-block" key={index}>
-                        {block.title && <h3 className="run-block-title">{block.title}</h3>}
-                        <pre className="code">{codeView.code}</pre>
-                        <SourceLine run={run} block={block} lang={lang} />
-                      </section>
-                    )
-                  }
-                  return null
-                })}
-              {!stale && report.unresolved > 0 && (
-                <p className="quiet run-unresolved">
-                  {report.unresolved === 1
-                    ? t.runUnresolvedOne
-                    : fill(t.runUnresolved, { n: report.unresolved })}
-                </p>
-              )}
-              {!stale && report.unresolvedCitations > 0 && (
-                <p className="quiet run-unresolved">
-                  <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
-                  {report.unresolvedCitations === 1
-                    ? t.runUnresolvedCitationsOne
-                    : fill(t.runUnresolvedCitations, { n: report.unresolvedCitations })}
-                </p>
-              )}
-              {!stale && ungrounded.size > 0 && (
-                <p className="grounding">
-                  <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
-                  {t.ungroundedNote}
-                </p>
-              )}
-              {!stale && contradicted.size > 0 && (
-                <p className="grounding">
-                  <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
-                  {t.contradictedNote}
-                </p>
-              )}
-            </>
-          ) : view.live ? null : legacyVerdict ? (
-            <>
-              <p className="verdict prose run-summary" data-verdict>
-                {plain(legacyVerdict.text)}
-              </p>
-              {legacyFindings && (
-                <FindingsBlock
-                  run={run}
-                  block={{ kind: 'findings', limit: 5 }}
-                  t={t}
-                  onOpen={openEvidence}
-                  onAccept={accept}
-                  staleDays={staleDays}
-                  expand={printing}
-                />
-              )}
-            </>
-          ) : (
+          {answerText ? (
+            <div className="verdict prose run-summary" data-verdict>
+              <Suspense fallback={<p>{plain(answerText)}</p>}>
+                <Markdown text={answerText} components={markdownComponents} />
+              </Suspense>
+            </div>
+          ) : view.live ? null : (
             <p className="quiet">{t.runNoAnswer}</p>
+          )}
+          {!stale && (answer?.unresolvedCitations ?? 0) > 0 && (
+            <p className="quiet run-unresolved">
+              <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
+              {(answer?.unresolvedCitations ?? 0) === 1
+                ? t.runUnresolvedCitationsOne
+                : fill(t.runUnresolvedCitations, { n: answer?.unresolvedCitations ?? 0 })}
+            </p>
+          )}
+          {!stale && ungrounded.size > 0 && (
+            <p className="grounding">
+              <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
+              {t.ungroundedNote}
+            </p>
+          )}
+          {!stale && contradicted.size > 0 && (
+            <p className="grounding">
+              <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
+              {t.contradictedNote}
+            </p>
           )}
         </section>
 
+        {primaryProof?.view && !view.live && (
+          <ProofView item={primaryProof} t={t} lang={lang} taskTitle={view.task.title} />
+        )}
+
         {view.live &&
-          (!report || report.stale) &&
+          (!answer || answer.stale) &&
           (view.live.text || view.live.phase === 'writing') && (
             <section className="run-draft" aria-label={t.runDraft}>
               <div className="run-draft-head">
@@ -1156,18 +815,13 @@ export function Run({
             </section>
           )}
 
-        {primaryData && !view.live && (
-          <PrimaryData data={primaryData} t={t} taskTitle={view.task.title} />
-        )}
-
-        {primaryFindings && (
+        {primaryRisks && (
           <section className="run-proof run-primary-risks">
             <div className="run-proof-head">
               <span className="run-section-title">{t.findingsTitle}</span>
             </div>
-            <FindingsBlock
+            <RiskList
               run={run}
-              block={{ kind: 'findings', limit: 5 }}
               t={t}
               onOpen={openEvidence}
               onAccept={accept}
@@ -1187,6 +841,7 @@ export function Run({
             <span className="run-section-title">
               {evidenceOpen ? t.runHideEvidence : t.runEvidenceTitle}
             </span>
+            {evidenceCount && <span className="run-evidence-count">{evidenceCount}</span>}
             <ChevronRight size={13} className={`chev ${evidenceOpen ? 'open' : ''}`} />
           </button>
         )}
@@ -1199,7 +854,7 @@ export function Run({
             focusId={evidenceFocus ?? focusId}
             staleDays={staleDays}
             hideData={hideData}
-            hideFix={hideFix}
+            hideChange={hideChange}
           />
         </div>
       </article>
@@ -1207,17 +862,7 @@ export function Run({
   )
 }
 
-// Keep the report markdown reachable for the window's copy/export path.
+/** The plain-text answer used by copy and save. */
 export function runMarkdown(run: RunModel): string {
-  if (!run.report) return ''
-  return [
-    run.report.text,
-    ...run.report.blocks.map((block) => {
-      if (block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown')
-        return block.text
-      return ''
-    }),
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+  return run.answer?.text ?? ''
 }
