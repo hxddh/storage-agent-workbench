@@ -296,6 +296,7 @@ export interface LiveInput {
     name: ToolName
     target: string
     note: string | null
+    status?: ToolStatus
     startedAt: string
   }[]
   text: string | null
@@ -600,7 +601,7 @@ export function deriveFacts(
       id: `live:${tool.callId}`,
       name: tool.name,
       target: tool.target,
-      status: 'running',
+      status: tool.status ?? 'running',
       note: tool.note,
       ms: null,
       at: tool.startedAt,

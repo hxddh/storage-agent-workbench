@@ -1,3 +1,34 @@
+## 32.0.0 — 2026-10-27
+
+The run is a work surface, not a blank page with a footer status. The user can
+see what the agent is doing, what it has read and what is still running without
+leaving the task.
+
+### Added
+
+- **Work.** One current-turn activity ledger. It is open while a run is live,
+  keeps every running and completed tool call in place, and collapses to one
+  `Worked for … · n calls` row after the answer settles. Opening it restores the
+  same order and shaped results.
+- **Honest reasoning.** Provider reasoning summaries are preserved and shown as
+  collapsible `Thought` rows. An omitted summary is labelled as omitted; the app
+  never invents a chain of thought. Completed reasoning is durable with the same
+  task entries.
+- **Live call progress.** `ToolDetails.progress` carries a bounded, redacted
+  progress line; `LiveTracker` no longer reads the last line of raw tool output.
+  Running calls show status, target, progress and elapsed time.
+- **Call detail.** Every settled call has a stable row with status, target, note
+  and duration; the typed view opens on demand. Failures, stopped and timed-out
+  calls stay visible instead of disappearing.
+- **Calmer Sources.** Work owns the process count; Sources carries evidence
+  categories and the audit receipt. The duplicate check count is removed.
+
+### Verification
+
+- Typecheck, Biome, 219 unit tests, build, contrast, bundle budget, full E2E,
+  no-model E2E, smoke eval, axe, cold-start performance and the 28-state visual
+  suite.
+
 ## 31.0.0 — 2026-10-27
 
 The report system is gone. The agent answers in its final message, tools are the

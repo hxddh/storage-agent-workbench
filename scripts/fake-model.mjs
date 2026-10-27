@@ -73,7 +73,15 @@ function plan(body) {
   }
 
   if (!called.has('plan')) {
+    const reasoning = ask.includes('public')
+      ? 'Read the account-wide public access block first, then inspect each bucket policy.'
+      : ask.includes('change plan')
+        ? 'Find the open finding, keep the existing lifecycle configuration intact, and prepare one user-applied text.'
+        : ask.includes('issue')
+          ? 'Read remembered posture and current open findings before choosing the five most useful risks.'
+          : null
     return {
+      ...(reasoning ? { reasoning } : {}),
       tool: call('call_plan_1', 'plan', {
         note: 'Plan the read before spending a call.',
         steps: [
@@ -228,9 +236,12 @@ const server = createServer((req, res) => {
             {
               index: 0,
               finish_reason: next.tool ? 'tool_calls' : 'stop',
-              message: next.tool
-                ? { role: 'assistant', content: null, tool_calls: [next.tool] }
-                : { role: 'assistant', content: next.text ?? null },
+              message: {
+                role: 'assistant',
+                content: next.tool ? null : (next.text ?? null),
+                ...(next.reasoning ? { reasoning_content: next.reasoning } : {}),
+                ...(next.tool ? { tool_calls: [next.tool] } : {}),
+              },
             },
           ],
           usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
@@ -245,6 +256,12 @@ const server = createServer((req, res) => {
       connection: 'keep-alive',
     })
     chunk(res, { ...base, choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] })
+    if (next.reasoning) {
+      chunk(res, {
+        ...base,
+        choices: [{ index: 0, delta: { reasoning_content: next.reasoning }, finish_reason: null }],
+      })
+    }
     if (next.tool) {
       chunk(res, {
         ...base,

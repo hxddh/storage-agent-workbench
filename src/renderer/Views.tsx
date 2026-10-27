@@ -419,10 +419,12 @@ export function ToolViewBody({
   view,
   t,
   taskTitle,
+  limit,
 }: {
   view: ToolView
   t: Dict
   taskTitle: string
+  limit?: number
 }) {
   if (view.kind === 'survey') {
     return (
@@ -446,6 +448,7 @@ export function ToolViewBody({
           name={`${view.provider}-buckets`}
           empty={t.noBuckets}
           t={t}
+          limit={limit}
         />
         <Issues issues={view.issues} t={t} />
       </div>
@@ -458,6 +461,7 @@ export function ToolViewBody({
         name={taskTitle || view.kind}
         empty={view.kind === 'buckets' ? t.noBuckets : t.noObjects}
         t={t}
+        limit={limit}
       />
     )
   }
@@ -532,6 +536,7 @@ export function ToolViewBody({
             name={`${taskTitle || 'estate'}-buckets`}
             empty={t.emptyEstate}
             t={t}
+            limit={limit}
           />
         )}
         {view.issues.length > 0 && <Issues issues={view.issues} t={t} />}

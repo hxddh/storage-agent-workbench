@@ -1,5 +1,11 @@
 import { type Dict, fill } from './i18n'
 
+/** A compact duration for a tool call or a whole run. */
+export function duration(ms: number | null): string | null {
+  if (ms === null || !Number.isFinite(ms)) return null
+  return ms < 1000 ? `${Math.max(1, Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`
+}
+
 /** Relative time shared by the run, evidence and task list surfaces. */
 export function ago(iso: string, t: Dict): string | null {
   const started = Date.parse(iso)

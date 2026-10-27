@@ -1,7 +1,7 @@
 import type { ContextRef, EstateRef, Live, StagedFile } from '@shared/contract'
 import { ArrowUp, AtSign, ChevronDown, Paperclip, Square, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { dict, fill } from './i18n'
+import { dict, fill, toolLabel } from './i18n'
 
 export function Composer({
   lang,
@@ -178,7 +178,10 @@ export function Composer({
       setFiles([])
       setContext([])
     } catch {
+      // Restore both the field and its draft now: a failure can be followed
+      // by a task switch before the effect that persists text runs.
       setText(value)
+      window.localStorage.setItem(key, value)
     } finally {
       setBusy(false)
     }
@@ -189,7 +192,9 @@ export function Composer({
     if (picked.length) setFiles((current) => [...current, ...picked].slice(0, 10))
   }
 
-  const current = live?.tools.at(-1)
+  const active = live?.tools.filter((tool) => tool.status === 'running').at(-1)
+  const lastTool = live?.tools.at(-1)
+  const failed = lastTool?.status === 'failed' ? lastTool : undefined
   const elapsed = live
     ? Math.max(0, Math.floor((now - (Date.parse(live.startedAt) || now)) / 1000))
     : 0
@@ -201,14 +206,16 @@ export function Composer({
         : `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
   const phase =
     live?.phase === 'tool'
-      ? current?.target
-        ? `${t.liveReading} ${current.target}`
+      ? active?.target
+        ? `${t.liveReading} ${active.target}`
         : t.livePacing
       : live?.phase === 'writing'
         ? t.writing
         : live?.phase === 'reasoning'
           ? t.thinking
           : t.thinking
+  const failedLabel =
+    !active && failed ? `${toolLabel(failed.name, lang)}: ${t.runWorkFailed}` : null
 
   return (
     <div className="composer-dock">
@@ -216,9 +223,9 @@ export function Composer({
         <div className="run-strip">
           <span className="run-dot" aria-hidden="true" />
           <span className="run-phase" role="status">
-            {phase}
+            {failedLabel ?? phase}
           </span>
-          {current?.note && <span className="run-note">{current.note}</span>}
+          {active?.note && <span className="run-note">{active.note}</span>}
           <span className="run-elapsed" aria-hidden="true">
             {elapsedLabel}
           </span>

@@ -1,10 +1,11 @@
 /**
  * Projection from pi's durable view to what the window receives.
  *
- * The window never sees `entry.model` (the provider-facing messages): only the
- * answer text, the request, and each tool call's shaped `details`. Tool status
- * comes from `details.status`, written by `agentTool()`; result text is never
- * parsed for it, because a bucket name or an error body can say anything.
+ * The window never sees raw `entry.model` (the provider-facing messages): only
+ * the answer text, a sanitized provider reasoning summary, the request, and each
+ * tool call's shaped `details`. Tool status comes from `details.status`, written
+ * by `agentTool()`; result text is never parsed for it, because a bucket name or
+ * an error body can say anything.
  */
 import type { ConversationView, EntryRecord } from '@earendil-works/pi-durable'
 import type {
@@ -20,6 +21,7 @@ import type {
   UiEntry,
   Usage,
 } from '@shared/contract'
+import { redact } from '../security/redact'
 
 interface Part {
   type: string
@@ -69,6 +71,14 @@ export function textOf(message: ModelMessage | undefined): string {
   return parts(message)
     .map((part) => (part.type === 'text' ? (part.text ?? '') : ''))
     .join('')
+    .trim()
+}
+
+/** The provider's reasoning summary for one assistant message. */
+function thinkingOf(message: ModelMessage | undefined): string {
+  return parts(message)
+    .map((part) => (part.type === 'thinking' ? (part.thinking ?? '') : ''))
+    .join('\n')
     .trim()
 }
 
@@ -131,6 +141,16 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       if (!message) continue
       for (const part of parts(message)) {
         if (part.type === 'toolCall' && part.id && part.name) toolNames.set(part.id, part.name)
+      }
+      const thinking = thinkingOf(message)
+      const hasThinking = parts(message).some((part) => part.type === 'thinking')
+      if (hasThinking) {
+        out.push({
+          id: `${id}:thinking`,
+          kind: 'reasoning',
+          at: iso(message.timestamp),
+          text: redact(thinking).slice(0, 4000),
+        })
       }
       const text = textOf(message)
       if (text) {
@@ -222,57 +242,63 @@ interface LiveDoc {
   tools?: { callId: string; name: string; status: string; output?: string; details?: unknown }[]
 }
 
+/** The latest live state; durable entries take over as each call settles. */
 export class LiveTracker {
   private readonly runStarted = new Map<string, string>()
   private readonly toolStarted = new Map<string, string>()
+  private readonly reasoningStarted = new Map<string, string>()
 
   map(view: ConversationView, taskId: string): Live | null {
     const live = view.docs['pi.live'] as LiveDoc | undefined
     if (!live?.run) {
       this.runStarted.delete(taskId)
+      this.reasoningStarted.delete(taskId)
+      this.toolStarted.clear()
       return null
     }
     const startedAt = this.runStarted.get(taskId) ?? new Date().toISOString()
     this.runStarted.set(taskId, startedAt)
     const tools: LiveTool[] = []
     for (const slot of live.tools ?? []) {
-      if (slot.status === 'done') {
-        this.toolStarted.delete(slot.callId)
-        continue
-      }
       const name = toolName(slot.name)
       if (!name) continue
+      const details = isDetails(slot.details) ? slot.details : null
       const since = this.toolStarted.get(slot.callId) ?? new Date().toISOString()
       this.toolStarted.set(slot.callId, since)
-      const details = isDetails(slot.details) ? slot.details : null
+      const status: ToolStatus =
+        details?.status ??
+        (slot.status === 'done' ? 'done' : slot.status === 'error' ? 'failed' : 'running')
       tools.push({
         callId: slot.callId,
         name,
         target: details?.target ?? '',
-        note: lastLine(slot.output),
+        note: details?.progress ?? details?.note ?? null,
+        status,
         startedAt: since,
       })
     }
     const message = live.generation?.message
+    const summary = thinkingOf(message)
+    const hasThinking = parts(message).some((part) => part.type === 'thinking')
+    if ((hasThinking || summary) && !this.reasoningStarted.has(taskId))
+      this.reasoningStarted.set(taskId, new Date().toISOString())
+    const reasoningStarted = this.reasoningStarted.get(taskId)
+    const reasoning = reasoningStarted
+      ? {
+          summary: summary ? redact(summary).slice(0, 4000) : null,
+          startedAt: reasoningStarted,
+        }
+      : null
     const text = textOf(message)
-    const reasoning = parts(message).some((part) => part.type === 'thinking')
+    const running = tools.some((tool) => tool.status === 'running')
     return {
-      phase: tools.length ? 'tool' : text ? 'writing' : reasoning ? 'reasoning' : 'thinking',
+      phase: running ? 'tool' : text ? 'writing' : reasoning ? 'reasoning' : 'thinking',
       tools,
+      reasoning,
       text: text || null,
       startedAt,
     }
   }
-}
-
-function lastLine(output: string | undefined): string | null {
-  if (!output) return null
-  const last = output
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .at(-1)
-  return last ? last.slice(0, 90) : null
 }
 
 interface UsageRecord {

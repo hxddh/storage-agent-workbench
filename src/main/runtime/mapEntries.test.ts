@@ -49,6 +49,31 @@ describe('entry projection', () => {
     expect(out[0]).toMatchObject({ kind: 'answer', text: 'demo-public is public.' })
   })
 
+  it('keeps a provider reasoning summary separate from the answer', () => {
+    const out = entries([
+      {
+        id: 'e2b',
+        kind: 'pi.assistant',
+        model: [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking: 'Check the policy before answering.' },
+              { type: 'text', text: 'demo-public is public.' },
+            ],
+            timestamp: 1_700_000_000_000,
+          },
+        ],
+      },
+    ])
+    expect(out).toHaveLength(2)
+    expect(out[0]).toMatchObject({
+      kind: 'reasoning',
+      text: 'Check the policy before answering.',
+    })
+    expect(out[1]).toMatchObject({ kind: 'answer', text: 'demo-public is public.' })
+  })
+
   it('turns a tool result into one row with its view', () => {
     const out = entries([
       {

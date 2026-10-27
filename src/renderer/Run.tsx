@@ -1,3 +1,4 @@
+import { buildActivity } from '@shared/activity'
 import {
   type AuditProgress,
   type Lang,
@@ -28,6 +29,7 @@ import {
   Radar,
 } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Work } from './Activity'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
 import { FindingRow, factsMarkdown, noticeText, Sources } from './Sources'
@@ -376,6 +378,7 @@ export function Run({
   )
   const [evidenceFocus, setEvidenceFocus] = useState<string | null>(null)
   const [evidenceOpen, setEvidenceOpen] = useState(false)
+  const [workOpen, setWorkOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [linked, setLinked] = useState(false)
   const [more, setMore] = useState(false)
@@ -388,6 +391,7 @@ export function Run({
     [view.entries, view.issueStatus],
   )
   const earlierTurns = useMemo(() => turns.slice(0, -1), [turns])
+  const activity = useMemo(() => buildActivity(view.entries, view.live), [view.entries, view.live])
   const root = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -458,6 +462,7 @@ export function Run({
     if (!turnKey) return
     setEvidenceOpen(false)
     setEvidenceFocus(null)
+    setWorkOpen(false)
     setMore(false)
     setHistoryOpen(false)
     setSelectedTurn(null)
@@ -568,16 +573,14 @@ export function Run({
 
   const hideData = Boolean(primaryData)
   const hideChange = primaryChange
-  const evidenceCount = [
-    run.facts.findings.length > 0 ? fill(t.findingsCount, { n: run.facts.findings.length }) : '',
-    run.facts.checks.length > 0
-      ? run.facts.checks.length === 1
-        ? t.checkOneShort
-        : `${run.facts.checks.length} ${t.checks}`
-      : '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  // Work owns the call count; Sources carries evidence categories only. Do not
+  // repeat the same receipt in two rows.
+  const evidenceCount =
+    run.facts.findings.length > 0
+      ? run.facts.findings.length === 1
+        ? t.findingsCountOne
+        : fill(t.findingsCount, { n: run.facts.findings.length })
+      : ''
 
   const hasSources =
     run.facts.findings.length + run.facts.accepted.length > 0 ||
@@ -754,6 +757,18 @@ export function Run({
           </section>
         )}
 
+        {view.live && (
+          <Work
+            activity={activity}
+            live={view.live}
+            open={workOpen || Boolean(view.live)}
+            onToggle={() => setWorkOpen((value) => !value)}
+            t={t}
+            lang={lang}
+            taskTitle={view.task.title}
+          />
+        )}
+
         <section
           className="run-answer"
           aria-label={t.runAnswerTitle}
@@ -790,6 +805,18 @@ export function Run({
             </p>
           )}
         </section>
+
+        {!view.live && (
+          <Work
+            activity={activity}
+            live={null}
+            open={workOpen || printing}
+            onToggle={() => setWorkOpen((value) => !value)}
+            t={t}
+            lang={lang}
+            taskTitle={view.task.title}
+          />
+        )}
 
         {primaryProof?.view && !view.live && (
           <ProofView item={primaryProof} t={t} lang={lang} taskTitle={view.task.title} />

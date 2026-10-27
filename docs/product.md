@@ -70,9 +70,11 @@ risk. It stores no request, answer text, policy or secret.
 ## A model task
 
 - The request is recorded immediately; the run is durable.
-- While it runs, a check appears when a tool starts and shows its real progress
-  (`3 of 12 buckets`). The check settles in place. The Checks section opens
-  while work is happening and folds to a receipt when it ends.
+- While it runs, Work appears immediately. A tool call appears when it starts
+  and shows its real progress (`3 of 12 buckets`); it settles in place. A
+  provider reasoning summary appears as `Thought`; an omitted summary stays
+  explicitly omitted. Completed, failed, stopped and timed-out calls remain in
+  order. Work folds to one `Worked for …` row when the answer settles.
 - The agent may publish a short plan; it updates as the work changes. The plan
   is visible while the run is in flight and folds away when a normal answer
   settles. It stays for a stopped run or a blocked step. A plan is optional: a
@@ -123,29 +125,34 @@ Top to bottom:
 2. **Notices** — stopped, failed, no-answer, model-missing and budget notices,
    with Retry or Continue where they apply. They sit outside the sources fold.
 3. **Plan** — the agent's own 1–6 steps, commonly 3–6, with pending, active,
-   done and blocked states. It is process, not answer: it is visible
-   while the run is live, remains for a stopped run or a blocked step, and is
-   absent when the agent did not publish one. A settled answer does not carry
-   the finished checklist.
-4. **Answer** — the agent's final response, normal Markdown. Inline citations
+   done and blocked states. It is intent, not evidence: it is visible while the
+   run is live, remains for a stopped run or a blocked step, and is absent when
+   the agent did not publish one. A settled answer does not carry the finished
+   checklist.
+4. **Work** — the current turn's one activity ledger, open while the run is
+   live. A provider reasoning summary appears as a collapsed `Thought` row when
+   the provider returned one; an omitted summary is shown honestly, never
+   invented. Every running and completed tool call has a stable row with status,
+   target, shaped result note and duration. Opening a call shows its result;
+   failures, stopped calls and compaction stay in place. After the answer
+   settles, Work collapses to one `Worked for … · n calls` row before the proof.
+   It reopens in the same order.
+5. **Answer** — the agent's final response, normal Markdown. Inline citations
    use `[1](#ev-<evidence id>)`. The window resolves every citation against the
    task's tool evidence, leaves a broken one as plain text and adds a quiet
    warning. There is no answer tool and no report block language. A final
    response with no citation is still a complete answer.
-5. **Primary proof** — the first cited tool result stands beside the answer;
+6. **Primary proof** — the first cited tool result stands beside the answer;
    without a citation, the latest data read, otherwise the latest change plan.
    When there is no proof and the task has risks, the current risk list is shown
    here instead. It is not duplicated below unless the user opens Sources.
-6. **Sources** — one compact index, not a second page. Its rows are
+7. **Sources** — one compact index, not a second page. Its rows are
    **Risks**, **Data**, **Change plan**, **Tool calls**, **Not checked**,
    **Checked again**, **Changes** and **Methods** when they exist. Only one
    section opens at a time. The index appears with its counts, and opening a
    section is a disclosure, not navigation. A deterministic check uses the same
-   component.
-7. **Checks** — every executed storage, query, memory or change-plan call in
-   order, with target, result note and duration, folded to
-   checks · time · tokens. `plan` and `skill` are control calls, not
-   checks; they appear with the rest of the run's activity.
+   component. The tool-call section is an audit receipt; the live and primary
+   process is Work.
 
 Copy and a single overflow menu are always visible in the run header. The
 overflow contains save Markdown, check again, re-verify, copy task link, export

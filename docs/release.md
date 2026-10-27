@@ -96,12 +96,11 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest published release is **31.0.0** (2026-10-27). Earlier release notes
+The latest published release is **32.0.0** (2026-10-27). Earlier release notes
 may describe retired behavior; they are history. Keep `README.md`,
 `CHANGELOG.md` and this paragraph in step with the next tag, and refresh
-`docs/screenshot.png` if the surface changed. 31.0 removes the report block
-protocol and the answer tool: the final assistant message is the answer, tool
-results are the only evidence, and a citation points at the actual evidence id.
-It also removes fix/playbook and all pre-30 compatibility views, renames the
-deterministic projection to `facts`, and renames the change plan model. Its
-visual baselines and E2E cover the new surface.
+`docs/screenshot.png` if the surface changed. 32.0 makes the current turn's work
+visible: provider reasoning summaries, live and completed tool calls, failed
+states and compaction share one activity ledger; the settled answer collapses
+the ledger to a Work summary. It keeps the 31.0 final-message answer, evidence
+citations and read-only boundary.

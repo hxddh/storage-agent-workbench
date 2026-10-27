@@ -82,18 +82,33 @@ export function agentTool<T extends TSchema>(
       }
       const timeout = AbortSignal.timeout(def.timeoutMs)
       const signal = context.abortSignal ? AbortSignal.any([context.abortSignal, timeout]) : timeout
-      const progress = (text: string) => api.output(`${redact(text)}\n`)
       const conversationId = String(api.conversationId)
       let regional: ((region: string) => S3Client) | undefined
+      let progressNote: string | null = null
+      let detailsWrite = Promise.resolve()
+      const writeDetails = (value: ToolDetails) => {
+        detailsWrite = detailsWrite
+          .catch(() => undefined)
+          .then(() => api.details(value as never, context))
+          .catch(() => undefined)
+        return detailsWrite
+      }
       const running = (value: string): ToolDetails => ({
         target: value,
         note: null,
+        progress: progressNote,
         view: null,
         ms: null,
         status: 'running',
       })
+      /** Keep the visible progress line in shaped details, never raw output. */
+      const progress = (text: string) => {
+        progressNote = redact(text).slice(0, 160)
+        void writeDetails(running(target))
+        api.output(`${progressNote}\n`)
+      }
       try {
-        await api.details(running(target) as never, context)
+        await writeDetails(running(target))
         const result = await def.run(args as Static<T>, {
           deps,
           context,
@@ -102,7 +117,7 @@ export function agentTool<T extends TSchema>(
           progress,
           setTarget: async (value: string) => {
             target = redact(value)
-            await api.details(running(target) as never, context)
+            await writeDetails(running(target))
           },
           provider: async (id?: string) => {
             const config = await deps.providers.resolve(id)
@@ -128,6 +143,8 @@ export function agentTool<T extends TSchema>(
           status: 'done',
           ...(evidenceId ? { evidenceId } : {}),
         }
+        // Let every queued progress write land before the final shaped result.
+        await detailsWrite
         return {
           output: [{ type: 'text' as const, text: envelope(bound(result.model), evidenceId) }],
           details: details as never,
@@ -172,6 +189,7 @@ export function agentTool<T extends TSchema>(
           status,
           ...(evidenceId ? { evidenceId } : {}),
         }
+        await detailsWrite
         return {
           output: [{ type: 'text' as const, text: envelope(forModel, evidenceId) }],
           isError: true,

@@ -77,6 +77,16 @@ await page.waitForTimeout(400)
 await page.waitForTimeout(350)
   await page.screenshot({ path: join(out, '03-task-light.png') })
 
+// Work is a summary after the answer settles; expanding it must restore the
+// same calls and let one call open its shaped result.
+await page.locator('.run-work-head').click()
+await page.waitForTimeout(250)
+await page.screenshot({ path: join(out, '22-work-expanded.png') })
+await page.locator('.activity-item.tool .activity-line').first().click()
+await page.waitForTimeout(250)
+await page.screenshot({ path: join(out, '23-tool-detail.png') })
+await page.locator('.run-work-head').click()
+
 await page.locator('.run-evidence-toggle').click()
 await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 2000 })
 await page.waitForTimeout(250)

@@ -106,12 +106,22 @@ The composer is inert until a model exists; the account can still be checked.
 
 Top to bottom: a 12.5px scope line (`Demo · All 2 buckets checked · 2m ago`),
 the question at 24px, Copy and the overflow menu, a collapsed **Earlier in this
-task** history, an optional plan, the final answer in Markdown, one primary
-proof or the primary risk list, one **Sources** disclosure and the checks
-receipt. The first cited tool result is the proof; without one, the latest data
-read or change plan stands in. The run
+task** history, an optional plan, the open **Work** ledger while live, the final
+answer in Markdown, the collapsed `Worked for …` row, one primary proof or the
+primary risk list, and one **Sources** disclosure. The first cited tool result is
+the proof; without one, the latest data read or change plan stands in. The run
 header is sticky. Save, Check again, Re-verify, Copy link, Export evidence and
 Save PDF live in the overflow.
+
+**Work** is one activity ledger, not a chat transcript or a card stack. A
+provider reasoning summary is a collapsed `Thought` row with its text visible on
+the row and full text on open; when the provider omits it, the row says so and
+no replacement narrative is invented. Each tool row keeps one identity from
+running to done, with a state mark, `verb target`, shaped note, duration and one
+chevron. The current row is open while live; completed rows collapse. A failed,
+stopped or timed-out row stays in place with its status and note. A tool result
+opens in a bounded scroll area using the same typed view as Sources. At settle,
+the answer leads and Work is a single line; opening it restores the same order.
 
 The scope line is the one place that makes coverage visible before the user
 reads the answer. It says `Not fully checked: n` (plus `m blocked` when some
@@ -166,15 +176,17 @@ A code-mode result shows its rows and chart in the data section; the script and
 output open under the query's check as the evidence. Byte columns render as
 human sizes; CSV keeps raw numbers.
 
-Tool calls fold to a receipt showing the number of checks, elapsed time and
-tokens/cost when known. Checks that were blocked before execution are not
-listed. Printing expands every Sources section and includes tool calls.
+The Sources **Tool calls** section is the audit receipt: every settled call,
+its status, target, note and duration, with all typed views expandable. Blocked
+calls are not listed. Printing expands Work and every Sources section.
 
 ### Running
 
-While a run is live, a status strip above the composer shows a pulsing accent
-dot, the current phase and target, the latest note and elapsed time. The checks
-section opens as work happens and folds to a receipt when the task settles.
+While a run is live, Work is open and the status strip above the composer shows
+a pulsing accent dot, the current phase and target and elapsed time. The current
+call is open in place; every earlier call stays above it. When work settles,
+Work folds to `Worked for … · n calls` and the answer becomes primary. A stopped
+run keeps Work and its plan; Continue resumes in the same task.
 
 ### Keyboard and pointer
 

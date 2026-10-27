@@ -33,12 +33,21 @@ actual evidence id from the `<untrusted-data evidence="…">` tag, for example
 every citation, leaves an unresolved one as plain text and shows a quiet note.
 The model never writes a table of facts.
 
+**Work** is the current-turn activity ledger. While live it is open: a provider
+reasoning summary if one exists, the running call and every completed call with
+its status, target, shaped result note and duration. Live progress comes from
+`ToolDetails.progress`, a redacted and bounded field; raw tool output never
+reaches this surface. Opening a call shows its typed result. After the answer
+settles Work collapses to `Worked for … · n calls` and reopens in the same order;
+failed, stopped and timed-out calls stay in place.
+
 The window shows one proof: the first cited tool result, otherwise the latest
 data read, otherwise the latest change plan. When there is no proof, the current
 risk list stands in its place. `Sources` is one compact index below the answer.
 Risks, Data, Change plan, Tool calls, Not checked, Checked again, Changes and
-Methods appear only when they have content; one row opens one section. There is
-no legacy report block path.
+Methods appear only when they have content; one row opens one section. The
+**Tool calls** section is the audit receipt, not the live Work narrative. There
+is no legacy report block path.
 
 ## Code mode (`query`)
 

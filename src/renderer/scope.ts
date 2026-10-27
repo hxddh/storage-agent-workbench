@@ -73,7 +73,9 @@ export function scopeText(brief: RunFacts, t: Dict, options: ScopeOptions = {}):
       : '',
     checked && coverage ? fill(t.checkedAt, { when: checked }) : '',
     options.findings && brief.findings.length > 0
-      ? fill(t.findingsCount, { n: brief.findings.length })
+      ? brief.findings.length === 1
+        ? t.findingsCountOne
+        : fill(t.findingsCount, { n: brief.findings.length })
       : '',
     options.memory && rememberedAt
       ? fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' })

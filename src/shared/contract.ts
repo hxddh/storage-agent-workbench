@@ -338,6 +338,8 @@ export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' |
 export interface ToolDetails {
   target: string
   note: string | null
+  /** A bounded, redacted progress line for the live work ledger. */
+  progress?: string | null
   view: ToolView | null
   ms: number | null
   status: ToolStatus
@@ -353,6 +355,16 @@ export interface LiveTool {
   name: ToolName
   target: string
   note: string | null
+  status: ToolStatus
+  startedAt: string
+}
+
+/**
+ * A provider-supplied reasoning summary, never a fabricated chain of thought.
+ * Some models return text; others return an empty block (`summary: null`).
+ */
+export interface LiveReasoning {
+  summary: string | null
   startedAt: string
 }
 
@@ -418,6 +430,8 @@ export type UiEntry =
       context?: ContextRef[]
     }
   | { id: string; kind: 'answer'; at: string; text: string; streaming?: boolean }
+  /** A provider-supplied reasoning summary. It is not a tool result. */
+  | { id: string; kind: 'reasoning'; at: string; text: string }
   | {
       id: string
       kind: 'tool'
@@ -459,6 +473,7 @@ export interface TaskSummary {
 export interface Live {
   phase: 'thinking' | 'reasoning' | 'tool' | 'writing'
   tools: LiveTool[]
+  reasoning: LiveReasoning | null
   text: string | null
   startedAt: string
 }

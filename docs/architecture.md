@@ -38,8 +38,8 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
 4. `submit` writes a `sa.user` entry and starts pi's generation task. A running
    call is projected from `pi.live.tools` (name, target, progress, start time).
    When it settles, the tool result becomes a `pi.tool-result` entry carrying
-   `details` (`{ target, note, view, ms, status }`); the live row is replaced in
-   place. `agentTool()` writes the status (`done`, `failed`, `refused`,
+   `details` (`{ target, note, progress, view, ms, status }`); live progress is a
+   redacted, bounded `progress` field, never the raw tool output. `agentTool()` writes the status (`done`, `failed`, `refused`,
    `timeout`, `stopped`); the projection never parses result text for it.
 5. Hooks guard the run. `beforeTool` blocks a repeated storage read and any
    call after the model tier's round budget (14 small, 24 mid, 32 large).
@@ -101,8 +101,8 @@ A model-free re-verification is always recorded as partial; only an unscoped
 survey can produce a complete reading.
 
 The window never receives `entry.model` (provider-facing messages). The mapper
-in `runtime/project.ts` projects entries into `UiEntry`, extracting only answer
-text and shaped tool details. `pi.user` entries (the harness's correction to
+in `runtime/project.ts` projects entries into `UiEntry`, extracting answer text,
+a sanitized provider reasoning summary and shaped tool details. `pi.user` entries (the harness's correction to
 the model) are not shown; `sa.continue` is a boundary, not a question.
 
 ## One reading, one set of rules
@@ -149,10 +149,11 @@ and truncation stay in the view.
 | `main/runtime/agent.ts` | prompt sections, guard hooks, grounding and open-read corrections, estate digest |
 | `main/runtime/harness.ts` | task lifecycle, model per run, watches, model-free audit, re-verify, reading records, purge |
 | `main/runtime/reverify-plan.ts` | deterministic plan-step comparison for re-verification |
-| `main/runtime/project.ts` | entries → `UiEntry`, live state, usage |
+| `main/runtime/project.ts` | entries → `UiEntry`, live state, sanitized reasoning, usage |
 | `main/runtime/search.ts` | sidebar search and index rows |
 | `shared/audit.ts` | deterministic account-check summary from survey views |
 | `shared/facts.ts` | entries → deterministic facts (risks, methods, coverage, change plans, data, tool calls) |
+| `shared/activity.ts` | current-turn work: reasoning summary, live/durable calls, compaction, resume |
 | `shared/run.ts` | optional plan + final Markdown answer + citation and evidence resolution |
 | `shared/grounding.ts` | names and exposure a task's results show; correction input |
 | `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details, evidence id |
@@ -176,7 +177,8 @@ and truncation stay in the view.
 | `main/window-state.ts` | window bounds in `window.json`, clamped to a display |
 | `renderer/Sidebar.tsx` | task list, search, rename, pin, delete |
 | `renderer/Home.tsx` | account summary, demo/local-model entry |
-| `renderer/Run.tsx` | run header, optional plan, final Markdown answer, cited proof, Sources, copy/save/export |
+| `renderer/Run.tsx` | run header, optional plan, live/settled Work, final Markdown answer, cited proof, Sources, copy/save/export |
+| `renderer/Activity.tsx` | Work ledger: reasoning row, call rows, statuses, expandable shaped results |
 | `renderer/Sources.tsx` | one compact source index: risks, data, change plan, tool calls, not read, re-check, changes, methods |
 | `main/skills.ts` | four on-demand methods; documentation, not checks |
 | `renderer/Composer.tsx` | request, steer, stop, @ focus, files |

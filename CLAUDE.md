@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 31.0.0**. Read
+> Implementation contract for **Storage Agent 32.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes and the changelog are history.
@@ -77,6 +77,8 @@ The invariant:
 - `src/shared/run.ts` — the agent-native projection: the latest optional plan,
   the final Markdown answer, evidence resolution, citation validation and
   grounding.
+- `src/shared/activity.ts` — the current-turn work projection: provider reasoning
+  summary, live and durable tool calls, compaction and resume.
 - `src/shared/audit.ts` — the deterministic summary for a model-free account
   check; it names only buckets and counts already present in survey views.
 - `src/shared/grounding.ts` — which names and exposure a task's results show;
@@ -84,7 +86,8 @@ The invariant:
 - `src/main/runtime/harness.ts` — pi-durable lifecycle, task CRUD, model per
   run, conversation watch, task-graph watch, model-free `audit()`, re-verify,
   purge on delete.
-- `src/main/runtime/project.ts` — entry → UI mapping, live state, usage.
+- `src/main/runtime/project.ts` — entry → UI mapping, live state, sanitized
+  provider reasoning, usage.
 - `src/main/runtime/model.ts` — pi-ai provider installation and saved/draft
   model test.
 - `src/main/runtime/reverify-plan.ts` — compares a change plan with a model-free
@@ -186,7 +189,9 @@ answer tool and no forced report protocol.
 `skill` is a real on-demand method, not a check: access evidence, change
 planning, inventory/logs and capacity/cost. The model sees the four descriptions
 in the capability section and loads one only when the question needs it. Methods
-are visible in Sources and never counted as tool calls.
+are visible in Sources and never counted as tool calls. Provider reasoning is
+shown only as the provider returned it (a summary); the app never fabricates a
+chain of thought or turns a tool label into thinking text.
 
 `change_plan` returns one change plan: lifecycle rules merge per bucket, a
 policy change is merged only when the current policy was read and contains no
@@ -249,10 +254,22 @@ re-check writes a result in the current task and opens its Sources section.
 Home reads its "last complete read" from the reading records.
 
 The plan section is the agent's own 1–6 steps (commonly 3–6) with
-pending/active/done/blocked states; it is optional and not a transcript. It is visible while the run is
-live and remains for a stopped run or a blocked step; a settled answer folds it
-away. The answer is normal Markdown with citations. The window shows one proof
-view: the first cited tool result, otherwise the latest data read, otherwise the
+pending/active/done/blocked states; it is optional and not a transcript. It is
+visible while the run is live and remains for a stopped run or a blocked step; a
+settled answer folds it away. Plan state is intent, not proof: an actual call is
+the only execution evidence.
+
+**Work** is the one current-turn activity surface. While live it is open and
+shows a provider reasoning summary when one was returned, the current call and
+all completed calls, with status, target, shaped result summary and duration.
+After the answer settles it collapses to one `Worked for … · n calls` row; the
+same rows reopen in their original order. It never invents a reasoning summary:
+an omitted or empty thinking block is shown as an honest `Thought` row with no
+summary. Live progress comes from shaped `ToolDetails.progress`, never from raw
+tool output. A failed call stays in place with its status and note.
+
+The answer is normal Markdown with citations. The window shows one proof view:
+the first cited tool result, otherwise the latest data read, otherwise the
 latest change plan. When there is no proof, the current risk list stands in its
 place. A missing citation is shown as plain text with a quiet note. There is no
 report block renderer and no legacy entry path.
@@ -268,9 +285,10 @@ Every table can be copied as CSV or saved; the page can be copied or saved as
 Markdown.
 
 A model-free check renders through the same run surface with a synthesized
-answer and a `Deterministic account check` tag. A model run shows a tool call
-when it starts and folds Tool calls to a receipt (calls · time · tokens) when it
-ends. A stopped run keeps its plan and offers Continue. There are no next-step
+answer and a `Deterministic account check` tag. A model run opens Work when it
+starts and collapses it to `Worked for … · n calls` when the answer settles;
+Sources Tool calls remains the audit receipt. A stopped run keeps its plan and
+offers Continue. There are no next-step
 suggestions or follow-up prompts. A query's script opens under its check as the
 evidence; the answer can cite it.
 

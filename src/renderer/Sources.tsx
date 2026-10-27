@@ -26,7 +26,7 @@ import {
 } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type Dict, dict, fill, toolLabel } from './i18n'
-import { ago } from './time'
+import { ago, duration } from './time'
 import {
   AccessChain,
   ChangePlanView,
@@ -54,11 +54,6 @@ const ICONS: Record<ToolName, typeof Radar> = {
 }
 
 const FINDINGS_SHOWN = 5
-
-function duration(ms: number | null): string | null {
-  if (ms === null || !Number.isFinite(ms)) return null
-  return ms < 1000 ? `${Math.max(1, Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`
-}
 
 function compact(n: number): string {
   return n < 1000
@@ -488,14 +483,20 @@ function CheckRow({
   taskTitle: string
 }) {
   const Icon = ICONS[check.name] ?? Activity
-  // Views already rendered on the page (findings, the data table, chart, change plans)
-  // do not open again here; the check row is their provenance.
-  const inline = check.view
-    ? // A query's rows are on the page; its script, the evidence, opens here.
-      ['buckets', 'objects', 'object', 'estate', 'probe', 'note', 'query'].includes(check.view.kind)
-    : false
-  const expandable = inline && check.status !== 'running'
+  // The call row is the audit surface; every settled view can open here, even
+  // when the same result is the primary proof above.
+  const expandable = Boolean(check.view) && check.status !== 'running'
   const shown = duration(check.ms)
+  const status =
+    check.status === 'failed'
+      ? t.runWorkFailed
+      : check.status === 'stopped'
+        ? t.runWorkStopped
+        : check.status === 'timeout'
+          ? t.runWorkTimeout
+          : check.status === 'refused'
+            ? t.runWorkRefused
+            : null
   return (
     <div className={`check-row ${check.status}`} data-check-id={check.id}>
       <button
@@ -513,6 +514,7 @@ function CheckRow({
         <span className="verb">{toolLabel(check.name, lang)}</span>
         {check.target && <span className="target">{check.target}</span>}
         {check.note && <span className="note">{check.note}</span>}
+        {status && <span className={`check-status ${check.status}`}>{status}</span>}
         {shown && <span className="time">{shown}</span>}
         {expandable && <ChevronRight size={13} className={`chev ${open ? 'open' : ''}`} />}
       </button>

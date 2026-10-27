@@ -1,18 +1,18 @@
 # Documentation
 
-These pages describe the behavior of the **31.0.0** tree. They are not a
+These pages describe the behavior of the **32.0.0** tree. They are not a
 roadmap and not a substitute for the code.
 
 | File | What it is |
 |---|---|
-| [product.md](product.md) | Tasks, runs, the optional plan, Markdown answers, Sources and the model-free check |
+| [product.md](product.md) | Tasks, runs, Work, the optional plan, Markdown answers, Sources and the model-free check |
 | [architecture.md](architecture.md) | Processes, runtime flow, modules and storage layout |
 | [data-model.md](data-model.md) | Host tables, pi tables, datasets and retention |
 | [tools.md](tools.md) | The twelve tools grouped by capability, final answer citations, change_plan, code mode and limits |
 | [security.md](security.md) | Secrets, scope, redaction, evidence and the trust boundary |
 | [iam.md](iam.md) | The read-only IAM actions and what each one enables |
 | [capabilities.md](capabilities.md) | Provider capability matrix |
-| [design.md](design.md) | Tokens, type, layout, motion and accessibility |
+| [design.md](design.md) | Tokens, type, Work layout, motion and accessibility |
 | [development.md](development.md) | Commands, tests and packaging |
 | [release.md](release.md) | CI/release gates, signing, feeds and update path |
 
@@ -29,13 +29,19 @@ roadmap and not a substitute for the code.
 
 - **Task** — the window's object: a user request or a deterministic account
   check, with durable entries and one run.
-- **Run** — the agent's optional plan, its answer, one proof view and the
-  evidence behind it.
+- **Run** — the agent's optional plan, its Work ledger, its answer, one proof
+  view and the evidence behind it.
+- **Work** — the current turn's one activity ledger: reasoning summary, live and
+  completed calls, status, target, duration and shaped results. It is open while
+  live and collapses to `Worked for …` after settlement.
 - **Answer** — the agent's final assistant message, normal Markdown. It cites a
   tool result by its evidence id; the window renders the cited tool view. The
   model never authors a fact table.
 - **Sources** — the one compact evidence index below the answer: Risks, Data,
   Change plan, Tool calls, Not checked, Checked again, Changes and Methods.
+  Tool calls is the audit receipt; Work is the process narrative.
+- **Thought** — a provider-supplied reasoning summary, never a fabricated chain
+  of thought. An omitted summary stays visibly omitted.
 - **Method** — a `skill` workflow the agent loaded (access, change, inventory,
   capacity). It is documentation, not a check or storage evidence.
 - **Risk** — the user-facing problem proved by a reading. An **Issue** is its

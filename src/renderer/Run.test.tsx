@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { IssueRow, TaskView, UiEntry } from '@shared/contract'
+import type { IssueRow, Live, TaskView, UiEntry } from '@shared/contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Run } from './Run'
@@ -132,9 +132,76 @@ describe('the run', () => {
     expect(screen.getByText(/Only/)).toBeTruthy()
     expect(document.querySelector('.run-proof table')).toBeTruthy()
     expect(screen.queryByText('Read the account')).toBeNull()
+    expect(screen.getByRole('button', { name: /Work/ })).toBeTruthy()
+    expect(screen.getByText(/Worked for/)).toBeTruthy()
     expect(document.querySelector('.run-evidence-wrap')?.className).toContain('is-collapsed')
     fireEvent.click(screen.getByRole('button', { name: /Sources/ }))
     expect(document.querySelector('.run-evidence-wrap')?.className).not.toContain('is-collapsed')
+  })
+
+  it('shows live work immediately, with completed calls still present', () => {
+    const now = new Date(Date.now() - 1000).toISOString()
+    const live: Live = {
+      phase: 'tool',
+      tools: [
+        {
+          callId: 'c1',
+          name: 'survey',
+          target: 'Demo',
+          note: '3 of 4',
+          status: 'running',
+          startedAt: now,
+        },
+        {
+          callId: 'c2',
+          name: 'config',
+          target: 'demo-public',
+          note: '4 findings',
+          status: 'done',
+          startedAt: now,
+        },
+      ],
+      reasoning: null,
+      text: null,
+      startedAt: now,
+    }
+    render(
+      <Run
+        view={view([user(), plan], { live })}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(document.querySelector('.run-work')).toBeTruthy()
+    expect(screen.getByText('Read account')).toBeTruthy()
+    expect(screen.getByText('3 of 4')).toBeTruthy()
+    expect(screen.getByText('Reviewed configuration')).toBeTruthy()
+    expect(screen.getByText('4 findings')).toBeTruthy()
+  })
+
+  it('shows provider reasoning summary when Work is expanded', () => {
+    const reasoning: UiEntry = {
+      id: 'reason-1',
+      kind: 'reasoning',
+      at: '2026-01-01T00:00:01Z',
+      text: 'Check the public access block before concluding.',
+    }
+    render(
+      <Run
+        view={view([user(), reasoning, survey, fallback('Only `demo` is public.')])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Work/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Thought/ }))
+    expect(screen.getAllByText('Check the public access block before concluding.')).toHaveLength(2)
   })
 
   it('shows the latest reading when the answer has no citation', () => {
