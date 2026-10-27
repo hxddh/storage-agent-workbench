@@ -1,5 +1,4 @@
 import type { BriefData, BriefFinding, BriefNotice } from '@shared/brief'
-import { readStateOfBrief } from '@shared/brief'
 import {
   type AuditProgress,
   type Lang,
@@ -32,22 +31,14 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Brief, briefMarkdown, FindingRow, noticeText } from './Brief'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
+import { scopeText } from './scope'
+import { ago } from './time'
 import { AccessChain, ChartView, PlanView, TableView, ToolViewBody } from './Views'
 
 const Markdown = lazy(() => import('./Markdown'))
 
 function plain(text: string): string {
   return text.replace(/`([^`]*)`/g, '$1')
-}
-
-function ago(iso: string, t: Dict): string | null {
-  const started = Date.parse(iso)
-  if (Number.isNaN(started)) return null
-  const seconds = Math.max(0, (Date.now() - started) / 1000)
-  if (seconds < 60) return t.justNow
-  if (seconds < 3600) return fill(t.minutesAgo, { n: Math.floor(seconds / 60) })
-  if (seconds < 86_400) return fill(t.hoursAgo, { n: Math.floor(seconds / 3600) })
-  return fill(t.daysAgo, { n: Math.floor(seconds / 86_400) })
 }
 
 function source(run: RunModel, block: ReportBlock): RunEvidence | undefined {
@@ -126,6 +117,38 @@ function TableBlock({
   return <ToolViewBody view={view} t={t} taskTitle={taskTitle} />
 }
 
+function CompareBlock({
+  run,
+  block,
+  t,
+  lang,
+  taskTitle,
+}: {
+  run: RunModel
+  block: Extract<ReportBlock, { kind: 'compare' }>
+  t: Dict
+  lang: Lang
+  taskTitle: string
+}) {
+  const items = block.evidence
+    .slice(0, 2)
+    .map((id) => resolveEvidence(run.evidence, id))
+    .filter((item): item is RunEvidence => Boolean(item?.view))
+  if (items.length < 2) return null
+  return (
+    <div className="run-compare">
+      {items.map((item) => (
+        <section className="run-compare-item" key={item.id}>
+          <h4>
+            {toolLabel(item.name, lang)} · {item.target}
+          </h4>
+          <ToolViewBody view={item.view!} t={t} taskTitle={taskTitle} />
+        </section>
+      ))}
+    </div>
+  )
+}
+
 function TimelineBlock({ view, limit, t }: { view: ToolView; limit?: number; t: Dict }) {
   const table =
     view.kind === 'estate' && view.history ? view.history : view.kind === 'query' ? view.rows : null
@@ -156,6 +179,7 @@ function FindingsBlock({
   onOpen,
   onAccept,
   staleDays,
+  expand = false,
 }: {
   run: RunModel
   block: Extract<ReportBlock, { kind: 'findings' }>
@@ -163,6 +187,7 @@ function FindingsBlock({
   onOpen: (id: string) => void
   onAccept: (finding: BriefFinding) => void
   staleDays: number
+  expand?: boolean
 }) {
   const all = run.brief.findings.filter(
     (finding) =>
@@ -170,7 +195,7 @@ function FindingsBlock({
       (!block.code || finding.code === block.code) &&
       finding.status === 'open',
   )
-  const rows = all.slice(0, block.limit ?? 5)
+  const rows = expand ? all : all.slice(0, block.limit ?? 5)
   if (!rows.length) return <p className="quiet">{t.runNoMatch}</p>
   const allMemory = all.length > 0 && all.every((finding) => finding.source === 'memory')
   const rememberedAt = allMemory
@@ -214,7 +239,7 @@ function FindingsBlock({
             staleDays={staleDays}
           />
         ))}
-        {all.length > rows.length && (
+        {!expand && all.length > rows.length && (
           <button
             className="more-toggle"
             type="button"
@@ -409,6 +434,7 @@ export function Run({
   onRetry,
   onContinue,
   onReverify,
+  onOlder = async () => undefined,
   onAudit = () => undefined,
   auditing = false,
   staleDays = 7,
@@ -420,6 +446,7 @@ export function Run({
   onRetry: () => void
   onContinue: () => void
   onReverify: () => Promise<void>
+  onOlder?: () => Promise<void>
   onAudit?: () => void
   auditing?: boolean
   staleDays?: number
@@ -435,6 +462,8 @@ export function Run({
   const [copied, setCopied] = useState(false)
   const [linked, setLinked] = useState(false)
   const [more, setMore] = useState(false)
+  const [printing, setPrinting] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [selectedTurn, setSelectedTurn] = useState<string | null>(null)
   const turns = useMemo(
@@ -464,19 +493,12 @@ export function Run({
       window.removeEventListener('keydown', key)
     }
   }, [more])
-  const read = readStateOfBrief(run.brief)
-  const scopeNames = [...new Set(run.brief.coverage.map((item) => item.provider))]
-  const coverageStatus =
-    read.open > 0
-      ? `${fill(t.scopeOpen, { n: read.open })}${
-          read.blocked > 0 ? ` · ${fill(t.scopeBlocked, { n: read.blocked })}` : ''
-        }`
-      : read.complete
-        ? t.scopeComplete
-        : ''
-  const checked = run.brief.lastReadAt ? ago(run.brief.lastReadAt, t) : null
   const question = run.audit ? null : (run.question?.text ?? view.task.title)
   const report = run.report
+  // Tasks created before the report protocol still carry a durable verdict in
+  // their answer entry. The unified Run shows that answer instead of sending
+  // the task back to a second page.
+  const legacyVerdict = !report && !view.live ? run.brief.verdict : null
   const stale = Boolean(report?.stale)
   // A stale report belongs to the previous question. Keep its prose as context,
   // but do not let its tables or plan masquerade as the current answer.
@@ -492,6 +514,7 @@ export function Run({
   const hasReportPlan = visibleBlocks.some((block) => block.kind === 'plan')
   const hasReportFindings = visibleBlocks.some((block) => block.kind === 'findings')
   const hasReportMarkdown = visibleBlocks.some((block) => block.kind === 'markdown')
+  const legacyFindings = Boolean(legacyVerdict && run.brief.findings.length)
   const ungrounded = new Set(stale ? [] : (report?.ungrounded ?? []))
   const contradicted = new Set(stale ? [] : (report?.contradicted ?? []))
   const stopped = run.brief.notices.some((notice) => notice.code === 'stopped')
@@ -499,7 +522,7 @@ export function Run({
     Boolean(view.live) ||
     stopped ||
     Boolean(run.plan?.steps.some((step) => step.status === 'blocked'))
-  const showCounts = hasReportFindings
+  const showCounts = hasReportFindings || legacyFindings
   const evidenceVisible = Boolean(auditProgress) || evidenceOpen
   // The agent's report is the answer. When it did not compose the proof itself,
   // the latest data read is the one view that can stand beside the summary.
@@ -533,6 +556,15 @@ export function Run({
     setHistoryOpen(false)
     setSelectedTurn(null)
   }, [turnKey])
+
+  const loadOlder = async () => {
+    setLoadingOlder(true)
+    try {
+      await onOlder()
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
 
   const openEvidence = useCallback((entryId?: string) => {
     setEvidenceOpen(true)
@@ -595,6 +627,12 @@ export function Run({
       content: fullMarkdown(),
       kind: 'markdown',
     })
+
+  const savePdf = () => {
+    setPrinting(true)
+    window.dispatchEvent(new Event('sa:prepare-print'))
+    window.setTimeout(() => void window.agent.exportPdf(), 80)
+  }
 
   const exportEvidence = () =>
     void window.agent.saveText({
@@ -668,18 +706,7 @@ export function Run({
 
         <header className="run-header">
           <div className="run-headline">
-            <p className="run-scope">
-              {[
-                scopeNames.join(' · '),
-                coverageStatus,
-                read.visible > 0
-                  ? fill(t.scopeRead, { read: read.processed, total: read.visible })
-                  : '',
-                checked ? fill(t.checkedAt, { when: checked }) : '',
-              ]
-                .filter(Boolean)
-                .join(' · ') || t.runNoScope}
-            </p>
+            <p className="run-scope">{scopeText(run.brief, t) || t.runNoScope}</p>
             <span className="run-actions">
               <button className="text-action" type="button" onClick={() => void copy()}>
                 <Copy size={12} aria-hidden="true" />
@@ -759,7 +786,7 @@ export function Run({
                       role="menuitem"
                       onClick={() => {
                         setMore(false)
-                        void window.agent.exportPdf()
+                        savePdf()
                       }}
                     >
                       {t.savePdf}
@@ -788,6 +815,17 @@ export function Run({
             </div>
           )}
         </header>
+
+        {view.hasOlder && (
+          <button
+            className="run-older"
+            type="button"
+            disabled={loadingOlder}
+            onClick={() => void loadOlder()}
+          >
+            {loadingOlder ? t.runLoadingEarlier : t.runLoadEarlier}
+          </button>
+        )}
 
         <TurnHistory
           turns={earlierTurns}
@@ -880,6 +918,19 @@ export function Run({
                       <SourceLine run={run} block={block} lang={lang} />
                     </section>
                   )
+                if (block.kind === 'compare')
+                  return (
+                    <section className="run-block" key={index}>
+                      {block.title && <h3 className="run-block-title">{block.title}</h3>}
+                      <CompareBlock
+                        run={run}
+                        block={block}
+                        t={t}
+                        lang={lang}
+                        taskTitle={view.task.title}
+                      />
+                    </section>
+                  )
                 if (block.kind === 'table') {
                   const item = source(run, block)
                   if (!item?.view) return null
@@ -917,6 +968,7 @@ export function Run({
                         onOpen={openEvidence}
                         onAccept={accept}
                         staleDays={staleDays}
+                        expand={printing}
                       />
                     </section>
                   )
@@ -966,7 +1018,24 @@ export function Run({
                 </p>
               )}
             </>
-          ) : view.live ? null : (
+          ) : view.live ? null : legacyVerdict ? (
+            <>
+              <p className="verdict prose run-summary" data-verdict>
+                {plain(legacyVerdict.text)}
+              </p>
+              {legacyFindings && (
+                <FindingsBlock
+                  run={run}
+                  block={{ kind: 'findings', limit: 5 }}
+                  t={t}
+                  onOpen={openEvidence}
+                  onAccept={accept}
+                  staleDays={staleDays}
+                  expand={printing}
+                />
+              )}
+            </>
+          ) : (
             <p className="quiet">{t.runNoAnswer}</p>
           )}
         </section>
@@ -1030,10 +1099,11 @@ export function Run({
             staleDays={staleDays}
             auditProgress={auditProgress}
             evidenceOnly
-            hideFindings={hasReportFindings}
             hideData={hideData}
             hideFix={hasReportPlan}
             hideNotices
+            hideVerdict={Boolean(legacyVerdict)}
+            hideFindings={hasReportFindings || legacyFindings}
             prefixMarkdown={runMarkdown(run)}
           />
         </div>

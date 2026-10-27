@@ -28,6 +28,7 @@ export type ToolName =
   | 'report'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
+export type CheckSchedule = 'off' | 'daily' | 'weekly'
 
 export interface Table {
   columns: string[]
@@ -221,6 +222,7 @@ export type ReportTone = 'info' | 'warn' | 'danger' | 'ok'
 export type ReportBlock =
   | { kind: 'summary'; text: string; evidence: string[] }
   | { kind: 'markdown'; text: string; title?: string; evidence: string[] }
+  | { kind: 'compare'; evidence: string[]; title?: string }
   | { kind: 'callout'; tone: ReportTone; text: string; title?: string; evidence: string[] }
   | { kind: 'table'; evidence: string[]; title?: string; limit?: number }
   | { kind: 'findings'; bucket?: string; code?: string; title?: string; limit?: number }
@@ -342,7 +344,7 @@ export type ToolView =
     }
   | { kind: 'playbook'; cards: { name: string; body: string }[] }
   | { kind: 'plan'; steps: PlanStep[]; note?: string }
-  | { kind: 'report'; title?: string; blocks: ReportBlock[] }
+  | { kind: 'report'; title?: string; blocks: ReportBlock[]; append?: boolean }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'
 
@@ -521,6 +523,8 @@ export interface Account {
   accessKeyMasked: string
   hasSessionToken: boolean
   scope: { buckets: string[] }
+  /** Opt-in read-only checks while the app is open. */
+  schedule?: CheckSchedule
 }
 
 export interface AccountInput {
@@ -536,6 +540,7 @@ export interface AccountInput {
   secretAccessKey?: string
   sessionToken?: string
   scope: { buckets: string[] }
+  schedule?: CheckSchedule
 }
 
 export interface ModelSettings {
@@ -574,6 +579,8 @@ export interface AppSettings {
   notify: boolean
   /** A remembered finding older than this is marked possibly stale. */
   staleDays: number
+  /** Notes older than this are hidden from Memory; 0 keeps every note. */
+  noteTtlDays: number
 }
 
 export type UpdateState =

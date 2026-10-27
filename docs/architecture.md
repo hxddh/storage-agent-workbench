@@ -203,7 +203,8 @@ pi rows, host task rows, search rows, datasets, audit rows and task directory.
 
 No event-sourcing layer, no second queue, no SSE, no free-form report generator,
 no MCP bridge, no skills loader, no subagents, no approval UI, no follow-up
-prompts, no background watch, no second window and no dashboard. The agent
+prompts, no automatic background watch, no second window and no dashboard. An
+account may opt into a daily or weekly read-only check while the app runs. The agent
 composes from a fixed block vocabulary; the app resolves every data block to a
 tool result. pi owns the durable loop; the product owns storage semantics,
 evidence and validation.

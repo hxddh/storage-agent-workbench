@@ -1,6 +1,6 @@
 # Documentation
 
-These pages describe the behavior of the **28.0.0** tree. They are not a
+These pages describe the behavior of the **29.0.0** tree. They are not a
 roadmap and not a substitute for the code.
 
 | File | What it is |
@@ -32,7 +32,7 @@ roadmap and not a substitute for the code.
 - **Run** — the agent's plan, the answer blocks it composed, and the
   deterministic evidence behind them.
 - **Report** — the ordered answer blocks the agent composes: summary, markdown,
-  callout, table, findings, timeline, plan or code. Data blocks cite one evidence id.
+  compare, callout, table, findings, timeline, plan or code. Data blocks cite one evidence id.
 - **Brief** — the evidence body of a run: findings, coverage, fixes, data and
   checks. Old tasks render it as the whole page.
 - **Check** — one read-only tool call, or one step of a model-free account

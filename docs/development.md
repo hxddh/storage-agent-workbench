@@ -80,7 +80,7 @@ windows, access evaluation, reading records and plan-aware re-verification.
   so a missing control is not hidden by a large unchanged window.
 - `scripts/perf.mjs` launches three times and fails when the median time to a
   visible composer exceeds 1,000 ms.
-- `scripts/budget.mjs` excludes the lazy Settings, Brief and Markdown chunks and
+- `scripts/budget.mjs` excludes the lazy Settings/Run/Markdown chunks and
   fails when the initial renderer JavaScript exceeds 500 KiB.
 
 ### Evaluation
@@ -138,13 +138,14 @@ tagged release builds all three platforms or publishes nothing.
   claim.
 - There is no automated native-dialog test for the file picker or save dialog.
 - Search indexes titles, requests, findings and the report summary only; it
-  does not index attachments or every object name. It returns at most 20 hits.
+  does not index attachments or every object name. FTS5 trigram ranks longer
+  queries; short CJK queries use LIKE. It returns at most 20 hits.
 - The sidebar shows the 500 most recently updated tasks; Settings lists the 100
   most recent notes. Older rows remain in SQLite but are not shown.
-- Removing an account does not cascade to notes or `issue_events`; see
-  [data-model.md](data-model.md).
+- Removing an account deletes its provider/bucket notes; `issue_events` keep
+  their historical rows with the Issue. See [data-model.md](data-model.md).
 - Access analysis is evidence with coverage, not a complete IAM authorization
   proof.
 - There is no import from an earlier version of the app.
-- The E2E axe gate covers serious and critical violations; there is no separate
-  contrast-certification job.
+- The E2E axe gate covers serious and critical violations; `scripts/contrast.mjs`
+  guards the secondary-text token pairs. It is not a full contrast certification.

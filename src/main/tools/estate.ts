@@ -376,7 +376,7 @@ export function estateTools(deps: ToolDeps) {
           command: string
         }
         const generated: GeneratedItem[] = []
-        for (const issue of issues.slice(0, 20)) {
+        for (const issue of issues) {
           if (
             issue.code !== 'account_public_access_block_missing' ||
             issue.bucket !== ACCOUNT_SCOPE
@@ -595,7 +595,6 @@ export function estateTools(deps: ToolDeps) {
         )
         const residual = issues
           .filter((issue) => !covered.has(`${issue.bucket}|${issue.code}`))
-          .slice(0, 30)
           .map((issue) => ({
             bucket: issue.bucket,
             code: issue.code,

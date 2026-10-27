@@ -642,9 +642,10 @@ export class AgentHarness {
    * as the tools, without a model, and stores one durable audit entry that the
    * window projects into the ordinary brief.
    */
-  async audit(taskId: string): Promise<void> {
+  async audit(taskId: string, providerIds?: string[]): Promise<void> {
     const conversation = await this.require(taskId)
-    const accounts = await this.deps.providers.list()
+    const all = await this.deps.providers.list()
+    const accounts = providerIds ? all.filter((account) => providerIds.includes(account.id)) : all
     if (accounts.length === 0) throw new Error('Add a storage account first.')
     const lang = this.deps.settings.get().language
     const signal = AbortSignal.timeout(300_000)
@@ -899,14 +900,18 @@ export class AgentHarness {
 
   async notes(): Promise<NoteRow[]> {
     const rows = await this.deps.db.listNotes({ limit: 100 })
-    return rows.map((note) => ({
-      id: note.id,
-      scope: note.scope,
-      ref: note.ref,
-      text: note.text,
-      author: note.author,
-      createdAt: note.created_at,
-    }))
+    const ttl = this.deps.settings.get().noteTtlDays
+    const cutoff = ttl > 0 ? Date.now() - ttl * 86_400_000 : null
+    return rows
+      .filter((note) => !cutoff || Date.parse(note.created_at) >= cutoff)
+      .map((note) => ({
+        id: note.id,
+        scope: note.scope,
+        ref: note.ref,
+        text: note.text,
+        author: note.author,
+        createdAt: note.created_at,
+      }))
   }
 
   async deleteNote(id: string): Promise<void> {

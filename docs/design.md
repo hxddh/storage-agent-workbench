@@ -38,8 +38,8 @@ the only place raw colours are declared.
 
 `--ink-3` measures 5.06:1 on light `--bg`, 5.33:1 on `--surface`, and 6.26:1 on
 dark `--bg`. Secondary text therefore clears WCAG AA at the sizes it is used.
-There is no dedicated automated contrast test; the E2E axe gate fails serious or
-critical violations.
+`npm run contrast` guards these secondary-text token pairs; the E2E axe gate
+fails serious or critical violations. This is a floor, not full certification.
 
 ## Type
 
@@ -103,8 +103,8 @@ The composer is inert until a model exists; the account can still be checked.
 Top to bottom: a 12.5px scope line (`Demo · Reads complete · 2/2 buckets
 checked · checked 2m ago`), the question at 24px, severity counts, Copy and the
 overflow menu, a collapsed **Earlier in this task** history, the agent's plan,
-the ordered answer blocks (summary, markdown, callout, table, findings,
-timeline, plan or code), a provisional draft while the agent is writing, then
+the ordered answer blocks (summary, markdown, compare, callout, table,
+findings, timeline, plan or code), a provisional draft while the agent is writing, then
 the deterministic evidence: findings, re-verification, changes, **Not read**,
 one data section and the checks receipt. The run header is sticky. Save, Check
 again, Re-verify, Copy link, Export evidence and Save PDF live in the overflow.
@@ -115,7 +115,8 @@ reads the answer. It says `Reads open: n · m blocked` when a read failed,
 stopped, was blind, is pending, was truncated or left an access question
 undecided; those details stay in **Not read**. A narrowed re-read never turns an
 account-wide gap into `Reads complete`. There is no next-step row and no chat
-transcript.
+transcript. When a task has more than the initial 200 entries, **Load earlier
+entries** fetches the next slice on demand.
 
 Estate history stays inside the existing Data section: the remembered bucket
 table, then a quiet `HISTORY` label and a four-column evidence table. It is not
@@ -180,9 +181,11 @@ Four panes: Model, Storage accounts, Memory and Appearance. The active pane is
 the top-bar title and the selected rail row. Model configuration is one form:
 provider, model, base URL, key, Save and Test. Local models are one-click
 chips. Accounts list read-only credentials and open one inline form for add or
-edit; the key fields are never pre-filled. Memory controls freshness and lists
-forgettable notes. Appearance holds language, theme and the background-
-notification switch.
+edit; the key fields are never pre-filled. Each account has an opt-in
+off/daily/weekly read-only check schedule.
+
+Memory controls freshness and lists forgettable notes and the 100-row limit.
+Appearance holds language, theme and the background-notification switch.
 
 Inputs and selects are styled consistently with visible focus rings; selects use
 a drawn chevron. Checkboxes keep the native input for keyboard and screen

@@ -426,4 +426,35 @@ describe('the run', () => {
     expect(screen.getByText('Deterministic account check')).toBeTruthy()
     expect(document.querySelector('.run-question')?.textContent).toBe('What changed?')
   })
+
+  it('renders an older task with its answer entry on the one Run page', () => {
+    render(
+      <Run
+        view={view([
+          {
+            id: 'u',
+            kind: 'user',
+            at: '2026-01-01T00:00:00Z',
+            text: 'Which buckets are public?',
+            attachments: [],
+          },
+          survey,
+          {
+            id: 'legacy-answer',
+            kind: 'answer',
+            at: '2026-01-01T00:00:02Z',
+            text: 'Only `demo` is public.',
+          },
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(document.querySelector('.run-summary')?.textContent).toContain('Only demo is public.')
+    expect(screen.queryByText('The agent has not composed an answer yet.')).toBeNull()
+    expect(screen.getByText('Bucket is publicly accessible')).toBeTruthy()
+  })
 })

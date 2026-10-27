@@ -42,6 +42,7 @@ describe('agent control tools', () => {
       blocks: [
         { kind: 'summary', text: 'Only `demo` is public.', evidence: ['ev-1'] },
         { kind: 'markdown', text: '## Detail', title: 'Details', evidence: ['ev-2'] },
+        { kind: 'compare', title: 'Before and after', evidence: ['ev-1', 'ev-2'] },
         { kind: 'table', evidence: [] },
         { kind: 'findings', bucket: 'demo', limit: 50, title: 'Open findings' },
         { kind: 'timeline', evidence: ['ev-2'] },
@@ -52,10 +53,15 @@ describe('agent control tools', () => {
     expect(view.blocks.map((block) => block.kind)).toEqual([
       'summary',
       'markdown',
+      'compare',
       'findings',
       'timeline',
     ])
-    expect(view.blocks[2]).toMatchObject({ bucket: 'demo', limit: 20, title: 'Open findings' })
+    expect(view.blocks.find((block) => block.kind === 'findings')).toMatchObject({
+      bucket: 'demo',
+      limit: 20,
+      title: 'Open findings',
+    })
   })
 
   it('rejects a report with no valid block', async () => {

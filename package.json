@@ -1,7 +1,7 @@
 {
   "name": "storage-agent",
   "productName": "Storage Agent",
-  "version": "28.0.0",
+  "version": "29.0.0",
   "description": "A local agent for object storage",
   "license": "Apache-2.0",
   "private": true,
@@ -25,6 +25,7 @@
     "e2e": "node scripts/e2e.mjs",
     "e2e:audit": "node scripts/e2e-audit.mjs",
     "budget": "node scripts/budget.mjs",
+    "contrast": "node scripts/contrast.mjs",
     "audit": "npm audit --omit=dev --audit-level=high",
     "sbom": "npm sbom --sbom-format=cyclonedx > sbom.json",
     "visual": "node scripts/visual.mjs",

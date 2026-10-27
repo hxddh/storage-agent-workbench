@@ -96,9 +96,9 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest release is **28.0.0**. Earlier release notes may describe retired
+The latest release is **29.0.0**. Earlier release notes may describe retired
 behavior; they are history. Keep `README.md`, `CHANGELOG.md` and this paragraph
 in step with the next tag, and refresh `docs/screenshot.png` if the surface
-changed. 28.0 adds turn history, a live draft, markdown and citation blocks, a
-single dismissal system and the recent-run Home; its visual baselines and E2E
-cover that surface.
+changed. 29.0 unifies Run and evidence, adds FTS and older-entry loading,
+compare/append report blocks, opt-in scheduled checks and the v29 quality
+surfaces; its visual baselines and E2E cover that surface.

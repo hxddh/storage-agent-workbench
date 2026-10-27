@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 28.0.0**. Read
+> Implementation contract for **Storage Agent 29.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes and the changelog are history.
@@ -63,7 +63,7 @@ The invariant:
 - `src/main/index.ts` — window, menu, single instance, notifications, dock,
   task protocol.
 - `src/main/app.ts` — service wiring, bootstrap, model installation, home
-  overview.
+  overview and the opt-in read-only check scheduler.
 - `src/main/ipc.ts` — the only IPC surface; every handler returns plain data.
 - `src/main/updater.ts` — background updates from GitHub releases, packaged
   builds only, with a visible missing-feed state.
@@ -85,7 +85,8 @@ The invariant:
   model test.
 - `src/main/runtime/reverify-plan.ts` — compares a change plan with a model-free
   replay; confirmed, not applied or unknown per step.
-- `src/main/runtime/search.ts` — sidebar search and the derived index rows.
+- `src/main/runtime/search.ts` — sidebar search and the FTS5-trigram index rows.
+- `src/main/runtime/schedule.ts` — daily/weekly due calculation; no OS daemon.
 - `src/main/runtime/agent.ts` — the one extension: prompt sections, tools,
   hooks, per-run read coverage and the one clean-claim correction.
 - `src/main/tools/*` — read-only storage tools through `agentTool()`, which
@@ -128,7 +129,7 @@ a complete listing no longer shows gets `gone_at` and its Issues resolve as
 `gone`. Capacity (bytes, objects, monthly estimate, growth) is remembered in
 each bucket's posture; the account posture in `providers.account_json`. Schema
 changes are append-only migrations in `db.ts`, gated by `user_version` (head
-**11**).
+**13**).
 
 `readings` records one settled account survey: trigger, coverage counts, open
 high/total and whether it was complete. It stores no request, answer, policy,
@@ -136,7 +137,8 @@ account id or secret. `complete` is false for any narrowed or re-verified read;
 Home's "last complete read" comes from this table. `estate(history: true)`
 includes reading rows only in an unfiltered history.
 
-`search_docs` is a derived index (title search reads `task_meta` directly). It
+`search_docs` is a derived index backed by FTS5 trigram (short queries fall back
+to LIKE; title search reads `task_meta` directly). It
 is rebuilt for a conversation when that conversation settles, and backfilled at
 startup for tasks without rows. It stores the request, the current answer
 summary (`entry_id = 'verdict'`) and one row per finding (`f:<source entry>:<key>`).
@@ -149,7 +151,8 @@ question. Its search rows are written from the report directly, because a
 Deleting a task purges `task_meta`, `search_docs`, its pi conversation, entries,
 tasks, submissions, documents and revisions, datasets, audit rows and
 `tasks/<conversation>/` on disk. Issue events and reading rows keep history with
-a null conversation id. There is no background watch.
+a null conversation id. There is no automatic background watch; an account can
+opt into daily or weekly read-only checks while the app is open.
 
 ## Agent
 
@@ -216,10 +219,10 @@ no command palette, no second window, no chat transcript.
 
 The task list groups pinned, today and earlier, with a state dot only for
 working, attention or failed and a relative time. Titles may take two lines;
-task rows support rename, pin and delete. A
-task title appears once, in the sidebar, plus the compact top bar below 860px.
+task rows support rename, pin and delete. A task title appears once, in the sidebar, plus the compact top bar below 860px.
 
-A task with a plan or report is an agent run. Earlier turns appear as compact
+Every task is an agent run page; `Brief` is its evidence component, not a second
+page. Earlier turns appear as compact
 expandable rows under **Earlier in this task**; the latest question is the run
 header. A deterministic check has no fake question. The run header names the
 account(s),
@@ -235,8 +238,8 @@ The plan section is the agent's own 3–6 steps with pending/active/done/blocked
 states; it is not a transcript. A live draft sits beside it while the agent
 writes. The plan is visible while the run is live and remains
 for a stopped run or a blocked step; a settled answer folds it away. The answer
-section renders the ordered report blocks: summary, markdown, callout, table,
-findings, timeline, plan or code. Markdown can carry sections and lists; `[1](#ev-1)`
+section renders the ordered report blocks: summary, markdown, compare, callout,
+table, findings, timeline, plan or code. Markdown can carry sections and lists; `[1](#ev-1)`
 citations open the matching check. A data block resolves one evidence id to the
 tool view that proved it; a missing block is omitted with a quiet note. A report findings
 block is visible in the answer; the evidence body does not duplicate its
@@ -281,7 +284,7 @@ surface where it appears; contrast is not currently an automated gate.
 ## Commands
 
 `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run build`
-· `npm run budget` · `npm run audit` · `npm run sbom` · `npm run dist:dir` ·
+· `npm run budget` · `npm run contrast` · `npm run audit` · `npm run sbom` · `npm run dist:dir` ·
 `xvfb-run -a node scripts/e2e.mjs` · `xvfb-run -a node scripts/e2e-audit.mjs`
 · `xvfb-run -a node scripts/eval.mjs --smoke` (or with `EVAL_*` for a real model)
 · `STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 npx vitest run src/main/compat.test.ts`

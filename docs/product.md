@@ -11,13 +11,15 @@ a console, a dashboard, a ticket system or a chat product.
    relative time, rename, pin, delete and Settings. A new task starts empty; a
    deterministic account check also appears here. The task open at quit opens at
    launch.
-2. **Task** — one run, not a transcript. The page scrolls; the composer stays.
+2. **Task** — one run, not a transcript. The page scrolls; the composer stays. The evidence component is always folded
+inside this one page; there is no separate Brief page.
 3. **Settings** — a full-screen sheet with a labeled **Done** control, for the
    model, storage accounts, memory, language, theme and notifications. It is one
    sheet, not a wizard.
 
 The composer is docked at the foot of the window on Home and in a task. It sends
 a model request, a steer while a run is active, or a follow-up in the same task.
+An unsent draft is kept locally per task and restored when the task reopens.
 Without a model it is disabled for free-form questions; a model-free account
 check still works.
 
@@ -53,8 +55,12 @@ Home or Settings.
    summary are synthesized into the ordinary run surface; the page carries a
    `Deterministic account check` tag.
 
+An account can opt into a daily or weekly scheduled check in Settings. It
+runs only while the app is open, uses the same model-free readers and never
+writes storage. It is a snapshot, not a monitor; a closed app performs no work.
+
 The progress line is live; the final checks are written when the reading ends.
-A check is a snapshot, not a background monitor. **Check again** in a run
+A check is a snapshot, not a continuous monitor. **Check again** in a run
 starts another check task; it does not mutate the old one. A settled reading
 also records one `readings` row per account with its coverage and current open
 risk. It stores no request, answer text, policy or secret.
@@ -91,7 +97,8 @@ risk. It stores no request, answer text, policy or secret.
 There is no chat transcript. Earlier requests remain in the durable task and
 appear under **Earlier in this task**: one compact row per turn, expandable to
 its question, summary and check count. The latest turn stays expanded in the run
-header. A deterministic account check has no question; its page starts with the
+header. A task with more than the initial 200 entries offers **Load earlier
+entries** on demand instead of silently dropping them. A deterministic account check has no question; its page starts with the
 scope line and the verdict, not a task title posing as a request.
 
 ## The run
@@ -113,8 +120,8 @@ Top to bottom:
    remains for a stopped run or a blocked step, and is absent on a deterministic
    check. A settled answer does not carry the finished checklist.
 4. **Answer** — the ordered blocks the agent composed: summary, markdown,
-   callout, table, findings, timeline, plan or code. A summary, markdown or
-   callout carries prose and evidence ids. A data block resolves one id to the tool view that proved it;
+   compare, callout, table, findings, timeline, plan or code. A summary,
+   markdown or callout carries prose and evidence ids; compare names two. A data block resolves one id to the tool view that proved it;
    the window drops a block whose evidence is missing and says how many. A
    summary is not limited to two sentences; it must stay grounded and concise.
    The window does not append a generic report after the answer.
@@ -259,7 +266,7 @@ the app measures with `query` instead and does not invent a number.
 ⌘K focuses the sidebar search. It covers task titles, requests, findings and the
 report summary. A finding hit opens its task with the finding highlighted; a
 summary hit opens the run and scrolls to the answer. Title search reads `task_meta`; the rest reads the
-derived `search_docs` index. Search is `LIKE`, not full-text search, and returns
+derived `search_docs` index. Search uses FTS5 trigram ranking, with a LIKE fallback for short CJK queries, and returns
 at most 20 hits.
 
 ## Model fit
@@ -294,13 +301,13 @@ mid gets 24 and large 32. The answer format does not change.
 - CloudTrail covers 90 days and is attributed for at most six changed buckets
   per survey; only management events are considered.
 - Re-verification replays at most 50 buckets per account, has a 120-second
-  budget, and reports skipped or truncated buckets. A plan generates at most 20
-  steps and scans at most 500 open Issues. A merged lifecycle omits Terraform
+  budget, and reports skipped or truncated buckets. A plan covers the selected open Issues (at most 500) and reports any
+  residual rule that has no generated fix. A merged lifecycle omits Terraform
   when existing rules contain fields the renderer cannot reproduce.
 - A code-mode script is bounded to 6,000 characters and the budgets above.
 - Notes are capped at 500; each note is at most 1,000 characters.
 - Attachments are limited to ten files and 4 GiB each.
-- There is no background watch, scheduler, dashboard, chat transcript, second
+- There is no automatic background watch, dashboard, chat transcript, second
   window or import from an earlier app version.
 
 ## Issues from rules
@@ -371,7 +378,8 @@ happened, not a new findings list. The model sees the same structured rows
 inside the untrusted-data envelope; raw requests and `search_docs` text are
 never part of memory.
 
-There is no watch, no background check and no scheduled task. Deleting a task
+There is no automatic watch or background monitor. An account can opt into a
+daily or weekly read-only scheduled check while the app is open. Deleting a task
 purges its conversation, entries, documents, datasets, uploads, search rows,
 audit rows and task directory. Issue event history remains with a null
 conversation id. See [data-model.md](data-model.md) for the exact tables.

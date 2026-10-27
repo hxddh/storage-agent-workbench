@@ -15,6 +15,7 @@ import { Estate } from './estate/estate'
 import { Providers } from './providers'
 import { AgentHarness, harnessDirs, type RunOutcome } from './runtime/harness'
 import { createModelSet, testModel, testModelDraft } from './runtime/model'
+import { isScheduleDue } from './runtime/schedule'
 import { Vault } from './security/vault'
 import { Settings } from './settings'
 import { Staging } from './staging'
@@ -41,6 +42,9 @@ export class App {
   private database!: Database
   private dataDir = ''
   private readonly models = createModelSet()
+  private scheduleTimer: ReturnType<typeof setInterval> | null = null
+  private scheduleBusy = false
+  private readonly scheduleAttempts = new Map<string, string>()
   private hooks: ShellHooks = {
     emit: () => undefined,
     settled: () => undefined,
@@ -76,6 +80,40 @@ export class App {
 
   setHooks(hooks: ShellHooks): void {
     this.hooks = hooks
+    this.startSchedules()
+  }
+
+  /** Opt-in checks run only while the app process is open. */
+  private startSchedules(): void {
+    if (this.scheduleTimer) return
+    this.scheduleTimer = setInterval(() => void this.runScheduled(), 60_000)
+    this.scheduleTimer.unref?.()
+    void this.runScheduled()
+  }
+
+  private async runScheduled(): Promise<void> {
+    if (this.scheduleBusy) return
+    this.scheduleBusy = true
+    try {
+      for (const account of await this.providers.list()) {
+        if (!isScheduleDue(account.schedule, undefined)) continue
+        const last = (await this.db.listReadings({ providerId: account.id, limit: 1 }))[0]
+        if (!isScheduleDue(account.schedule, last?.at ?? this.scheduleAttempts.get(account.id)))
+          continue
+        this.scheduleAttempts.set(account.id, new Date().toISOString())
+        const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
+        const title = `${this.settings.get().language === 'zh' ? '定期检查' : 'Scheduled check'} · ${account.name} · ${stamp}`
+        const taskId = await this.harness.newTask(title)
+        await this.harness.audit(taskId, [account.id])
+        const task = (await this.harness.listTasks()).find((item) => item.id === taskId)
+        if (task) this.hooks.settled(task, 'answered')
+      }
+    } catch {
+      // A scheduled read must never take down the window. Its task page keeps
+      // any failure it wrote; the next interval can try again.
+    } finally {
+      this.scheduleBusy = false
+    }
   }
 
   setUpdate(update: UpdateState): void {
@@ -156,6 +194,8 @@ export class App {
   }
 
   async dispose(): Promise<void> {
+    if (this.scheduleTimer) clearInterval(this.scheduleTimer)
+    this.scheduleTimer = null
     await this.harness?.close().catch(() => undefined)
     await this.database?.close().catch(() => undefined)
   }

@@ -6,7 +6,7 @@ import {
   section,
   ToolTask,
 } from '@earendil-works/pi-durable'
-import type { ToolDetails, ToolView } from '@shared/contract'
+import type { ReportBlock, ToolDetails, ToolView } from '@shared/contract'
 import { contradicted, exposureInView, namesInView, ungrounded } from '@shared/grounding'
 import { BY_CODE, ruleTitle } from '../estate/rules'
 import { PLAYBOOK_NAMES } from '../playbooks'
@@ -68,9 +68,10 @@ The tool output carries an \`evidence\` id in its \`<untrusted-data>\` opening t
 const COMPOSE = `Composing the answer:
 - Call \`report\` once when you are ready. It takes ordered blocks: summary, markdown, callout, table, findings, timeline, plan or code.
 - summary is your direct answer. It may be a few sentences, but no headings, tables or lists. Use the markdown block when the answer needs sections or lists. Put every bucket, object key and account name in backticks, spelled exactly as a tool returned it.
-- summary, markdown and callout carry an \`evidence\` array of tool-call ids. Cite in prose as \`[1](#ev-1)\`, using the evidence array order; never cite an id you did not receive. table, timeline, plan and code point at one evidence id each. findings selects deterministic estate findings by optional bucket or code.
+- summary, markdown, compare and callout carry an \`evidence\` array of tool-call ids. Cite in prose as \`[1](#ev-1)\`, using the evidence array order; never cite an id you did not receive. table, timeline, plan and code point at one evidence id each. findings selects deterministic estate findings by optional bucket or code.
 - Compose for the question that was asked, not for the whole task history. A public-bucket question gets the reading; an access question gets the access chain; a history question gets the timeline; a change plan gets the plan. One summary and at most one proof block is usually enough. Use a code block only when the script itself is the answer; the check already holds the script.
 - Do not append findings, changes, checks or a full survey just because the task has them. The window keeps those facts behind Evidence and opens them on request. A findings block is for a question about findings, not for every audit.
+- Use append: true only to add a missing section after an earlier report; never restate a block.
 - Do not duplicate the same evidence in several blocks. The summary is the conclusion, not a prose copy of the next block: do not enumerate rows or findings the block already lists. Say what is true and what it means.
 - The plan is process. The window shows it while you work and hides it once the answer settles; write the answer as if the plan is not on the page.
 - If a read was blind, a survey stopped early, or coverage is open, say what remains open and do not call the account clean.
@@ -84,6 +85,21 @@ export interface ReadGap {
 }
 
 /** Per-run state the hooks keep; the harness resets it at each submission. */
+/** The text a report contributes to grounding, including markdown blocks. */
+export function reportTextOf(blocks: readonly ReportBlock[]): string {
+  return blocks
+    .filter(
+      (block) => block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown',
+    )
+    .map((block) =>
+      block.kind === 'summary' || block.kind === 'callout' || block.kind === 'markdown'
+        ? block.text
+        : '',
+    )
+    .filter(Boolean)
+    .join('\n')
+}
+
 export interface RunState {
   rounds: number
   calls: Set<string>
@@ -367,13 +383,7 @@ export function createAgent(deps: ToolDeps, state: AgentState, tools?: ToolRegis
               exposureInView(details.view, current.exposure)
               if (details.view) recordReadGaps(current, details.view)
               if (details.view?.kind === 'report')
-                current.reportText = details.view.blocks
-                  .filter((block) => block.kind === 'summary' || block.kind === 'callout')
-                  .map((block) =>
-                    block.kind === 'summary' || block.kind === 'callout' ? block.text : '',
-                  )
-                  .filter(Boolean)
-                  .join('\n')
+                current.reportText = reportTextOf(details.view.blocks)
               current.readGaps.delete(`failed:${_call.name}:${details.target}`)
             } else if (STORAGE_READS.has(_call.name)) {
               setReadGap(current, `failed:${_call.name}:${details.target}`, 1, 1)

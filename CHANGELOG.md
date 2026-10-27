@@ -1,3 +1,47 @@
+## 29.0.0
+
+One run surface, ranked memory and opt-in read-only checks. This is one release;
+there is no 29.x split.
+
+### Added
+
+- **One Run.** `App` no longer chooses between a Run and a Brief page. `Brief`
+  is the evidence component inside Run; older answer entries keep their verdict
+  and findings, and long tasks offer **Load earlier entries** on demand.
+- **Ranked search.** `search_docs_fts` uses FTS5 trigram ranking; short CJK
+  queries fall back to LIKE. Results remain capped at 20 and retain their source
+  kind.
+- **Composable report evidence.** report accepts `compare` (two evidence ids
+  side by side) and `append` for a section added after an earlier report.
+- **Scheduled checks.** Each account can opt into an off/daily/weekly read-only
+  check while the app is open. It uses the deterministic readers, never a model,
+  and never writes storage.
+- **Memory controls.** The Memory pane explains the 100-row view, supports a
+  note TTL, and deleting an account removes its provider/bucket notes.
+
+### Changed
+
+- The scope sentence is shared by the run and the evidence fold. A narrowed
+  re-read still cannot turn an account gap into `Reads complete`.
+- A finding block whose entries all come from memory now says `remembered` once
+  instead of repeating it on every row.
+- Report prose, citations and markdown are included in the grounding check.
+- `fix` no longer silently generates only the first 20 Issues; plan schema now
+  matches the 3–6 step promise.
+- Settings explains the schedule boundary and wires account Test plus a test
+  after saving an account. An unsent composer draft is stored per task.
+- Save PDF expands findings, checks and data before printing.
+- `npm run contrast` guards the secondary-text tokens; localized dictionaries
+  have a key/empty-string test.
+- Model-authored links open in the system browser; the trusted window never
+  navigates to one.
+
+### Verification
+
+- Typecheck, Biome, 208 unit tests, build, contrast and bundle budget.
+- Full E2E, no-model E2E, axe 0 serious violations, visual baselines and the
+  harness smoke evaluation.
+
 ## 28.0.0
 
 A continuous, citable agent run. This is one release; the earlier proposal to

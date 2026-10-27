@@ -2,14 +2,14 @@
 
 ## Application tables (`storage-agent.db`)
 
-`user_version` is the schema version (head **11**). Migrations are append-only
+`user_version` is the schema version (head **13**). Migrations are append-only
 in `main/db.ts`; the schema is created with `CREATE TABLE IF NOT EXISTS`, then
 old databases are brought forward by version checks. There is no separate
 migration tool.
 
 | Table | Columns (essential) |
 |---|---|
-| `providers` | `id`, `name`, `kind` (`aws`/`r2`/`minio`/`aliyun`/`gcs`/`other`), `endpoint`, `region`, `force_path_style`, `auth` (`keys`/`profile`), `profile`, `access_key_id`, `secret_ref`, `session_ref`, `scope_json`, `account_json`, `account_at`, `created_at` |
+| `providers` | `id`, `name`, `kind` (`aws`/`r2`/`minio`/`aliyun`/`gcs`/`other`), `endpoint`, `region`, `force_path_style`, `auth` (`keys`/`profile`), `profile`, `access_key_id`, `secret_ref`, `session_ref`, `scope_json`, `account_json`, `account_at`, `schedule` (`off`/`daily`/`weekly`), `created_at` |
 | `buckets` | `provider_id`, `name`, `posture_json`, `posture_at`, `region`, `first_seen`, `last_seen`, `gone_at` |
 | `issues` | `id`, `provider_id`, `bucket`, `code`, `severity`, `status` (`open`/`resolved`/`accepted`), `detail`, `opened_at`, `resolved_at`, `accepted_at`, `last_seen_at`, `recurred` |
 | `issue_events` | `id`, `issue_id`, `conversation_id`, `kind`, `at`, `detail_json` |
@@ -20,6 +20,7 @@ migration tool.
 | `readings` | `id`, `conversation_id`, `provider_id`, `at`, `trigger` (`check`/`task`/`reverify`), `complete`, `visible`, `processed`, `pending`, `denied`, `unknown`, `truncated`, `open_high`, `open_total` |
 | `datasets` | `id`, `conversation_id`, `kind`, `path`, `rows`, `bytes`, `created_at` |
 | `search_docs` | `conversation_id`, `entry_id`, `kind`, `text`, `at` — derived index |
+| `search_docs_fts` | FTS5 trigram mirror of `search_docs`; short queries fall back to LIKE |
 
 `secret_ref` and `session_ref` are vault references (ciphertext), never
 plaintext. A profile account stores an empty `secret_ref`, an empty
@@ -48,7 +49,7 @@ account's latest complete row and the newest complete row overall; `estate`
 history includes up to 30 reading rows in an unfiltered view.
 
 `search_docs` is rebuilt per conversation when the task settles and backfilled
-at startup. It stores the request, the current report summary
+at startup; its FTS5 trigram mirror is rebuilt with it. It stores the request, the current report summary
 (`entry_id = 'verdict'`)
 and one row per finding (`entry_id = 'f:<source entry>:<finding key>'`). The
 source entry id lets a search hit load the evidence even when it is outside the
@@ -104,9 +105,9 @@ the task's `pi_conversations` / `pi_entries` / `pi_tasks` / `pi_submissions` /
 with `conversation_id` set to null; reading rows remain as account history with
 the same null conversation id.
 
-Removing an account currently deletes the provider row, its bucket rows, Issues,
-posture-change rows and reading rows. It does not cascade to account-scoped
-notes or `issue_events`; that is a known retention gap. There is no import from earlier
+Removing an account deletes the provider row, its bucket rows, Issues,
+posture-change rows, reading rows and account/bucket-scoped notes. `issue_events`
+keep their historical rows with the Issue; there is no import from earlier
 versions of the app.
 
 The sidebar reads the 500 most recently updated tasks and Settings shows the

@@ -14,10 +14,9 @@ import { Home } from './Home'
 import { dict } from './i18n'
 import type { SettingsPane } from './Settings'
 
-// Settings is a sheet most launches never open; the brief and its Markdown
+// Settings is a sheet most launches never open; the run and its Markdown
 // bundle load when a task opens. Home and the composer are the first paint.
 const Settings = lazy(() => import('./Settings').then((module) => ({ default: module.Settings })))
-const Brief = lazy(() => import('./Brief').then((module) => ({ default: module.Brief })))
 const Run = lazy(() => import('./Run').then((module) => ({ default: module.Run })))
 
 import { Sidebar } from './Sidebar'
@@ -183,6 +182,22 @@ export function App() {
     if (boot.lastTaskId) void openTaskRef.current(boot.lastTaskId).catch(() => undefined)
   }, [boot])
 
+  const loadOlder = async () => {
+    const current = view
+    if (!current?.hasOlder || !current.cursor) return
+    const older = await window.agent.older(current.task.id, current.cursor)
+    setView((value) =>
+      value && value.task.id === current.task.id
+        ? {
+            ...value,
+            entries: [...older.entries, ...value.entries],
+            hasOlder: older.hasOlder,
+            cursor: older.cursor,
+          }
+        : value,
+    )
+  }
+
   const submit = async (text: string, tokens: string[], context: ContextRef[] = []) => {
     setFocusId(null)
     if (view) {
@@ -260,19 +275,6 @@ export function App() {
     return <div className="fatal">{t.fatal}</div>
   }
 
-  // A task that has a plan or a composed report is an agent run. Old tasks and
-  // a model-free audit without a report keep the original brief.
-  const nativeView = view
-    ? view.entries.some(
-        (entry) =>
-          entry.kind === 'tool' &&
-          entry.view &&
-          (entry.view.kind === 'report' || entry.view.kind === 'plan'),
-      ) ||
-      (!view.entries.some((entry) => entry.kind === 'user') &&
-        view.entries.some((entry) => entry.kind === 'tool'))
-    : false
-
   return (
     <div className="app">
       <div className="dragbar" />
@@ -312,39 +314,20 @@ export function App() {
         </div>
         {view ? (
           <Suspense fallback={null}>
-            {nativeView ? (
-              <Run
-                key={view.task.id}
-                view={view}
-                lang={lang}
-                focusId={focusId}
-                onRetry={() => void window.agent.retryTask(view.task.id)}
-                onContinue={() => void window.agent.continueTask(view.task.id)}
-                onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
-                onAudit={() => void audit()}
-                auditing={auditing}
-                auditProgress={
-                  auditProgress?.taskId === view.task.id ? auditProgress.progress : null
-                }
-                staleDays={boot?.settings.staleDays ?? 7}
-              />
-            ) : (
-              <Brief
-                key={view.task.id}
-                view={view}
-                lang={lang}
-                focusId={focusId}
-                onRetry={() => void window.agent.retryTask(view.task.id)}
-                onContinue={() => void window.agent.continueTask(view.task.id)}
-                onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
-                onAudit={() => void audit()}
-                auditing={auditing}
-                auditProgress={
-                  auditProgress?.taskId === view.task.id ? auditProgress.progress : null
-                }
-                staleDays={boot?.settings.staleDays ?? 7}
-              />
-            )}
+            <Run
+              key={view.task.id}
+              view={view}
+              lang={lang}
+              focusId={focusId}
+              onRetry={() => void window.agent.retryTask(view.task.id)}
+              onContinue={() => void window.agent.continueTask(view.task.id)}
+              onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
+              onOlder={loadOlder}
+              onAudit={() => void audit()}
+              auditing={auditing}
+              auditProgress={auditProgress?.taskId === view.task.id ? auditProgress.progress : null}
+              staleDays={boot?.settings.staleDays ?? 7}
+            />
           </Suspense>
         ) : boot ? (
           <Home
@@ -368,7 +351,9 @@ export function App() {
           onSend={submit}
           onSteer={steer}
           onStop={stop}
+          key={view?.task.id ?? 'new'}
           onOpenSettings={() => openSettings('model')}
+          draftKey={view?.task.id ?? 'new'}
         />
       </main>
       {settingsOpen && boot && (

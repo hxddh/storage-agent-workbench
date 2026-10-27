@@ -110,6 +110,11 @@ function validBlock(block: ReportBlock, evidence: readonly RunEvidence[]): boole
   )
     return true
   const first = block.evidence[0]
+  if (block.kind === 'compare')
+    return (
+      block.evidence.length >= 2 &&
+      block.evidence.every((id) => Boolean(resolveEvidence(evidence, id)?.view))
+    )
   const source = resolveEvidence(evidence, first)
   if (!source?.view) return false
   if (block.kind === 'table') return hasTable(source.view)
@@ -155,11 +160,12 @@ function normalize(
   const text = textOfBlocks(blocks)
   const names = text ? ungrounded(text, known) : []
   const wrong = text ? contradicted(text, exposure) : []
+  const merged = report.append && previous ? [...previous.blocks, ...blocks] : blocks
   return {
     id,
     at,
     title: report.title ?? previous?.title ?? null,
-    blocks,
+    blocks: merged,
     stale,
     synthesized,
     unresolved,

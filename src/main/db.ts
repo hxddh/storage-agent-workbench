@@ -4,7 +4,7 @@ import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 import { detectProviderKind } from './s3/capabilities'
 
-export const HOST_SCHEMA_VERSION = 11
+export const HOST_SCHEMA_VERSION = 13
 
 export interface ProviderRow {
   id: string
@@ -22,6 +22,7 @@ export interface ProviderRow {
   profile: string | null
   account_json?: string | null
   account_at?: string | null
+  schedule?: string
 }
 
 export interface BucketRow {
@@ -121,7 +122,8 @@ CREATE TABLE IF NOT EXISTS providers (
   secret_ref TEXT NOT NULL,
   session_ref TEXT,
   scope_json TEXT NOT NULL DEFAULT '{"buckets":[]}',
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  schedule TEXT NOT NULL DEFAULT 'off'
 );
 
 CREATE TABLE IF NOT EXISTS buckets (
@@ -235,6 +237,15 @@ CREATE TABLE IF NOT EXISTS search_docs (
 );
 
 CREATE INDEX IF NOT EXISTS search_docs_conversation ON search_docs (conversation_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS search_docs_fts USING fts5(
+  conversation_id UNINDEXED,
+  entry_id UNINDEXED,
+  kind UNINDEXED,
+  text,
+  at UNINDEXED,
+  tokenize = 'trigram'
+);
 `
 
 export class AppDb {
@@ -316,6 +327,32 @@ export class AppDb {
           await raw.run('UPDATE providers SET kind = ? WHERE id = ?', inferred, row.id)
       }
     }
+    if (version < 13) {
+      const columns = await raw.all<{ name: string }>('PRAGMA table_info(providers)')
+      if (!columns.some((column) => column.name === 'schedule'))
+        await raw.exec("ALTER TABLE providers ADD COLUMN schedule TEXT NOT NULL DEFAULT 'off'")
+    }
+    if (version < 12) {
+      // 29.0: FTS5 trigram gives ranked substring search without changing the
+      // durable search_docs rows. Rebuild once for existing tasks.
+      await raw.exec('DELETE FROM search_docs_fts')
+      const rows = await raw.all<{
+        conversation_id: string
+        entry_id: string
+        kind: string
+        text: string
+        at: string
+      }>('SELECT conversation_id, entry_id, kind, text, at FROM search_docs')
+      for (const row of rows)
+        await raw.run(
+          'INSERT INTO search_docs_fts (conversation_id, entry_id, kind, text, at) VALUES (?, ?, ?, ?, ?)',
+          row.conversation_id,
+          row.entry_id,
+          row.kind,
+          row.text,
+          row.at,
+        )
+    }
     if (version < HOST_SCHEMA_VERSION) {
       await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
     }
@@ -335,13 +372,14 @@ export class AppDb {
   async upsertProvider(row: ProviderRow): Promise<void> {
     await this.raw.run(
       `INSERT INTO providers (id, name, kind, endpoint, region, force_path_style, access_key_id,
-         secret_ref, session_ref, scope_json, created_at, auth, profile)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         secret_ref, session_ref, scope_json, created_at, auth, profile, schedule)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name, kind = excluded.kind, endpoint = excluded.endpoint, region = excluded.region,
          force_path_style = excluded.force_path_style, access_key_id = excluded.access_key_id,
          secret_ref = excluded.secret_ref, session_ref = excluded.session_ref,
-         scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile`,
+         scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile,
+         schedule = excluded.schedule`,
       row.id,
       row.name,
       row.kind,
@@ -355,6 +393,7 @@ export class AppDb {
       row.created_at,
       row.auth,
       row.profile,
+      row.schedule ?? 'off',
     )
   }
 
@@ -389,6 +428,9 @@ export class AppDb {
     await this.raw.run('DELETE FROM issues WHERE provider_id = ?', id)
     await this.raw.run('DELETE FROM posture_changes WHERE provider_id = ?', id)
     await this.raw.run('DELETE FROM readings WHERE provider_id = ?', id)
+    // Provider and bucket notes carry the provider id in `ref`. Remove them
+    // with the account; an account-scoped memory cannot outlive its account.
+    await this.raw.run('DELETE FROM notes WHERE ref = ? OR ref LIKE ?', id, `${id}/%`)
   }
 
   // -- buckets --------------------------------------------------------------
@@ -1063,13 +1105,23 @@ export class AppDb {
   ): Promise<void> {
     await this.raw.transaction(async (tx) => {
       await tx.run('DELETE FROM search_docs WHERE conversation_id = ?', conversationId)
+      await tx.run('DELETE FROM search_docs_fts WHERE conversation_id = ?', conversationId)
       for (const doc of docs) {
+        const text = doc.text.slice(0, 20_000)
         await tx.run(
           'INSERT INTO search_docs (conversation_id, entry_id, kind, text, at) VALUES (?, ?, ?, ?, ?)',
           conversationId,
           doc.entryId,
           doc.kind,
-          doc.text.slice(0, 20_000),
+          text,
+          doc.at,
+        )
+        await tx.run(
+          'INSERT INTO search_docs_fts (conversation_id, entry_id, kind, text, at) VALUES (?, ?, ?, ?, ?)',
+          conversationId,
+          doc.entryId,
+          doc.kind,
+          text,
           doc.at,
         )
       }
@@ -1082,19 +1134,36 @@ export class AppDb {
   ): Promise<
     { conversation_id: string; entry_id: string; kind: string; text: string; at: string }[]
   > {
-    const escaped = query.replace(/[%_\\]/g, (match) => `\\${match}`)
-    const pattern = `%${escaped}%`
+    const cap = Math.max(1, Math.min(limit, 500))
+    const trimmed = query.trim()
+    // Trigram requires at least three characters. Short CJK queries keep the
+    // substring path; longer queries are ranked by BM25 with kind weighting.
+    if ([...trimmed].length < 3) {
+      const escaped = trimmed.replace(/[%_\\]/g, (match) => `\\${match}`)
+      return this.raw.all(
+        `SELECT conversation_id, entry_id, kind, text, at FROM search_docs
+         WHERE lower(text) LIKE lower(?) ESCAPE '\\' ORDER BY at DESC LIMIT ?`,
+        `%${escaped}%`,
+        cap,
+      )
+    }
+    const match = `"${trimmed.replace(/"/g, '""')}"`
     return this.raw.all(
-      `SELECT conversation_id, entry_id, kind, text, at FROM search_docs
-       WHERE lower(text) LIKE lower(?) ESCAPE '\\'
-       ORDER BY at DESC LIMIT ?`,
-      pattern,
-      Math.max(1, Math.min(limit, 500)),
+      `SELECT f.conversation_id, f.entry_id, f.kind, f.text, f.at
+       FROM search_docs_fts f
+       WHERE f.text MATCH ?
+       ORDER BY bm25(search_docs_fts),
+         CASE f.kind WHEN 'user' THEN 0 WHEN 'answer' THEN 1 WHEN 'finding' THEN 2 ELSE 3 END,
+         f.at DESC
+       LIMIT ?`,
+      match,
+      cap,
     )
   }
 
   async deleteSearchDocs(conversationId: string): Promise<void> {
     await this.raw.run('DELETE FROM search_docs WHERE conversation_id = ?', conversationId)
+    await this.raw.run('DELETE FROM search_docs_fts WHERE conversation_id = ?', conversationId)
   }
 
   async conversationsWithoutSearch(): Promise<string[]> {

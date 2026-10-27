@@ -21,6 +21,17 @@ describe('search index', () => {
     expect(hits[0]?.conversation_id).toBe('c1')
   })
 
+  it('ranks a three-character CJK substring through the FTS index', async () => {
+    const db = await open()
+    await db.replaceSearchDocs('c1', [
+      { entryId: 'e1', kind: 'answer', text: '存储桶策略公开', at: '' },
+      { entryId: 'e2', kind: 'user', text: '如何检查存储桶', at: '' },
+    ])
+    const hits = await db.searchDocs('存储桶')
+    expect(hits).toHaveLength(2)
+    expect(hits[0]?.kind).toBe('user')
+  })
+
   it('treats % and _ as text, not wildcards', async () => {
     const db = await open()
     await db.replaceSearchDocs('c1', [
@@ -64,7 +75,7 @@ describe('schema', () => {
     `)
     const db = await AppDb.open(raw)
     const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(11)
+    expect(version?.user_version).toBe(13)
     expect((await db.getProvider('p'))?.auth).toBe('keys')
     expect((await db.getIssue('i'))?.detail).toBeNull()
   })
@@ -82,6 +93,17 @@ describe('schema', () => {
     `)
     const db = await AppDb.open(raw)
     expect((await db.getProvider('r2'))?.kind).toBe('r2')
+  })
+})
+
+describe('provider deletion', () => {
+  it('removes provider and bucket notes but keeps estate memory', async () => {
+    const db = await open()
+    await db.insertNote({ scope: 'provider', ref: 'p', text: 'account note', author: 'agent' })
+    await db.insertNote({ scope: 'bucket', ref: 'p/demo', text: 'bucket note', author: 'agent' })
+    await db.insertNote({ scope: 'estate', ref: null, text: 'estate note', author: 'agent' })
+    await db.deleteProvider('p')
+    expect((await db.listNotes()).map((note) => note.text)).toEqual(['estate note'])
   })
 })
 

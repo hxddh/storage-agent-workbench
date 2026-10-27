@@ -16,11 +16,11 @@ tools (`plan`, `report`, `playbook`) and never read storage.
 | `config` | `provider_id?`, `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules proved clean; for `access`, grants and coverage | finding list, observations, access chain and coverage |
 | `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`) | check outcomes | check list |
 | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with their age, Issues with evidence, notes; with `history`, Issue events, posture changes and unfiltered reading events | bucket table, Issues, notes, optional history table |
-| `fix` | `provider_id?`, `bucket?`, `code?` (omit for every open issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500, emits up to 20) | plan rows; each step opens CLI/Terraform/API tabs and impact |
+| `fix` | `provider_id?`, `bucket?`, `code?` (omit for every open issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
 | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
 | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | first 40 rows, call and listing counts, script output | table, bar chart, script, buckets read |
-| `plan` | `steps` (3–12), `note?` | the plan was recorded | the run's plan with pending/active/done/blocked steps |
-| `report` | ordered `blocks`: summary, markdown, callout, table, findings, timeline, plan, code | the report was recorded | the answer blocks; data blocks cite an `evidenceId` |
+| `plan` | `steps` (3–6), `note?` | the plan was recorded | the run's plan with pending/active/done/blocked steps |
+| `report` | ordered `blocks`: summary, markdown, compare, callout, table, findings, timeline, plan, code; optional `append` | the report was recorded | the answer blocks; data blocks cite an `evidenceId` |
 | `playbook` | `card?` | one field-guide card, or the card list | not rendered; documentation for the model |
 
 ## Code mode (`query`)
@@ -58,7 +58,7 @@ to query that dataset.
 The agent publishes a short plan before its first read and updates it when a
 step materially changes. The run header renders it above the answer; it is not
 a transcript. `report` is the answer composition: a summary, markdown or callout
-carries prose and evidence ids; a table, timeline, plan or code block points at one tool
+carries prose and evidence ids; compare takes two evidence ids; a table, timeline, plan or code block points at one tool
 result by its `evidenceId`; a findings block selects deterministic estate
 findings. The window resolves the actual tool view, drops a block whose evidence
 is missing and says how many were omitted. `playbook` reads one of the field

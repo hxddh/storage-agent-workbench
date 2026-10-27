@@ -12,6 +12,7 @@ export function Composer({
   onSteer,
   onStop,
   onOpenSettings,
+  draftKey,
 }: {
   lang: 'en' | 'zh'
   hasModel: boolean
@@ -21,9 +22,10 @@ export function Composer({
   onSteer: (text: string) => Promise<void>
   onStop: () => void
   onOpenSettings: () => void
+  draftKey: string
 }) {
   const t = dict(lang)
-  const [text, setText] = useState('')
+  const [text, setText] = useState(() => window.localStorage.getItem(`sa.draft:${draftKey}`) ?? '')
   const [files, setFiles] = useState<StagedFile[]>([])
   const [busy, setBusy] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -35,6 +37,12 @@ export function Composer({
   const [now, setNow] = useState(Date.now())
   const ref = useRef<HTMLTextAreaElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const key = `sa.draft:${draftKey}`
+    if (text) window.localStorage.setItem(key, text)
+    else window.localStorage.removeItem(key)
+  }, [text, draftKey])
 
   const stage = useCallback(async (list: FileList | File[]) => {
     const picked = await window.agent.stageFiles([...list])

@@ -29,6 +29,7 @@ const EMPTY_ACCOUNT: AccountInput = {
   secretAccessKey: '',
   sessionToken: '',
   scope: { buckets: [] },
+  schedule: 'off',
 }
 
 export function Settings({
@@ -53,6 +54,12 @@ export function Settings({
     { id: 'appearance' as const, label: t.appearance, icon: Palette },
   ]
   const active = panes.find((item) => item.id === pane) ?? panes[0]!
+  const scheduleLabel = (schedule: Account['schedule']) =>
+    schedule === 'daily'
+      ? t.schedule_daily
+      : schedule === 'weekly'
+        ? t.schedule_weekly
+        : t.schedule_off
   const kindLabel = (kind: Account['kind']) =>
     kind === 'aws'
       ? t.kind_aws
@@ -88,6 +95,12 @@ export function Settings({
   const [form, setForm] = useState<AccountInput>(EMPTY_ACCOUNT)
   const [showForm, setShowForm] = useState(boot.accounts.length === 0)
   const [accountStatus, setAccountStatus] = useState<{ ok: boolean; detail: string } | null>(null)
+  const [testingAccount, setTestingAccount] = useState<string | null>(null)
+  const [accountTest, setAccountTest] = useState<{
+    id: string
+    ok: boolean
+    detail: string
+  } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [notes, setNotes] = useState<NoteRow[]>([])
   const trap = useFocusTrap<HTMLDivElement>(onClose, '[data-active-tab="true"]')
@@ -218,18 +231,36 @@ export function Settings({
   const saveAccount = async () => {
     setAccountStatus(null)
     try {
-      await window.agent.saveAccount(form)
+      const saved = await window.agent.saveAccount(form)
       setForm(EMPTY_ACCOUNT)
       setShowForm(false)
       await onChanged()
       const fresh = await window.agent.bootstrap()
       setAccounts(fresh.accounts)
       setAccountStatus({ ok: true, detail: t.saved })
+      await testAccount(saved.id)
     } catch (error) {
       setAccountStatus({
         ok: false,
         detail: error instanceof Error ? error.message : String(error),
       })
+    }
+  }
+
+  const testAccount = async (id: string) => {
+    setTestingAccount(id)
+    setAccountTest(null)
+    try {
+      const result = await window.agent.testAccount(id)
+      setAccountTest({ id, ...result })
+    } catch (error) {
+      setAccountTest({
+        id,
+        ok: false,
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setTestingAccount(null)
     }
   }
 
@@ -255,6 +286,7 @@ export function Settings({
       secretAccessKey: '',
       sessionToken: '',
       scope: { buckets: account.scope.buckets },
+      schedule: account.schedule ?? 'off',
     })
     setShowForm(true)
     setAccountStatus(null)
@@ -277,6 +309,11 @@ export function Settings({
 
   const setStaleDays = async (staleDays: number) => {
     await window.agent.saveSettings({ staleDays })
+    await onChanged()
+  }
+
+  const setNoteTtl = async (noteTtlDays: number) => {
+    await window.agent.saveSettings({ noteTtlDays })
     await onChanged()
   }
 
@@ -494,6 +531,14 @@ export function Settings({
                         <button
                           className="btn ghost"
                           type="button"
+                          disabled={testingAccount === account.id}
+                          onClick={() => void testAccount(account.id)}
+                        >
+                          {t.test}
+                        </button>
+                        <button
+                          className="btn ghost"
+                          type="button"
                           onClick={() => editAccount(account)}
                         >
                           {t.edit}
@@ -519,7 +564,14 @@ export function Settings({
                       {account.scope.buckets.length
                         ? `${t.scope}: ${account.scope.buckets.join(', ')}`
                         : t.allBuckets}
+                      {' · '}
+                      {t.schedule}: {scheduleLabel(account.schedule)}
                     </div>
+                    {accountTest?.id === account.id && (
+                      <div className={accountTest.ok ? 'ok-text' : 'error-text'}>
+                        {accountTest.detail}
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -678,6 +730,24 @@ export function Settings({
                       />
                       <span className="hint">{t.scopeHint}</span>
                     </div>
+                    <div className="field">
+                      <label htmlFor="accSchedule">{t.schedule}</label>
+                      <select
+                        id="accSchedule"
+                        value={form.schedule ?? 'off'}
+                        onChange={(event) =>
+                          setForm({
+                            ...form,
+                            schedule: event.target.value as AccountInput['schedule'],
+                          })
+                        }
+                      >
+                        <option value="off">{t.schedule_off}</option>
+                        <option value="daily">{t.schedule_daily}</option>
+                        <option value="weekly">{t.schedule_weekly}</option>
+                      </select>
+                      <span className="hint">{t.scheduleHint}</span>
+                    </div>
                     <label className="check-field">
                       <input
                         type="checkbox"
@@ -747,6 +817,21 @@ export function Settings({
                     ))}
                   </select>
                 </div>
+                <div className="field">
+                  <label htmlFor="noteTtl">{t.noteTtl}</label>
+                  <select
+                    id="noteTtl"
+                    value={boot.settings.noteTtlDays}
+                    onChange={(event) => void setNoteTtl(Number(event.target.value))}
+                  >
+                    {[0, 30, 90, 365].map((days) => (
+                      <option key={days} value={days}>
+                        {days === 0 ? t.noteTtlNever : fill(t.noteTtlDays, { n: days })}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="hint">{t.noteTtlHint}</span>
+                </div>
                 {notes.length === 0 ? (
                   <p className="hint">{t.noMemory}</p>
                 ) : (
@@ -765,6 +850,7 @@ export function Settings({
                     ))}
                   </div>
                 )}
+                <p className="hint">{t.memoryLimit}</p>
               </section>
 
               <section className="section" hidden={pane !== 'appearance'}>

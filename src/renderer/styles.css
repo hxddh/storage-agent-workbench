@@ -3313,6 +3313,21 @@ pre.code {
   color: var(--warn);
 }
 
+.run-older {
+  align-self: flex-start;
+  margin: 8px 0 2px;
+  padding: 4px 0;
+  color: var(--ink-3);
+  font-size: 11.75px;
+  text-align: left;
+}
+.run-older:hover,
+.run-older:focus-visible {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .run-history {
   display: flex;
   flex-direction: column;
@@ -3627,6 +3642,29 @@ pre.code {
   margin: 3px 0 12px;
   color: var(--ink-3);
   font-size: 11.75px;
+}
+
+.run-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.run-compare-item {
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.run-compare-item h4 {
+  margin: 0 0 8px;
+  color: var(--ink-2);
+  font-size: 11.75px;
+  font-weight: 600;
+}
+@media (max-width: 860px) {
+  .run-compare {
+    grid-template-columns: 1fr;
+  }
 }
 
 .run-cite {

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 const dir = 'out/renderer/assets'
 const files = readdirSync(dir).filter((name) => name.endsWith('.js'))
-const lazy = (name) => /^(Settings|Brief|Markdown)-/.test(name)
+const lazy = (name) => /^(Settings|Run|Brief|Markdown)-/.test(name)
 let initial = 0
 let gzip = 0
 let largest = 0

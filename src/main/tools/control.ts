@@ -20,6 +20,7 @@ const blockSchema = Type.Object({
   kind: Type.Union([
     Type.Literal('summary'),
     Type.Literal('markdown'),
+    Type.Literal('compare'),
     Type.Literal('callout'),
     Type.Literal('table'),
     Type.Literal('findings'),
@@ -106,6 +107,12 @@ function reportBlocks(value: unknown): ReportBlock[] {
       })
       continue
     }
+    if (kind === 'compare') {
+      const ids = evidence(item.evidence).slice(0, 2)
+      if (ids.length < 2) continue
+      blocks.push({ kind, evidence: ids, ...(title ? { title } : {}) })
+      continue
+    }
     if (kind === 'findings') {
       const limit =
         typeof item.limit === 'number' && Number.isFinite(item.limit)
@@ -144,7 +151,7 @@ export function planTool() {
     description:
       'Publish or update the investigation plan the user sees. Call it before the first read and after a step materially changes. Keep it to 3–6 short steps; the plan is a promise, not a transcript.',
     parameters: Type.Object({
-      steps: Type.Array(stepSchema, { minItems: 1, maxItems: 12 }),
+      steps: Type.Array(stepSchema, { minItems: 1, maxItems: 6 }),
       note: Type.Optional(Type.String({ maxLength: 300 })),
     }),
     execute: async (args) => {
@@ -189,10 +196,13 @@ export function reportTool() {
   return defineTool({
     name: 'report',
     description:
-      'Compose the answer the window renders. Blocks are ordered. summary, markdown and callout carry your prose and cite the tool-call ids that support it; table, timeline, plan and code point at one tool result each; findings selects deterministic estate findings. Use one summary and at most one proof block for the question; do not append findings, changes, checks or a full survey for completeness. Call it once when the investigation is ready; after it, write one short sentence at most.',
+      'Compose the answer the window renders. Blocks are ordered. summary, markdown and callout carry your prose and cite the tool-call ids that support it; compare takes exactly two evidence ids and renders them side by side; table, timeline, plan and code point at one tool result each; findings selects deterministic estate findings. Use one summary and at most one proof block for the question; do not append findings, changes, checks or a full survey for completeness. Call it once when the investigation is ready; after it, write one short sentence at most.',
     parameters: Type.Object({
       title: Type.Optional(Type.String({ maxLength: 160 })),
       blocks: Type.Array(blockSchema, { minItems: 1, maxItems: 12 }),
+      append: Type.Optional(
+        Type.Boolean({ description: 'Append these blocks to the previous report in this task.' }),
+      ),
     }),
     execute: async (args) => {
       const title = text(args.title, 160) || undefined
@@ -224,7 +234,12 @@ export function reportTool() {
           },
         ],
         details: details(
-          { kind: 'report', blocks, ...(title ? { title } : {}) },
+          {
+            kind: 'report',
+            blocks,
+            ...(title ? { title } : {}),
+            ...(args.append ? { append: true } : {}),
+          },
           'answer',
           `${blocks.length} blocks`,
         ) as never,

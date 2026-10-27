@@ -131,6 +131,7 @@ export class Providers {
       accessKeyMasked: row.auth === 'profile' ? '' : maskKey(row.access_key_id),
       hasSessionToken: Boolean(row.session_ref),
       scope: parseScope(row.scope_json),
+      schedule: row.schedule === 'daily' || row.schedule === 'weekly' ? row.schedule : 'off',
     }))
   }
 
@@ -199,6 +200,7 @@ export class Providers {
       created_at: existing?.created_at ?? new Date().toISOString(),
       auth,
       profile,
+      schedule: input.schedule === 'daily' || input.schedule === 'weekly' ? input.schedule : 'off',
     })
     this.forget(id)
     const account = (await this.list()).find((a) => a.id === id)

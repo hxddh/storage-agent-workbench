@@ -49,6 +49,8 @@ import {
 } from 'react'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
+import { scopeText } from './scope'
+import { ago } from './time'
 import {
   AccessChain,
   ChartView,
@@ -92,16 +94,6 @@ function compact(n: number): string {
     : n < 1_000_000
       ? `${(n / 1000).toFixed(1)}k`
       : `${(n / 1_000_000).toFixed(1)}M`
-}
-
-function ago(iso: string, t: Dict): string | null {
-  const started = Date.parse(iso)
-  if (Number.isNaN(started)) return null
-  const seconds = Math.max(0, (Date.now() - started) / 1000)
-  if (seconds < 60) return t.justNow
-  if (seconds < 3600) return fill(t.minutesAgo, { n: Math.floor(seconds / 60) })
-  if (seconds < 86_400) return fill(t.hoursAgo, { n: Math.floor(seconds / 3600) })
-  return fill(t.daysAgo, { n: Math.floor(seconds / 86_400) })
 }
 
 const FIELD_ZH: Record<string, string> = {
@@ -636,6 +628,7 @@ export function Brief({
   hideData = false,
   hideFix = false,
   hideNotices = false,
+  hideVerdict = false,
   prefixMarkdown = '',
 }: {
   view: TaskView
@@ -654,6 +647,7 @@ export function Brief({
   hideData?: boolean
   hideFix?: boolean
   hideNotices?: boolean
+  hideVerdict?: boolean
   /** Markdown the run composed above this evidence body; included in Copy. */
   prefixMarkdown?: string
 }) {
@@ -761,9 +755,6 @@ export function Brief({
   }
   const allMemory =
     brief.findings.length > 0 && brief.findings.every((finding) => finding.source === 'memory')
-  const rememberedAt = allMemory
-    ? (brief.findings.map((finding) => finding.readAt).sort()[0] ?? null)
-    : null
   const read = readStateOfBrief(brief)
   const {
     unread,
@@ -772,24 +763,11 @@ export function Brief({
     failed: failedReads,
     access: accessGaps,
     permissions: allPermissions,
-    visible: totalBuckets,
-    processed: readBuckets,
   } = read
   const permissions = allPermissions.slice(0, 12)
-  const scopeNames = [...new Set(brief.coverage.map((item) => item.provider))]
-  const gone = brief.coverage.flatMap((item) => item.gone)
-  // One deterministic read status. It names coverage, never a security verdict.
-  const blocked = read.blocked
   const openReads = read.open
-  const coverageStatus =
-    openReads > 0
-      ? `${fill(t.scopeOpen, { n: openReads })}${
-          blocked > 0 ? ` · ${fill(t.scopeBlocked, { n: blocked })}` : ''
-        }`
-      : read.complete
-        ? t.scopeComplete
-        : ''
-  const checked = brief.lastReadAt ? ago(brief.lastReadAt, t) : null
+  const gone = brief.coverage.flatMap((item) => item.gone)
+  const scope = scopeText(brief, t, { findings: true, memory: true })
   const title = view.task.title
   const hasContent =
     Boolean(brief.verdict || brief.findings.length || brief.checks.length) || evidenceOnly
@@ -876,6 +854,15 @@ export function Brief({
       kind: 'markdown',
     })
 
+  const savePdf = () => {
+    // The print stylesheet cannot open React disclosures by itself. Expand the
+    // evidence first, then hand the composited DOM to Chromium.
+    setAllFindings(true)
+    setOpenChecks(true)
+    setDataOpen(true)
+    window.setTimeout(() => void window.agent.exportPdf(), 80)
+  }
+
   const accept = (finding: BriefFinding) =>
     finding.issueId
       ? () => void window.agent.acceptIssue(finding.issueId!, finding.status !== 'accepted')
@@ -900,6 +887,16 @@ export function Brief({
     }
   }
 
+  useEffect(() => {
+    const prepare = () => {
+      setAllFindings(true)
+      setOpenChecks(true)
+      setDataOpen(true)
+    }
+    window.addEventListener('sa:prepare-print', prepare)
+    return () => window.removeEventListener('sa:prepare-print', prepare)
+  }, [])
+
   const body = (
     <article
       className={evidenceOnly ? 'run-evidence' : 'brief'}
@@ -909,18 +906,7 @@ export function Brief({
     >
       <h1 className="visually-hidden">{title}</h1>
       <div className={`brief-meta ${hasContent ? '' : 'silent'}`}>
-        <span className={brief.coverage.length > 0 || coverageStatus ? 'brief-scope' : undefined}>
-          {[
-            scopeNames.join(' · '),
-            coverageStatus,
-            totalBuckets > 0 ? fill(t.scopeRead, { read: readBuckets, total: totalBuckets }) : '',
-            checked ? fill(t.checkedAt, { when: checked }) : '',
-            brief.findings.length > 0 ? fill(t.findingsCount, { n: brief.findings.length }) : '',
-            rememberedAt ? fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' }) : '',
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-        </span>
+        <span className={scope ? 'brief-scope' : undefined}>{scope}</span>
         {hasContent && (
           <span className="brief-actions">
             <button className="text-action" type="button" onClick={() => void copy()}>
@@ -1003,7 +989,7 @@ export function Brief({
                     role="menuitem"
                     onClick={() => {
                       setMore(false)
-                      void window.agent.exportPdf()
+                      savePdf()
                     }}
                   >
                     {t.savePdf}
@@ -1035,7 +1021,7 @@ export function Brief({
       )}
 
       <div aria-live="polite" aria-atomic="false">
-        {brief.verdict && (
+        {!hideVerdict && brief.verdict && (
           <div
             className={`verdict prose ${brief.verdict.streaming ? 'streaming' : ''} ${
               brief.verdict.stale && live ? 'stale' : ''
