@@ -24,6 +24,8 @@ const names = [
   '02b-settings-appearance.png',
   '02c-settings-dark.png',
   '02d-settings-account-form.png',
+  '02e-settings-methods.png',
+  '02f-settings-memory.png',
   '03-task-light.png',
   '04-follow-up-light.png',
   '06-task-dark.png',
@@ -39,12 +41,19 @@ const names = [
   '21-settings-error-zh.png',
   '23-tool-detail.png',
   '24-citation-open.png',
+  '25-render-light.png',
+  '26-agent-tool-light.png',
+  '27-delegate-light.png',
 ]
 let failed = 0
 for (const name of names) {
   const before = join(baseline, name)
   const after = join(current, name)
-  if (!existsSync(after)) continue
+  if (!existsSync(after)) {
+    console.error(`${name}: capture missing; run scripts/shots.mjs first`)
+    failed += 1
+    continue
+  }
   if (update || !existsSync(before)) {
     copyFileSync(after, before)
     console.log(`baseline ${name}`)

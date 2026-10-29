@@ -99,6 +99,7 @@ function toolEntry(
     view: details?.view ?? null,
     ...(fallback.callId ? { callId: fallback.callId } : {}),
     ...(details?.evidenceId ? { evidenceId: details.evidenceId } : {}),
+    ...(details?.provider ? { provider: details.provider } : {}),
     ...(fallback.text ? { output: fallback.text } : {}),
   }
 }
@@ -264,6 +265,7 @@ export class LiveTracker {
         args: details?.args ?? null,
         status,
         startedAt: since,
+        ...(details?.provider ? { provider: details.provider } : {}),
       })
     }
     const message = live.generation?.message

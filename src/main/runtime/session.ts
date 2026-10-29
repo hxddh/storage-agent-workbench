@@ -21,6 +21,7 @@ import {
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
 import type { AppEvent, TaskModel, TaskSummary, UiEntry } from '@shared/contract'
 import type { AppDb } from '../db'
+import type { MemoryStore } from '../memory'
 import type { Providers } from '../providers'
 import type { Vault } from '../security/vault'
 import type { Settings } from '../settings'
@@ -45,6 +46,7 @@ export interface RuntimeDeps {
   settings: Settings
   vault: Vault
   models: ReturnType<typeof createModels>
+  memory: MemoryStore
   dirs: RuntimeDirs
   emit: (event: AppEvent) => void
   /** A run settled; the shell decides whether to notify. */
@@ -103,6 +105,7 @@ export class Runtime {
       taskDir: deps.dirs.task,
       datasetsDir: deps.dirs.datasets,
       uploadsDir: deps.dirs.uploads,
+      memory: deps.memory,
       lang: () => deps.settings.get().language,
     }
     const list = createTools(tools)
@@ -129,6 +132,7 @@ export class Runtime {
       CONTEXT,
     )
     runtime = new Runtime(deps, pi, tools, list)
+    tools.entries = (id) => runtime!.entries(id)
     // The vault stays closed at launch: on macOS it can prompt for Keychain
     // access, which belongs to the first model run. The digest is one query.
     await runtime.refreshDigest()
@@ -136,7 +140,7 @@ export class Runtime {
   }
 
   async refreshDigest(): Promise<void> {
-    this.digest = await buildDigest(this.tools, this.deps.settings.get().noteTtlDays)
+    this.digest = await buildDigest(this.tools)
   }
 
   async conversation(id: string): Promise<Conversation | null> {

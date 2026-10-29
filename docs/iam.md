@@ -1,11 +1,15 @@
 # Read-only IAM
 
 Storage Agent never runs a write action. There is no fixed list of reads:
-`call` (`s3/api.ts`) can run any operation of a bundled service (S3, S3
-Control, STS, IAM, Organizations, KMS, Access Analyzer, CloudWatch,
-CloudTrail) whose name starts with Get, List, Head, Describe, Lookup, Search,
-Select or Simulate, except STS `GetSessionToken`, `GetFederationToken`,
-`GetWebIdentityToken` and KMS `GetParametersForImport`. What the agent can
+`call` (`s3/api.ts`) can run any operation of a bundled service whose name
+starts with Get, List, Head, Describe, Lookup, Search, Select, Simulate,
+BatchGet, Query or Scan. The bundled clients are S3, S3 Control, STS, IAM,
+Organizations, KMS, Access Analyzer, CloudWatch, CloudTrail, EC2, Lambda,
+DynamoDB, RDS, CloudFront, Route 53, Config, Security Hub, GuardDuty, ECR, SNS,
+SQS, Secrets Manager, SSM, Service Quotas, Support, Backup and Cost Explorer.
+The exceptions are STS `GetSessionToken`, `GetFederationToken`,
+`GetWebIdentityToken`, KMS `GetParametersForImport` and the secret-store reads
+listed in [tools.md](tools.md). What the agent can
 actually read is what the account's credentials allow.
 
 Every permission is optional. A denied call comes back as the service's error,
@@ -70,7 +74,9 @@ A narrower policy for storage questions:
 }
 ```
 
-Drop the `AccountRead` statement to keep the agent to S3. Drop `s3:GetObject`
+Add permissions for the other bundled services only when the agent should
+read them; `ReadOnlyAccess` covers them all. Drop the `AccountRead` statement
+to keep the agent to S3. Drop `s3:GetObject`
 and `s3:GetObjectVersion` to keep it off object bodies; S3 Inventory import
 (`query`'s `inventory()`) then needs `s3:GetObject` on the inventory
 destination only. Narrowing `Resource` to the configured buckets and objects is

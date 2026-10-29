@@ -1,21 +1,22 @@
 import type {
   Account,
   AccountInput,
+  AgentToolRow,
   Bootstrap,
   CatalogModel,
   Lang,
   LocalModel,
+  MemoryRow,
   ModelProvider,
-  NoteRow,
   Theme,
 } from '@shared/contract'
-import { Brain, Cloud, Cpu, Palette, Plus, X } from 'lucide-react'
+import { Brain, Cloud, Cpu, Palette, Plus, Wrench, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { type Dict, dict, fill } from './i18n'
 import { useFocusTrap } from './lib/focus'
 
 type Provider = ModelProvider
-export type SettingsPane = 'model' | 'accounts' | 'memory' | 'appearance'
+export type SettingsPane = 'model' | 'accounts' | 'memory' | 'methods' | 'appearance'
 
 /** Map the provider layer's fixed test messages; pass other provider errors through. */
 function testDetail(detail: string, t: Dict): string {
@@ -67,6 +68,7 @@ export function Settings({
     { id: 'model' as const, label: t.model, icon: Cpu },
     { id: 'accounts' as const, label: t.accounts, icon: Cloud },
     { id: 'memory' as const, label: t.memory, icon: Brain },
+    { id: 'methods' as const, label: t.methods, icon: Wrench },
     { id: 'appearance' as const, label: t.appearance, icon: Palette },
   ]
   const active = panes.find((item) => item.id === pane) ?? panes[0]!
@@ -100,11 +102,13 @@ export function Settings({
     detail: string
   } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
-  const [notes, setNotes] = useState<NoteRow[]>([])
+  const [memory, setMemory] = useState<MemoryRow[]>([])
+  const [methods, setMethods] = useState<AgentToolRow[]>([])
   const trap = useFocusTrap<HTMLDivElement>(onClose, '[data-active-tab="true"]')
 
   useEffect(() => {
-    void window.agent.notes().then(setNotes)
+    void window.agent.memory().then(setMemory)
+    void window.agent.agentTools().then(setMethods)
     void window.agent.awsProfiles().then(setProfiles)
     void window.agent.localModels().then(setLocalModels)
   }, [])
@@ -117,8 +121,13 @@ export function Settings({
   }
 
   const forget = async (id: string) => {
-    await window.agent.deleteNote(id)
-    setNotes(await window.agent.notes())
+    await window.agent.deleteMemory(id)
+    setMemory(await window.agent.memory())
+  }
+
+  const forgetMethod = async (id: string) => {
+    await window.agent.deleteAgentTool(id)
+    setMethods(await window.agent.agentTools())
   }
 
   const saveModel = async () => {
@@ -292,11 +301,6 @@ export function Settings({
 
   const setNotify = async (notify: boolean) => {
     await window.agent.saveSettings({ notify })
-    await onChanged()
-  }
-
-  const setNoteTtl = async (noteTtlDays: number) => {
-    await window.agent.saveSettings({ noteTtlDays })
     await onChanged()
   }
 
@@ -744,34 +748,59 @@ export function Settings({
 
               <section className="section" hidden={pane !== 'memory'}>
                 <p className="settings-desc">{t.settingsMemoryDesc}</p>
-                <div className="field">
-                  <label htmlFor="noteTtl">{t.noteTtl}</label>
-                  <select
-                    id="noteTtl"
-                    value={boot.settings.noteTtlDays}
-                    onChange={(event) => void setNoteTtl(Number(event.target.value))}
-                  >
-                    {[0, 30, 90, 365].map((days) => (
-                      <option key={days} value={days}>
-                        {days === 0 ? t.noteTtlNever : fill(t.noteTtlDays, { n: days })}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="hint">{t.noteTtlHint}</span>
-                </div>
-                {notes.length === 0 ? (
+                {memory.length === 0 ? (
                   <p className="hint">{t.noMemory}</p>
                 ) : (
                   <div className="memory-list">
-                    {notes.map((note) => (
-                      <div className="memory-row" key={note.id}>
-                        <span className="memory-text">{note.text}</span>
+                    {memory.map((doc) => (
+                      <div className="memory-row memory-doc" key={doc.id}>
+                        <div className="memory-head">
+                          <span className="method-name mono">{doc.key}</span>
+                          <span className="hint">{doc.scope}</span>
+                        </div>
+                        <span className="memory-text">
+                          {doc.text.length > 1200 ? `${doc.text.slice(0, 1200)}…` : doc.text}
+                        </span>
                         <button
                           className="text-action"
                           type="button"
-                          onClick={() => void forget(note.id)}
+                          onClick={() => void forget(doc.id)}
                         >
                           {t.forget}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="section" hidden={pane !== 'methods'}>
+                <p className="settings-desc">{t.settingsMethodsDesc}</p>
+                {methods.length === 0 ? (
+                  <p className="hint">{t.noMethods}</p>
+                ) : (
+                  <div className="memory-list">
+                    {methods.map((method) => (
+                      <div className="method-row" key={method.id}>
+                        <div className="method-head">
+                          <span className="method-name mono">{method.name}</span>
+                          <span className="hint">
+                            {t.methodScope}: {method.scope}
+                          </span>
+                        </div>
+                        {method.description && (
+                          <span className="memory-text">{method.description}</span>
+                        )}
+                        <details className="method-code">
+                          <summary>{t.raw}</summary>
+                          <pre className="mono">{method.code}</pre>
+                        </details>
+                        <button
+                          className="text-action"
+                          type="button"
+                          onClick={() => void forgetMethod(method.id)}
+                        >
+                          {t.delete}
                         </button>
                       </div>
                     ))}

@@ -5,13 +5,35 @@
  * a secret, or a raw S3 response; every value here is already redacted and
  * shaped for display.
  */
+import type { ViewDoc } from './view'
+
+export type {
+  ChartSpec,
+  TimelineEvent,
+  TreeNode,
+  ViewBlock,
+  ViewCell,
+  ViewColumn,
+  ViewDoc,
+  ViewTone,
+} from './view'
 
 export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high'
 export type ModelProvider = 'anthropic' | 'openai' | 'compatible'
 export type Lang = 'en' | 'zh'
 export type Theme = 'light' | 'dark' | 'system'
 
-export type ToolName = 'call' | 'query' | 'probe' | 'more' | 'note' | 'ask'
+export type ToolName =
+  | 'call'
+  | 'query'
+  | 'probe'
+  | 'more'
+  | 'ask'
+  | 'discover'
+  | 'render'
+  | 'memory'
+  | 'tool'
+  | 'delegate'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
 
@@ -25,6 +47,25 @@ export interface NoteRow {
   id: string
   text: string
   createdAt: string
+}
+
+/** A method the agent wrote for itself. */
+export interface AgentToolRow {
+  id: string
+  name: string
+  description: string
+  schema: unknown
+  code: string
+  scope: 'task' | 'user'
+  conversationId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** A memory document, as Settings lists it. */
+export interface MemoryRow extends NoteRow {
+  key: string
+  scope: 'task' | 'user'
 }
 
 export interface Chart {
@@ -52,6 +93,19 @@ export type ToolView =
       buckets?: string[]
     }
   | { kind: 'question'; question: string; options: string[]; note?: string }
+  /** A view the agent composed with `render`; the window owns its rendering. */
+  | { kind: 'render'; title: string; doc: ViewDoc }
+  /** A child agent's answer and status. */
+  | {
+      kind: 'delegate'
+      title: string
+      conversationId: string
+      answer: string
+      status: 'done' | 'failed' | 'stopped'
+      calls?: number
+    }
+  /** Rows from agent memory. */
+  | { kind: 'memory'; title: string; table: Table; text?: string }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped'
 
@@ -68,6 +122,8 @@ export interface ToolDetails {
   status: ToolStatus
   /** Stable id the model cites from its answer. */
   evidenceId?: string
+  /** The storage account this call used, when it used one. */
+  provider?: string
 }
 
 /** App notices are codes; the window words them in the user's language. */
@@ -81,6 +137,7 @@ export interface LiveTool {
   args?: string | null
   status: ToolStatus
   startedAt: string
+  provider?: string
 }
 
 /**
@@ -153,6 +210,8 @@ export type UiEntry =
       view: ToolView | null
       callId?: string
       evidenceId?: string
+      /** The storage account this call used, when it used one. */
+      provider?: string
       /** Exactly what the model received for this call, enveloped and redacted. */
       output?: string
     }
@@ -289,7 +348,6 @@ export interface AppSettings {
   /** A system notification when a run finishes while the window is in the background. */
   notify: boolean
   /** Notes older than this are hidden from Memory; 0 keeps every note. */
-  noteTtlDays: number
 }
 
 export type UpdateState =
@@ -356,8 +414,10 @@ export interface AgentApi {
   retryTask(taskId: string): Promise<void>
   continueTask(taskId: string): Promise<void>
   search(query: string): Promise<SearchHit[]>
-  notes(): Promise<NoteRow[]>
-  deleteNote(id: string): Promise<void>
+  memory(): Promise<MemoryRow[]>
+  deleteMemory(id: string): Promise<void>
+  agentTools(): Promise<AgentToolRow[]>
+  deleteAgentTool(id: string): Promise<void>
   saveText(input: {
     name: string
     content: string

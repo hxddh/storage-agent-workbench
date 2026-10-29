@@ -263,6 +263,31 @@ try {
   console.log('QUERY OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-query.png') })
 
+  // A view the agent composed, not app-generated report scaffolding.
+  await page.getByRole('button', { name: 'New task' }).click()
+  await say('Show the buckets as a view')
+  const rendered = await openTool('Composed a view')
+  await rendered.locator('.view-doc table').waitFor({ timeout: 5_000 })
+  if (!(await rendered.locator('.view-doc').innerText()).includes('web-assets'))
+    await fail('render view missing web-assets')
+  console.log('RENDER OK')
+
+  // A method the agent writes, saves and runs.
+  await page.getByRole('button', { name: 'New task' }).click()
+  await say('Write a method for bucket names and run it')
+  const method = await openTool('Used an agent method')
+  await method.locator('.table-block table').waitFor({ timeout: 5_000 })
+  if (!(await method.locator('.table-block').innerText()).includes('web-assets'))
+    await fail('agent method did not return buckets')
+  console.log('AGENT TOOL OK')
+
+  // A child agent for an independent investigation.
+  await page.getByRole('button', { name: 'New task' }).click()
+  await say('Delegate a bucket survey')
+  const delegated = await openTool('Delegated to a child agent')
+  await delegated.locator('.delegate-view').waitFor({ timeout: 30_000 })
+  console.log('DELEGATE OK')
+
   const db = readFileSync(join(dataDir, 'storage-agent.db'))
   console.log('DB BYTES:', db.length)
 } catch (error) {

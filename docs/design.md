@@ -131,7 +131,9 @@ strips, no summary of the work.
   spinning loader while running, a `--ok` check when done, a small circle when
   stopped, a `--danger` triangle for failed or refused), the tool's label
   (`Read`, `Ran a read-only query`, `Probed endpoint`, `Read more of a result`,
-  `Updated memory`), the target in mono (`s3 GetBucketPolicy · logs`), the
+  `Discovered capabilities`, `Composed a view`, `Used memory`, `Used an agent
+  method`, `Delegated to a child agent`), the target in mono
+  (`s3 GetBucketPolicy · logs`), the
   note, a status word when it did not finish (`Running`, `Failed`, `Stopped`,
   `Refused`), the duration
   and a chevron. A running step is open and counts its elapsed time; a settled
@@ -187,6 +189,17 @@ A code-mode result shows its chart, rows (eight at first, then `N more`; the
 window keeps up to 10,000, the agent gets all), script and output under the
 query's step. Byte columns render as human sizes; CSV keeps raw numbers.
 
+A `render` result is a view document, not JSON: the app draws its Markdown,
+tables, charts, trees, timelines, diffs, callouts, key-value rows and code.
+Every block is data and follows the same typography and tokens as the rest of
+the page. A `memory` result is a table of documents. A `delegate` result is the
+child's answer and its status, not a transcript.
+
+The step's argument summary is shown for a storage read where its input helps
+(`call`, `query`, `probe`, `more`). For `render`, `memory`, `tool`, `delegate`,
+`discover` and `ask`, the step line and its typed view already say what
+happened; raw JSON arguments are not repeated.
+
 Printing (Save PDF) opens every step and hides the sidebar, composer, overflow
 menu and copy buttons.
 
@@ -221,15 +234,17 @@ authorization.
 
 ## Settings
 
-Four panes: Model, Storage accounts, Memory and Appearance. The active pane is
-the top-bar title and the selected rail row. Model configuration is one form:
-provider, model, base URL, key, Save and Test. Local models are one-click
+Five panes: Model, Storage accounts, Memory, Methods and Appearance. The active
+pane is the top-bar title and the selected rail row. Model configuration is one
+form: provider, model, base URL, key, Save and Test. Local models are one-click
 chips. Accounts list read-only credentials and open one inline form for add or
 edit (name, endpoint, region, path-style, access keys or AWS profile, bucket
 scope); the key fields are never pre-filled.
 
-Memory holds the note-age setting and lists every note, each with **Forget**.
-Appearance holds language, theme and the background-notification switch.
+Memory lists every document the agent wrote, with its key, scope and text, and
+**Forget**. Methods lists every agent-authored method, with its scope,
+description, code under **Raw**, and Delete. Appearance holds language, theme
+and the background-notification switch.
 
 Inputs and selects are styled consistently with visible focus rings; selects use
 a drawn chevron. Checkboxes keep the native input for keyboard and screen

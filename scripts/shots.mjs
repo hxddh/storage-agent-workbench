@@ -77,6 +77,19 @@ async function say(text) {
     { timeout: 60_000 },
   )
   await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
+  await page.waitForFunction(
+    () => {
+      const items = [...document.querySelectorAll('.conversation > *')]
+      const user = items.findLastIndex(
+        (item) => item.classList.contains('msg') && item.classList.contains('user'),
+      )
+      return items
+        .slice(user + 1)
+        .some((item) => item.matches('.msg.agent.text') || item.querySelector?.('.msg.agent.text'))
+    },
+    null,
+    { timeout: 60_000 },
+  )
   await page.waitForTimeout(350)
 }
 
@@ -113,11 +126,37 @@ await page.waitForTimeout(250)
 await page.screenshot({ path: join(out, '04-follow-up-light.png') })
 
 // What the agent noted in one task, it knows in the next.
+await say('Survey my account.')
 await page.getByRole('button', { name: 'New task' }).click()
 await say('What did you find last time?')
 await page.screenshot({ path: join(out, '13-memory-light.png') })
 
+// A view the agent composed, a method it wrote, and a child agent.
+await page.getByRole('button', { name: 'New task' }).click()
+await say('Show the buckets as a view')
+await openStep('Composed a view')
+await page.waitForTimeout(350)
+await page.screenshot({ path: join(out, '25-render-light.png') })
+
+await page.getByRole('button', { name: 'New task' }).click()
+await say('Write a method for bucket names and run it')
+await openStep('Used an agent method')
+await page.waitForTimeout(350)
+await page.screenshot({ path: join(out, '26-agent-tool-light.png') })
+
+await page.getByRole('button', { name: 'New task' }).click()
+await say('Delegate a bucket survey')
+await openStep('Delegated to a child agent')
+await page.waitForTimeout(350)
+await page.screenshot({ path: join(out, '27-delegate-light.png') })
+
 await page.getByRole('button', { name: 'Settings' }).click()
+await page.getByRole('button', { name: 'Memory', exact: true }).click()
+await page.waitForTimeout(350)
+await page.screenshot({ path: join(out, '02f-settings-memory.png') })
+await page.getByRole('button', { name: 'Methods', exact: true }).click()
+await page.waitForTimeout(350)
+await page.screenshot({ path: join(out, '02e-settings-methods.png') })
 await page.getByRole('button', { name: 'Appearance', exact: true }).click()
 await page.waitForTimeout(350)
 await page.screenshot({ path: join(out, '02b-settings-appearance.png') })

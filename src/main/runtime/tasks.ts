@@ -2,15 +2,14 @@
  * The task list and the open task.
  *
  * A task is a pi conversation plus a title row. This keeps the sidebar, the one
- * watched task, the search index and the user's own acts on memory (deleting a
- * note). Runs belong to the engine.
+ * watched task, the search index and the user's own acts on memory. Runs
+ * belong to the engine.
  */
 import { rm } from 'node:fs/promises'
 import type { ConversationView, TaskGraph, WatchHandle } from '@earendil-works/pi-durable'
 import type {
   ContextRef,
   Live,
-  NoteRow,
   SearchHit,
   StorageRef,
   TaskModel,
@@ -133,22 +132,32 @@ export class Tasks {
     return searchTasks(this.deps.db, query)
   }
 
-  async notes(): Promise<NoteRow[]> {
-    const rows = await this.deps.db.listNotes()
-    const ttl = this.deps.settings.get().noteTtlDays
-    const cutoff = ttl > 0 ? Date.now() - ttl * 86_400_000 : null
-    return rows
-      .filter((note) => !cutoff || Date.parse(note.created_at) >= cutoff)
-      .map((note) => ({
-        id: note.id,
-        text: note.text,
-        createdAt: note.created_at,
-      }))
+  memoryRows() {
+    return this.deps.memory.rows()
   }
 
-  async deleteNote(id: string): Promise<void> {
-    await this.deps.db.deleteNote(id)
+  async deleteMemory(id: string): Promise<void> {
+    this.deps.memory.delete(id)
     await this.runtime.refreshDigest()
+  }
+
+  async agentTools() {
+    const rows = await this.deps.db.listAgentTools()
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      schema: JSON.parse(row.schema_json) as unknown,
+      code: row.code,
+      scope: row.scope,
+      conversationId: row.conversation_id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }))
+  }
+
+  async deleteAgentTool(id: string): Promise<void> {
+    await this.deps.db.deleteAgentTool(id)
   }
 
   async pin(taskId: string, pinned: boolean): Promise<void> {
@@ -189,8 +198,11 @@ export class Tasks {
     this.runtime.failed.delete(taskId)
     await this.deps.db.deleteTaskMeta(taskId)
     await this.deps.db.deleteSearchDocs(taskId)
-    await this.deps.db.purgeTask(taskId)
-    await rm(this.deps.dirs.task(taskId), { recursive: true, force: true }).catch(() => undefined)
+    const purged = await this.deps.db.purgeTask(taskId)
+    for (const id of purged) {
+      this.deps.memory.deleteTask(id)
+      await rm(this.deps.dirs.task(id), { recursive: true, force: true }).catch(() => undefined)
+    }
     if (this.deps.settings.get().lastTaskId === taskId) this.deps.settings.setLastTask(null)
     await this.refreshList()
   }

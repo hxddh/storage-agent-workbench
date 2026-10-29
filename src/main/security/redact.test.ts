@@ -12,7 +12,7 @@ describe('redaction', () => {
     ['Authorization: AWS4-HMAC-SHA256 Credential=x', 'Authorization: [redacted]'],
     ['Bearer abcdefghijklmnop', 'Bearer [redacted]'],
     ['{"SecretAccessKey":"wJalrXUtnFEMI"}', '{"SecretAccessKey":"[redacted]"}'],
-    ['arn:aws:iam::123456789012:role/x', 'arn:aws:iam:[account]:role/x'],
+    ['arn:aws:iam::123456789012:role/x', 'arn:aws:iam::[account]:role/x'],
     ['key sk-ant-abcdefghijklmnopqrstuvwxyz', 'key sk-ant-[redacted]'],
     ['sk-proj-abcdefghijklmnopqrstu', 'sk-proj-[redacted]'],
     ['aws_secret_access_key = wJalrXUtnFEMI/K7MDENG', 'aws_secret_access_key = [redacted]'],

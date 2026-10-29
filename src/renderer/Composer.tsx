@@ -352,7 +352,7 @@ export function Composer({
             className="icon-btn"
             type="button"
             aria-label={t.attach}
-            disabled={Boolean(live) || !hasModel}
+            disabled={!hasModel}
             onClick={() => void attach()}
           >
             <Paperclip size={15} strokeWidth={1.7} />
@@ -362,7 +362,7 @@ export function Composer({
             type="button"
             aria-label={t.attachContext}
             title={t.attachContext}
-            disabled={Boolean(live) || !hasModel}
+            disabled={!hasModel}
             onClick={() => {
               setPicker('')
               ref.current?.focus()
@@ -384,7 +384,7 @@ export function Composer({
                 type="button"
                 aria-label={t.steer}
                 title={t.steer}
-                disabled={!text.trim()}
+                disabled={!text.trim() && files.length === 0}
                 onClick={() => void send()}
               >
                 <ArrowUp size={15} strokeWidth={2} />

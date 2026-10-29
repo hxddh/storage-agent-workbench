@@ -65,9 +65,9 @@ export function installModel(
   const baseUrl = baseUrlOf(stored)
   const contextWindow = stored.contextWindow > 0 ? stored.contextWindow : 128_000
   const reasoning = stored.thinking !== 'off'
-  // The request's output limit: the model's own maximum, as its provider said
-  // it (`learnOutputLimit`), or the context window when it has not said.
-  const maxTokens = outputLimit ?? contextWindow
+  // A bounded default; a provider that accepts more can still be used. The
+  // app no longer makes a hidden probe call to discover the limit.
+  const maxTokens = outputLimit ?? Math.min(32_000, contextWindow)
   const { api, streams } = apiOf(stored)
 
   const model = {
@@ -94,73 +94,6 @@ export function installModel(
     } as never),
   )
   return { provider: providerId, modelId: stored.modelId }
-}
-
-const learned = new Map<string, number>()
-
-/**
- * The most output tokens this model's provider accepts in one reply. Asked
- * once per model per launch: a one-word request that offers the whole context
- * window; a provider that refuses names its maximum, which becomes the limit.
- */
-export async function learnOutputLimit(
-  models: ReturnType<typeof createModels>,
-  stored: StoredModel,
-  vault: Vault | null,
-): Promise<number> {
-  const key = `${stored.provider}|${baseUrlOf(stored)}|${stored.modelId}`
-  const known = learned.get(key)
-  if (known) return known
-  const window = stored.contextWindow > 0 ? stored.contextWindow : 128_000
-  let limit = window
-  // A limit is kept only when the provider answered about it: accepted, or named its maximum.
-  let confirmed = false
-  try {
-    const ref = installModel(models, stored, vault, undefined, `${PROVIDER_ID}-limit`, window)
-    const model = models.getModel(ref.provider, ref.modelId)
-    if (model) {
-      const response = await models.complete(
-        model,
-        {
-          systemPrompt: 'Answer with one word.',
-          messages: [{ role: 'user', content: 'Reply with: ok', timestamp: Date.now() }],
-          tools: [],
-        },
-        { maxTokens: window },
-      )
-      if (response.stopReason !== 'error') confirmed = true
-      else ({ limit, confirmed } = fromRefusal(response.errorMessage, window))
-    }
-  } catch (error) {
-    ;({ limit, confirmed } = fromRefusal(
-      error instanceof Error ? error.message : String(error),
-      window,
-    ))
-  }
-  if (confirmed) learned.set(key, limit)
-  return limit
-}
-
-/**
- * What a refusal says about the limit. A named maximum is the limit. A refusal
- * about tokens that names none leaves the size every supported model accepts,
- * for this run only; any other error is not about the limit at all.
- */
-function fromRefusal(message: string | undefined, window: number) {
-  const stated = statedMaximum(message, window)
-  if (stated < window) return { limit: stated, confirmed: true }
-  if (message && /max(imum)?[_ ]?(output[_ ]?)?tokens|max_completion_tokens/i.test(message))
-    return { limit: Math.min(32_000, Math.floor(window / 4)), confirmed: false }
-  return { limit: window, confirmed: false }
-}
-
-/** The maximum a provider's refusal names: the largest number in it below what was asked. */
-export function statedMaximum(message: string | undefined, asked: number): number {
-  if (!message || !/token/i.test(message)) return asked
-  const numbers = (message.replace(/[,_]/g, '').match(/\d{3,}/g) ?? [])
-    .map(Number)
-    .filter((n) => n > 0 && n < asked)
-  return numbers.length ? Math.max(...numbers) : asked
 }
 
 /** pi's thinking level for a stored setting; `off` when the model does not reason. */

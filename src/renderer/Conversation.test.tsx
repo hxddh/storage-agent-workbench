@@ -112,6 +112,44 @@ describe('the conversation', () => {
     expect(document.querySelector('sup.cite.missing')?.getAttribute('title')).toMatch(/No call/)
   })
 
+  it('renders an agent-composed view as blocks, not raw JSON', async () => {
+    render(
+      <Conversation
+        {...props}
+        view={view([
+          user('u1', 'Show the buckets'),
+          {
+            ...call,
+            view: {
+              kind: 'render',
+              title: 'Buckets',
+              doc: {
+                version: 1,
+                blocks: [
+                  {
+                    type: 'section',
+                    title: 'Inventory',
+                    blocks: [
+                      {
+                        type: 'table',
+                        columns: [{ key: 'name', label: 'Bucket' }],
+                        rows: [{ name: 'logs' }],
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        ])}
+      />,
+    )
+    fireEvent.click(document.querySelector('.step-line')!)
+    await waitFor(() => expect(document.querySelector('.view-doc')).toBeTruthy())
+    expect(screen.getByText('Inventory')).toBeTruthy()
+    expect(screen.getByText('logs')).toBeTruthy()
+  })
+
   it('answers a clarifying question with one click while the agent waits', () => {
     const onAnswer = vi.fn()
     render(

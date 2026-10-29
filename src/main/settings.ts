@@ -17,7 +17,6 @@ export interface StoredSettings {
   language: Lang
   theme: Theme
   notify: boolean
-  noteTtlDays: number
   model: StoredModel | null
   lastTaskId: string | null
 }
@@ -26,7 +25,6 @@ const DEFAULTS: StoredSettings = {
   language: 'en',
   theme: 'system',
   notify: true,
-  noteTtlDays: 0,
   model: null,
   lastTaskId: null,
 }
@@ -51,7 +49,6 @@ export class Settings {
       language: this.value.language,
       theme: this.value.theme,
       notify: this.value.notify,
-      noteTtlDays: this.value.noteTtlDays,
     }
   }
 
@@ -60,8 +57,6 @@ export class Settings {
     if (patch.theme === 'light' || patch.theme === 'dark' || patch.theme === 'system')
       this.value.theme = patch.theme
     if (typeof patch.notify === 'boolean') this.value.notify = patch.notify
-    if (typeof patch.noteTtlDays === 'number' && Number.isFinite(patch.noteTtlDays))
-      this.value.noteTtlDays = Math.max(0, Math.min(3650, Math.round(patch.noteTtlDays)))
     this.save()
   }
 
@@ -93,10 +88,6 @@ export class Settings {
         language: raw.language === 'zh' ? 'zh' : 'en',
         theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
         notify: raw.notify !== false,
-        noteTtlDays:
-          typeof raw.noteTtlDays === 'number' && raw.noteTtlDays >= 0 && raw.noteTtlDays <= 3650
-            ? Math.round(raw.noteTtlDays)
-            : 0,
         model,
         lastTaskId: typeof raw.lastTaskId === 'string' ? raw.lastTaskId : null,
       }

@@ -4,12 +4,16 @@
 
 1. **Read-only.** No product tool calls a mutating storage or cloud API.
    `call` (`s3/api.ts`) runs an operation only when its name starts with Get,
-   List, Head, Describe, Lookup, Search, Select or Simulate and it exists on a
-   bundled SDK client. `NEVER` refuses the reads that hand out credentials or
-   start state on the service (STS `GetSessionToken`, `GetFederationToken`,
-   `GetWebIdentityToken`; KMS `GetParametersForImport`). A refused call sends
-   nothing. There is no shell, raw HTTP proxy, write endpoint or apply action.
-   A change the agent writes is text for the user; the app never runs it.
+   List, Head, Describe, Lookup, Search, Select, Simulate, BatchGet, Query or
+   Scan and it exists on a bundled SDK client. `NEVER` refuses the reads that
+   hand out credentials or start state on the service (STS `GetSessionToken`,
+   `GetFederationToken`, `GetWebIdentityToken`; KMS `GetParametersForImport`).
+   Secret-store reads are refused too: Secrets Manager `GetSecretValue` and
+   `BatchGetSecretValue`, SSM `GetParameter`, `GetParameters`,
+   `GetParametersByPath` and `GetParameterHistory`. A refused call sends
+   nothing. There is no shell, raw HTTP proxy, write
+   endpoint or apply action. A change the agent writes is text for the user;
+   the app never runs it.
 2. **Scope.** An account may name a bucket allow-list. On a scoped account,
    `checkCall()` refuses an S3 or S3 Control call whose `Bucket` is outside it,
    from the `call` tool and from `query`'s `call()` alike. A plain bucket ARN
@@ -27,9 +31,12 @@
    profile account stores only the profile name; the AWS SDK resolves it from
    the user's `~/.aws` files at call time, and the app reads those files only
    for profile names.
-4. **Account ids.** `scrub()` (`s3/api.ts`) replaces every 12-digit number in
-   a value, keys included, with `<account>`. Every `call` response, every
-   `probe` answer and every value a `query` script returns is scrubbed, and
+4. **Account ids.** `scrub()` (`s3/api.ts`) replaces the caller's actual
+   12-digit account id and account fields (such as a policy principal) with
+   `<account>` and lets `redact()` handle the account in ARNs. It does not
+   rewrite every 12-digit number: a timestamp, an object key or a policy
+   condition is data. Every `call` response, every `probe`
+   answer and every value a `query` script returns is scrubbed, and
    `describeError()` scrubs every tool's error text. Where the agent writes
    `<account>` in an input, and for S3 Control's `AccountId`, `call` puts in
    the id STS `GetCallerIdentity` returns; it is used for that call only and
@@ -39,8 +46,8 @@
    tokens, secret JSON fields, the account in any ARN, signature query
    parameters, model API keys (`sk-…`) and shared-credentials lines. It runs
    before a value is stored, shown or sent to the model, including targets,
-   argument summaries, progress lines, notes and error text. Every string in a
-   tool view is redacted.
+   argument summaries, progress lines, memory text, method code and error
+   text. Every string in a tool view is redacted.
 6. **Envelope.** Every tool result the model sees is wrapped in
    `<untrusted-data source="storage" evidence="…">…</untrusted-data>`, with
    `<`, `>` and `&` escaped first, so no tag, policy, metadata value or error
@@ -52,33 +59,52 @@
    with client IPs masked at import. The agent reads it with `sql()`: one
    `SELECT` (or `WITH … SELECT`) on a read-only connection, no second
    statement and no `load_extension`.
-8. **Audit.** Every call through `agentTool()` writes
-   `audit(tool, target, outcome, conversation)`: `ok`, `refused`, `stopped` or
-   `error`. `ask` reads nothing and is not audited.
-9. **Status is structured.** `agentTool()` writes a call's status into
-   `details`; nothing parses result text, which a bucket name or an error body
-   could forge.
-10. **Code mode.** `query` scripts run in a QuickJS VM with no network,
-    filesystem, process, timers or modules, and no model access. The four
+8. **Memory is a separate database.** `memory.sqlite` holds only the agent's
+   documents. A `memory` query runs on a read-only connection with one
+   `SELECT`; it cannot see `storage-agent.db`, accounts, task metadata or vault
+   references. Memory values are redacted when written and are returned to the
+   model inside the untrusted envelope.
+9. **Agent-authored methods.** `tool` saves a JSON Schema and a JavaScript
+   body. The body runs in the same QuickJS sandbox as `query`: no network,
+   filesystem, process, timers or modules, and only the read-only primitives.
+   Arguments are checked against the schema before execution. The code is
+   redacted when stored. Task methods are purged with the task; user methods
+   are listed in Settings and can be deleted.
+10. **Views are data.** `render` validates a `ViewDoc` against
+    `shared/view.ts`: block types, depth, size, rows and nodes are bounded.
+    The document is never HTML or code. The window renders each block with
+    React and never evaluates it.
+11. **Delegation.** A child agent is a pi conversation owned by the task. It
+    inherits the same read-only tools, account scope and memory; it cannot
+    write. Its answer is returned to the parent as untrusted data. The child is
+    purged with the task.
+12. **Audit.** Every call through `agentTool()` writes
+    `audit(tool, target, outcome, conversation)`: `ok`, `refused`, `stopped` or
+    `error`. `ask` reads nothing and is not audited.
+13. **Status is structured.** `agentTool()` writes a call's status into
+    `details`; nothing parses result text, which a bucket name or an error body
+    could forge.
+14. **Code mode.** `query` scripts run in a QuickJS VM with no network,
+    filesystem, process, timers or modules, and no model access. Its
     primitives are `call()` (the same read check, scope and scrubbing as the
-    tool), `dataset()`, `inventory()` and `sql()`. A script runs until it
-    returns or the user stops it; its memory is 1,024 MB unless the agent sets
-    `memory_mb`.
-11. **Tools return data.** `call` returns the service's response or its
+    tool), `discover()`, `memory()`, `render()`, `dataset()`, `inventory()` and
+    `sql()`. A script runs until it returns or the user stops it; its memory is
+    1,024 MB unless the agent sets `memory_mb`.
+15. **Tools return data.** `call` returns the service's response or its
     error; `probe` returns what the endpoint answered. The app computes no
     exposure, no "public" and no authorization decision, and does not merge
     policies, ACLs, IAM and SCPs into a verdict. What a read could not reach is
     the agent's to say; the failed read stays visible as a step.
-12. **Export.** The JSON export holds the task, the projected conversation and
+16. **Export.** The JSON export holds the task, the projected conversation and
     usage. The Markdown export holds the messages, the agent's text and
     reasoning, and each call with what the agent received. PDF prints the
     window with every step open. All of them are written only through the
     user's save dialog, from values already redacted and scrubbed.
-13. **Dropped files.** The preload turns a dropped or pasted `File` into a path
+17. **Dropped files.** The preload turns a dropped or pasted `File` into a path
     with `webUtils.getPathForFile`, which yields nothing for a file the page
     constructed. The main process accepts only absolute paths to regular files
     up to 4 GiB, at most ten at a time.
-14. **Updates** come only from this repository's GitHub releases through
+18. **Updates** come only from this repository's GitHub releases through
     `electron-updater`, in packaged builds. A missing feed shows as
     unavailable in Settings.
 
@@ -93,9 +119,13 @@
   Logs and CSV files import row by row and the strings they store are capped.
   Inventory files stream to disk. A Parquet file is read whole into
   memory. Attachments are not malware-scanned.
-- **A hostile object body.** `GetObject` reads at most `max_bytes` (1 MiB
-  unless the agent asks for more) and closes the stream; bytes that are not
-  text come back as base64.
+- **A hostile object body.** A streamed `GetObject` body is written to the
+  task folder; the model gets a 64 KiB preview and a ref. `max_bytes` can stop
+  the stream earlier. The bytes are never executed, and `more` reads text by
+  offset. An event stream is read up to `max_bytes`.
+- **A hostile memory document or method.** Memory values are data; a method's
+  code runs only in the QuickJS sandbox with read-only primitives. Neither can
+  reach the host filesystem, network, process or vault.
 - **`probe`** sends one unsigned request, without credentials, only to the
   account's endpoint host or a host under it (on AWS, an S3 host).
 - **The renderer is sandboxed**: `contextIsolation`, sandbox, no
@@ -105,8 +135,6 @@
   prose is never parsed as product state. A citation link opens only a step
   the task holds. Links in model prose open in the system browser; the window
   never navigates to one.
-- **Notes are memory, not instructions.** A note is redacted when written and
-  reaches the prompt inside a `<memory>` block marked as data.
 - **The vault fallback is local.** Without an OS keyring, the AES key file and
   the database both live under the user profile. Copying the database without
   the key file protects the ciphertext; copying both does not.
@@ -126,8 +154,8 @@
 
 - A change the agent writes is text. A later read can show that a
   configuration changed; it cannot prove which command was run.
-- The app does not verify the agent's answer. The evidence is the steps in
-  the conversation.
+- The app does not verify the agent's answer. The evidence is the steps in the
+  conversation.
 - The app makes no authorization claim. IAM, Organizations, KMS and Access
   Analyzer responses come back as the APIs return them, one page per call
   where the API pages.

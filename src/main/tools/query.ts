@@ -18,12 +18,14 @@ import { DatabaseSync } from 'node:sqlite'
 import { pipeline } from 'node:stream/promises'
 import { CodemodeSandbox, type CodemodeTool } from '@earendil-works/pi-codemode'
 import type { Chart, Table } from '@shared/contract'
+import { viewDoc, viewText } from '@shared/view'
 import { type DatasetKind, preview, TABLES } from '../analysis/dataset'
 import { datasetBytes, importDataset, importInventoryFiles } from '../analysis/import'
 import type { ProviderConfig } from '../providers'
-import { type CallInput, callApi, scrub } from '../s3/api'
-import { redact } from '../security/redact'
+import { type CallInput, callApi, operationsOf, SERVICES, scrub } from '../s3/api'
+import { redact, redactView } from '../security/redact'
 import { assertInScope } from '../security/scope'
+import { checkSql } from '../sql'
 import { agentTool, providerParam, type ToolDeps, Type } from './policy'
 
 /**
@@ -34,9 +36,12 @@ export const SANDBOX = { memoryMb: 1024, viewRows: 10_000 }
 
 /** The primitives as the model sees them, in the tool description. */
 export const QUERY_API = `Primitives (all read-only, all async):
-  call({service, operation, input?, region?, maxBytes?}): the service's response   // any read the call tool makes, with the same rules
+  call({service, operation, input?, region?}): the service's response   // any read the call tool makes, with the same rules
+  discover({kind?: "aws"|"tools", service?, operation?}): the capability graph
   dataset({file, kind?: "access_log"|"inventory"}): {file, kind, rows, columns}   // import one attached access log or inventory into a local SQLite table named "rows"
   inventory({bucket}): {file, rows, columns, manifestAt}   // import every file of the bucket's latest S3 Inventory manifest into a local dataset
+  memory({action, ...}): read or write durable JSON memory
+  render({title?, doc}): return a ViewDoc for the window to render
   sql({file, sql, params?}): row[]   // one read-only SELECT (or WITH … SELECT) over a dataset's "rows" table
 Call them as tools.call({...}) etc. Return an array of flat rows (objects with string/number/boolean values), or {rows, chart: {label: "<column>", value: "<numeric column>"}}. text("…") adds a line of output.`
 
@@ -95,14 +100,7 @@ export function toTable(value: unknown): { table: Table; chart: Chart | null } {
  * One statement that starts by reading. The dataset opens read-only, so a write
  * cannot happen whatever the text says; this keeps a script to one query.
  */
-export function checkSql(sql: string): void {
-  const text = sql.trim().replace(/;\s*$/, '')
-  if (!/^(select|with)\b/i.test(text)) throw new Error('sql must be one SELECT (or WITH … SELECT).')
-  if (text.includes(';')) throw new Error('sql must be one statement.')
-  if (/\bload_extension\b/i.test(text)) throw new Error('sql may not load extensions.')
-}
-
-interface Context {
+export interface SandboxContext {
   conversationId: string
   deps: ToolDeps
   config: ProviderConfig
@@ -113,18 +111,26 @@ interface Context {
 }
 
 /** The datasets of this task, by the name a script imported them under. */
-async function knownDatasets(ctx: Context) {
+async function knownDatasets(ctx: SandboxContext) {
   const rows = await ctx.deps.db.listDatasets(ctx.conversationId)
   return rows
 }
 
-function primitives(ctx: Context): CodemodeTool[] {
+export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
   const { deps, config } = ctx
   const call = (input: CallInput) => {
     ctx.calls.count += 1
     const bucket = (input.input as { Bucket?: unknown } | undefined)?.Bucket
     if (typeof bucket === 'string') ctx.touched.add(bucket)
-    return callApi({ providers: deps.providers, config, signal: ctx.signal }, input)
+    return callApi(
+      {
+        providers: deps.providers,
+        config,
+        signal: ctx.signal,
+        bodyDir: deps.taskDir(ctx.conversationId),
+      },
+      input,
+    )
   }
   const register = async (
     name: string,
@@ -156,7 +162,112 @@ function primitives(ctx: Context): CodemodeTool[] {
           input: (a.input ?? {}) as Record<string, unknown>,
           ...(typeof a.region === 'string' ? { region: a.region } : {}),
           ...(typeof a.maxBytes === 'number' ? { maxBytes: a.maxBytes } : {}),
+          ...(typeof a.fullBody === 'boolean' ? { fullBody: a.fullBody } : {}),
         })
+      },
+    },
+    {
+      name: 'discover',
+      description: 'The environment capability graph: AWS reads or the tools available here.',
+      execute: async (args) => {
+        const a = (args ?? {}) as Record<string, unknown>
+        if (a.kind === 'tools') {
+          const saved = await deps.db.listAgentTools(ctx.conversationId)
+          return {
+            tools: [
+              'call',
+              'query',
+              'probe',
+              'more',
+              'ask',
+              'discover',
+              'render',
+              'memory',
+              'tool',
+              'delegate',
+              ...saved.map((row) => row.name),
+            ],
+          }
+        }
+        const service = typeof a.service === 'string' ? a.service.toLowerCase() : ''
+        if (!service) return { services: SERVICES }
+        if (!SERVICES.includes(service))
+          throw new Error(
+            `Service '${service}' is not available. Available: ${SERVICES.join(', ')}.`,
+          )
+        const operations = operationsOf(service)
+        if (typeof a.operation === 'string' && !operations.includes(a.operation))
+          throw new Error(`${service} has no read operation '${a.operation}'.`)
+        return { service, operations }
+      },
+    },
+    {
+      name: 'memory',
+      description: 'Read or write durable JSON memory.',
+      execute: async (args) => {
+        const a = (args ?? {}) as Record<string, unknown>
+        const memory = deps.memory
+        if (!memory) throw new Error('Memory is not available in this build.')
+        const scope = a.scope === 'task' ? 'task' : 'user'
+        const conversationId = scope === 'task' ? ctx.conversationId : null
+        if (a.action === 'put') {
+          const key = String(a.key ?? '')
+          if (!key) throw new Error('memory put needs a key.')
+          return memory.put({
+            key,
+            value: redactView(a.value ?? null),
+            ...(typeof a.text === 'string' ? { text: redact(a.text) } : {}),
+            ...(Array.isArray(a.tags)
+              ? {
+                  tags: a.tags
+                    .filter((tag): tag is string => typeof tag === 'string')
+                    .map((tag) => redact(tag)),
+                }
+              : {}),
+            scope,
+            conversationId,
+          })
+        }
+        if (a.action === 'get') {
+          const key = String(a.key ?? '')
+          const doc = memory.get(key, scope, conversationId)
+          if (!doc) throw new Error(`No memory document '${key}'.`)
+          return doc
+        }
+        if (a.action === 'list')
+          return memory.list({
+            scope,
+            conversationId,
+            ...(typeof a.prefix === 'string' ? { prefix: a.prefix } : {}),
+            ...(typeof a.tag === 'string' ? { tag: a.tag } : {}),
+            limit: 100,
+          })
+        if (a.action === 'query')
+          return memory.query(
+            String(a.sql ?? ''),
+            Array.isArray(a.params) ? (a.params as (string | number | null)[]) : [],
+          )
+        if (a.action === 'delete') {
+          if (typeof a.id === 'string') {
+            memory.delete(a.id)
+            return { deleted: a.id }
+          }
+          const key = String(a.key ?? '')
+          if (!key) throw new Error('memory delete needs a key or id.')
+          memory.deleteByKey(key, scope, conversationId)
+          return { deleted: key }
+        }
+        throw new Error(`Unknown memory action '${String(a.action)}'.`)
+      },
+    },
+    {
+      name: 'render',
+      description: 'Validate a ViewDoc and return it for the window to render.',
+      execute: async (args) => {
+        const a = (args ?? {}) as Record<string, unknown>
+        const doc = viewDoc(a.doc)
+        if (!doc) throw new Error('render doc is not a valid ViewDoc.')
+        return doc
       },
     },
     {
@@ -253,7 +364,7 @@ function primitives(ctx: Context): CodemodeTool[] {
           service: 's3',
           operation: 'GetObject',
           input: { Bucket: target, Key: latest.Key },
-          maxBytes: Number.MAX_SAFE_INTEGER,
+          fullBody: true,
         })) as { Body?: { text?: string } }
         const manifest = JSON.parse(manifestBody.Body?.text ?? '{}') as {
           creationTimestamp?: string
@@ -349,7 +460,7 @@ export function queryTool(deps: ToolDeps) {
       const calls = { count: 0 }
       const touched = new Set<string>()
       const sandbox = new CodemodeSandbox({
-        tools: primitives({
+        tools: sandboxPrimitives({
           deps,
           config,
           signal: run.signal,
@@ -381,6 +492,17 @@ export function queryTool(deps: ToolDeps) {
             : `${result.error.name ?? 'Error'}: ${result.error.message}`
         throw new Error(`${reason}${output ? `\nOutput before it failed:\n${output}` : ''}`)
       }
+      const rendered = viewDoc(result.value)
+      if (rendered)
+        return {
+          model: viewText(rendered),
+          note: `${rendered.blocks.length} view block(s)`,
+          view: {
+            kind: 'render' as const,
+            title: args.title ?? 'View',
+            doc: rendered,
+          },
+        }
       const { table, chart } = toTable(result.value)
       const text = [
         table.columns.join('\t'),

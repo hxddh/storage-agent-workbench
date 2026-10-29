@@ -95,7 +95,7 @@ it check, download and restart; there is no automated upgrade test.
 
 ## Version
 
-The version is the `package.json` version, **37.0.0**, and the tag is
+The version is the `package.json` version, **38.0.0**, and the tag is
 `v<version>`. Published tags are immutable; a correction is a new patch
 release. Settings shows the installed version and the update state. Keep
 `README.md` and `docs/screenshot.png` in step with the surface when tagging.
