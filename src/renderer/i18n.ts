@@ -80,7 +80,7 @@ const en = {
   noteTtl: 'Hide notes after',
   noteTtlNever: 'Never',
   noteTtlDays: '{n} days',
-  noteTtlHint: 'Older notes stay in the local database but leave this list. 0 keeps every note.',
+  noteTtlHint: 'Older notes leave this list and the agent’s memory. 0 keeps every note.',
   exportEvidence: 'Export sources',
   savePdf: 'Save PDF',
   fetchModels: 'Fetch models',
@@ -97,16 +97,6 @@ const en = {
   homeNoEstate: 'No account yet. Add one, then ask.',
   homeNoModel: 'The agent needs a model to read your storage. Set one up and add an account.',
   scopeHint: 'Comma-separated bucket names. Empty means every bucket the credentials can see.',
-  providerKind: 'Provider',
-  providerKindHint:
-    'Auto reads the endpoint. The provider decides which account, IAM, KMS, CloudTrail and inventory reads exist.',
-  kind_auto: 'Auto',
-  kind_aws: 'AWS S3',
-  kind_r2: 'Cloudflare R2',
-  kind_minio: 'MinIO',
-  kind_aliyun: 'Aliyun OSS',
-  kind_gcs: 'GCS interop',
-  kind_other: 'S3-compatible',
   allBuckets: 'All buckets',
   language: 'Language',
   theme: 'Theme',
@@ -140,7 +130,6 @@ const en = {
   daysAgo: '{n}d ago',
   memory: 'Memory',
   noMemory: 'Nothing remembered yet.',
-  memoryLimit: 'Showing the 100 most recent notes; older notes stay in the local database.',
   forget: 'Forget',
   rows: 'rows',
   copyAnswer: 'Copy answer',
@@ -150,7 +139,6 @@ const en = {
   noticeStopped: 'Stopped. What was read is kept.',
   noticeNoAnswer: 'The agent stopped without replying.',
   noticeFailed: 'The agent hit an error.',
-  noticeBudget: 'The turn reached 100 rounds of tool calls and stopped calling tools.',
   noticeCut: 'The reply reached the model’s output limit and is cut off here.',
   tokens: '{n} tokens',
   auth: 'Credentials',
@@ -186,7 +174,6 @@ const en = {
   runWorkDone: 'Done',
   runWorkFailed: 'Failed',
   runWorkStopped: 'Stopped',
-  runWorkTimeout: 'Timed out',
   runWorkRefused: 'Outside scope',
   runThought: 'Thought',
   runWorkCompacted: 'Earlier steps were compacted',
@@ -273,7 +260,7 @@ const zh: typeof en = {
   noteTtl: '隐藏笔记于',
   noteTtlNever: '永不',
   noteTtlDays: '{n} 天',
-  noteTtlHint: '更早的笔记仍保存在本地数据库，但不再显示。0 表示保留全部笔记。',
+  noteTtlHint: '更早的笔记会从这里和 agent 的记忆中移除。0 表示保留全部笔记。',
   exportEvidence: '导出来源',
   savePdf: '保存 PDF',
   fetchModels: '获取模型',
@@ -290,15 +277,6 @@ const zh: typeof en = {
   homeNoEstate: '还没有账号。添加一个，再提问。',
   homeNoModel: 'Agent 需要一个模型才能读取存储。先配置模型，再添加账号。',
   scopeHint: '用逗号分隔桶名。留空表示凭据能看到的全部桶。',
-  providerKind: '提供方',
-  providerKindHint: '自动会读取接入点。提供方决定哪些账号、IAM、KMS、CloudTrail 和清单读取可用。',
-  kind_auto: '自动',
-  kind_aws: 'AWS S3',
-  kind_r2: 'Cloudflare R2',
-  kind_minio: 'MinIO',
-  kind_aliyun: '阿里云 OSS',
-  kind_gcs: 'GCS 互操作',
-  kind_other: 'S3 兼容',
   allBuckets: '全部桶',
   language: '语言',
   theme: '主题',
@@ -332,7 +310,6 @@ const zh: typeof en = {
   daysAgo: '{n} 天前',
   memory: '记忆',
   noMemory: '还没有记住任何内容。',
-  memoryLimit: '只显示最近 100 条笔记；更早的笔记仍保存在本地数据库。',
   forget: '忘记',
   rows: '行',
   copyAnswer: '复制答案',
@@ -342,7 +319,6 @@ const zh: typeof en = {
   noticeStopped: '已停止。已读取的内容会保留。',
   noticeNoAnswer: 'Agent 停下了，没有回复。',
   noticeFailed: 'Agent 出错了。',
-  noticeBudget: '本轮已进行 100 轮工具调用，之后的调用不再执行。',
   noticeCut: '回复达到了模型的输出上限，在此处被截断。',
   tokens: '{n} tokens',
   auth: '凭据',
@@ -378,7 +354,6 @@ const zh: typeof en = {
   runWorkDone: '已完成',
   runWorkFailed: '失败',
   runWorkStopped: '已停止',
-  runWorkTimeout: '已超时',
   runWorkRefused: '超出范围',
   runThought: '已思考',
   runWorkCompacted: '较早的步骤已压缩',
@@ -395,20 +370,6 @@ export function dict(lang: Lang): Dict {
 }
 
 /** The provider kind as the window names it. */
-export function kindName(t: Dict, kind: string): string {
-  return kind === 'aws'
-    ? t.kind_aws
-    : kind === 'r2'
-      ? t.kind_r2
-      : kind === 'minio'
-        ? t.kind_minio
-        : kind === 'aliyun'
-          ? t.kind_aliyun
-          : kind === 'gcs'
-            ? t.kind_gcs
-            : t.kind_other
-}
-
 export function fill(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''))
 }
@@ -420,16 +381,6 @@ const TOOL_EN: Record<string, string> = {
   more: 'Read more of a result',
   note: 'Updated memory',
   ask: 'Asked a question',
-  // Tools of earlier versions, for the calls in older tasks.
-  buckets: 'Listed buckets',
-  objects: 'Listed objects',
-  object: 'Inspected object',
-  config: 'Read configuration',
-  account: 'Read account settings',
-  survey: 'Read account',
-  estate: 'Recalled memory',
-  change_plan: 'Prepared a change plan',
-  accept_risk: 'Asked to accept a risk',
 }
 
 const TOOL_ZH: Record<string, string> = {
@@ -439,16 +390,6 @@ const TOOL_ZH: Record<string, string> = {
   more: '继续读取结果',
   note: '更新记忆',
   ask: '提出问题',
-  // 早期版本的工具，用于旧任务里的调用。
-  buckets: '列出存储桶',
-  objects: '列出对象',
-  object: '查看对象',
-  config: '读取配置',
-  account: '读取账号设置',
-  survey: '读取账号',
-  estate: '读取记忆',
-  change_plan: '生成变更计划',
-  accept_risk: '请求接受风险',
 }
 
 export function toolLabel(name: string, lang: Lang): string {

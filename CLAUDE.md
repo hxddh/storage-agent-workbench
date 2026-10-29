@@ -3,8 +3,7 @@
 > Implementation contract for **Storage Agent 37.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md`,
 > `docs/data-model.md` and, for anything in the window, `docs/design.md` before
-> changing product structure. The code and its tests are authoritative; release
-> notes and the changelog are history.
+> changing product structure. The code and its tests are authoritative.
 
 ## The product
 
@@ -16,7 +15,7 @@ message and the agent's work on it.
 > The agent reads, judges and says what it found; the application gives it
 > read-only tools that return what the storage APIs return, enforces the safety
 > boundaries and shows each call where it happened. The app decides nothing
-> about the storage: no rules, no findings, no Issues, no verdict, no report.
+> about the storage: no rules, no findings, no verdict, no report.
 
 ## Non-negotiables
 
@@ -26,8 +25,9 @@ message and the agent's work on it.
 2. Secrets never reach SQLite in the clear, a model prompt, a log or the window.
    `security/vault.ts` is the only place that opens one. A profile account
    stores a profile name, never a key.
-3. A provider's `scope.buckets` is enforced by `assertInScope` before any bucket
-   call. `@` focus is not authorization.
+3. A provider's `scope.buckets` is enforced before any bucket call (`checkCall`
+   in `s3/api.ts`; `assertInScope` for the inventory a script imports); a
+   scoped listing shows only the scoped buckets. `@` focus is not authorization.
 4. Tool output reaches the model inside `<untrusted-data>`, through `redact()`;
    `details` reaching the window are already shaped. Status comes from
    `details.status`, never from result text. A result longer than one piece
@@ -42,7 +42,8 @@ message and the agent's work on it.
    Lookup, Search, Select, Simulate), minus the few that hand out credentials;
    no list of sections, reads or checks stands between the agent and the API.
    A custom-endpoint account answers every service at its own endpoint, its
-   credentials never sent to AWS; nothing is skipped by provider kind.
+   credentials never sent to AWS. An account is its endpoint, region,
+   credentials and scope; the app does not classify providers.
 7. Account ids never reach the model, the window, a log or SQLite. Every
    response and every tool's error text pass through `scrub()`, which replaces
    each 12-digit number with `<account>`; `redact()` masks the account in any
@@ -51,7 +52,7 @@ message and the agent's work on it.
    only.
 8. The conversation shows what happened, in order: the user's messages, the
    agent's text, provider reasoning as returned in full, and every tool call —
-   blocked ones and calls to tools of earlier versions too — with its shaped
+   failed and refused ones, and calls to a tool that does not exist — with its shaped
    result and exactly what the agent received. A tool's `model` text carries
    what its view shows; when the agent got only the first piece, the step says
    so. The app never writes into the agent's answer, rewrites it, corrects it or
@@ -118,7 +119,7 @@ plan and writes any change in its own words. A new storage tool must say why
 `call` or `query` cannot do the job; a new service is a new SDK client in
 `s3/api.ts`, not a new tool.
 
-Prompt sections: identity, time, policy (the hard rules and the ceiling),
+Prompt sections: identity, time, policy (the hard rules),
 compose, memory digest, language. The digest names the accounts (their ids are
 tool arguments) and every note with its id and author. The model may link a call as
 `[1](#ev-<id>)`; a link opens that call in place. Provider reasoning is shown
@@ -128,24 +129,22 @@ in full, as returned.
 
 Host tables in `storage-agent.db`: `providers`, `notes`, `audit`, `task_meta`,
 `datasets`, `search_docs` (+ FTS5 trigram). pi's tables are prefixed `pi_`.
-Schema changes are append-only migrations in `db.ts` gated by `user_version`
-(head **16**; 16 dropped the rule engine's `issues`, `issue_events`,
-`readings`, `posture_changes` and `buckets`, and the providers' `schedule`,
-`account_json` and `account_at`). Entry kinds and payloads are in
-`docs/data-model.md` (`sa.run`, `sa.steer`, `sa.resume`, `sa.notice`; 35.x
-`sa.call`/`sa.answer` still read as calls and text). Deleting a task purges its
-pi rows, host task rows, datasets, audit rows and `tasks/<conversation>/` (with
-the results kept for `more`). 37.0 changes no table.
+`db.ts` holds one schema at `user_version` **17**. A database at any other
+version is cleared and created again, pi's tables and `tasks/` with it: the app
+carries nothing from an earlier layout, and no code reads one. A note is text,
+its author and its time. Entry kinds and payloads are in `docs/data-model.md`
+(`sa.run`, `sa.steer`, `sa.resume`, `sa.notice`). Deleting a task purges its pi
+rows, host task rows, datasets, audit rows and `tasks/<conversation>/` (with the
+results kept for `more`).
 
 ## Window
 
 `Sidebar · conversation · Composer`, plus a full-screen Settings sheet. The
 conversation (messages, inline steps, what each call returned, clarify,
 notices, Stop/Continue/Retry) and the keyboard map are specified in
-`docs/design.md`. A `call` or `probe` step opens as the response's JSON. There
-are no evidence strips, scope line, earlier-runs fold or
-"worked for" summary, and Home lists accounts without saying anything about
-them. Design tokens live in `src/renderer/styles.css`; never use a raw colour in
+`docs/design.md`. A `call` or `probe` step opens as the response's JSON. The
+window adds nothing of its own to the conversation, and Home lists accounts
+without saying anything about them. Design tokens live in `src/renderer/styles.css`; never use a raw colour in
 a component. `npm run contrast` guards secondary text. English by default;
 Chinese copy is written, not translated word by word.
 

@@ -12,11 +12,9 @@ export function noticeText(notice: NoticeFact, t: Dict): string {
         ? t.noticeNoAnswer
         : notice.code === 'failed'
           ? t.noticeFailed
-          : notice.code === 'budget'
-            ? t.noticeBudget
-            : notice.code === 'cut'
-              ? t.noticeCut
-              : ''
+          : notice.code === 'cut'
+            ? t.noticeCut
+            : ''
   if (!base) return notice.text
   return notice.text && notice.code !== 'stopped' ? `${base} ${notice.text}` : base
 }

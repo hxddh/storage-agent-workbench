@@ -214,7 +214,7 @@ async function readTrace() {
       title: text(row.querySelector('.step-title')),
       target: text(row.querySelector('.step-target')),
       status:
-        ['done', 'failed', 'stopped', 'timeout', 'refused', 'running'].find((name) =>
+        ['done', 'failed', 'stopped', 'refused', 'running'].find((name) =>
           row.classList.contains(name),
         ) ?? '',
     }))

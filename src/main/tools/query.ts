@@ -21,7 +21,7 @@ import type { Chart, Table } from '@shared/contract'
 import { type DatasetKind, preview, TABLES } from '../analysis/dataset'
 import { datasetBytes, importDataset, importInventoryFiles } from '../analysis/import'
 import type { ProviderConfig } from '../providers'
-import { type CallInput, callApi } from '../s3/api'
+import { type CallInput, callApi, scrub } from '../s3/api'
 import { redact } from '../security/redact'
 import { assertInScope } from '../security/scope'
 import { agentTool, providerParam, type ToolDeps, Type } from './policy'
@@ -44,9 +44,9 @@ function cell(value: unknown): string | number | null {
   if (value === null || value === undefined) return null
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
   if (typeof value === 'bigint') return Number(value)
-  if (typeof value === 'string') return redact(value)
+  if (typeof value === 'string') return redact(scrub(value) as string)
   if (typeof value === 'boolean') return value ? 'true' : 'false'
-  return redact(JSON.stringify(value))
+  return redact(JSON.stringify(scrub(value)))
 }
 
 /** The script's value as a table and an optional bar chart. */

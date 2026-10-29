@@ -79,7 +79,6 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     const providers = new Providers(db, vault)
     await providers.save({
       name: 'moto',
-      kind: 'aws',
       endpoint: endpoint!,
       region: 'us-east-1',
       forcePathStyle: true,

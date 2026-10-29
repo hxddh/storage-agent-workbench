@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
-import { detectProviderKind } from './s3/capabilities'
-
-export const HOST_SCHEMA_VERSION = 16
+/**
+ * The schema this version writes. A database at any other version is cleared
+ * and created again: the app carries nothing from an earlier layout.
+ */
+export const HOST_SCHEMA_VERSION = 17
 
 export interface ProviderRow {
   id: string
   name: string
-  kind: string
   endpoint: string
   region: string
   force_path_style: number
@@ -22,8 +23,6 @@ export interface ProviderRow {
 
 export interface NoteRecord {
   id: string
-  scope: 'estate' | 'provider' | 'bucket'
-  ref: string | null
   text: string
   author: 'agent' | 'user'
   created_at: string
@@ -43,7 +42,6 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS providers (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  kind TEXT NOT NULL DEFAULT 'aws',
   endpoint TEXT NOT NULL,
   region TEXT NOT NULL,
   force_path_style INTEGER NOT NULL DEFAULT 0,
@@ -51,13 +49,13 @@ CREATE TABLE IF NOT EXISTS providers (
   secret_ref TEXT NOT NULL,
   session_ref TEXT,
   scope_json TEXT NOT NULL DEFAULT '{"buckets":[]}',
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  auth TEXT NOT NULL DEFAULT 'keys',
+  profile TEXT
 );
 
 CREATE TABLE IF NOT EXISTS notes (
   id TEXT PRIMARY KEY,
-  scope TEXT NOT NULL,
-  ref TEXT,
   text TEXT NOT NULL,
   author TEXT NOT NULL,
   created_at TEXT NOT NULL
@@ -77,7 +75,8 @@ CREATE TABLE IF NOT EXISTS task_meta (
   title TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  pinned INTEGER NOT NULL DEFAULT 0
+  pinned INTEGER NOT NULL DEFAULT 0,
+  model_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS datasets (
@@ -90,7 +89,7 @@ CREATE TABLE IF NOT EXISTS datasets (
   created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS notes_scope ON notes (scope, ref, created_at);
+CREATE INDEX IF NOT EXISTS notes_created ON notes (created_at);
 CREATE INDEX IF NOT EXISTS datasets_conversation ON datasets (conversation_id);
 
 CREATE TABLE IF NOT EXISTS search_docs (
@@ -115,157 +114,34 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_docs_fts USING fts5(
 `
 
 export class AppDb {
-  /** Migration 15 cleared the task history; the shell clears `tasks/` on disk too. */
+  /** The database was cleared on open; the shell clears `tasks/` on disk too. */
   resetTasks = false
 
   constructor(readonly raw: NodeSqliteDatabase) {}
 
   static async open(raw: NodeSqliteDatabase): Promise<AppDb> {
     await raw.exec('PRAGMA journal_mode = WAL')
+    const row = await raw.get<{ user_version: number }>('PRAGMA user_version')
+    const tables = await raw.all<{ name: string; type: string }>(
+      "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
+    )
+    const reset = tables.length > 0 && (row?.user_version ?? 0) !== HOST_SCHEMA_VERSION
+    if (reset) {
+      await raw.exec('PRAGMA foreign_keys = OFF')
+      // Shadow tables of an FTS table go with it; drop the virtual tables first.
+      for (const item of tables.filter((t) => t.name.endsWith('_fts')))
+        await raw.exec(`DROP TABLE IF EXISTS "${item.name}"`)
+      const left = await raw.all<{ name: string; type: string }>(
+        "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
+      )
+      for (const item of left)
+        await raw.exec(`DROP ${item.type.toUpperCase()} IF EXISTS "${item.name}"`)
+    }
     await raw.exec('PRAGMA foreign_keys = ON')
     await raw.exec(SCHEMA)
-    const row = await raw.get<{ user_version: number }>('PRAGMA user_version')
-    const version = row?.user_version ?? 0
-    if (version < 3) {
-      await raw.exec('DROP TABLE IF EXISTS watch')
-      const columns = await raw.all<{ name: string }>('PRAGMA table_info(task_meta)')
-      if (columns.some((column) => column.name === 'origin')) {
-        await raw.exec('ALTER TABLE task_meta DROP COLUMN origin')
-      }
-    }
-    if (version < 4) {
-      // 18.0: account auth kinds, bucket region and disappearance, Issue evidence
-      // and the user-owned accepted state.
-      const add = async (table: string, column: string, ddl: string) => {
-        const columns = await raw.all<{ name: string }>(`PRAGMA table_info(${table})`)
-        // A table a later version dropped is not created again to be altered.
-        if (columns.length && !columns.some((c) => c.name === column))
-          await raw.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
-      }
-      await add('providers', 'auth', "auth TEXT NOT NULL DEFAULT 'keys'")
-      await add('providers', 'profile', 'profile TEXT')
-      await add('buckets', 'region', 'region TEXT')
-      await add('buckets', 'gone_at', 'gone_at TEXT')
-      await add('issues', 'detail', 'detail TEXT')
-      await add('issues', 'accepted_at', 'accepted_at TEXT')
-    }
-    if (version < 5) {
-      // 19.0: the account-wide posture (statuses and booleans, never the account id).
-      const columns = await raw.all<{ name: string }>('PRAGMA table_info(providers)')
-      if (!columns.some((c) => c.name === 'account_json'))
-        await raw.exec('ALTER TABLE providers ADD COLUMN account_json TEXT')
-      if (!columns.some((c) => c.name === 'account_at'))
-        await raw.exec('ALTER TABLE providers ADD COLUMN account_at TEXT')
-    }
-    if (version < 6) {
-      // 20.0: search rows gained the source entry id, and old tasks need the
-      // current finding/verdict projection. Clearing rebuilds every task once.
-      await raw.exec('DELETE FROM search_docs')
-    }
-    if (version < 7) {
-      const columns = await raw.all<{ name: string }>('PRAGMA table_info(providers)')
-      if (!columns.some((column) => column.name === 'kind'))
-        await raw.exec("ALTER TABLE providers ADD COLUMN kind TEXT NOT NULL DEFAULT 'aws'")
-    }
-    if (version < 8) {
-      const columns = await raw.all<{ name: string }>('PRAGMA table_info(task_meta)')
-      if (!columns.some((column) => column.name === 'pinned'))
-        await raw.exec('ALTER TABLE task_meta ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
-    }
-    if (version < 9) {
-      await raw.exec(`CREATE TABLE IF NOT EXISTS posture_changes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        provider_id TEXT NOT NULL,
-        bucket TEXT NOT NULL,
-        at TEXT NOT NULL,
-        changes_json TEXT NOT NULL
-      )`)
-    }
-    if (version < 10) {
-      // 21.0: v7 added `kind` with an AWS default, which mislabelled every
-      // existing R2/MinIO/Aliyun/other endpoint as AWS during an upgrade.
-      // Endpoints are the only evidence those rows carry; infer once, without
-      // touching real AWS endpoints (empty or *.amazonaws.com).
-      const rows = await raw.all<{ id: string; endpoint: string; kind: string }>(
-        'SELECT id, endpoint, kind FROM providers',
-      )
-      for (const row of rows) {
-        if (row.kind !== 'aws' || !row.endpoint) continue
-        const lower = row.endpoint.toLowerCase()
-        const inferred = lower.includes('amazonaws.com') ? 'aws' : detectProviderKind(row.endpoint)
-        if (inferred !== row.kind)
-          await raw.run('UPDATE providers SET kind = ? WHERE id = ?', inferred, row.id)
-      }
-    }
-    if (version < 13) {
-      const columns = await raw.all<{ name: string }>('PRAGMA table_info(providers)')
-      if (!columns.some((column) => column.name === 'schedule'))
-        await raw.exec("ALTER TABLE providers ADD COLUMN schedule TEXT NOT NULL DEFAULT 'off'")
-    }
-    if (version < 12) {
-      // 29.0: FTS5 trigram gives ranked substring search without changing the
-      // durable search_docs rows. Rebuild once for existing tasks.
-      await raw.exec('DELETE FROM search_docs_fts')
-      const rows = await raw.all<{
-        conversation_id: string
-        entry_id: string
-        kind: string
-        text: string
-        at: string
-      }>('SELECT conversation_id, entry_id, kind, text, at FROM search_docs')
-      for (const row of rows)
-        await raw.run(
-          'INSERT INTO search_docs_fts (conversation_id, entry_id, kind, text, at) VALUES (?, ?, ?, ?, ?)',
-          row.conversation_id,
-          row.entry_id,
-          row.kind,
-          row.text,
-          row.at,
-        )
-    }
-    if (version < 14) {
-      // 34.0: one task may run with a model other than the Settings default.
-      const columns = await raw.all<{ name: string }>('PRAGMA table_info(task_meta)')
-      if (!columns.some((column) => column.name === 'model_json'))
-        await raw.exec('ALTER TABLE task_meta ADD COLUMN model_json TEXT')
-    }
-    let resetTasks = false
-    if (version >= 1 && version < 15) {
-      // 35.0: one engine and one entry model. Tasks written by earlier
-      // versions use entry kinds 35 does not read, so the task history starts
-      // over. Accounts, remembered posture, Issues and their history, notes and
-      // reading records stay; their links to old tasks become null.
-      const pi = await raw.all<{ name: string; type: string }>(
-        "SELECT name, type FROM sqlite_master WHERE name LIKE 'pi\\_%' ESCAPE '\\' AND type IN ('table', 'view')",
-      )
-      await raw.exec('PRAGMA foreign_keys = OFF')
-      for (const item of pi)
-        await raw.exec(`DROP ${item.type.toUpperCase()} IF EXISTS "${item.name}"`)
-      await raw.exec('PRAGMA foreign_keys = ON')
-      await raw.exec('DELETE FROM task_meta')
-      await raw.exec('DELETE FROM search_docs')
-      await raw.exec('DELETE FROM search_docs_fts')
-      await raw.exec('DELETE FROM datasets')
-      await raw.exec('DELETE FROM audit')
-      resetTasks = true
-    }
-    if (version < 16) {
-      // 36.0: the agent judges; the app keeps no verdicts of its own. The rule
-      // engine's Issues and their events, the remembered posture, its diffs and
-      // the reading records are dropped, with the provider columns only they
-      // and the removed scheduled checks used. Accounts, notes and tasks stay.
-      for (const table of ['issue_events', 'issues', 'readings', 'posture_changes', 'buckets'])
-        await raw.exec(`DROP TABLE IF EXISTS ${table}`)
-      const columns = await raw.all<{ name: string }>('PRAGMA table_info(providers)')
-      for (const column of ['account_json', 'account_at', 'schedule'])
-        if (columns.some((c) => c.name === column))
-          await raw.exec(`ALTER TABLE providers DROP COLUMN ${column}`)
-    }
-    if (version < HOST_SCHEMA_VERSION) {
-      await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
-    }
+    await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
     const db = new AppDb(raw)
-    db.resetTasks = resetTasks
+    db.resetTasks = reset
     return db
   }
 
@@ -281,17 +157,16 @@ export class AppDb {
 
   async upsertProvider(row: ProviderRow): Promise<void> {
     await this.raw.run(
-      `INSERT INTO providers (id, name, kind, endpoint, region, force_path_style, access_key_id,
+      `INSERT INTO providers (id, name, endpoint, region, force_path_style, access_key_id,
          secret_ref, session_ref, scope_json, created_at, auth, profile)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-         name = excluded.name, kind = excluded.kind, endpoint = excluded.endpoint, region = excluded.region,
+         name = excluded.name, endpoint = excluded.endpoint, region = excluded.region,
          force_path_style = excluded.force_path_style, access_key_id = excluded.access_key_id,
          secret_ref = excluded.secret_ref, session_ref = excluded.session_ref,
          scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile`,
       row.id,
       row.name,
-      row.kind,
       row.endpoint,
       row.region,
       row.force_path_style,
@@ -307,23 +182,10 @@ export class AppDb {
 
   async deleteProvider(id: string): Promise<void> {
     await this.raw.run('DELETE FROM providers WHERE id = ?', id)
-    // Provider and bucket notes carry the provider id in `ref`. Remove them
-    // with the account; an account-scoped memory cannot outlive its account.
-    await this.raw.run('DELETE FROM notes WHERE ref = ? OR ref LIKE ?', id, `${id}/%`)
   }
 
   async deleteNote(id: string): Promise<void> {
     await this.raw.run('DELETE FROM notes WHERE id = ?', id)
-  }
-
-  async countNotes(author?: 'agent' | 'user'): Promise<number> {
-    const row = author
-      ? await this.raw.get<{ n: number }>(
-          'SELECT count(*) AS n FROM notes WHERE author = ?',
-          author,
-        )
-      : await this.raw.get<{ n: number }>('SELECT count(*) AS n FROM notes')
-    return row?.n ?? 0
   }
 
   // -- notes ----------------------------------------------------------------
@@ -335,10 +197,8 @@ export class AppDb {
       created_at: new Date().toISOString(),
     }
     await this.raw.run(
-      'INSERT INTO notes (id, scope, ref, text, author, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO notes (id, text, author, created_at) VALUES (?, ?, ?, ?)',
       record.id,
-      record.scope,
-      record.ref,
       record.text,
       record.author,
       record.created_at,
@@ -346,35 +206,9 @@ export class AppDb {
     return record
   }
 
-  async listNotes(
-    filter: { scope?: string; ref?: string; limit?: number } = {},
-  ): Promise<NoteRecord[]> {
-    const where: string[] = []
-    const params: (string | number)[] = []
-    if (filter.scope) {
-      where.push('scope = ?')
-      params.push(filter.scope)
-    }
-    if (filter.ref) {
-      where.push('ref = ?')
-      params.push(filter.ref)
-    }
-    const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    // No limit means every note.
-    if (filter.limit !== undefined) params.push(Math.max(1, filter.limit))
-    return this.raw.all<NoteRecord>(
-      `SELECT * FROM notes ${clause} ORDER BY created_at DESC${filter.limit !== undefined ? ' LIMIT ?' : ''}`,
-      ...params,
-    )
-  }
-
-  async searchNotes(query: string, limit = 10): Promise<NoteRecord[]> {
-    const q = `%${query.replace(/[%_]/g, '')}%`
-    return this.raw.all<NoteRecord>(
-      'SELECT * FROM notes WHERE text LIKE ? ORDER BY created_at DESC LIMIT ?',
-      q,
-      Math.max(1, Math.min(limit, 50)),
-    )
+  /** Every note, newest first. */
+  async listNotes(): Promise<NoteRecord[]> {
+    return this.raw.all<NoteRecord>('SELECT * FROM notes ORDER BY created_at DESC')
   }
 
   // -- audit ----------------------------------------------------------------
@@ -569,7 +403,7 @@ export class AppDb {
        FROM search_docs_fts f
        WHERE f.text MATCH ?
        ORDER BY bm25(search_docs_fts),
-         CASE f.kind WHEN 'user' THEN 0 WHEN 'answer' THEN 1 WHEN 'finding' THEN 2 ELSE 3 END,
+         CASE f.kind WHEN 'user' THEN 0 WHEN 'answer' THEN 1 ELSE 2 END,
          f.at DESC
        LIMIT ?`,
       match,

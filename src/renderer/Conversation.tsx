@@ -57,11 +57,9 @@ function statusLabel(status: ToolStatus, t: Dict): string {
       ? t.runWorkFailed
       : status === 'stopped'
         ? t.runWorkStopped
-        : status === 'timeout'
-          ? t.runWorkTimeout
-          : status === 'refused'
-            ? t.runWorkRefused
-            : t.runWorkDone
+        : status === 'refused'
+          ? t.runWorkRefused
+          : t.runWorkDone
 }
 
 /** One tool call where it happened: a line, and its shaped result on demand. */

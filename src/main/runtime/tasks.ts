@@ -141,8 +141,6 @@ export class Tasks {
       .filter((note) => !cutoff || Date.parse(note.created_at) >= cutoff)
       .map((note) => ({
         id: note.id,
-        scope: note.scope,
-        ref: note.ref,
         text: note.text,
         author: note.author,
         createdAt: note.created_at,
@@ -234,9 +232,7 @@ export class Tasks {
       if (this.active) this.active.entries = entries
       let start = Math.max(0, entries.length - INITIAL_ENTRIES)
       if (focus) {
-        // 35.x search rows named an answer `answer:<entry>`.
-        const source = focus.startsWith('answer:') ? focus.slice('answer:'.length) : focus
-        const index = entries.findIndex((entry) => entry.id === source || entry.id === focus)
+        const index = entries.findIndex((entry) => entry.id === focus)
         if (index >= 0) start = Math.max(0, index - 20)
       }
       const slice = entries.slice(start)

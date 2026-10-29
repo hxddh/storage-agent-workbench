@@ -42,7 +42,6 @@ export class Engine {
     const focus = await this.tasks.sanitizeContext(context)
     await this.deps.db.touchTask(taskId)
     const data: RunData = {
-      trigger: 'user',
       text,
       attachments,
       ...(focus.length ? { context: focus } : {}),

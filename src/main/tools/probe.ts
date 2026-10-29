@@ -2,6 +2,7 @@ import { lookup } from 'node:dns/promises'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { TLSSocket } from 'node:tls'
+import { scrub } from '../s3/api'
 import { agentTool, providerParam, type ToolDeps, Type } from './policy'
 
 interface Answer {
@@ -81,7 +82,8 @@ export function probeTool(deps: ToolDeps) {
         !config.endpoint && /(^|\.)s3([.-][\w-]+)*\.amazonaws\.com(\.cn)?$/.test(url.hostname)
       if (url.hostname !== host && !url.hostname.endsWith(`.${host}`) && !awsS3)
         throw new Error(`The probe reaches only ${host} and hosts under it.`)
-      const answer = await probe(url, args.method ?? 'HEAD', run.signal)
+      // Headers and certificates can name the account; the agent never sees its id.
+      const answer = scrub(await probe(url, args.method ?? 'HEAD', run.signal)) as Answer
       return {
         model: JSON.stringify(answer, null, 1),
         note: `HTTP ${answer.status} · ${answer.ms.total} ms`,

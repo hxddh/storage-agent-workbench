@@ -1,7 +1,7 @@
 import type { Bootstrap, LocalModel, TaskSummary } from '@shared/contract'
 import { Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { dict, fill, kindName } from './i18n'
+import { dict, fill } from './i18n'
 
 function ago(iso: string | null, lang: 'en' | 'zh'): string {
   if (!iso) return lang === 'zh' ? '尚未读取' : 'not read yet'
@@ -14,6 +14,16 @@ function ago(iso: string | null, lang: 'en' | 'zh'): string {
   if (days <= 0) return 'today'
   if (days === 1) return 'yesterday'
   return `${days} days ago`
+}
+
+/** Where an account answers: its endpoint's host, or AWS. */
+function hostOf(endpoint: string): string {
+  if (!endpoint) return 'AWS'
+  try {
+    return new URL(endpoint).host
+  } catch {
+    return endpoint
+  }
 }
 
 export function Home({
@@ -80,7 +90,7 @@ export function Home({
             {boot.accounts.map((account) => (
               <li className="home-account" key={account.id}>
                 <span className="home-account-name">{account.name}</span>
-                <span className="home-account-kind">{kindName(t, account.kind)}</span>
+                <span className="home-account-kind">{hostOf(account.endpoint)}</span>
               </li>
             ))}
           </ul>

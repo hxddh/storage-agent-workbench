@@ -28,8 +28,6 @@ export async function searchTasks(db: AppDb, query: string): Promise<SearchHit[]
   }
   for (const doc of await db.searchDocs(q, 300)) {
     if (hits.has(doc.conversation_id)) continue
-    // 35.x indexed its findings; a finding is the agent's data now, not something said.
-    if (doc.kind === 'finding') continue
     const task = byId.get(doc.conversation_id)
     if (!task) continue
     const index = doc.text.toLowerCase().indexOf(needle)

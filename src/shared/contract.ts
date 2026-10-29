@@ -23,8 +23,6 @@ export interface Table {
 
 export interface NoteRow {
   id: string
-  scope: 'estate' | 'provider' | 'bucket'
-  ref: string | null
   text: string
   author: 'agent' | 'user'
   createdAt: string
@@ -56,7 +54,7 @@ export type ToolView =
     }
   | { kind: 'question'; question: string; options: string[]; note?: string }
 
-export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'
+export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped'
 
 /** What `agentTool()` attaches to every result; the status is never parsed from text. */
 export interface ToolDetails {
@@ -74,7 +72,7 @@ export interface ToolDetails {
 }
 
 /** App notices are codes; the window words them in the user's language. */
-export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'budget' | 'cut'
+export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'cut'
 
 export interface LiveTool {
   callId: string
@@ -146,7 +144,7 @@ export type UiEntry =
       id: string
       kind: 'tool'
       at: string
-      /** A current tool's name, or one an earlier version had. */
+      /** The tool the model called; a name no tool has still shows as a failed step. */
       name: string
       target: string
       status: ToolStatus
@@ -221,12 +219,9 @@ export interface Usage {
   cost: number
 }
 
-export type ProviderKind = 'aws' | 'r2' | 'minio' | 'aliyun' | 'gcs' | 'other'
-
 export interface Account {
   id: string
   name: string
-  kind: ProviderKind
   endpoint: string
   region: string
   forcePathStyle: boolean
@@ -241,7 +236,6 @@ export interface Account {
 export interface AccountInput {
   id?: string
   name: string
-  kind?: ProviderKind | 'auto'
   endpoint: string
   region: string
   forcePathStyle: boolean

@@ -15,7 +15,6 @@ import { fromIni } from '@aws-sdk/credential-provider-ini'
 import type { Account, AccountInput } from '@shared/contract'
 import type { AppDb, ProviderRow } from './db'
 import { scrub } from './s3/api'
-import { detectProviderKind } from './s3/capabilities'
 import { maskKey } from './security/redact'
 import type { Vault } from './security/vault'
 
@@ -26,7 +25,6 @@ export type Credentials =
 export interface ProviderConfig {
   id: string
   name: string
-  kind: import('./s3/capabilities').ProviderKind
   endpoint: string
   region: string
   forcePathStyle: boolean
@@ -123,7 +121,6 @@ export class Providers {
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
-      kind: (row.kind || detectProviderKind(row.endpoint)) as Account['kind'],
       endpoint: row.endpoint,
       region: row.region,
       forcePathStyle: row.force_path_style === 1,
@@ -161,11 +158,6 @@ export class Providers {
     const existing = input.id ? await this.db.getProvider(input.id) : undefined
     const id = existing?.id ?? randomUUID()
     const auth = input.auth === 'profile' ? 'profile' : 'keys'
-    const kinds = new Set(['aws', 'r2', 'minio', 'aliyun', 'gcs', 'other'])
-    const kind =
-      !input.kind || input.kind === 'auto' || !kinds.has(input.kind)
-        ? detectProviderKind(input.endpoint.trim())
-        : input.kind
     let secretRef = ''
     let sessionRef: string | null = null
     let accessKeyId: string | null = null
@@ -189,7 +181,6 @@ export class Providers {
     await this.db.upsertProvider({
       id,
       name: input.name.trim() || 'Storage',
-      kind,
       endpoint: input.endpoint.trim(),
       region: input.region.trim() || 'us-east-1',
       force_path_style: input.forcePathStyle ? 1 : 0,
@@ -328,7 +319,6 @@ export class Providers {
     return {
       id: row.id,
       name: row.name,
-      kind: (row.kind || detectProviderKind(row.endpoint)) as Account['kind'],
       endpoint: row.endpoint,
       region: row.region,
       forcePathStyle: row.force_path_style === 1,

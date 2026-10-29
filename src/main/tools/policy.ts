@@ -82,8 +82,6 @@ export interface ToolDefinition<T extends TSchema> {
   name: ToolName
   description: string
   parameters: T
-  /** Only where a hang is the tool's own failure (a network probe); Stop ends any call. */
-  timeoutMs?: number
   target: (args: Static<T>) => string
   run: (
     args: Static<T>,
@@ -107,11 +105,8 @@ export function agentTool<T extends TSchema>(
       } catch {
         target = ''
       }
-      const timeout = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : null
-      const signals = [context.abortSignal, timeout].filter((item): item is AbortSignal =>
-        Boolean(item),
-      )
-      const signal = signals.length ? AbortSignal.any(signals) : new AbortController().signal
+      // Stop is the only end a call has besides its own answer.
+      const signal = context.abortSignal ?? new AbortController().signal
       const conversationId = String(api.conversationId)
       const callArgs = argsSummary(args)
       let regional: ((region: string) => S3Client) | undefined
@@ -194,9 +189,7 @@ export function agentTool<T extends TSchema>(
             ? 'refused'
             : context.abortSignal?.aborted
               ? 'stopped'
-              : timeout?.aborted
-                ? 'timeout'
-                : 'failed'
+              : 'failed'
         await deps.db.audit({
           conversationId,
           tool: def.name,
@@ -208,9 +201,7 @@ export function agentTool<T extends TSchema>(
             ? `Refused: ${message}`
             : status === 'stopped'
               ? 'Stopped by the user before this call finished.'
-              : status === 'timeout'
-                ? `Timed out after ${Math.round((def.timeoutMs ?? 0) / 1000)} s. Nothing after the last progress line was read.`
-                : `Error: ${message}`
+              : `Error: ${message}`
         const evidenceId = api.callId ? String(api.callId) : undefined
         const details: ToolDetails = {
           target,
@@ -219,9 +210,7 @@ export function agentTool<T extends TSchema>(
               ? redact(message).slice(0, 160)
               : status === 'stopped'
                 ? null
-                : status === 'timeout'
-                  ? 'Timed out'
-                  : redact(message).slice(0, 160),
+                : redact(message).slice(0, 160),
           view: null,
           args: callArgs,
           ms: Date.now() - started,

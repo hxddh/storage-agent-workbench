@@ -264,8 +264,6 @@ describe('memory', () => {
     expect(details.view.text).not.toContain('AKIAABCDEFGHIJKLMNOP')
     const mine = (await deps.db.listNotes()).find((note) => note.text.startsWith('Logs land'))
     const users = await deps.db.insertNote({
-      scope: 'estate',
-      ref: null,
       text: 'mine',
       author: 'user',
     })

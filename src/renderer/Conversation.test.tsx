@@ -170,31 +170,32 @@ describe('the conversation', () => {
     )
   })
 
-  it('shows a call from an earlier version as a step with what the agent received', async () => {
+  it('shows a call to a tool that does not exist as a failed step, with what the agent received', async () => {
     render(
       <Conversation
         {...props}
         view={view([
-          user('u1', 'Accept it'),
+          user('u1', 'Run it'),
           {
-            id: 'acc',
+            id: 'x',
             kind: 'tool',
             at: '',
-            name: 'accept_risk',
-            target: 'logs',
-            status: 'done',
-            note: null,
+            name: 'shell',
+            target: '',
+            status: 'failed',
+            note: 'Tool shell not found',
             ms: 0,
             view: null,
-            output: '<untrusted-data>Asked the user.</untrusted-data>',
+            output: '<untrusted-data>Tool shell not found</untrusted-data>',
           },
         ])}
       />,
     )
-    expect(screen.getByText('Asked to accept a risk')).toBeTruthy()
+    expect(document.querySelector('.step.tool.failed')).toBeTruthy()
     fireEvent.click(document.querySelector('.step-line')!)
-    await waitFor(() => expect(screen.getByText(/Asked the user\./)).toBeTruthy())
-    expect(document.querySelector('.msg.agent.confirm')).toBeNull()
+    await waitFor(() =>
+      expect(screen.getAllByText(/Tool shell not found/).length).toBeGreaterThan(0),
+    )
   })
 
   it('shows a stopped turn with Continue, and the agent working while it waits for a model', () => {

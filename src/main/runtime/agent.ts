@@ -59,7 +59,7 @@ export async function buildDigest(deps: ToolDeps, noteTtlDays = 0): Promise<stri
       const parts: string[] = []
       for (const account of accounts)
         parts.push(
-          `${account.name} (id ${account.id}; ${account.kind}${account.endpoint ? ` at ${account.endpoint}` : ''}${
+          `${account.name} (id ${account.id}; ${account.endpoint ? `endpoint ${account.endpoint}` : 'AWS'}, region ${account.region}${
             account.scope.buckets.length ? `; scope: ${account.scope.buckets.join(', ')}` : ''
           })`,
         )
