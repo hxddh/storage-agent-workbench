@@ -92,7 +92,8 @@ fields, not a sequence of panels.
 ## Home
 
 A 30–36px heading (`What should I check?`), then the accounts the agent can
-read — one hairline row each, name and provider kind, nothing more. Home shows
+read: one hairline row each, its name and where it answers (the endpoint's
+host, or `AWS`), nothing more. Home shows
 no risk counts, coverage or "clear": what an account holds is for the agent to
 read and say in a conversation. With no account, one lede line takes the
 list's place (`No account yet. Add one, then ask.`, or, before a model exists,
@@ -113,8 +114,7 @@ Nothing on Home sends a message. The composer is inert until a model exists.
 
 A task is one thread, top to bottom in the order things happened. The app
 adds nothing of its own between the messages: no scope line, no evidence
-strips, no earlier-runs fold, no `Worked for` summary. Those 35.x surfaces were
-removed in 36.0.
+strips, no summary of the work.
 
 - **Overflow menu** — one `More actions` button, sticky at the top right of the
   column on its own row so it never covers the first message. It holds
@@ -129,16 +129,17 @@ removed in 36.0.
 - **Steps** — the agent's thoughts and tool calls between two messages form one
   list with a hairline on its left. Each step is one line: a state mark (a
   spinning loader while running, a `--ok` check when done, a small circle when
-  stopped, a `--danger` triangle for failed, refused or timed out), the tool's
-  label (`Listed buckets`, `Read configuration`, `Read account settings`,
-  `Ran a read-only query`, …), the target in mono, the note, a status word when it did not finish
-  (`Running`, `Failed`, `Stopped`, `Timed out`, `Outside scope`), the duration
+  stopped, a `--danger` triangle for failed or refused), the tool's label
+  (`Read`, `Ran a read-only query`, `Probed endpoint`, `Read more of a result`,
+  `Updated memory`), the target in mono (`s3 GetBucketPolicy · logs`), the
+  note, a status word when it did not finish (`Running`, `Failed`, `Stopped`,
+  `Refused`), the duration
   and a chevron. A running step is open and counts its elapsed time; a settled
   step folds to its line and opens on click. Open, it shows the argument summary
   and the typed result in a scroll area at most 420px high, then a folded
   `What the agent received` with the exact text the model got; a running step
-  without a result says `Waiting for the first result.` A call the runaway
-  ceiling blocked is a failed step with the note `Did not run`.
+  without a result says `Waiting for the first result.` When the agent got
+  only the first piece of a long result, the note says so.
 - **Thought** — a provider reasoning summary is a `Thought` step, `Thinking`
   while it streams. It opens to the summary as returned, in full; when the
   provider returned none it says `This model did not return a reasoning summary.` No
@@ -155,8 +156,7 @@ removed in 36.0.
 - **Notices** — one line with a dot (`--danger` for an error): `Stopped. What
   was read is kept.` with **Continue**; `The agent hit an error.` or `The agent
   stopped without replying.` with **Retry**, followed by the provider's error
-  text when there is one; `The turn reached 100 rounds of tool calls and
-  stopped calling tools.`; `The reply reached the model’s output limit and is
+  text when there is one; `The reply reached the model’s output limit and is
   cut off here.`
 - **Dividers** — `Continued this task` where a stopped turn was resumed, and
   `Earlier steps were compacted` where pi compacted the context; quiet centred
@@ -169,23 +169,23 @@ The view follows the thread as it grows unless the user scrolled up to read.
 When the task is empty and nothing is running it says `The agent has not
 composed an answer yet.`
 
-A `config` read opens as its sections, one hairline row each: the section
-name in mono, its status in `--ink-3` (`--danger` for `access denied` and
-`error`), then the value as JSON or the provider's error. The bucket's region
-heads the list. An `account` read and any other unsectioned value open as one
-JSON block. Nothing is summarised, coloured as risky or marked clean.
+A `call` or `probe` step opens as one JSON block: the service's response, or
+what the endpoint answered. A failed call shows the service's error code, HTTP
+status and message as its note. Nothing is summarised, coloured as risky or
+marked clean.
 
 A change the agent writes is part of its text: a fenced code block in its
 Markdown, with no tabs, Apply button or applied state. The `Markdown` chunk is
 lazy; while it loads, link targets, bold marks and backticks are stripped
 rather than flashing raw syntax.
 
-Calls to tools of earlier versions (`survey`, `estate`, `change_plan`,
-`accept_risk`) keep their labels in older tasks; opened, they show their note
-and what the agent received, not their old typed view.
+A call to a tool name the registry does not hold shows under that name as a
+failed step; a call pi ended before the tool ran shows `Did not run`. Opened,
+either shows what the agent received.
 
-A code-mode result shows its chart, rows (eight at first, then `N more`),
-script and output under the query's step. Byte columns render as human sizes; CSV keeps raw numbers.
+A code-mode result shows its chart, rows (eight at first, then `N more`; the
+window keeps up to 10,000, the agent gets all), script and output under the
+query's step. Byte columns render as human sizes; CSV keeps raw numbers.
 
 Printing (Save PDF) opens every step and hides the sidebar, composer, overflow
 menu and copy buttons.
@@ -214,8 +214,6 @@ steer button, and **Stop** sits beside it. A stopped turn keeps its steps;
 - `⌘.` stops the running turn.
 - `Escape` closes Settings and the compact sidebar.
 
-There is no `⌘⇧R` re-check and no risk navigation with `j` / `k` / `a`.
-
 Dropping a file anywhere shows a dashed accent border and one centred line on
 the composer (`Drop to attach`); nothing else moves. `@` opens one quiet picker
 above the composer; selected names become chips and are focus, not
@@ -227,10 +225,10 @@ Four panes: Model, Storage accounts, Memory and Appearance. The active pane is
 the top-bar title and the selected rail row. Model configuration is one form:
 provider, model, base URL, key, Save and Test. Local models are one-click
 chips. Accounts list read-only credentials and open one inline form for add or
-edit; the key fields are never pre-filled. There is no schedule setting.
+edit (name, endpoint, region, path-style, access keys or AWS profile, bucket
+scope); the key fields are never pre-filled.
 
-Memory holds the note-age setting and lists the 100 most recent notes, each
-with **Forget**.
+Memory holds the note-age setting and lists every note, each with **Forget**.
 Appearance holds language, theme and the background-notification switch.
 
 Inputs and selects are styled consistently with visible focus rings; selects use

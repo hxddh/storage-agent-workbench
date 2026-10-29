@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import type { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,12 +24,13 @@ const BUCKETS = {
 
 let fake: { server: Server; endpoint: string }
 let deps: ToolDeps
+const dir = mkdtempSync(join(tmpdir(), 'sa-query-task-'))
 
-async function run(args: Record<string, unknown>, timeoutMs?: number) {
-  const result = await queryTool(deps, timeoutMs).execute(
+async function run(args: Record<string, unknown>, signal?: AbortSignal) {
+  const result = await queryTool(deps).execute(
     args as never,
     { conversationId: 'c', output: () => undefined, details: async () => undefined } as never,
-    {} as never,
+    { abortSignal: signal } as never,
   )
   const text = result.output?.map((part) => (part.type === 'text' ? part.text : '')).join('') ?? ''
   return { text, details: result.details as unknown as ToolDetails }
@@ -55,8 +56,9 @@ beforeAll(async () => {
   deps = {
     db,
     providers,
-    datasetsDir: () => tmpdir(),
-    uploadsDir: () => tmpdir(),
+    taskDir: () => dir,
+    datasetsDir: () => join(dir, 'datasets'),
+    uploadsDir: () => join(dir, 'uploads'),
     lang: () => 'en',
   }
 })
@@ -73,12 +75,16 @@ describe('read-only code mode', () => {
         const sizes = {}
         let token = null
         do {
-          const page = await tools.list({ bucket: 'lake', token })
-          for (const o of page.items) {
-            const p = o.key.split('/')[0] + '/'
-            sizes[p] = (sizes[p] ?? 0) + o.size
+          const page = await tools.call({
+            service: 's3',
+            operation: 'ListObjectsV2',
+            input: { Bucket: 'lake', ContinuationToken: token ?? undefined },
+          })
+          for (const o of page.Contents ?? []) {
+            const p = o.Key.split('/')[0] + '/'
+            sizes[p] = (sizes[p] ?? 0) + o.Size
           }
-          token = page.next
+          token = page.NextContinuationToken ?? null
         } while (token)
         return Object.entries(sizes).map(([prefix, bytes]) => ({ prefix, bytes })).sort((a, b) => b.bytes - a.bytes)
       `,
@@ -94,7 +100,6 @@ describe('read-only code mode', () => {
     expect(view.rows.columns).toEqual(['prefix', 'bytes'])
     expect(new Map(view.rows.rows.map((r) => [r[0], r[1]]))).toEqual(expected)
     expect(view.chart?.labels).toHaveLength(3)
-    expect(view.listed).toBe(2500)
     expect(view.calls).toBe(3)
     expect(text).toContain('<untrusted-data source="storage">')
   })
@@ -102,7 +107,7 @@ describe('read-only code mode', () => {
   it('refuses a bucket outside the account scope from inside the script', async () => {
     const { details } = await run({
       title: 'x',
-      code: `return (await tools.list({ bucket: 'hidden' })).items`,
+      code: `return (await tools.call({ service: 's3', operation: 'ListObjectsV2', input: { Bucket: 'hidden' } })).Contents`,
     })
     expect(details.status).toBe('failed')
     expect(details.note).toMatch(/outside this account's scope/)
@@ -117,17 +122,48 @@ describe('read-only code mode', () => {
     expect(details.view.rows.rows[0]).toEqual(['undefined', 'undefined', 'undefined', 'undefined'])
   })
 
-  it('stops a script that never ends', async () => {
-    const { details } = await run({ title: 'loop', code: 'while (true) {}' }, 1500)
-    expect(details.status).toBe('failed')
-    expect(details.note).toMatch(/ran past 2 s|ran past 1 s/)
+  it('runs until the user stops it', async () => {
+    const stop = new AbortController()
+    setTimeout(() => stop.abort(), 800)
+    const { details } = await run({ title: 'loop', code: 'while (true) {}' }, stop.signal)
+    expect(['stopped', 'failed']).toContain(details.status)
+    expect(details.note ?? '').not.toMatch(/ran past/)
   })
 
-  it('turns odd return values into a bounded table', () => {
-    expect(toTable(42).table).toEqual({ columns: ['value'], rows: [[42]], truncated: false })
-    const many = toTable(Array.from({ length: 600 }, (_, i) => ({ i })))
-    expect(many.table.rows).toHaveLength(500)
-    expect(many.table.truncated).toBe(true)
+  it('answers SQL over an attached log, and only reads', async () => {
+    mkdirSync(join(dir, 'uploads'), { recursive: true })
+    writeFileSync(
+      join(dir, 'uploads', 'access.csv'),
+      [
+        'timestamp,method,path,status,bytes,latency_ms,remote_ip',
+        '2026-02-01T10:00:00Z,GET,/a,200,10,5,203.0.113.9',
+        '2026-02-01T10:00:01Z,GET,/b,200,20,7,203.0.113.9',
+        '2026-02-01T10:00:02Z,PUT,/c,403,0,9,198.51.100.7',
+      ].join('\n'),
+    )
+    const { details } = await run({
+      title: 'by status',
+      code: `
+        await tools.dataset({ file: 'access.csv' })
+        return await tools.sql({ file: 'access.csv', sql: 'SELECT status_code, count(*) AS n FROM rows GROUP BY status_code ORDER BY status_code' })
+      `,
+    })
+    if (details.view?.kind !== 'query') throw new Error(`expected a query view: ${details.note}`)
+    expect(details.view.rows.rows).toEqual([
+      [200, 2],
+      [403, 1],
+    ])
+    const write = await run({
+      title: 'write',
+      code: `await tools.dataset({ file: 'access.csv' }); return await tools.sql({ file: 'access.csv', sql: 'DELETE FROM rows' })`,
+    })
+    expect(write.details.status).toBe('failed')
+  })
+
+  it('turns any return value into a table, every row of it', () => {
+    expect(toTable(42).table).toEqual({ columns: ['value'], rows: [[42]] })
+    const many = toTable(Array.from({ length: 20_000 }, (_, i) => ({ i })))
+    expect(many.table.rows).toHaveLength(20_000)
     expect(toTable([{ a: { nested: 'AKIAABCDEFGHIJKLMNOP' } }]).table.rows[0]?.[0]).toBe(
       '{"nested":"AKIA[redacted]"}',
     )

@@ -11,16 +11,7 @@ export type ModelProvider = 'anthropic' | 'openai' | 'compatible'
 export type Lang = 'en' | 'zh'
 export type Theme = 'light' | 'dark' | 'system'
 
-export type ToolName =
-  | 'buckets'
-  | 'objects'
-  | 'object'
-  | 'config'
-  | 'account'
-  | 'probe'
-  | 'query'
-  | 'note'
-  | 'ask'
+export type ToolName = 'call' | 'query' | 'probe' | 'more' | 'note' | 'ask'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
 
@@ -32,22 +23,8 @@ export interface Table {
 
 export interface NoteRow {
   id: string
-  scope: 'estate' | 'provider' | 'bucket'
-  ref: string | null
   text: string
-  author: 'agent' | 'user'
   createdAt: string
-}
-
-/**
- * One line of a review. `blind` is a read that could not see: it is shown, and
- * it never counts as clean. Codes are rule codes, `advice:*` or `blind:*`.
- */
-export interface ProbeCheck {
-  name: string
-  ok: boolean
-  detail: string
-  ms: number
 }
 
 export interface Chart {
@@ -58,16 +35,8 @@ export interface Chart {
 }
 
 export type ToolView =
-  | { kind: 'buckets'; rows: Table }
-  | { kind: 'objects'; rows: Table }
-  | {
-      kind: 'object'
-      facts: [string, string][]
-      preview: { language: string; text: string } | null
-    }
-  /** A read returned as the API returned it: sections or documents, shown as JSON. */
+  /** A read returned as the service returned it, shown as JSON. */
   | { kind: 'raw'; title: string; value: unknown }
-  | { kind: 'probe'; endpoint: string; checks: ProbeCheck[] }
   | { kind: 'note'; text: string }
   | {
       kind: 'query'
@@ -79,13 +48,12 @@ export type ToolView =
       chart: Chart | null
       output: string | null
       calls: number
-      listed: number
       /** Buckets the script read. */
       buckets?: string[]
     }
   | { kind: 'question'; question: string; options: string[]; note?: string }
 
-export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'
+export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped'
 
 /** What `agentTool()` attaches to every result; the status is never parsed from text. */
 export interface ToolDetails {
@@ -103,7 +71,7 @@ export interface ToolDetails {
 }
 
 /** App notices are codes; the window words them in the user's language. */
-export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'budget' | 'cut'
+export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'cut'
 
 export interface LiveTool {
   callId: string
@@ -175,7 +143,7 @@ export type UiEntry =
       id: string
       kind: 'tool'
       at: string
-      /** A current tool's name, or one an earlier version had. */
+      /** The tool the model called; a name no tool has still shows as a failed step. */
       name: string
       target: string
       status: ToolStatus
@@ -250,12 +218,9 @@ export interface Usage {
   cost: number
 }
 
-export type ProviderKind = 'aws' | 'r2' | 'minio' | 'aliyun' | 'gcs' | 'other'
-
 export interface Account {
   id: string
   name: string
-  kind: ProviderKind
   endpoint: string
   region: string
   forcePathStyle: boolean
@@ -270,7 +235,6 @@ export interface Account {
 export interface AccountInput {
   id?: string
   name: string
-  kind?: ProviderKind | 'auto'
   endpoint: string
   region: string
   forcePathStyle: boolean

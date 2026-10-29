@@ -15,14 +15,11 @@ import type {
   LiveTool,
   NoticeCode,
   ToolDetails,
-  ToolName,
   ToolStatus,
-  ToolView,
   UiEntry,
   Usage,
 } from '@shared/contract'
 import { redact } from '../security/redact'
-import { TOOL_NAMES as MANIFEST_TOOL_NAMES } from '../tools/registry'
 
 interface Part {
   type: string
@@ -44,8 +41,6 @@ interface ModelMessage {
   durationMs?: number
   details?: unknown
 }
-
-const TOOL_NAMES = new Set<ToolName>(MANIFEST_TOOL_NAMES)
 
 function iso(timestamp: number | undefined): string {
   return timestamp ? new Date(timestamp).toISOString() : ''
@@ -71,31 +66,13 @@ function thinkingOf(message: ModelMessage | undefined): string {
     .trim()
 }
 
-const VIEW_KINDS = new Set<string>([
-  'buckets',
-  'objects',
-  'object',
-  'raw',
-  'probe',
-  'note',
-  'query',
-  'question',
-])
-
-/** A view this version renders; a call from an earlier version shows what the agent received. */
-function viewOf(name: string, view: ToolView | null | undefined): ToolView | null {
-  if (!view || !TOOL_NAMES.has(name as ToolName) || !VIEW_KINDS.has(view.kind)) return null
-  return view
-}
-
-/** `agentTool()` details; 17.x results carry the same shape without `status`. */
+/** `agentTool()` details. */
 function isDetails(value: unknown): value is Partial<ToolDetails> & { target: string } {
   return Boolean(value) && typeof value === 'object' && 'target' in (value as object)
 }
 
 /** What a user message carries. */
 export interface RunData {
-  trigger: 'user'
   text?: string
   attachments?: AttachmentRef[]
   context?: ContextRef[]
@@ -119,7 +96,7 @@ function toolEntry(
     note: details ? (details.note ?? null) : fallback.isError ? blockedNote(fallback.text) : null,
     args: details?.args ?? null,
     ms: details?.ms ?? fallback.ms ?? null,
-    view: viewOf(name, details?.view),
+    view: details?.view ?? null,
     ...(fallback.callId ? { callId: fallback.callId } : {}),
     ...(details?.evidenceId ? { evidenceId: details.evidenceId } : {}),
     ...(fallback.text ? { output: fallback.text } : {}),
@@ -135,9 +112,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
     const at = iso(message?.timestamp)
     switch (entry.kind) {
       case 'sa.run': {
-        const data = (entry.data ?? {}) as Partial<RunData> & { trigger?: string }
-        // 35.0 wrote a scripted check's start here; its calls and answer follow as entries.
-        if (data.trigger && data.trigger !== 'user') break
+        const data = (entry.data ?? {}) as Partial<RunData>
         out.push({
           id,
           kind: 'user',
@@ -149,9 +124,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
         break
       }
       case 'sa.steer': {
-        const data = (entry.data ?? {}) as Partial<RunData> & { trigger?: string }
-        // 35.0 wrote a scripted check's start here; its calls and answer follow as entries.
-        if (data.trigger && data.trigger !== 'user') break
+        const data = (entry.data ?? {}) as Partial<RunData>
         out.push({
           id,
           kind: 'steer',
@@ -165,24 +138,6 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       case 'sa.resume':
         out.push({ id, kind: 'resume', at })
         break
-      // 35.0 scripted checks: their calls and answer read as ordinary conversation items.
-      case 'sa.call': {
-        const data = entry.data as { name?: string; at?: string; details?: ToolDetails } | undefined
-        const name = data?.name
-        if (data?.details && name)
-          out.push(
-            toolEntry(id, data.at ?? at, name, data.details, {
-              isError: data.details.status !== 'done',
-              text: '',
-            }),
-          )
-        break
-      }
-      case 'sa.answer': {
-        const data = entry.data as { text?: string; at?: string } | undefined
-        if (data?.text) out.push({ id, kind: 'answer', at: data.at ?? at, text: data.text })
-        break
-      }
       case 'sa.notice': {
         const data = entry.data as
           | {
@@ -262,18 +217,6 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
     }
   }
   return out
-}
-
-/** Model rounds of the current run: assistant messages that called a tool, blocked ones too. */
-export function roundsOf(entries: readonly EntryRecord[]): number {
-  let rounds = 0
-  for (const entry of entries) {
-    if (entry.kind === 'sa.run' || entry.kind === 'sa.resume') rounds = 0
-    if (entry.kind !== 'pi.assistant') continue
-    const message = entry.model?.[0] as ModelMessage | undefined
-    if (parts(message).some((part) => part.type === 'toolCall')) rounds += 1
-  }
-  return rounds
 }
 
 /** A result pi wrote without running the tool (a budget block); its text is the step's output. */

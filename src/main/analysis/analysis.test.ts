@@ -3,9 +3,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { aggregate, preview, readRows } from './aggregate'
+import { preview } from './dataset'
 import { maskIp, normalizeTimestamp } from './formats'
 import { importDataset, importInventoryFiles } from './import'
+
+/** One read-only query over a dataset's file, as a script's sql() runs it. */
+function sql<T>(path: string, query: string): T[] {
+  const db = new DatabaseSync(path, { readOnly: true })
+  try {
+    return db.prepare(query).all() as T[]
+  } finally {
+    db.close()
+  }
+}
 
 /** Rows a dataset holds, read straight from its file. */
 function countRows(path: string, kind: 'access_log' | 'inventory'): number {
@@ -53,29 +63,13 @@ describe('inventory import and aggregation', () => {
     expect(result.rows).toBe(3)
     expect(countRows(db, 'inventory')).toBe(3)
 
-    const byClass = aggregate(db, 'inventory', { metric: 'total_size', groupBy: 'storage_class' })
-    const totals = Object.fromEntries(
-      (byClass.groups ?? []).map((group) => [group.group, group.value]),
+    const byClass = sql<{ storage_class: string; total: number }>(
+      db,
+      'SELECT storage_class, sum(size) AS total FROM inventory_objects GROUP BY storage_class',
     )
+    const totals = Object.fromEntries(byClass.map((row) => [row.storage_class, row.total]))
     expect(totals.STANDARD).toBe(300)
     expect(totals.GLACIER).toBe(100)
-
-    const sum = aggregate(db, 'inventory', { metric: 'total_size' })
-    expect(sum.value).toBe(400)
-
-    // The rows themselves page through, filtered by whitelisted columns only.
-    const first = readRows(db, 'inventory', { limit: 2 })
-    expect(first.rows).toHaveLength(2)
-    expect(first.next).toBe(2)
-    const rest = readRows(db, 'inventory', { limit: 2, offset: first.next })
-    expect(rest.rows).toHaveLength(1)
-    expect(rest.next).toBeNull()
-    expect(readRows(db, 'inventory', { filters: { storage_class: 'GLACIER' } }).rows).toHaveLength(
-      1,
-    )
-    expect(() => readRows(db, 'inventory', { filters: { 'size; DROP': 1 } })).toThrow(
-      /Unknown filter/,
-    )
     expect(preview(db, 'inventory', 2).rows).toHaveLength(2)
   })
 
@@ -96,25 +90,6 @@ describe('inventory import and aggregation', () => {
     expect(countRows(db, 'inventory')).toBe(2)
   })
 
-  it('keeps a multi-file import inside its row budget', async () => {
-    const dir = temp()
-    const files = [1, 2, 3].map((n) => {
-      const file = join(dir, `part-${n}.csv`)
-      writeFileSync(file, `"bucket","key","size"\n"logs","${n}.bin",${n}\n`)
-      return file
-    })
-    const db = join(dir, 'limited.sqlite')
-    const result = await importInventoryFiles({
-      files,
-      destPath: db,
-      fallbackBucket: 'logs',
-      maxRows: 2,
-    })
-    expect(result.rows).toBe(2)
-    expect(result.truncated).toBe(true)
-    expect(countRows(db, 'inventory')).toBe(2)
-  })
-
   it('counts requests by status from a CSV log', async () => {
     const dir = temp()
     const csv = join(dir, 'access.csv')
@@ -132,17 +107,14 @@ describe('inventory import and aggregation', () => {
     const result = await importDataset({ filePath: csv, destPath: db, kind: 'access_log' })
     expect(result.rows).toBe(4)
 
-    const byStatus = aggregate(db, 'access_log', { metric: 'count', groupBy: 'status_code' })
-    const counts = Object.fromEntries(
-      (byStatus.groups ?? []).map((group) => [group.group, group.value]),
+    const byStatus = sql<{ status_code: number; n: number }>(
+      db,
+      'SELECT status_code, count(*) AS n FROM access_logs GROUP BY status_code',
     )
+    const counts = Object.fromEntries(byStatus.map((row) => [String(row.status_code), row.n]))
     expect(counts['200']).toBe(2)
     expect(counts['403']).toBe(1)
     expect(counts['404']).toBe(1)
-
-    const p95 = aggregate(db, 'access_log', { metric: 'p95_latency_ms' })
-    expect(typeof p95.value).toBe('number')
-    expect(p95.value).toBeGreaterThan(5)
   })
 
   it('rejects an inventory disguised as access logs', async () => {

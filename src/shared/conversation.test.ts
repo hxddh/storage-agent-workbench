@@ -8,10 +8,10 @@ describe('the conversation thread', () => {
     const entries: UiEntry[] = [
       request('Which buckets are public?'),
       { id: 'r1', kind: 'reasoning', at: '', text: 'Read the account first.' },
-      tool('buckets', buckets(['a']), { id: 's1' }),
+      tool('call', buckets(['a']), { id: 's1' }),
       answer('`a` is private.'),
       request('And the access paths?'),
-      tool('config', null, { id: 'c1', status: 'failed', target: 'a' }),
+      tool('call', null, { id: 'c1', status: 'failed', target: 'a' }),
       answer('I could not read them.'),
     ]
     expect(thread(entries).map((item) => item.kind)).toEqual([
@@ -60,37 +60,34 @@ describe('the conversation thread', () => {
     const live: Live = {
       phase: 'tool',
       tools: [
-        { callId: 's1', name: 'buckets', target: '', note: null, status: 'done', startedAt: '' },
+        { callId: 's1', name: 'call', target: '', note: null, status: 'done', startedAt: '' },
       ],
       reasoning: null,
       text: null,
       startedAt: '',
     }
-    const items = thread([request(), tool('buckets', buckets(['a']), { id: 's1' })], live)
+    const items = thread([request(), tool('call', buckets(['a']), { id: 's1' })], live)
     expect(items.filter((item) => item.kind === 'tool')).toHaveLength(1)
   })
 
   it('links a citation to its call, and knows when the agent is waiting on a question', () => {
     const items = thread([
       request(),
-      tool('buckets', buckets(['a']), { id: 's1' }),
+      tool('call', buckets(['a']), { id: 's1' }),
       tool(
         'ask',
         { kind: 'question', question: 'Which account?', options: ['A', 'B'] },
         { id: 'q1' },
       ),
     ])
-    expect(callFor(items, 's1')).toMatchObject({ name: 'buckets' })
+    expect(callFor(items, 's1')).toMatchObject({ name: 'call' })
     expect(pendingQuestion(items)).toBe('q1')
     expect(pendingQuestion([...items, ...thread([request('A')])])).toBeNull()
   })
 
   it('saves the conversation as Markdown, with reasoning and what each call returned', () => {
     const call = {
-      ...(tool('buckets', buckets(['a']), { target: 'Prod' }) as Extract<
-        UiEntry,
-        { kind: 'tool' }
-      >),
+      ...(tool('call', buckets(['a']), { target: 'Prod' }) as Extract<UiEntry, { kind: 'tool' }>),
       output: '<untrusted-data>1 bucket</untrusted-data>',
     }
     const text = transcriptMarkdown(
@@ -102,7 +99,7 @@ describe('the conversation thread', () => {
       ]),
     )
     expect(text).toBe(
-      '**You:** Q?\n\n> Read it.\n\n> buckets · Prod · done\n\n````text\n<untrusted-data>1 bucket</untrusted-data>\n````\n\nA.',
+      '**You:** Q?\n\n> Read it.\n\n> call · Prod · done\n\n````text\n<untrusted-data>1 bucket</untrusted-data>\n````\n\nA.',
     )
   })
 })

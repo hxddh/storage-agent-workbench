@@ -17,7 +17,7 @@ export function askTool() {
       'Ask the user a question and end your turn until they answer. Options, when given, are shown as buttons; the user can also reply in their own words.',
     parameters: Type.Object({
       question: Type.String({ minLength: 1 }),
-      options: Type.Optional(Type.Array(Type.String({ maxLength: 100 }), { maxItems: 6 })),
+      options: Type.Optional(Type.Array(Type.String())),
       note: Type.Optional(Type.String()),
     }),
     execute: async (args) => {

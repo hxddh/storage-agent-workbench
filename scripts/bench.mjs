@@ -57,7 +57,7 @@ const scenarios = [
   {
     name: 'public-account',
     turns: ['Which buckets are public?'],
-    expect: { tools: ['Listed buckets', 'Read configuration'], answer: 'web-assets', citations: 1 },
+    expect: { tools: ['Read'], answer: 'web-assets', citations: 1 },
   },
   {
     name: 'blind-acl',
@@ -80,7 +80,7 @@ const scenarios = [
     // The agent writes the change itself and never says it made it.
     name: 'fix',
     turns: ['Give me the fix for data-lake'],
-    expect: { tools: ['Read configuration'], command: 'data-lake', noWrite: true },
+    expect: { tools: ['Read'], command: 'data-lake', noWrite: true },
   },
   {
     name: 'query',
@@ -127,7 +127,7 @@ const scenarios = [
     // A follow-up is a new message in the same conversation, not a new report.
     name: 'follow-up',
     turns: ['Which buckets are public?', 'Who can read web-assets?'],
-    expect: { messages: 2, replies: 2, tools: ['Read configuration'], citations: 1, unresolved: 0 },
+    expect: { messages: 2, replies: 2, tools: ['Read'], citations: 1, unresolved: 0 },
   },
 ]
 
@@ -214,7 +214,7 @@ async function readTrace() {
       title: text(row.querySelector('.step-title')),
       target: text(row.querySelector('.step-target')),
       status:
-        ['done', 'failed', 'stopped', 'timeout', 'refused', 'running'].find((name) =>
+        ['done', 'failed', 'stopped', 'refused', 'running'].find((name) =>
           row.classList.contains(name),
         ) ?? '',
     }))

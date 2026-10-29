@@ -11,7 +11,7 @@ import type {
 } from '@shared/contract'
 import { Brain, Cloud, Cpu, Palette, Plus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { type Dict, dict, fill, kindName } from './i18n'
+import { type Dict, dict, fill } from './i18n'
 import { useFocusTrap } from './lib/focus'
 
 type Provider = ModelProvider
@@ -37,7 +37,6 @@ function testDetail(detail: string, t: Dict): string {
 
 const EMPTY_ACCOUNT: AccountInput = {
   name: '',
-  kind: 'auto',
   endpoint: '',
   region: 'us-east-1',
   forcePathStyle: false,
@@ -71,7 +70,6 @@ export function Settings({
     { id: 'appearance' as const, label: t.appearance, icon: Palette },
   ]
   const active = panes.find((item) => item.id === pane) ?? panes[0]!
-  const kindLabel = (kind: Account['kind']) => kindName(t, kind)
   const [provider, setProvider] = useState<Provider>(
     (boot.model?.provider as Provider) ?? 'compatible',
   )
@@ -268,7 +266,6 @@ export function Settings({
     setForm({
       id: account.id,
       name: account.name,
-      kind: account.kind,
       endpoint: account.endpoint,
       region: account.region,
       forcePathStyle: account.forcePathStyle,
@@ -509,7 +506,7 @@ export function Settings({
                       <div>
                         <div className="account-name">{account.name}</div>
                         <div className="account-meta">
-                          {kindLabel(account.kind)} · {account.endpoint || 'AWS'}
+                          {account.endpoint || 'AWS'} · {account.region}
                           {account.auth === 'profile' && account.profile
                             ? ` · ${t.profile} ${account.profile}`
                             : account.accessKeyMasked
@@ -582,25 +579,6 @@ export function Settings({
                         placeholder="https://s3.example.com"
                         onChange={(event) => setForm({ ...form, endpoint: event.target.value })}
                       />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="accKind">{t.providerKind}</label>
-                      <select
-                        id="accKind"
-                        value={form.kind ?? 'auto'}
-                        onChange={(event) =>
-                          setForm({ ...form, kind: event.target.value as AccountInput['kind'] })
-                        }
-                      >
-                        <option value="auto">{t.kind_auto}</option>
-                        <option value="aws">{t.kind_aws}</option>
-                        <option value="r2">{t.kind_r2}</option>
-                        <option value="minio">{t.kind_minio}</option>
-                        <option value="aliyun">{t.kind_aliyun}</option>
-                        <option value="gcs">{t.kind_gcs}</option>
-                        <option value="other">{t.kind_other}</option>
-                      </select>
-                      <span className="hint">{t.providerKindHint}</span>
                     </div>
                     <div className="field">
                       <label htmlFor="accRegion">{t.region}</label>
@@ -799,7 +777,6 @@ export function Settings({
                     ))}
                   </div>
                 )}
-                <p className="hint">{t.memoryLimit}</p>
               </section>
 
               <section className="section" hidden={pane !== 'appearance'}>

@@ -1,48 +1,49 @@
 # Release
 
-A release is a tag plus three platform builds and one GitHub release. The
-workflow is `.github/workflows/release.yml`; it is triggered by a `v*` tag or a
-manual dispatch with an existing tag.
+A release is a tag, three platform builds and one GitHub release. The
+workflow is `.github/workflows/release.yml`; a `v*` tag starts it, or a manual
+dispatch with an existing tag.
 
-## What CI checks
+## CI
 
-The normal CI workflow runs on `main` and pull requests:
+`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests:
 
-- typecheck, Biome lint, Vitest, build, bundle budget, secondary-text contrast,
-  production dependency audit and SBOM;
-- the real-window E2E with fake S3 and a fake OpenAI-compatible model;
-- the no-model first-run E2E;
-- the smoke eval, the behavior bench smoke, cold-start performance, screenshots
-  and visual comparison;
-- on `main`, the real-model bench for a small and a large model
-  (three runs per scenario) when `EVAL_API_KEY` and the model variables exist;
-  without them the job says it did not run;
-- the moto compatibility suite.
+- **check**: typecheck, Biome lint, Vitest, build, bundle budget,
+  secondary-text contrast, production dependency audit and SBOM;
+- **e2e**: the real-window E2E with fake S3 and a fake model, the no-model
+  first-run E2E, the eval smoke, the bench smoke, cold-start performance,
+  screenshots and the visual comparison (captures are uploaded when it
+  fails);
+- **bench-real**, on pushes to `main` only: `bench.mjs --runs 3` for a small
+  model (`EVAL_MODEL_SECONDARY`) and a large one (`EVAL_MODEL_PRIMARY`). Without
+  `EVAL_API_KEY` or the model variable the job says it did not run and passes;
+- **compat**: the moto compatibility suite.
 
-The Release workflow itself does not run typecheck, lint or unit tests. Tag a
-commit from a green `main`; do not use the tag workflow as a substitute for CI.
+`.github/workflows/eval.yml` is a manual run of `eval.mjs` against a provider,
+model, base URL, reasoning level and run count given as inputs.
+
+The Release workflow does not run typecheck, lint or unit tests. Tag a commit
+from a green `main`.
 
 ## Release jobs
 
-1. **Evaluation** — if the `EVAL_API_KEY` secret exists, the job runs
-   `scripts/eval.mjs --runs 2` for the primary and secondary model variables,
-   then `scripts/bench.mjs --runs 3` against the primary and the secondary
-   model. If it does not exist, it runs `scripts/eval.mjs --smoke` and
-   `scripts/bench.mjs --smoke`. A smoke
-   report proves the harness and conversation plumbing run; it is not a
-   model-quality score. The eval scores the agent's answer against the fake
-   storage's known truth; the bench scores the conversation the agent produced
-   (calls, citations, clarify, steer, resume, follow-ups, a change for the user
-   to apply, model choice) and what it said.
-2. **Signing detection** — checks all seven signing secrets. Only when every one
-   is present is the build marked signed.
-3. **Build** — macOS x64 and arm64 (`.dmg`, `.zip`), Windows NSIS `.exe`, Linux
-   AppImage and `.deb`, plus `sbom.json` and `latest*.yml` feeds. Builds run in
-   parallel; one failed platform stops the publish job.
-4. **Publish** — collects all artifacts, writes release notes from the eval and
-   signing facts, and creates one GitHub release. The notes explicitly say
-   either “real-model evaluation” or “harness smoke only”, and either “signed
-   and notarized” or “unsigned; macOS is ad-hoc signed only”.
+1. **Evaluation.** With the `EVAL_API_KEY` secret, `eval.mjs --runs 2` for the
+   primary and secondary model, then `bench.mjs --runs 3` for the primary and,
+   when `EVAL_MODEL_SECONDARY` is set, the secondary. Without it,
+   `eval.mjs --smoke` and `bench.mjs --smoke`. The eval scores the agent's
+   answer against the fake storage's known truth; the bench scores the
+   conversation (calls, citations, clarify, steer, resume, follow-ups, a
+   change written for the user, model choice) and what it said.
+2. **Signing detection.** Checks the seven signing secrets; only when every
+   one is present is the build marked signed.
+3. **Build.** macOS (`.dmg`, `.zip`, x64 and arm64), Windows (NSIS `.exe`) and
+   Linux (AppImage, `.deb`), with `sbom.json`, the `latest*.yml` feeds and
+   blockmaps. Builds run in parallel; if any fails, nothing is published.
+4. **Publish.** Collects every artifact, writes release notes from the eval
+   and signing facts, and creates one GitHub release. The notes are headed either
+   "Real-model evaluation" or "Evaluation: harness smoke only", and end with
+   either "Installers are signed and notarized." or "These installers are
+   unsigned. macOS builds are ad-hoc signed only; …".
 
 ## Signing
 
@@ -50,81 +51,51 @@ commit from a green `main`; do not use the tag workflow as a substitute for CI.
   `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
 - Windows: `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`.
 
-When every secret exists, macOS is signed and notarized and Windows is signed.
-When any is absent, the workflow still builds every platform: macOS is ad-hoc
-signed (so an Apple-silicon download can launch) and Windows is unsigned. The
-release notes state this. There is no silent “unsigned presented as signed”
-path.
+With every secret, macOS is signed and notarized and Windows is signed. With
+any missing, every platform still builds: macOS is ad-hoc signed by
+`scripts/after-sign.cjs` (so an Apple-silicon download can launch) and Windows
+is unsigned. The release notes say which. This is a distribution limit, not a
+runtime security boundary ([security.md](security.md)).
 
-This is a distribution limitation, not a runtime security boundary. The
-application itself still has the read-only, scope and secret boundaries in
-[security.md](security.md).
+## Evaluation gates
 
-## Evaluation and visual gates
+Real-model evaluation needs a provider key and model variables; without them
+the release records a smoke result. The bench gate is every must-pass check
+in every run and at least 90% of soft checks; the smoke bench uses the same
+gate. Reports are attached and name the model, never the key. A smoke report
+is labelled as plumbing only.
 
-Real-model evaluation is valuable but not guaranteed by the repository alone:
-it needs a provider key and model variables. The release records a smoke result
-when they are absent. The eval covers 28 storage scenarios, each scored on what
-the agent said against what the fake storage holds; the bench covers 13
-agent-behavior scenarios and scores the conversation, including a retry after a
-steer, a follow-up in the same thread and a fix written as text without a
-claimed write. The bench gate: every must-pass check
-passes in every run and at least 90% of soft checks pass. A smoke bench uses the
-same gate (the fake model is deterministic, so a failure is a plumbing
-regression). Reports are attached and named after the model, never the key. A
-smoke report is labeled as plumbing only.
-
-For an open-model baseline, point the same eval at Ollama. The local server
-ignores the API key; set `OLLAMA_API_KEY` to any non-empty value for the client:
+For an open-model baseline, point the eval at Ollama. The local server ignores
+the key, but the client needs a non-empty one:
 
 ```bash
 EVAL_PROVIDER=compatible \
 EVAL_MODEL=qwen2.5:3b \
 EVAL_BASE_URL=http://127.0.0.1:11434/v1 \
-EVAL_API_KEY="$OLLAMA_API_KEY" \
+EVAL_API_KEY=ollama \
 xvfb-run -a node scripts/eval.mjs --runs 1
 ```
 
-The visual gate in CI compares committed captures to `visual/baseline` with a
-5% global budget plus a 64px local-region check. A screenshot run is evidence of
-rendered states; it is not a substitute for the E2E interaction checks.
+The visual gate compares the captures to `visual/baseline` with a 5% global
+budget and a 64px tile check. It is evidence of rendered states, not a
+substitute for the E2E interaction checks.
 
 ## Update path
 
-`electron-updater` checks this repository's GitHub releases in packaged builds.
-A release must keep:
+`electron-updater` checks this repository's GitHub releases in packaged
+builds. A release keeps:
 
-- the same `appId` (`com.storageagent.app`);
+- the `appId` `com.storageagent.app`;
 - `latest.yml`, `latest-mac.yml` and `latest-linux.yml`;
-- the existing artifact naming convention in `package.json`.
+- the artifact name `storage-agent-${version}-${os}-${arch}.${ext}`.
 
-A missing feed is shown in Settings as an unavailable update source instead of
-failing silently. Before publishing a packaging or updater change, install the
-previous release, let it check, download and restart. That upgrade is a manual
-check; there is no automated upgrade E2E.
+A missing feed shows in Settings as an unavailable update source. Before
+publishing a packaging or updater change, install the previous release and let
+it check, download and restart; there is no automated upgrade test.
 
-## Release notes and version
+## Version
 
-Version is the `package.json` version and the tag is `v<version>`. Published
-tags are immutable; put a correction in a new patch release. The Settings sheet
-shows the installed version and the update state. The full release record lives
-in `CHANGELOG.md` and on the GitHub release.
-
-## Current release facts
-
-The latest release is **36.0.0** (2026-10-29). Earlier release notes
-may describe retired behavior; they are history. Keep `README.md`,
-`CHANGELOG.md` and this paragraph in step with the next tag, and refresh
-`docs/screenshot.png` if the surface changed. 36.0 makes the window a
-conversation and the agent the only reader: each task is one thread of the
-user's messages and the agent's steps and text, projected by
-`shared/conversation.ts`, and every read goes through the agent. The tools are
-nine (`buckets`, `objects`, `object`, `config`, `account`, `probe`, `query`,
-`note`, `ask`) and return each API's answer as it came, scrubbed of account
-ids (`s3/raw.ts`). The rule engine and Issues, the `survey`, `estate`,
-`change_plan` and `accept_risk` tools, generated change plans, reading records
-and posture history, scheduled checks, **Check account**, demo storage, the
-scripted check and re-check, app-level answer validation, the scope line and
-the evidence strips were removed. The runaway ceiling still derives from
-durable entries. Schema head 16 drops the rule engine's tables and the
-providers' schedule and account columns; 35.x tasks open as conversations.
+The version is the `package.json` version, **37.0.0**, and the tag is
+`v<version>`. Published tags are immutable; a correction is a new patch
+release. Settings shows the installed version and the update state. Keep
+`README.md` and `docs/screenshot.png` in step with the surface when tagging.

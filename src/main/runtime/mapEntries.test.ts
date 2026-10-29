@@ -87,13 +87,13 @@ describe('entry projection', () => {
           {
             role: 'toolResult',
             toolCallId: 'call-1',
-            toolName: 'buckets',
+            toolName: 'call',
             content: [{ type: 'text', text: 'ok' }],
             details: {
               target: 'Prod',
               note: '2 buckets',
               args: '{"provider_id":"p1"}',
-              view: { kind: 'buckets', rows: { columns: ['Bucket'], rows: [['a']] } },
+              view: { kind: 'raw', title: 's3 ListBuckets', value: { Buckets: [{ Name: 'a' }] } },
               ms: 12,
             },
             isError: false,
@@ -104,14 +104,14 @@ describe('entry projection', () => {
     ])
     expect(out[0]).toMatchObject({
       kind: 'tool',
-      name: 'buckets',
+      name: 'call',
       target: 'Prod',
       status: 'done',
       args: '{"provider_id":"p1"}',
       ms: 12,
     })
     if (out[0]?.kind !== 'tool') throw new Error('expected a tool entry')
-    expect(out[0].view?.kind).toBe('buckets')
+    expect(out[0].view?.kind).toBe('raw')
   })
 
   it('marks a tool error and keeps its note', () => {
@@ -189,44 +189,6 @@ describe('entry projection', () => {
     ])
   })
 
-  it('reads a 35.0 scripted check as ordinary calls and an answer', () => {
-    const out = entries([
-      { id: 'run1', kind: 'sa.run', data: { trigger: 'check', at: '2026-10-24T12:00:00.000Z' } },
-      {
-        id: 'call1',
-        kind: 'sa.call',
-        data: {
-          name: 'survey',
-          at: '2026-10-24T12:00:00.000Z',
-          details: {
-            target: 'Prod',
-            note: '1 bucket',
-            ms: 4,
-            status: 'done',
-            evidenceId: 'chk_1',
-            key: 'k1',
-            view: { kind: 'buckets', rows: { columns: ['Bucket'], rows: [['logs']] } },
-          },
-        },
-      },
-      {
-        id: 'ans1',
-        kind: 'sa.answer',
-        data: {
-          text: '1 risk is open across 1 bucket, including `logs`.',
-          at: '2026-10-24T12:00:01.000Z',
-        },
-      },
-    ])
-    expect(out.map((entry) => entry.kind)).toEqual(['tool', 'answer'])
-    expect(out[0]).toMatchObject({
-      name: 'survey',
-      target: 'Prod',
-      evidenceId: 'chk_1',
-    })
-    expect(out[1]).toMatchObject({ text: '1 risk is open across 1 bucket, including `logs`.' })
-  })
-
   it('keeps a steer apart from a request', () => {
     const out = entries([
       {
@@ -251,7 +213,7 @@ describe('entry projection', () => {
     expect(out).toEqual([{ id: 'e11', kind: 'resume', at: new Date(3).toISOString() }])
   })
 
-  it('keeps a call to a tool this version does not have, with what the agent received', () => {
+  it('keeps a call to a tool that does not exist as a failed step, with what the agent received', () => {
     const out = entries([
       {
         id: 'e12',
@@ -260,12 +222,8 @@ describe('entry projection', () => {
           {
             role: 'toolResult',
             toolCallId: 'x',
-            toolName: 'survey',
-            content: [{ type: 'text', text: 'Tool survey not found' }],
-            details: {
-              target: 'Old',
-              view: { kind: 'survey', buckets: { columns: [], rows: [] } },
-            },
+            toolName: 'shell',
+            content: [{ type: 'text', text: 'Tool shell not found' }],
             isError: true,
             timestamp: 1,
           },
@@ -275,9 +233,10 @@ describe('entry projection', () => {
     expect(out).toHaveLength(1)
     expect(out[0]).toMatchObject({
       kind: 'tool',
-      name: 'survey',
+      name: 'shell',
+      status: 'failed',
       view: null,
-      output: 'Tool survey not found',
+      output: 'Tool shell not found',
     })
   })
 

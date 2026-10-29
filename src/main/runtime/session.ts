@@ -100,6 +100,7 @@ export class Runtime {
     const tools: ToolDeps = {
       db: deps.db,
       providers: deps.providers,
+      taskDir: deps.dirs.task,
       datasetsDir: deps.dirs.datasets,
       uploadsDir: deps.dirs.uploads,
       lang: () => deps.settings.get().language,
@@ -111,7 +112,6 @@ export class Runtime {
       createAgent(
         tools,
         {
-          records: (id) => runtime?.records(id) ?? Promise.resolve(null),
           digest: () => runtime?.digest ?? '',
           language: () => deps.settings.get().language,
         },
