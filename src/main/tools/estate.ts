@@ -21,6 +21,7 @@ import {
 } from '../estate/changes'
 import { ACCOUNT_SCOPE, BY_CODE, ruleTitle } from '../estate/rules'
 import { redact } from '../security/redact'
+import { tableText } from '../util'
 import { agentTool, assertInScope, providerParam, type ToolDeps, Type } from './policy'
 
 function dim(value: unknown): string {
@@ -269,7 +270,7 @@ export function estateTools(deps: ToolDeps) {
                   ? 'checked'
                   : 'read',
               '—',
-              `${reading.complete ? 'complete' : 'partial'} · ${reading.processed}/${reading.visible} buckets · ${reading.open_high} high`,
+              `${reading.processed}/${reading.visible} buckets read${reading.pending ? ` · ${reading.pending} pending` : ''}${reading.denied ? ` · ${reading.denied} denied` : ''}${reading.unknown ? ` · ${reading.unknown} unknown` : ''}${reading.truncated ? ' · truncated' : ''} · ${reading.open_total} open Issues (${reading.open_high} high)`,
             ]),
             ...eventRows.map((event) => [
               event.at.slice(0, 10),
@@ -297,23 +298,20 @@ export function estateTools(deps: ToolDeps) {
             oldest !== newest ? ` to ${age(newest)}` : ''
           }. ${open.length} open Issue(s)${accepted ? `, ${accepted} accepted by the user` : ''}.`,
           'This is memory, not a fresh read: survey when the question is about the current state.',
-          ...open
-            .slice(0, 8)
-            .map(
-              (issue) =>
-                `[${issue.severity}] ${issue.title} — ${issue.bucket || 'account'} · rule ${issue.code}${issue.detail ? ` (${issue.detail})` : ''}`,
-            ),
+          tableText(table.columns, table.rows),
+          ...issues.map(
+            (issue) =>
+              `[${issue.severity}] ${issue.title} — ${issue.bucket || 'account'} · rule ${issue.code} · ${issue.status}${issue.detail ? ` (${issue.detail})` : ''}`,
+          ),
           ...(historyTable
             ? [
                 historyTable.rows.length
                   ? `History (newest first, ${historyTable.rows.length} row(s)):`
                   : 'History: no matching Issue event or posture change is remembered.',
-                ...historyTable.rows
-                  .slice(0, 10)
-                  .map((row) => `${row[0]} ${row[1]} ${row[2]} — ${row[3]}`),
+                ...historyTable.rows.map((row) => `${row[0]} ${row[1]} ${row[2]} — ${row[3]}`),
               ]
             : []),
-          ...notes.slice(0, 6).map((note) => `note: ${note.text.slice(0, 160)}`),
+          ...notes.map((note) => `note: ${note.text}`),
         ]
         return {
           model: lines.join('\n'),
@@ -345,7 +343,7 @@ export function estateTools(deps: ToolDeps) {
     agentTool(deps, {
       name: 'change_plan',
       description:
-        'Build one change plan for Open Issues: a baseline, merged steps with AWS CLI/Terraform/API text, impact from the remembered posture, manual blockers and residual findings. Omit bucket and code for every open issue, or set either to narrow the plan. Read-only; the user applies it and re-verification confirms it.',
+        'Build one change plan: a baseline, merged steps with AWS CLI/Terraform/API text, impact from the remembered posture, manual blockers and residual findings. Omit bucket and code for every open Issue, set either to narrow it, or set both to plan that change for that bucket whether or not an Issue is open. Read-only; the user applies it, and only a later read shows it took effect.',
       parameters: Type.Object({
         provider_id: providerParam,
         bucket: Type.Optional(
@@ -353,7 +351,7 @@ export function estateTools(deps: ToolDeps) {
         ),
         code: Type.Optional(
           Type.String({
-            description: `Issue code, one of: ${[...BY_CODE.keys()].join(', ')}. Omit for every open issue.`,
+            description: `Rule code, one of: ${[...BY_CODE.keys()].join(', ')}. Omit for every open Issue.`,
           }),
         ),
       }),
@@ -361,11 +359,15 @@ export function estateTools(deps: ToolDeps) {
       target: (args) => args.bucket ?? args.code ?? 'all issues',
       run: async (args, run) => {
         const { config, client } = await run.provider(args.provider_id)
-        const issues = (
+        let issues: { bucket: string; code: string; severity: Severity }[] = (
           await deps.db.listIssues({ providerId: config.id, status: 'open', limit: 500 })
         )
           .filter((issue) => !args.bucket || issue.bucket === args.bucket)
           .filter((issue) => !args.code || issue.code === args.code)
+        // The agent named a bucket and a change: plan it, Issue or not.
+        const named = args.bucket && args.code ? BY_CODE.get(args.code) : undefined
+        if (!issues.length && named && args.bucket)
+          issues = [{ bucket: args.bucket, code: named.code, severity: named.severity }]
         if (!issues.length)
           throw new Error(
             `No open Issue${args.code ? ` '${args.code}'` : ''}${args.bucket ? ` on ${args.bucket}` : ''}. Survey or review it first.`,
@@ -609,13 +611,15 @@ export function estateTools(deps: ToolDeps) {
               ? ruleTitle(BY_CODE.get(issue.code)!, deps.lang())
               : issue.code,
           }))
-        const reading = await deps.db.latestCompleteReading(config.id)
+        const reading = await deps.db.latestReading(config.id)
         const baseline = reading
           ? {
               at: reading.at,
-              complete: true,
               visible: reading.visible,
               processed: reading.processed,
+              pending: reading.pending,
+              denied: reading.denied,
+              unknown: reading.unknown,
               openHigh: reading.open_high,
               openTotal: reading.open_total,
             }
@@ -637,8 +641,10 @@ export function estateTools(deps: ToolDeps) {
             .slice(0, 10)
             .map((item) => `residual: ${item.bucket || 'account'} — ${item.title}`),
           baseline
-            ? `Baseline: complete reading ${baseline.at.slice(0, 10)}.`
-            : 'Baseline: no complete reading is recorded; this plan is based on remembered state.',
+            ? `Baseline: account survey ${baseline.at.slice(0, 10)}, ${baseline.processed}/${baseline.visible} buckets read${
+                baseline.pending ? `, ${baseline.pending} pending` : ''
+              }${baseline.denied ? `, ${baseline.denied} denied` : ''}${baseline.unknown ? `, ${baseline.unknown} unknown` : ''}.`
+            : 'Baseline: no account survey is recorded; this plan is based on remembered state.',
         ]
         const plan: ChangePlan = { steps, baseline, residual, summary }
         return {

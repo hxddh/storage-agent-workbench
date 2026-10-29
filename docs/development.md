@@ -38,9 +38,9 @@ Issue lifecycle (opened, resolved, gone, accepted, recurred), schema migrations,
 scope and the tool floor, code mode (sandbox, budgets, timeout, import), demo
 storage, generated change plans and impact, log normalization and IP masking,
 CSV/Parquet import and the aggregate whitelist, the search index, entry → UI
-projection (including 35.x entries), the turn ledger, the conversation
-projection (order, steers, the live slot, citations, the newest plan per turn,
-Markdown), turn guards rebuilt from durable entries, migration 15, redaction,
+projection (including 35.x entries and budget-blocked calls), the conversation
+projection (order, steers, the live slot, citations, replaced plans, Markdown),
+the round budget rebuilt from durable entries, migrations 15 and 16, redaction,
 provider capabilities, posture diffs, permission diagnosis, model windows,
 access evaluation and reading records. `Conversation.test.tsx` and
 `Composer.test.tsx` run in jsdom; the rest use Node.

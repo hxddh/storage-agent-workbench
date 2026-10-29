@@ -2,7 +2,7 @@
 
 ## Application tables (`storage-agent.db`)
 
-`user_version` is the schema version (head **15**). Migrations are append-only
+`user_version` is the schema version (head **16**). Migrations are append-only
 in `main/db.ts`; the schema is created with `CREATE TABLE IF NOT EXISTS`, then
 old databases are brought forward by version checks. There is no separate
 migration tool.
@@ -17,7 +17,7 @@ migration tool.
 | `audit` | `id`, `conversation_id`, `tool`, `target`, `outcome`, `at` |
 | `task_meta` | `conversation_id`, `title`, `created_at`, `updated_at`, `pinned`, `model_json` |
 | `posture_changes` | `id`, `provider_id`, `bucket`, `at`, `changes_json` |
-| `readings` | `id`, `conversation_id`, `provider_id`, `at`, `trigger` (`task`; older rows may hold `check`/`reverify`), `complete`, `visible`, `processed`, `pending`, `denied`, `unknown`, `truncated`, `open_high`, `open_total` |
+| `readings` | `id`, `conversation_id`, `provider_id`, `at`, `trigger` (`task`; older rows may hold `check`/`reverify`), `visible`, `processed`, `pending`, `denied`, `unknown`, `truncated`, `open_high`, `open_total` |
 | `datasets` | `id`, `conversation_id`, `kind`, `path`, `rows`, `bytes`, `created_at` |
 | `search_docs` | `conversation_id`, `entry_id`, `kind`, `text`, `at` — derived index |
 | `search_docs_fts` | FTS5 trigram mirror of `search_docs`; short queries fall back to LIKE |
@@ -43,15 +43,13 @@ it is a read of these rows, not a second store.
 
 `readings` is the compact history of settled account reads: one row per account
 a settled turn surveyed account-wide (a survey narrowed to named buckets adds no
-row of its own). It stores counts and booleans, the triggering path and the
-current open Issue totals, never a request, answer, policy document, account id
-or secret. `complete = 1` only when the turn left nothing open for that account:
-no pending, truncated, denied or unknown bucket, no permission gap, blind spot,
-failed read, access gap or undecided rule (`readState()` in `shared/ledger.ts`).
-Every row 36 writes has `trigger = 'task'`; `estate` history shows older `check`
-and `reverify` rows as `checked` and `rechecked`. Only the agent reads them:
-`estate` uses each account's latest complete row, and its history includes up
-to 30 reading rows in an unfiltered view. The window does not show readings.
+row of its own; `runtime/readings.ts`). It stores the survey's counts and the
+open Issue totals at the time — no verdict, never a request, answer, policy
+document, account id or secret. Every row 36 writes has `trigger = 'task'`;
+`estate` history shows older `check` and `reverify` rows as `checked` and
+`rechecked`. Only the agent reads them: a change plan's baseline is the
+account's latest row, and `estate` history includes up to 30 reading rows in an
+unfiltered view. The window does not show readings.
 
 `task_meta.model_json` is a per-task model override (`provider`, `modelId`,
 `baseUrl`, `thinking`); null means the model in Settings. The provider key is
@@ -79,10 +77,10 @@ Entry kinds the window understands:
 |---|---|
 | `sa.run` | a user message; data `{ trigger: 'user', text, attachments, context? }`. It starts a turn |
 | `sa.steer` | a message sent while the agent works; data like `sa.run`. It joins the running turn |
-| `sa.resume` | the user continued a stopped turn; shown as a divider, not a message |
-| `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window. Codes: `stopped`, `no_answer`, `failed`, `budget`, `model_missing` |
+| `sa.resume` | the user continued a stopped turn; the model gets `Continue.` and nothing else; shown as a divider |
+| `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window. Codes: `stopped`, `no_answer`, `failed`, `budget` |
 | `pi.assistant` | model output; its text and reasoning summary are projected, `model` is not sent to the window |
-| `pi.tool-result` | a tool result; `details` is `{ target, note, progress, args, view, ms, status, evidenceId, key, assessed? }` |
+| `pi.tool-result` | a tool result; `details` is `{ target, note, progress, args, view, ms, status, evidenceId }`; its text content is exactly what the model received, and the step shows it |
 | `pi.compaction` | compaction divider |
 
 Entries 35.x wrote still open: an `sa.call` reads as a tool step and an
@@ -91,22 +89,27 @@ Entries 35.x wrote still open: an `sa.call` reads as a tool step and an
 shown. A `pi.user` entry (35.x's answer correction) is not shown either. 36
 writes none of these.
 
-`details.key` is a hash of the call's exact arguments; the turn ledger blocks a
-repeated read by it. `details.assessed` is what the rules did with the reading
-(Issues opened, resolved, recurred), written by `estate/assess.ts`. An
-`accept_risk` result carries an `accept` view (`{ issue, accept }`); it records
-a request, not an acceptance.
+35.x results may still carry `details.key` and `details.assessed`; 36 neither
+writes nor reads them. A call the round budget blocked has no `details`: it
+shows as a step that did not run, with the block text as what the agent
+received. An `accept_risk` result carries an `accept` view (`{ issue, accept }`);
+it records a request, not an acceptance.
 
-The turn's state (rounds, calls, coverage) is never stored separately:
-`shared/ledger.ts` derives it from these entries, so a restarted process
-rebuilds the same guards.
+The turn's round count is never stored separately: `runtime/agent.ts` derives
+it from these entries, so a restarted process has the same budget.
 
 pi's `pi.usage` document supplies the task's token and cost totals; the
 overflow menu's JSON export includes them.
 
+## Migration 16
+
+36.0 drops `readings.complete` and recreates `readings_provider_at` on
+`(provider_id, at)`. The column was a verdict the app composed from a survey's
+counts; the counts stay, and so do accounts, memory, Issues and tasks.
+
 ## Migration 15
 
-Schema head **15**; 36.0 adds no migration. Tasks written before 35.0 use entry
+Tasks written before 35.0 use entry
 kinds 35 does not read,
 so migration 15 starts the task history over: it drops the `pi_*` tables and
 clears `task_meta`, `search_docs`, `datasets` and `audit`, and the shell clears

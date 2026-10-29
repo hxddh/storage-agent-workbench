@@ -14,9 +14,7 @@ export function noticeText(notice: NoticeFact, t: Dict): string {
           ? t.noticeFailed
           : notice.code === 'budget'
             ? t.noticeBudget
-            : notice.code === 'model_missing'
-              ? t.noticeModelMissing
-              : ''
+            : ''
   if (!base) return notice.text
   return notice.text && notice.code !== 'stopped' ? `${base} ${notice.text}` : base
 }

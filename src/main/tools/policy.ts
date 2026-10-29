@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import type { S3Client } from '@aws-sdk/client-s3'
 import type { Context } from '@earendil-works/chord'
 import { type Static, type TSchema, Type } from '@earendil-works/pi-ai'
@@ -46,26 +45,6 @@ function argsSummary(args: unknown): string | null {
   } catch {
     return null
   }
-}
-
-/** Canonical JSON of the arguments, without undefined fields and with sorted keys. */
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical)
-  if (!value || typeof value !== 'object') return value
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([, item]) => item !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, item]) => [key, canonical(item)]),
-  )
-}
-
-/** The key the run ledger uses to recognise the same call: name and exact arguments. */
-export function callKey(name: string, args: unknown): string {
-  return createHash('sha256')
-    .update(`${name}:${JSON.stringify(canonical(args ?? {}))}`)
-    .digest('hex')
-    .slice(0, 24)
 }
 
 export function assertInScope(provider: ProviderConfig, bucket: string): void {
@@ -121,7 +100,6 @@ export function agentTool<T extends TSchema>(
       const signal = context.abortSignal ? AbortSignal.any([context.abortSignal, timeout]) : timeout
       const conversationId = String(api.conversationId)
       const callArgs = argsSummary(args)
-      const key = callKey(def.name, args)
       const assess = new Assessor(deps.db, conversationId)
       let regional: ((region: string) => S3Client) | undefined
       let progressNote: string | null = null
@@ -141,7 +119,6 @@ export function agentTool<T extends TSchema>(
         view: null,
         ms: null,
         status: 'running',
-        key,
       })
       /** Keep the visible progress line in shaped details, never raw output. */
       const progress = (text: string) => {
@@ -186,8 +163,6 @@ export function agentTool<T extends TSchema>(
           ms: Date.now() - started,
           status: 'done',
           ...(evidenceId ? { evidenceId } : {}),
-          key,
-          ...(assess.summary() ? { assessed: assess.summary() } : {}),
         }
         // Let every queued progress write land before the final shaped result.
         await detailsWrite
@@ -235,9 +210,6 @@ export function agentTool<T extends TSchema>(
           ms: Date.now() - started,
           status,
           ...(evidenceId ? { evidenceId } : {}),
-          key,
-          // A read that stopped half way may still have changed Issues; say so.
-          ...(assess.summary() ? { assessed: assess.summary() } : {}),
         }
         await detailsWrite
         return {

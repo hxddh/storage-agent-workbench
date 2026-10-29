@@ -3,7 +3,7 @@ import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 import { detectProviderKind } from './s3/capabilities'
 
-export const HOST_SCHEMA_VERSION = 15
+export const HOST_SCHEMA_VERSION = 16
 
 export interface ProviderRow {
   id: string
@@ -72,14 +72,13 @@ export interface IssueEventRecord {
 
 export type ReadingTrigger = 'check' | 'task' | 'reverify'
 
-/** A settled reading of an account, with its coverage and current open risk. */
+/** A settled account survey: its counts and the open risk at the time. No verdict. */
 export interface ReadingRecord {
   id: string
   conversation_id: string | null
   provider_id: string
   at: string
   trigger: ReadingTrigger
-  complete: number
   visible: number
   processed: number
   pending: number
@@ -208,7 +207,6 @@ CREATE TABLE IF NOT EXISTS readings (
   provider_id TEXT NOT NULL,
   at TEXT NOT NULL,
   trigger TEXT NOT NULL,
-  complete INTEGER NOT NULL DEFAULT 0,
   visible INTEGER NOT NULL DEFAULT 0,
   processed INTEGER NOT NULL DEFAULT 0,
   pending INTEGER NOT NULL DEFAULT 0,
@@ -220,7 +218,7 @@ CREATE TABLE IF NOT EXISTS readings (
 );
 
 CREATE INDEX IF NOT EXISTS issues_open ON issues (provider_id, status, severity);
-CREATE INDEX IF NOT EXISTS readings_provider_at ON readings (provider_id, complete, at);
+CREATE INDEX IF NOT EXISTS readings_provider_at ON readings (provider_id, at);
 CREATE INDEX IF NOT EXISTS issue_events_issue ON issue_events (issue_id, at);
 CREATE INDEX IF NOT EXISTS notes_scope ON notes (scope, ref, created_at);
 CREATE INDEX IF NOT EXISTS datasets_conversation ON datasets (conversation_id);
@@ -381,6 +379,16 @@ export class AppDb {
       await raw.exec('UPDATE issue_events SET conversation_id = NULL')
       await raw.exec('UPDATE readings SET conversation_id = NULL')
       resetTasks = true
+    }
+    if (version < 16) {
+      // 36.0: a reading keeps its counts, not a "complete" verdict the app
+      // composed from them. What a reading left open is the agent's to say.
+      const columns = await raw.all<{ name: string }>('PRAGMA table_info(readings)')
+      if (columns.some((column) => column.name === 'complete')) {
+        await raw.exec('DROP INDEX IF EXISTS readings_provider_at')
+        await raw.exec('ALTER TABLE readings DROP COLUMN complete')
+        await raw.exec('CREATE INDEX readings_provider_at ON readings (provider_id, at)')
+      }
     }
     if (version < HOST_SCHEMA_VERSION) {
       await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
@@ -627,7 +635,6 @@ export class AppDb {
     providerId: string
     at: string
     trigger: ReadingTrigger
-    complete: boolean
     visible: number
     processed: number
     pending: number
@@ -643,7 +650,6 @@ export class AppDb {
       provider_id: input.providerId,
       at: input.at,
       trigger: input.trigger,
-      complete: input.complete ? 1 : 0,
       visible: Math.max(0, input.visible),
       processed: Math.max(0, input.processed),
       pending: Math.max(0, input.pending),
@@ -655,15 +661,14 @@ export class AppDb {
     }
     await this.raw.run(
       `INSERT INTO readings
-        (id, conversation_id, provider_id, at, trigger, complete, visible, processed,
+        (id, conversation_id, provider_id, at, trigger, visible, processed,
          pending, denied, unknown, truncated, open_high, open_total)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       record.id,
       record.conversation_id,
       record.provider_id,
       record.at,
       record.trigger,
-      record.complete,
       record.visible,
       record.processed,
       record.pending,
@@ -677,17 +682,13 @@ export class AppDb {
   }
 
   async listReadings(
-    filter: { providerId?: string; complete?: boolean; since?: string; limit?: number } = {},
+    filter: { providerId?: string; since?: string; limit?: number } = {},
   ): Promise<ReadingRecord[]> {
     const where: string[] = []
     const params: (string | number)[] = []
     if (filter.providerId) {
       where.push('provider_id = ?')
       params.push(filter.providerId)
-    }
-    if (filter.complete !== undefined) {
-      where.push('complete = ?')
-      params.push(filter.complete ? 1 : 0)
     }
     if (filter.since) {
       where.push('at >= ?')
@@ -701,15 +702,12 @@ export class AppDb {
     )
   }
 
-  async latestCompleteReading(providerId?: string): Promise<ReadingRecord | undefined> {
-    return providerId
-      ? this.raw.get<ReadingRecord>(
-          'SELECT * FROM readings WHERE provider_id = ? AND complete = 1 ORDER BY at DESC, id DESC LIMIT 1',
-          providerId,
-        )
-      : this.raw.get<ReadingRecord>(
-          'SELECT * FROM readings WHERE complete = 1 ORDER BY at DESC, id DESC LIMIT 1',
-        )
+  /** The latest account-wide survey of this account. */
+  async latestReading(providerId: string): Promise<ReadingRecord | undefined> {
+    return this.raw.get<ReadingRecord>(
+      'SELECT * FROM readings WHERE provider_id = ? ORDER BY at DESC, id DESC LIMIT 1',
+      providerId,
+    )
   }
 
   async listBuckets(providerId: string): Promise<BucketRow[]> {

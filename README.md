@@ -149,9 +149,9 @@ fallbacks.
 - Tool output reaches the model inside `<untrusted-data>` and is bounded and
   redacted. Tool status comes from `details.status`, never from result text.
 - A denied or unsupported read is a blind spot. It is never converted into a
-  clean result: the call stays in the conversation as a failed step, and the
-  agent is told to say what it could not read. The window adds no coverage
-  summary of its own.
+  clean result: the call stays in the conversation as a failed step, the agent
+  receives what it could not read, and saying so is the agent's. The app adds
+  no coverage summary or verdict of its own.
 - Access analysis is evidence, not a complete authorization decision. Policy
   and ACL grants are not merged with every identity, SCP and condition into a
   single yes/no; service principals, federated identities and some external

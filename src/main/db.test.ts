@@ -117,6 +117,30 @@ describe('schema', () => {
     expect((await AppDb.open(raw)).resetTasks).toBe(false)
   })
 
+  it('drops the 35.x reading verdict and keeps the counts and the tasks', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sa-mig36-'))
+    const raw = await openNodeSqliteDatabase(join(dir, 'v35.sqlite'))
+    await raw.exec(`
+      CREATE TABLE readings (id TEXT PRIMARY KEY, conversation_id TEXT, provider_id TEXT NOT NULL,
+        at TEXT NOT NULL, trigger TEXT NOT NULL, complete INTEGER NOT NULL DEFAULT 0,
+        visible INTEGER NOT NULL DEFAULT 0, processed INTEGER NOT NULL DEFAULT 0,
+        pending INTEGER NOT NULL DEFAULT 0, denied INTEGER NOT NULL DEFAULT 0,
+        unknown INTEGER NOT NULL DEFAULT 0, truncated INTEGER NOT NULL DEFAULT 0,
+        open_high INTEGER NOT NULL DEFAULT 0, open_total INTEGER NOT NULL DEFAULT 0);
+      CREATE INDEX readings_provider_at ON readings (provider_id, complete, at);
+      INSERT INTO readings (id, conversation_id, provider_id, at, trigger, complete, visible, processed)
+        VALUES ('r1', 'c1', 'p', '2026-01-01T00:00:00.000Z', 'check', 1, 4, 4);
+      PRAGMA user_version = 15;
+    `)
+    const db = await AppDb.open(raw)
+    expect(db.resetTasks).toBe(false)
+    const columns = await raw.all<{ name: string }>('PRAGMA table_info(readings)')
+    expect(columns.map((column) => column.name)).not.toContain('complete')
+    expect(await db.latestReading('p')).toMatchObject({ id: 'r1', visible: 4, processed: 4 })
+    const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
+    expect(version?.user_version).toBe(HOST_SCHEMA_VERSION)
+  })
+
   it('infers the kind of a provider added before the kind column existed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sa-mig-kind-'))
     const raw = await openNodeSqliteDatabase(join(dir, 'old.sqlite'))
@@ -185,14 +209,13 @@ describe('issue lifecycle', () => {
     expect(await db.countBuckets('p')).toBe(1)
   })
 
-  it('keeps complete and partial readings apart and returns the latest complete one', async () => {
+  it('keeps each reading’s counts and returns the latest one, with no verdict', async () => {
     const db = await open()
     await db.insertReading({
       conversationId: 'c1',
       providerId: 'p',
       at: '2026-01-01T00:00:00.000Z',
       trigger: 'check',
-      complete: true,
       visible: 3,
       processed: 3,
       pending: 0,
@@ -207,7 +230,6 @@ describe('issue lifecycle', () => {
       providerId: 'p',
       at: '2026-01-02T00:00:00.000Z',
       trigger: 'task',
-      complete: false,
       visible: 3,
       processed: 2,
       pending: 1,
@@ -217,9 +239,9 @@ describe('issue lifecycle', () => {
       openHigh: 2,
       openTotal: 3,
     })
-    expect((await db.listReadings({ providerId: 'p' })).map((row) => row.complete)).toEqual([0, 1])
-    expect((await db.latestCompleteReading('p'))?.at).toBe('2026-01-01T00:00:00.000Z')
-    expect(await db.listReadings({ providerId: 'p', complete: true })).toHaveLength(1)
+    expect((await db.listReadings({ providerId: 'p' })).map((row) => row.processed)).toEqual([2, 3])
+    expect((await db.latestReading('p'))?.at).toBe('2026-01-02T00:00:00.000Z')
+    expect(await db.latestReading('p')).not.toHaveProperty('complete')
   })
 
   it('reads Issue events with the Issue they belong to, and filters them', async () => {

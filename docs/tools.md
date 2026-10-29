@@ -15,18 +15,18 @@ nothing itself.
 
 | Group | Tool | Input | Model output | View |
 |---|---|---|---|---|
-| read | `survey` | `provider_id?`, `buckets?` (≤50), `limit?` (≤5000) | buckets read, public, account block, capacity and largest buckets, undecided rules, Issue delta, what was not read | bucket table with capacity, open and accepted Issues, resolutions, account block, coverage |
-| read | `buckets` | `provider_id?` | names | name + created |
-| read | `objects` | `provider_id?`, `bucket`, `prefix?`, `kind?` (`keys`/`versions`/`uploads`), `limit?` (≤200; default 50) | one page count | key table with truncation |
-| read | `object` | `provider_id?`, `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`) | facts | fact list, bounded text preview |
-| read | `config` | `provider_id?`, `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules proved clean; for `access`, grants and coverage | finding list, observations, access chain and coverage |
+| read | `survey` | `provider_id?`, `buckets?` (≤50), `limit?` (≤5000) | buckets read, the bucket table, open Issues, public, account block, capacity and largest buckets, undecided rules, Issue delta, what was not read | bucket table with capacity, open and accepted Issues, resolutions, account block, coverage |
+| read | `buckets` | `provider_id?` | name + created table | name + created |
+| read | `objects` | `provider_id?`, `bucket`, `prefix?`, `kind?` (`keys`/`versions`/`uploads`), `limit?` (≤200; default 50) | the page as a table, and whether more exist | key table with truncation |
+| read | `object` | `provider_id?`, `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`) | facts (metadata names only, never values) and the text preview | fact list, bounded text preview |
+| read | `config` | `provider_id?`, `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules not triggered, exposure, missing permissions, the bucket's Issues; for `access`, every grant, blind source, missing permission and coverage | finding list, observations, access chain and coverage |
 | read | `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`) | check outcomes | check list |
 | read | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | first 40 rows, call/listing counts, script output | table, bar chart, script, buckets read |
-| memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with age, Issues (each line ends `· rule <code>`), notes; with `history`, Issue events, posture changes and reading events | bucket table, Issues, notes, optional history table |
+| memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | the remembered bucket table with age, every Issue (each line has `· rule <code>`), notes; with `history`, Issue events, posture changes and reading counts | bucket table, Issues, notes, optional history table |
 | memory | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
 | memory | `accept_risk` | `provider_id?`, `bucket` (empty for the account rule), `code` (the rule code as `estate` lists it), `accept?` (default true; false reopens) | the window asks the user; it is not accepted until they confirm | confirmation card with **Accept risk** or **Reopen** |
-| change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
-| plan | `plan` | `steps` (1–6), `note?` | optional plan recorded | pending/active/done/blocked checklist; only its newest version per turn is shown |
+| change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue; both plan that change for that bucket, Issue or not) | one change plan: baseline (latest account survey, as counts), merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
+| plan | `plan` | `steps` (1–6), `note?` | optional plan recorded | pending/active/done/blocked checklist; a version replaced later in the turn shows as one line |
 | skill | `skill` | `name?` | one method, or the four methods | a `Read a method` step; not a check |
 | ask | `ask` | `question` (≤300), `options` (1–4), `note?` | one question; the turn ends until the user answers | the question as an agent message, with one button per option while it waits |
 
@@ -40,9 +40,12 @@ the window the link is a small button; clicking it opens that call's step in
 place and scrolls to it. The app does not validate citations or names; a link
 that matches no call is shown greyed as plain text, with a tooltip saying so.
 
-Every call is a step in the conversation, where it happened: a state mark, the
-tool's label, target, note, a status word when it did not finish, and its
-duration. A running step is open and shows `Waiting for the first result.`
+Every call is a step in the conversation, where it happened, a call the round
+budget blocked included: a state mark, the tool's label, target, note, a status
+word when it did not finish, and its duration. An open step shows the shaped
+result and, under `What the agent received`, the exact text the model got. A
+tool's model text carries the data its view shows, so the view never shows the
+user something the agent did not receive. A running step is open and shows `Waiting for the first result.`
 until it settles; a settled step opens on click to show the argument summary
 and the typed result. Live progress comes from `ToolDetails.progress` and the
 live tool's note, redacted and bounded; raw tool output never reaches the
@@ -90,11 +93,11 @@ agent loads is a `Read a method` step like any other call.
 
 ## Plan
 
-`plan` is optional. Use it when the work has several distinct steps; omit it for
-a short read. It renders 1–6 steps with pending/active/done/blocked states as a
-`Plan` block among the turn's steps. The agent revises it by calling `plan`
-again; within a turn only the newest version is shown
-(`latestPlans()` in `shared/conversation.ts`).
+`plan` is optional; the agent decides whether to use it. It renders 1–6 steps
+with pending/active/done/blocked states as a `Plan` block among the turn's
+steps. The agent revises it by calling `plan` again; every call stays in the
+thread, and a version replaced later in the same turn shows as one line,
+`Plan · updated below` (`supersededPlans()` in `shared/conversation.ts`).
 
 ## Accepting a risk
 
@@ -111,8 +114,7 @@ the risk fixed, it says so instead of offering the button.
 - A bucket outside `provider.scope.buckets` is refused before any request.
 - `survey` and `config` read through `s3/facts.ts` and decide rules from facts;
   a blind read decides nothing. They never write an Issue: they hand the
-  decisions to the call's `Assessor` (`estate/assess.ts`), and the transitions
-  travel with the call as `assessed`. `survey` remembers each bucket as soon as it is
+  decisions to the call's `Assessor` (`estate/assess.ts`). `survey` remembers each bucket as soon as it is
   read, reads the longest-unread first, uses at most 12 concurrent readers, stops
   starting buckets 20 seconds before its 300-second timeout, and reports the
   rest as pending; calling it again continues. Its step note gives the buckets
@@ -124,10 +126,9 @@ the risk fixed, it says so instead of offering the button.
   are batched in GetMetricData calls; the storage estimate is a list-price
   estimate, not a bill. An S3-compatible endpoint has neither, and the rules
   that need them stay undecided.
-- The harness blocks a storage read repeated with the same arguments in one turn
-  (`estate`, `change_plan`, `note`, `survey`, `accept_risk` and the control
-  tools may repeat), allows one retry after a failed read, and blocks every call
-  after the model tier's round budget (**14 small, 24 mid, 32 large**).
+- The harness blocks a call only past the model tier's round budget (**14
+  small, 24 mid, 32 large**). It never refuses a repeated call; repeating one is
+  the agent's decision.
 - `object.preview` reads at most 8 KiB and only for text-like content types under
   1 MiB; the body of a large object is never downloaded.
 - `dataset` imports at most 2,000,000 rows and `aggregate` answers only

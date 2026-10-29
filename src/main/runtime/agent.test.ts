@@ -1,7 +1,6 @@
 import type { EntryRecord } from '@earendil-works/pi-durable'
 import type { ToolDetails, ToolView } from '@shared/contract'
 import { describe, expect, it } from 'vitest'
-import { callKey } from '../tools/policy'
 import { blockReason, maxRounds, runView, tierFor } from './agent'
 
 let seq = 0
@@ -44,7 +43,6 @@ function result(
     ms: 5,
     status,
     evidenceId: id,
-    key: callKey(name, args),
   }
   return {
     id: `t${id}`,
@@ -83,49 +81,20 @@ describe('model tiers', () => {
   })
 })
 
-describe('run guards from durable entries', () => {
-  it('blocks a finished read, whatever the key order, and admits another aspect', () => {
+describe('the turn guard, from durable entries', () => {
+  it('leaves repeating a call to the agent', () => {
     const args = { bucket: 'demo', aspect: 'security' }
     const view = runView([
       request(),
       call('c1', 'config', args),
       result('c1', 'config', args, config('demo')),
-    ])
-    const inflight = new Set<string>()
-    expect(
-      blockReason(view, 'mid', 'config', { aspect: 'security', bucket: 'demo' }, inflight),
-    ).toMatch(/already ran/)
-    expect(
-      blockReason(view, 'mid', 'config', { bucket: 'demo', aspect: 'lifecycle' }, inflight),
-    ).toBeUndefined()
-  })
-
-  it('lets a failed read run once more, then blocks it', () => {
-    const args = { bucket: 'demo' }
-    const once = runView([
-      request(),
-      call('c1', 'config', args),
-      result('c1', 'config', args, null, 'failed'),
-    ])
-    expect(blockReason(once, 'mid', 'config', args, new Set())).toBeUndefined()
-    const twice = runView([
-      request(),
-      call('c1', 'config', args),
-      result('c1', 'config', args, null, 'failed'),
       call('c2', 'config', args),
       result('c2', 'config', args, null, 'failed'),
     ])
-    expect(blockReason(twice, 'mid', 'config', args, new Set())).toMatch(/already ran/)
+    expect(blockReason(view, 'mid')).toBeUndefined()
   })
 
-  it('treats two identical calls in one round as one read', () => {
-    const view = runView([request()])
-    const inflight = new Set<string>()
-    expect(blockReason(view, 'mid', 'objects', { bucket: 'demo' }, inflight)).toBeUndefined()
-    expect(blockReason(view, 'mid', 'objects', { bucket: 'demo' }, inflight)).toMatch(/already ran/)
-  })
-
-  it('starts every run with a fresh budget and fresh calls', () => {
+  it('starts every turn with a fresh budget', () => {
     const args = { bucket: 'demo' }
     const view = runView([
       request(),
@@ -134,22 +103,16 @@ describe('run guards from durable entries', () => {
       request('Again'),
     ])
     expect(view.rounds).toBe(0)
-    expect(blockReason(view, 'mid', 'config', args, new Set())).toBeUndefined()
   })
 
-  it('stops every tool past the round budget, counted from the entries', () => {
+  it('tells the agent to answer past the round budget, counted from the entries', () => {
     const records: EntryRecord[] = [request()]
     for (let index = 0; index < 15; index += 1) {
       const args = { bucket: `b${index}` }
       records.push(call(`c${index}`, 'objects', args), result(`c${index}`, 'objects', args, null))
     }
     // The same entries give the same budget after a restart: nothing is in memory.
-    expect(blockReason(runView(records), 'small', 'estate', {}, new Set())).toMatch(/Step budget/)
-    expect(blockReason(runView(records), 'mid', 'estate', {}, new Set())).toBeUndefined()
-  })
-
-  it('lets memory be read again as it changes', () => {
-    const view = runView([request(), call('c1', 'estate', {}), result('c1', 'estate', {}, null)])
-    expect(blockReason(view, 'mid', 'estate', {}, new Set())).toBeUndefined()
+    expect(blockReason(runView(records), 'small')).toMatch(/Step budget/)
+    expect(blockReason(runView(records), 'mid')).toBeUndefined()
   })
 })

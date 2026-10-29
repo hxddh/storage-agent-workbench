@@ -46,6 +46,8 @@ export type ThreadItem =
       ms: number | null
       evidenceId: string | null
       view: ToolView | null
+      /** What the agent received; null while live. */
+      output: string | null
     }
   | {
       kind: 'notice'
@@ -109,6 +111,7 @@ export function thread(entries: readonly UiEntry[], live: Live | null = null): T
           ms: entry.ms,
           evidenceId: entry.evidenceId ?? entry.callId ?? null,
           view: entry.view,
+          output: entry.output ?? null,
         })
         break
       case 'notice':
@@ -154,6 +157,7 @@ export function thread(entries: readonly UiEntry[], live: Live | null = null): T
       ms: null,
       evidenceId: tool.callId || null,
       view: null,
+      output: null,
     })
   }
   if (live.text?.trim())
@@ -168,10 +172,11 @@ export function thread(entries: readonly UiEntry[], live: Live | null = null): T
 }
 
 /**
- * The plan is one checklist the agent keeps updating, so within a turn only
- * its newest version is shown; the earlier ones are the same list, older.
+ * The plan is one checklist the agent keeps updating. Every `plan` call stays
+ * in the thread; the ones a later call in the same turn replaced are returned
+ * here, so the window can show them as one line instead of a stale checklist.
  */
-export function latestPlans(items: readonly ThreadItem[]): ThreadItem[] {
+export function supersededPlans(items: readonly ThreadItem[]): Set<string> {
   const superseded = new Set<string>()
   let last: string | null = null
   for (const item of items) {
@@ -181,7 +186,7 @@ export function latestPlans(items: readonly ThreadItem[]): ThreadItem[] {
       last = item.id
     }
   }
-  return superseded.size ? items.filter((item) => !superseded.has(item.id)) : [...items]
+  return superseded
 }
 
 /** The tool call a `[n](#ev-<id>)` link in the agent's text points at. */

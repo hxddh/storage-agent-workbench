@@ -205,7 +205,6 @@ describe('entry projection', () => {
             status: 'done',
             evidenceId: 'chk_1',
             key: 'k1',
-            assessed: { opened: 1, resolved: 0, recurred: 0 },
             view: { kind: 'buckets', rows: { columns: ['Bucket'], rows: [['demo']] } },
           },
         },
@@ -224,8 +223,6 @@ describe('entry projection', () => {
       name: 'survey',
       target: 'Demo',
       evidenceId: 'chk_1',
-      key: 'k1',
-      assessed: { opened: 1 },
     })
     expect(out[1]).toMatchObject({ text: '1 risk is open across 1 bucket, including `demo`.' })
   })
@@ -267,7 +264,7 @@ describe('entry projection', () => {
     expect(out).toHaveLength(0)
   })
 
-  it('leaves out a call the harness blocked', () => {
+  it('keeps a call the harness blocked, as a step that did not run', () => {
     const out = entries([
       {
         id: 'e13',
@@ -279,13 +276,22 @@ describe('entry projection', () => {
             toolName: 'survey',
             isError: true,
             content: [
-              { type: 'text', text: 'This exact call already ran in this task. Use its result.' },
+              {
+                type: 'text',
+                text: 'Step budget reached. Answer now with the evidence you already have.',
+              },
             ],
             timestamp: 1,
           },
         ],
       },
     ])
-    expect(out).toHaveLength(0)
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      kind: 'tool',
+      status: 'failed',
+      note: 'Did not run',
+      output: 'Step budget reached. Answer now with the evidence you already have.',
+    })
   })
 })

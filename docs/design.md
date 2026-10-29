@@ -134,16 +134,18 @@ removed in 36.0.
   (`Running`, `Failed`, `Stopped`, `Timed out`, `Outside scope`), the duration
   and a chevron. A running step is open and counts its elapsed time; a settled
   step folds to its line and opens on click. Open, it shows the argument summary
-  and the typed result in a scroll area at most 420px high; a running step
-  without a result says `Waiting for the first result.`
+  and the typed result in a scroll area at most 420px high, then a folded
+  `What the agent received` with the exact text the model got; a running step
+  without a result says `Waiting for the first result.` A call the round budget
+  blocked is a failed step with the note `Did not run`.
 - **Thought** — a provider reasoning summary is a `Thought` step, `Thinking`
-  while it streams. It opens to the summary as returned; when the provider
+  while it streams. It opens to the summary as returned, in full; when the provider
   returned none it says `This model did not return a reasoning summary.` No
   replacement narrative is invented.
 - **Plan** — a `Plan` block among the steps: the agent's note and 1–6 items
   with a mark each (circle pending, loader active, check done, triangle blocked
-  in `--warn`). Within a turn only the newest version is shown, where it was
-  last published.
+  in `--warn`). Every `plan` call stays where it was made; a version the agent
+  replaced later in the turn folds to one line, `Plan · updated below`.
 - **Agent text** — plain Markdown at 15px, no bubble. A citation
   `[1](#ev-<id>)` is a small superscript button on `--accent-soft`; clicking it
   opens that call's step and scrolls it to the centre. While text streams it
@@ -162,7 +164,7 @@ removed in 36.0.
 - **Notices** — one line with a dot (`--danger` for an error): `Stopped. What
   was read is kept.` with **Continue**; `The agent hit an error.` or `The agent
   stopped without replying.` with **Retry**, followed by the provider's error text when
-  there is one; `The step budget ran out.`; `Choose a model in Settings first.`
+  there is one; `The step budget ran out.`
 - **Dividers** — `Continued this task` where a stopped turn was resumed, and
   `Earlier steps were compacted` where pi compacted the context; quiet centred
   lines.

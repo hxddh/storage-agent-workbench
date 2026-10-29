@@ -168,6 +168,12 @@ try {
   if ((await page.locator('.msg.user').count()) !== 2) await fail('the follow-up is not in the same thread')
   await page.locator('.msg.agent .cite').last().click()
   await page.waitForSelector('.step.tool .step-detail', { timeout: 5_000 })
+  // A step shows exactly what the agent received, and it holds the table the view shows.
+  const received = page.locator('.step.tool .step-detail .step-output').first()
+  await received.locator('summary').click()
+  const sent = await received.locator('pre').innerText()
+  if (!sent.includes('<untrusted-data') || !sent.includes('demo-private'))
+    await fail(`the step does not show what the agent received: ${sent.slice(0, 120)}`)
   console.log('ANSWER OK:', (await lastText()).replace(/\s+/g, ' ').slice(0, 160))
   await checkA11y('conversation')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-answer.png') })

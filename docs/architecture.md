@@ -36,11 +36,11 @@ and the window renders them through one projection.
                                      │
                          durable entries in pi_entries
                                      │
-                shared/ledger.ts            shared/conversation.ts
-                 (turn boundary, calls       (the thread: messages, text,
-                  by key, coverage)           thoughts, steps, notices, live)
+        runtime/agent.ts, readings.ts       shared/conversation.ts
+         (round budget; survey counts)       (the thread: messages, text,
+                                              thoughts, steps, notices, live)
                      │                                  │
-          agent hooks, readings              the window, search, export
+          the budget hook, memory            the window, search, export
 ```
 
 - **One driver.** The model reads with its tools, calls them in parallel where
@@ -55,30 +55,28 @@ and the window renders them through one projection.
 The scripted check and re-check (`runtime/check.ts`, `runtime/reverify-plan.ts`)
 and the trace reducer (`shared/trace.ts`) were removed in 36.0.
 
-## Turn state is derived, never held
+## What the harness decides
 
-`shared/ledger.ts` folds a task's entries into the current turn's ledger: the
-turn boundary (the latest user message; a steer joins the running turn), call
-keys and attempts, coverage, blind spots and undecided rules. `readState()`
-turns it into one read status stored in the reading records `estate` history
-returns to the agent. The ledger is never shown in the window.
+One thing: the round budget. `runtime/agent.ts` counts the turn's assistant
+entries that called a tool (`runView()`), so a restart or a resumed turn has the
+same budget as an uninterrupted one, and past the model tier's budget (14
+small, 24 mid, 32 large) `beforeTool` blocks the call with "Step budget
+reached. Answer now…". The blocked call stays in the conversation as a step
+that did not run, with that text as what the agent received. Which calls to
+make, and whether to make one again, is the agent's; there is no repeated-read
+block (removed in 36.0).
 
-The agent's hooks rebuild that ledger from durable entries
-(`runtime/agent.ts` → `runView()`), so a restart or a resumed turn has the same
-guards as an uninterrupted one:
-
-- `beforeTool` blocks an exact storage read that already finished in the turn
-  (by argument key, which `agentTool()` writes into the details), allows one
-  retry after a failed read, treats two identical calls in one round as one,
-  and stops every tool past the model tier's round budget (14 small, 24 mid,
-  32 large). Rounds are counted from the assistant entries of the turn.
-  `estate`, `change_plan`, `note`, `survey`, `accept_risk` and the control
-  tools (`skill`, `plan`, `ask`) may repeat.
+`runtime/readings.ts` folds the turn's account surveys into reading records at
+settle: counts (visible, processed, pending, denied, unknown, truncated) and the
+open Issue totals at the time. No verdict is composed from them. They are the
+agent's memory — `estate` history and a change plan's baseline — and never
+shown in the window.
 
 There is no answer check. The app does not look for ungrounded names,
 unresolved citations or uncited paragraphs, and never asks the model to rewrite
-its text. The prompt's `COMPOSE` section tells the agent to say what it read and
-what it could not, and never to call the account clean while a read is open.
+its text. The prompt describes the tools and the hard rules, not a workflow;
+`COMPOSE` says the window adds no coverage summary or verdict, so what a read
+could not reach is the agent's to say.
 
 The tier comes from the model the conversation runs with (a task's own model or
 the one in Settings), never from a global. Each model configuration is its own
@@ -103,9 +101,10 @@ never replaces another task's mid-turn.
    a fresh round budget.
 4. A running call is projected from `pi.live.tools`. When it settles, the result
    is a `pi.tool-result` entry whose `details` carry target, note, shaped
-   progress, argument summary, view, duration, status, evidence id, argument key
-   and what the rules did with the reading. Status is written by `agentTool()`;
-   result text is never parsed for it.
+   progress, argument summary, view, duration, status and evidence id; the
+   result's text is exactly what the model received, and the step shows it.
+   A tool's `model` text carries the data its view shows. Status is written by
+   `agentTool()`; result text is never parsed for it.
 5. A tool reads; it never writes an Issue. `agentTool()` hands each call an
    `Assessor` (`estate/assess.ts`), the only module that turns rule decisions
    into Issue transitions. The transitions are recorded on the call
@@ -188,8 +187,8 @@ Coverage, unread sources and truncation stay in the view.
 | `main/tools/query.ts` | code mode: read-only primitives, datasets, inventory, budgets |
 | `main/s3/*` | readers: facts, policy, account, metrics, access, changes, capabilities, permissions |
 | `shared/contract.ts` | the one type contract |
-| `shared/ledger.ts` | the turn ledger and read status |
-| `shared/conversation.ts` | the one projection: thread, newest plan per turn, citation lookup, search rows, Markdown transcript |
+| `main/runtime/readings.ts` | the turn's account surveys as reading records (counts) |
+| `shared/conversation.ts` | the one projection: thread, replaced plans, citation lookup, search rows, Markdown transcript |
 | `renderer/Conversation.tsx` | the thread: messages, steps, plan, question, confirmation, notices, overflow menu, task model |
 | `renderer/Composer.tsx` | message, steer, stop, files, `@` focus, the live status strip |
 | `renderer/Home.tsx` | accounts list, Check account, demo and model setup |

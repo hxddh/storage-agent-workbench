@@ -8,8 +8,8 @@ import {
 } from '@shared/contract'
 import {
   callFor,
-  latestPlans,
   pendingQuestion,
+  supersededPlans,
   type ThreadItem,
   thread,
   transcriptMarkdown,
@@ -129,6 +129,15 @@ function ToolStep({
           ) : item.note ? (
             <p className="step-detail-note">{item.note}</p>
           ) : null}
+          {item.output && (
+            <details className="step-output">
+              <summary>{t.sentToAgent}</summary>
+              {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll area must be reachable by keyboard */}
+              <pre className="mono" tabIndex={0}>
+                {item.output}
+              </pre>
+            </details>
+          )}
         </div>
       )}
     </li>
@@ -136,8 +145,16 @@ function ToolStep({
 }
 
 /** The agent's plan, as it published it, where it published it. */
-function PlanStep({ item, t }: { item: Tool; t: Dict }) {
+function PlanStep({ item, t, replaced }: { item: Tool; t: Dict; replaced: boolean }) {
   if (item.view?.kind !== 'plan') return null
+  // A plan the agent updated later in the turn: the call stays, as one line.
+  if (replaced)
+    return (
+      <li className="step agent-plan replaced">
+        <span className="step-title">{t.runPlanTitle}</span>
+        <span className="step-note">{t.planUpdated}</span>
+      </li>
+    )
   return (
     <li className="step agent-plan">
       <span className="step-title">{t.runPlanTitle}</span>
@@ -485,7 +502,8 @@ export function Conversation({
 
   // Steps between two messages render as one list, so a turn reads top to bottom.
   const blocks: (ThreadItem | ThreadItem[])[] = []
-  for (const item of latestPlans(items)) {
+  const replaced = supersededPlans(items)
+  for (const item of items) {
     // A question or a confirmation speaks to the user; a call that failed is a step like any other.
     const step =
       item.kind === 'thought' ||
@@ -536,7 +554,7 @@ export function Conversation({
                   item.kind === 'thought' ? (
                     <Thought key={item.id} item={item} t={t} />
                   ) : item.kind === 'tool' && item.name === 'plan' ? (
-                    <PlanStep key={item.id} item={item} t={t} />
+                    <PlanStep key={item.id} item={item} t={t} replaced={replaced.has(item.id)} />
                   ) : item.kind === 'tool' ? (
                     <ToolStep
                       key={item.id}

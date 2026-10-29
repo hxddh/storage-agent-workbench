@@ -10,7 +10,7 @@ import {
 } from '@aws-sdk/client-s3'
 import type { Table } from '@shared/contract'
 import { describe } from '../providers'
-import { formatBytes, iso, shortDate } from '../util'
+import { formatBytes, iso, shortDate, tableText } from '../util'
 import {
   agentTool,
   assertInScope,
@@ -40,10 +40,7 @@ export function bucketTools(deps: ToolDeps) {
         )
         const rows = buckets.map((bucket) => [bucket.Name ?? '', shortDate(bucket.CreationDate)])
         return {
-          model: `${buckets.length} bucket(s): ${buckets
-            .map((b) => b.Name)
-            .slice(0, 40)
-            .join(', ')}`,
+          model: `${buckets.length} bucket(s):\n${tableText(['Bucket', 'Created'], rows)}`,
           note: `${buckets.length} bucket${buckets.length === 1 ? '' : 's'}`,
           view: {
             kind: 'buckets' as const,
@@ -88,7 +85,9 @@ export function bucketTools(deps: ToolDeps) {
             shortDate(v.LastModified),
           ])
           return {
-            model: `${rows.length} version(s) in ${args.bucket}${prefix ? ` under ${prefix}` : ''}.`,
+            model: `${rows.length} version(s) in ${args.bucket}${prefix ? ` under ${prefix}` : ''}${
+              response.IsTruncated ? ' (more exist; listing stopped at the limit)' : ''
+            }:\n${tableText(['Key', 'Version', 'Latest', 'Size', 'Modified'], rows)}`,
             note: `${rows.length} version${rows.length === 1 ? '' : 's'}`,
             view: {
               kind: 'objects' as const,
@@ -116,7 +115,9 @@ export function bucketTools(deps: ToolDeps) {
             iso(u.Initiated),
           ])
           return {
-            model: `${rows.length} incomplete upload(s) in ${args.bucket}.`,
+            model: `${rows.length} incomplete upload(s) in ${args.bucket}${
+              response.IsTruncated ? ' (more exist; listing stopped at the limit)' : ''
+            }:\n${tableText(['Key', 'Upload', 'Class', 'Initiated'], rows)}`,
             note: `${rows.length} upload${rows.length === 1 ? '' : 's'}`,
             view: {
               kind: 'objects' as const,
@@ -144,8 +145,8 @@ export function bucketTools(deps: ToolDeps) {
         ])
         return {
           model: `${rows.length} object(s) in ${args.bucket}${prefix ? ` under ${prefix}` : ''}${
-            response.IsTruncated ? ' (truncated)' : ''
-          }.`,
+            response.IsTruncated ? ' (more exist; listing stopped at the limit)' : ''
+          }:\n${tableText(['Key', 'Size', 'Class', 'Modified'], rows)}`,
           note: `${rows.length} object${rows.length === 1 ? '' : 's'}`,
           view: {
             kind: 'objects' as const,
@@ -204,8 +205,8 @@ export function bucketTools(deps: ToolDeps) {
           if (head.ServerSideEncryption) facts.push(['Encryption', head.ServerSideEncryption])
           if (head.VersionId) facts.push(['Version', head.VersionId])
           const metadata = Object.entries(head.Metadata ?? {})
-          if (metadata.length)
-            facts.push(['Metadata', metadata.map(([k, v]) => `${k}=${v}`).join(', ')])
+          // Metadata names only: values can hold anything the uploader put there.
+          if (metadata.length) facts.push(['Metadata', metadata.map(([k]) => k).join(', ')])
         } catch (error) {
           throw new Error(describe(error))
         }
@@ -276,7 +277,9 @@ export function bucketTools(deps: ToolDeps) {
           }
         }
         return {
-          model: `${args.bucket}/${args.key}: ${facts.map(([k, v]) => `${k}=${v}`).join('; ')}`,
+          model: `${args.bucket}/${args.key}: ${facts.map(([k, v]) => `${k}=${v}`).join('; ')}${
+            preview ? `\nFirst ${preview.text.length} characters of the body:\n${preview.text}` : ''
+          }`,
           note: formatBytes(size),
           view: { kind: 'object' as const, facts, preview },
         }

@@ -32,8 +32,10 @@ message and the agent's work on it. The agent remembers what it read in an
    and `redact()`; `details` reaching the window are already shaped. Status comes
    from `details.status`, never from result text.
 5. The conversation shows what happened, in order: the user's messages, the
-   agent's text, provider reasoning as returned, and every tool call with its
-   shaped result. The app never writes into the agent's answer, rewrites it,
+   agent's text, provider reasoning as returned in full, and every tool call —
+   blocked ones too — with its shaped result and exactly what the agent
+   received. A tool's `model` text carries what its view shows; the window
+   never shows the user data the agent did not get. The app never writes into the agent's answer, rewrites it,
    corrects it or summarises it. Honesty about unread parts is the agent's job,
    stated in the prompt (`COMPOSE`); a failed or refused call stays visible as a
    failed step.
@@ -55,9 +57,12 @@ message and the agent's work on it. The agent remembers what it read in an
 11. Demo storage is an explicit user choice. Nothing adds it on its own.
 12. Every read goes through the agent. There is no scripted run and no
     model-free check: without a model the window says so and asks for one.
-13. Loop guards derive from durable entries. The round budget and the repeated
-    read block are rebuilt from the turn's entries; a restarted process
-    rebuilds the same guards.
+13. The harness overrides the agent in one place only: the round budget, rebuilt
+    from the turn's entries. Which calls to make, and whether to repeat one, is
+    the agent's decision. The prompt describes the tools and the hard rules; it
+    does not prescribe a workflow.
+14. The app composes no verdict of its own — not in the window, not in memory.
+    A reading record holds a survey's counts; there is no "complete" or "clean".
 
 ## Architecture
 
@@ -71,13 +76,13 @@ One engine, one log, one projection (`docs/architecture.md`).
   the tool registry; durable reads; per-conversation model tier; digest.
 - **Tasks** (`runtime/tasks.ts`): task list, the one watched task, task graph,
   search index, the user's acts on memory.
-- **Agent** (`runtime/agent.ts`): prompt sections and hooks. Hooks rebuild the
-  turn view from entries (`runView`): repeated reads by argument key, one retry
-  after a failure, and the round budget (**14 small, 24 mid, 32 large**,
-  counted from the turn's assistant entries).
-- **Ledger** (`shared/ledger.ts`): the turn boundary, calls by argument key,
-  coverage; `readState()` feeds the reading records `estate` history returns.
-  It is never shown in the window.
+- **Agent** (`runtime/agent.ts`): prompt sections and one hook, the round
+  budget (**14 small, 24 mid, 32 large**, counted from the turn's assistant
+  entries by `runView`). A blocked call stays in the conversation as a step
+  that did not run.
+- **Readings** (`runtime/readings.ts`): the counts of each account survey in a
+  turn, recorded at settle as the agent's memory (`estate` history, a change
+  plan's baseline). Never shown in the window.
 - **Conversation** (`shared/conversation.ts`): the one projection the window,
   search and export use: an ordered thread of messages, text, thoughts, calls,
   questions, confirmations and notices, plus the live slot.
@@ -104,10 +109,11 @@ opens that call in place. It never authors an Issue transition. `skill` loads
 one of four methods (access, change, inventory, capacity); a method is
 documentation, not evidence. Provider reasoning is shown only as returned.
 
-`change_plan` returns one plan: lifecycle rules merge per bucket, a policy merge
-only when the current policy was read and holds no account id, anything else a
-manual step with a blocker; it names its baseline, residual risks and unreadable
-dependencies.
+`change_plan` returns one plan for open Issues, or for a bucket and change the
+agent names: lifecycle rules merge per bucket, a policy merge only when the
+current policy was read and holds no account id, anything else a manual step
+with a blocker; it names its baseline (the latest account survey, as counts),
+residual risks and unreadable dependencies.
 
 `Check account` and a scheduled check send the agent a message; they are turns
 like any other, and need a model.
@@ -118,7 +124,7 @@ Host tables in `storage-agent.db`: `providers`, `buckets`, `issues`,
 `issue_events`, `notes`, `audit`, `task_meta`, `posture_changes`, `readings`,
 `datasets`, `search_docs` (+ FTS5 trigram). pi's tables are prefixed `pi_`.
 Schema changes are append-only migrations in `db.ts` gated by `user_version`
-(head **15**). Entry kinds and payloads are in `docs/data-model.md` (`sa.run`,
+(head **16**; 16 dropped the readings' `complete` verdict). Entry kinds and payloads are in `docs/data-model.md` (`sa.run`,
 `sa.steer`, `sa.resume`, `sa.notice`; 35.x `sa.call`/`sa.answer` still read as
 calls and text). `readings` holds counts per settled account survey, never a
 request, answer, policy, account id or secret. Deleting a task purges its pi
@@ -131,7 +137,8 @@ events and readings keep history with a null conversation id.
 conversation (messages, inline steps, plan, clarify, risk confirmation,
 notices, Stop/Continue/Retry) and the keyboard map are specified in
 `docs/design.md`. There are no evidence strips, scope line, earlier-runs fold or
-"worked for" summary. Design tokens live in `src/renderer/styles.css`; never use
+"worked for" summary, and Home lists accounts without saying anything about
+them. Design tokens live in `src/renderer/styles.css`; never use
 a raw colour in a component. `npm run contrast` guards secondary text. English
 by default; Chinese copy is written, not translated word by word.
 

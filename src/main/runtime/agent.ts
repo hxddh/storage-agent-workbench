@@ -1,18 +1,11 @@
 import type { EntryRecord, ToolRegistration } from '@earendil-works/pi-durable'
-import {
-  defineExtension,
-  GenerationTask,
-  hook,
-  section,
-  ToolTask,
-} from '@earendil-works/pi-durable'
-import { foldLedger, type Ledger } from '@shared/ledger'
+import { defineExtension, hook, section, ToolTask } from '@earendil-works/pi-durable'
 import { BY_CODE, ruleTitle } from '../estate/rules'
 import { SKILL_NAMES } from '../skills'
 import { createTools } from '../tools'
-import { callKey, type ToolDeps } from '../tools/policy'
+import type { ToolDeps } from '../tools/policy'
 import { manifestPrompt } from '../tools/registry'
-import { mapEntries, roundsOf } from './project'
+import { roundsOf } from './project'
 
 export type ModelTier = 'small' | 'mid' | 'large'
 
@@ -27,52 +20,33 @@ export function maxRounds(tier: ModelTier): number {
   return tier === 'small' ? 14 : tier === 'large' ? 32 : 24
 }
 
-/** Memory and control change as the run reads; only storage reads repeat exactly. */
-const REPEATABLE = new Set([
-  'estate',
-  'change_plan',
-  'note',
-  'survey',
-  'skill',
-  'plan',
-  'ask',
-  'accept_risk',
-])
+const POLICY = `You are talking with the user in a conversation. You decide what to read, in what order, and what to say; the window shows your messages and, inline, every tool call you make and exactly what it returned to you.
 
-const POLICY = `You are talking with the user in a conversation. You own the investigation and the answer; the window shows your messages and, inline, every tool call you make.
-
-How to work:
-- Start from memory. \`estate\` returns remembered posture with the date it was read. Use it when it answers the question, and say it is memory.
-- Ask for history when the question is temporal: when a risk appeared, what changed, what a previous task fixed, or what the user accepted. \`estate(history: true)\` returns Issue events and posture changes; narrow it with \`bucket\`, \`code\` or \`since\`.
-- Read before you conclude. A denied, unsupported or failed read leaves the question open; silence is never a clean bill of health. Coverage fields (pending, denied, unknown, truncated, undecided, permissions) are part of the evidence.
-- Use \`query\` when the answer needs many objects or buckets, or when the user attached a log or inventory. Prefer CloudWatch capacity, S3 Inventory, or a prefix-level listing before paging millions of objects.
+What the tools are:
+- \`estate\` is memory: remembered posture, Issues and notes, each with the date it was read. It is not a fresh read. With \`history: true\` it returns Issue events, posture changes and past account surveys.
+- The read tools are live and read-only. A denied, unsupported or failed read tells you nothing about what it could not reach; the coverage fields they return (pending, denied, unknown, truncated, undecided, permissions) are part of their result.
+- \`query\` runs a read-only script over many objects or buckets, or over a log or inventory the user attached.
+- \`skill\` returns a method document. It is documentation, not storage evidence.
+- \`plan\` publishes a checklist the window shows; \`ask\` puts one question with 2–4 options to the user and ends your turn until they answer.
+- \`accept_risk\` asks the user to accept or reopen a risk; the window shows them a confirmation, and nothing is accepted until they click it.
 - Calls that do not depend on each other can go in the same round.
-- Stop when the evidence answers the question. More calls are not more certainty. If a read could still change the answer, continue or say what remains open.
-- Load a \`skill\` only when the question needs a method, compatibility rule or safety detail. Skills are documentation, not storage evidence.
-- Publish a \`plan\` when the work has several distinct steps. It is optional; do not create a plan just to satisfy a protocol.
-- If the request is genuinely ambiguous and the answer would change, use \`ask\` once with one short question and 2–4 concrete options. Do not guess; the run ends until the user answers.
-- When the user asks to accept a risk, call \`accept_risk\` with its bucket and rule code. The window asks the user to confirm; it is not accepted until they do, so never say it is.
-- Write the answer as your final response, in your own prose and structure.
 
-Read-only is absolute: never claim a write, a change plan was applied, or an Issue was opened, resolved or accepted by you. The rules open and resolve Issues from readings; accepting a risk is the user's act.`
+Read-only is absolute: never claim a write, that a change plan was applied, or that you opened, resolved or accepted an Issue. The rules open and resolve Issues from readings; accepting a risk is the user's act.`
 
 const COMPOSE = `Composing the answer:
 - Your final response is the answer. Write normal Markdown, as you would in any conversation.
 - Put bucket, object key and account names in backticks, spelled exactly as a tool returned them.
 - You may link a tool result by the evidence id in its \`<untrusted-data>\` tag: \`[1](#ev-<id>)\`. The link opens that call in the conversation. Never invent an id.
-- Say what you read, what it means, and what you could not read. The window does not add a coverage summary for you: if a read was denied, failed, stopped early or left a rule undecided, say so, and never call the account clean while a read is open.`
+- The window adds nothing to your answer: no coverage summary, no verdict. What a read could not reach is yours to say.`
 
 const TIER_NOTE: Record<ModelTier, string> = {
-  small:
-    'This model has a smaller context: keep query scripts under 40 lines, read at most 5 buckets per survey, and finish within 14 rounds.',
-  mid: 'Finish within 24 rounds.',
-  large:
-    'This model can hold a larger trace: up to 32 rounds. Still stop when the question is answered; more calls are not more certainty.',
+  small: 'This turn has a budget of 14 rounds of tool calls.',
+  mid: 'This turn has a budget of 24 rounds of tool calls.',
+  large: 'This turn has a budget of 32 rounds of tool calls.',
 }
 
-/** The current run as the hooks need it, rebuilt from durable entries. */
+/** The current turn as the hook needs it, rebuilt from durable entries. */
 export interface RunView {
-  ledger: Ledger
   rounds: number
 }
 
@@ -87,40 +61,22 @@ export interface AgentContext {
 }
 
 export function runView(records: readonly EntryRecord[]): RunView {
-  return { ledger: foldLedger(mapEntries(records)), rounds: roundsOf(records) }
+  return { rounds: roundsOf(records) }
 }
 
 /**
- * Why a call may not run, or undefined. `inflight` holds the keys this round
- * already admitted: two identical calls in one round are still one read.
+ * The one limit the harness puts on the agent's choices: a turn that circles
+ * past its round budget is told to answer. Which calls to make, and whether to
+ * make one again, is the agent's decision.
  */
-export function blockReason(
-  view: RunView,
-  tier: ModelTier,
-  name: string,
-  args: unknown,
-  inflight: Set<string>,
-): string | undefined {
+export function blockReason(view: RunView, tier: ModelTier): string | undefined {
   if (view.rounds > maxRounds(tier))
     return 'Step budget reached. Answer now with the evidence you already have.'
-  if (REPEATABLE.has(name)) return undefined
-  const key = callKey(name, args)
-  const previous = view.ledger.calls.get(key)
-  // A failed read is not evidence: it may run once more. A finished read is
-  // final, because read-only storage has not changed since.
-  const blocked =
-    inflight.has(key) || (previous && (previous.last === 'done' || previous.attempts >= 2))
-  if (blocked)
-    return 'This exact call already ran in this run. Use its result; nothing has changed in read-only storage since.'
-  inflight.add(key)
   return undefined
 }
 
 export function createAgent(deps: ToolDeps, context: AgentContext, tools?: ToolRegistration[]) {
   const registry = tools ?? createTools(deps)
-  // Keys admitted in the current round, per conversation. A restart loses
-  // them harmlessly: the next round's ledger has the finished calls.
-  const inflight = new Map<string, Set<string>>()
   const load = async (conversationId: string): Promise<RunView | null> => {
     const records = await context.records(conversationId)
     return records ? runView(records) : null
@@ -151,19 +107,12 @@ export function createAgent(deps: ToolDeps, context: AgentContext, tools?: ToolR
     ],
     tools: registry,
     hooks: [
-      hook(GenerationTask, {
-        afterTools: (_assistant, _results, api) => {
-          inflight.delete(String(api.conversationId))
-        },
-      }),
       hook(ToolTask, {
-        beforeTool: async (call, api) => {
+        beforeTool: async (_call, api) => {
           const id = String(api.conversationId)
           const view = await load(id)
           if (!view) return undefined
-          const keys = inflight.get(id) ?? new Set<string>()
-          inflight.set(id, keys)
-          const reason = blockReason(view, await context.tier(id), call.name, call.arguments, keys)
+          const reason = blockReason(view, await context.tier(id))
           return reason ? { block: reason } : undefined
         },
       }),

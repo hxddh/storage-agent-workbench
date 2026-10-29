@@ -10,7 +10,7 @@ into report sections. 35.x tasks open as conversations.
 - **A conversation, not a run page.** `shared/conversation.ts` projects the
   entries into one ordered thread: messages (a steer shows where it was said),
   the agent's text, provider reasoning as returned, each tool call as a step
-  you can open in place, the agent's plan (its newest version per turn), a
+  you can open in place, the agent's plan (each update where it was made), a
   clarifying question with one-click options, notices with Retry or Continue,
   and a divider where a stopped turn was continued. Follow-ups are the next
   message in the same thread. `Conversation.tsx` replaces `Run`, `Answer`,
@@ -28,6 +28,27 @@ into report sections. 35.x tasks open as conversations.
   verdict on an account; it is gone. Readings stay as the agent's memory.
 - **Home copy** no longer says a model is optional; "Recent runs" is "Recent
   tasks", and notices say the agent stopped or hit an error.
+
+- **The harness overrides the agent only at the round budget.** The
+  repeated-read block (and the argument key behind it) is gone: whether to read
+  something again is the agent's call. A call the budget blocked stays in the
+  conversation as a step that did not run.
+- **The window never shows more than the agent got.** `objects`, `object`,
+  `buckets`, `config`, `survey` and `estate` send the model the rows, preview,
+  grants and Issues their views show, and every step can open `What the agent
+  received`: the exact text of its result. `object` returns metadata names,
+  never values, as its description always said.
+- **No app verdict in memory.** Reading records keep a survey's counts; the
+  `complete` column is dropped (migration 16), `estate` history shows the
+  counts, and a change plan's baseline is the latest account survey.
+- **The prompt describes the tools, not a workflow.** POLICY no longer tells the
+  agent to start from memory, when to plan or stop, or to read at most five
+  buckets; the tier note states the round budget. Continue sends `Continue.`
+- **`change_plan` plans what the agent names**: a bucket and a rule code plan
+  that change whether or not an Issue is open.
+- Every `plan` call stays in the thread; a replaced one folds to one line.
+  Reasoning is shown in full. An `@` bucket the estate has not read yet is no
+  longer dropped. Tool views no longer say "No problems found" or "clean".
 
 ### Removed
 

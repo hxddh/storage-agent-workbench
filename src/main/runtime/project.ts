@@ -108,8 +108,7 @@ function toolEntry(
     view: details?.view ?? null,
     ...(fallback.callId ? { callId: fallback.callId } : {}),
     ...(details?.evidenceId ? { evidenceId: details.evidenceId } : {}),
-    ...(details?.key ? { key: details.key } : {}),
-    ...(details?.assessed ? { assessed: details.assessed } : {}),
+    ...(fallback.text ? { output: fallback.text } : {}),
   }
 }
 
@@ -199,7 +198,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
             id: `${id}:thinking`,
             kind: 'reasoning',
             at,
-            text: redact(thinkingOf(message)).slice(0, 4000),
+            text: redact(thinkingOf(message)),
           })
         const text = textOf(message)
         if (text) out.push({ id, kind: 'answer', at, text })
@@ -219,8 +218,6 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
         const name = toolName(message.toolName ?? toolNames.get(message.toolCallId ?? ''))
         if (!name) break
         const details = isDetails(message.details) ? message.details : null
-        // A call the harness blocked never read anything; it is not a check.
-        if (!details && message.isError && BLOCKED.test(textOf(message))) break
         // A result without our details came from pi itself: the call never
         // reached `agentTool()` (aborted before start, or faulted).
         out.push(
@@ -254,8 +251,6 @@ export function roundsOf(entries: readonly EntryRecord[]): number {
   }
   return rounds
 }
-
-const BLOCKED = /step budget reached|already ran in this (?:task|run)/i
 
 /** A result pi wrote without running the tool; its text is not shown. */
 function blockedNote(text: string): string | null {
@@ -312,7 +307,7 @@ export class LiveTracker {
     const reasoningStarted = this.reasoningStarted.get(taskId)
     const reasoning = reasoningStarted
       ? {
-          summary: summary ? redact(summary).slice(0, 4000) : null,
+          summary: summary ? redact(summary) : null,
           startedAt: reasoningStarted,
         }
       : null

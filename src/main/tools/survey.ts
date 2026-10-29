@@ -14,6 +14,7 @@ import { type BucketFacts, readBucket, rememberable } from '../s3/facts'
 import { type Capacity, formatBytes, readCapacity } from '../s3/metrics'
 import { permissionGaps } from '../s3/permissions'
 import { isAbort } from '../s3/status'
+import { tableText } from '../util'
 import { agentTool, limitParam, providerParam, type ToolDeps, Type } from './policy'
 
 const HARD_MAX_BUCKETS = 5000
@@ -345,15 +346,22 @@ export function surveyTool(deps: ToolDeps) {
       const lines = [
         `Surveyed ${config.name}: ${read.length} of ${scoped.length} bucket(s) read.`,
         publicBuckets.length
-          ? `Public: ${publicBuckets.slice(0, 20).join(', ')}${publicBuckets.length > 20 ? ` and ${publicBuckets.length - 20} more` : ''}.`
+          ? `Public: ${publicBuckets.join(', ')}.`
           : unknown.length
-            ? `No bucket proved public; exposure is undecided for ${unknown.length}: ${unknown.slice(0, 10).join(', ')}.`
-            : 'No bucket is publicly exposed.',
+            ? `No bucket proved public; exposure is undecided for ${unknown.length}: ${unknown.join(', ')}.`
+            : `No bucket read here is public (${read.length} read).`,
         aws
           ? `Account public access block: ${accountPab}.`
           : 'S3-compatible endpoint: no account-wide block or CloudWatch capacity.',
         `Issues: ${changed.opened} opened, ${changed.resolved} resolved, ${changed.recurred} recurred; ${issueTotal} open now.`,
+        tableText(table.columns, table.rows),
       ]
+      if (issues.length)
+        lines.push(
+          `Open Issues${issueTotal > issues.length ? ` (first ${issues.length} of ${issueTotal})` : ''}:\n${issues
+            .map((issue) => `${issue.bucket || 'account'}\t${issue.severity}\t${issue.title}`)
+            .join('\n')}`,
+        )
       if (totals) {
         const top = [...read]
           .filter((f) => f.capacity)
@@ -373,12 +381,10 @@ export function surveyTool(deps: ToolDeps) {
       if (undecided.size)
         lines.push(
           `Undecided because a read was blind: ${[...undecided.entries()]
-            .slice(0, 8)
             .map(([bucket, codes]) => `${bucket} (${codes.join(', ')})`)
             .join('; ')}.`,
         )
-      if (denied.length)
-        lines.push(`Access denied on ${denied.length}: ${denied.slice(0, 20).join(', ')}.`)
+      if (denied.length) lines.push(`Access denied on ${denied.length}: ${denied.join(', ')}.`)
       if (pending > 0)
         lines.push(
           `${pending} bucket(s) were not read before the survey stopped; survey again to read them (longest unread first).`,
@@ -391,7 +397,7 @@ export function surveyTool(deps: ToolDeps) {
       if (postureChanges.length)
         lines.push(
           `Changed since the last reading: ${postureChanges
-            .slice(0, 8)
+            .slice(0, 80)
             .map((change) => `${change.bucket} ${change.field} ${change.before} → ${change.after}`)
             .join('; ')}.${
             attribution

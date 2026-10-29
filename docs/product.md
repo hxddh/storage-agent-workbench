@@ -75,8 +75,10 @@ The scripted, model-free check and re-check of 35.x were removed in 36.0.
   step says so. Completed, failed, refused, stopped and timed-out calls stay in
   order.
 - The agent may publish a short plan; it appears as a `Plan` block among the
-  steps. Within a turn only its newest version is shown. A plan is optional: a
-  direct answer does not need one.
+  steps. Each update is a step where it was made; a replaced version folds to
+  one line. Whether to plan at all is the agent's choice.
+- Every step can show exactly what the agent received from that call, so the
+  page never shows more than the agent saw.
 - The agent's text is normal Markdown, and a turn can hold several texts
   between calls. Text streams in while it is written. The agent may link a call
   as `[1](#ev-<id>)`; clicking the link opens that step in place. There is no
@@ -130,8 +132,9 @@ gets `gone_at`; its Issues resolve as `gone`.
 
 There is no Findings or Not checked strip and no scope line. What a read could
 not see is in that call's result (denied, unknown, pending, truncated,
-undecided, permissions), and the prompt tells the agent to say it and never to
-call the account clean while a read is open.
+undecided, permissions), and the agent receives it. Saying what it could not
+read is the agent's; the app composes no coverage verdict, in the window or in
+memory.
 
 ## Saving a task
 
@@ -297,7 +300,7 @@ an incomplete authoritative resource. A policy change is merged with the
 current policy only when that policy was read and names no account id.
 Otherwise the step is marked manual and keeps its blocker; the plan never
 reproduces an unread or account-bearing policy in the window. The plan states
-its baseline (the latest complete reading or remembered state), lists residual
+its baseline (the latest account survey, as counts, or remembered state), lists residual
 risks it does not cover, and is text the user applies. The bucket name must
 match `[A-Za-z0-9][A-Za-z0-9._-]{0,254}`; otherwise no safe change is generated.
 The app never applies the text and there is no Apply button.

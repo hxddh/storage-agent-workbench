@@ -8,11 +8,11 @@
  */
 import { configure } from '@earendil-works/pi-durable'
 import type { AttachmentRef, ContextRef, NoticeCode } from '@shared/contract'
-import { foldLedger, type Ledger, readState } from '@shared/ledger'
 import { escapeTags } from '../security/redact'
 import { maxRounds, runView } from './agent'
 import { installModel } from './model'
 import type { RunData } from './project'
+import { turnSurveys } from './readings'
 import { CONTEXT, type RunOutcome, type Runtime } from './session'
 import type { Tasks } from './tasks'
 
@@ -96,14 +96,13 @@ export class Engine {
     await this.submit(taskId, last.text, last.attachments, last.context ?? [])
   }
 
-  /** Resume a stopped run. The resume is a row in the run, not a new request. */
+  /**
+   * Resume a stopped turn. The user's Continue is the whole message; the
+   * window shows it as the divider, and the agent decides what to do next.
+   */
   async continueTask(taskId: string): Promise<void> {
     const conversation = await this.runtime.require(taskId)
-    await this.run(
-      conversation,
-      'Continue from where you stopped. Do not repeat calls that already finished.',
-      { kind: 'sa.resume' },
-    )
+    await this.run(conversation, 'Continue.', { kind: 'sa.resume' })
   }
 
   private async run(
@@ -207,28 +206,16 @@ export class Engine {
       .catch(() => undefined)
   }
 
-  /**
-   * One reading row per account the run surveyed account-wide. It stores
-   * counts, never request text, prose, policy or an account id.
-   */
+  /** One reading row per account the turn surveyed account-wide: counts only. */
   private async recordReadings(taskId: string): Promise<void> {
-    const ledger: Ledger = foldLedger(await this.runtime.entries(taskId))
-    for (const coverage of ledger.coverage) {
-      const providerId = coverage.providerId
-      if (!providerId) continue
-      const state = readState(ledger, providerId)
+    for (const survey of turnSurveys(await this.runtime.entries(taskId))) {
+      const { providerId, at, ...counts } = survey
       await this.deps.db.insertReading({
         conversationId: taskId,
         providerId,
-        at: coverage.at || new Date().toISOString(),
+        at: at || new Date().toISOString(),
         trigger: 'task',
-        complete: state.complete,
-        visible: state.visible,
-        processed: state.processed,
-        pending: state.pending,
-        denied: state.denied,
-        unknown: state.unknown,
-        truncated: state.truncated,
+        ...counts,
         openHigh: await this.deps.db.countOpenHigh(providerId),
         openTotal: await this.deps.db.countOpenIssues(providerId),
       })

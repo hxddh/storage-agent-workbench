@@ -195,7 +195,6 @@ describe('tools over the estate', () => {
       providerId,
       at: '2026-01-03T00:00:00.000Z',
       trigger: 'check',
-      complete: true,
       visible: 6,
       processed: 6,
       pending: 0,
@@ -334,8 +333,8 @@ describe('tools over the estate', () => {
       scope: { buckets: [] },
     })
     const { details } = await run(surveyTool(fresh), {})
-    expect(details.assessed?.opened).toBeGreaterThan(0)
-    expect(details.key).toMatch(/^[0-9a-f]{24}$/)
+    if (details.view?.kind !== 'survey') throw new Error('expected a survey')
+    expect(details.view.changed.opened).toBeGreaterThan(0)
   })
 
   it('generates a batch when no bucket or code narrows it', async () => {
@@ -351,6 +350,17 @@ describe('tools over the estate', () => {
     expect(plan.steps.every((step) => step.codes.length > 0 && step.formats.length > 0)).toBe(true)
     const lifecycle = plan.steps.filter((step) => step.id.startsWith('lifecycle:'))
     expect(new Set(lifecycle.map((step) => step.bucket)).size).toBe(lifecycle.length)
+  })
+
+  it('plans a change the agent names for a bucket even when no Issue is open', async () => {
+    const [, change] = estateTools(deps)
+    const { details } = await run(change as Executable, {
+      bucket: Object.keys(fake.buckets)[0]!,
+      code: 'no_abort_mpu',
+    })
+    if (details.view?.kind !== 'change' || !details.view.plan)
+      throw new Error(`expected a change plan; got ${details.status}: ${details.note ?? ''}`)
+    expect(details.view.plan.steps[0]?.codes).toContain('no_abort_mpu')
   })
 
   it('omits Terraform rather than dropping existing lifecycle rules from a merged step', async () => {
@@ -373,14 +383,16 @@ describe('tools over the estate', () => {
     expect(details.status).toBe('stopped')
   })
 
-  it('generates a change only for an open Issue', async () => {
+  it('narrows to open Issues unless the agent names both the bucket and the change', async () => {
     const [, change] = estateTools(deps)
     const ok = await run(change as Executable, { bucket: 'compat-public', code: 'public_exposure' })
     expect(ok.details.status).toBe('done')
-    const resolved = await run(change as Executable, {
+    const named = await run(change as Executable, {
       bucket: 'aws-public',
       code: 'public_exposure',
     })
-    expect(resolved.details.status).toBe('failed')
+    expect(named.details.status).toBe('done')
+    const none = await run(change as Executable, { bucket: 'never-read' })
+    expect(none.details.status).toBe('failed')
   })
 })

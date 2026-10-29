@@ -94,8 +94,6 @@ export class Tasks {
       const bucket = typeof raw.bucket === 'string' ? raw.bucket : ''
       if (!bucket || (account.scope.buckets.length && !account.scope.buckets.includes(bucket)))
         continue
-      const known = (await this.deps.db.listBuckets(account.id)).some((row) => row.name === bucket)
-      if (!known) continue
       if (raw.kind === 'issue') {
         const issueId = typeof raw.issueId === 'string' ? raw.issueId : ''
         const issue = issueId ? await this.deps.db.getIssue(issueId) : undefined

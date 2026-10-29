@@ -151,11 +151,14 @@ export interface ChangePlanStep {
 
 export interface ChangePlan {
   steps: ChangePlanStep[]
+  /** The latest account survey the plan was made against, as counts. */
   baseline: {
     at: string
-    complete: boolean
     visible: number
     processed: number
+    pending: number
+    denied: number
+    unknown: number
     openHigh: number
     openTotal: number
   } | null
@@ -316,10 +319,6 @@ export interface ToolDetails {
   status: ToolStatus
   /** Stable id the model cites from its answer. */
   evidenceId?: string
-  /** Hash of the exact arguments: the run ledger blocks a repeated read by it. */
-  key?: string
-  /** What the rules did with this reading, applied by `estate/assess.ts`. */
-  assessed?: Assessed
 }
 
 /** The Issue transitions one reading caused. The model never causes one. */
@@ -330,7 +329,7 @@ export interface Assessed {
 }
 
 /** App notices are codes; the window words them in the user's language. */
-export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'budget' | 'model_missing'
+export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'budget'
 
 export interface LiveTool {
   callId: string
@@ -412,8 +411,8 @@ export type UiEntry =
       view: ToolView | null
       callId?: string
       evidenceId?: string
-      key?: string
-      assessed?: Assessed
+      /** Exactly what the model received for this call, enveloped and redacted. */
+      output?: string
     }
   | {
       id: string

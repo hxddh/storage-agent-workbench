@@ -37,9 +37,8 @@ roadmap and not a substitute for the code.
 - **Answer** — the agent's text, normal Markdown. A turn can hold several texts
   between tool calls. The agent may link a call as `[1](#ev-<id>)`; the link
   opens that step in place. The app never writes into it.
-- **Ledger** — the turn's state derived from its durable entries: calls by
-  argument key, coverage. It feeds the loop guards and the reading records; it is
-  never shown in the conversation.
+- **Reading record** — the counts of one account survey in a turn, kept as the
+  agent's memory. It holds no verdict and is never shown in the window.
 - **Thought** — a provider-supplied reasoning summary, never a fabricated chain
   of thought. An omitted summary stays visibly omitted.
 - **Method** — a `skill` workflow the agent loaded (access, change, inventory,

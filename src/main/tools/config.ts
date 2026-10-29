@@ -63,18 +63,22 @@ export function configTool(deps: ToolDeps) {
           signal: run.signal,
           session: accessSession(deps, run.conversationId),
         })
+        const permissions = [
+          ...permissionGaps(facts),
+          ...accessPermissionGaps(args.bucket, access.blind),
+        ]
         const lines = access.paths.length
-          ? access.paths
-              .slice(0, 20)
-              .map(
-                (item) =>
-                  `${item.source}: ${item.principal} — ${item.actions.join(', ')}${
-                    item.condition ? ` (${item.condition})` : ''
-                  }${item.note ? ` · ${item.note}` : ''}`,
-              )
+          ? access.paths.map(
+              (item) =>
+                `${item.source}: ${item.principal} — ${item.actions.join(', ')}${
+                  item.condition ? ` (${item.condition})` : ''
+                }${item.note ? ` · ${item.note}` : ''}`,
+            )
           : ['No policy, ACL, identity or key grant was readable for this bucket.']
         for (const item of access.blind)
           lines.push(`${item.source} could not be read (${item.status}); access is not complete.`)
+        for (const gap of permissions)
+          lines.push(`Missing permission: ${gap.action}${gap.bucket ? ` on ${gap.bucket}` : ''}.`)
         lines.push(
           `Coverage: ${access.coverage.evaluated}/${access.coverage.principals} principal(s) evaluated; ${access.coverage.undecided} undecided; ${access.coverage.truncated ? 'truncated' : 'not truncated'}.`,
         )
@@ -92,10 +96,7 @@ export function configTool(deps: ToolDeps) {
             access: access.paths,
             accessBlind: access.blind,
             accessCoverage: access.coverage,
-            permissions: [
-              ...permissionGaps(facts),
-              ...accessPermissionGaps(args.bucket, access.blind),
-            ],
+            permissions,
             observations: [],
           },
         }
@@ -122,18 +123,28 @@ export function configTool(deps: ToolDeps) {
       const problems = findings.filter((finding) => finding.severity !== 'blind')
       const blind = findings.filter((finding) => finding.severity === 'blind')
       const lines = problems.length
-        ? problems.slice(0, 10).map((f) => `[${f.severity}] ${f.title}: ${f.detail}`)
-        : [`No problems in the ${aspect} review.`]
+        ? problems.map((f) => `[${f.severity}] ${f.title}: ${f.detail}`)
+        : [`No rule in the ${aspect} review was triggered.`]
       if (blind.length)
         lines.push(`Blind (undecided, not clean): ${blind.map((f) => f.title).join('; ')}.`)
-      if (passed) lines.push(`${passed} rule(s) proved clean.`)
+      if (passed) lines.push(`${passed} rule(s) checked and not triggered.`)
+      if (aspect === 'security')
+        lines.push(
+          `Exposure: ${facts.exposure.verdict === null ? 'undecided' : facts.exposure.verdict ? 'public' : 'not public'}.`,
+        )
+      for (const gap of permissionGaps(facts))
+        lines.push(`Missing permission: ${gap.action}${gap.bucket ? ` on ${gap.bucket}` : ''}.`)
+      if (issues.length)
+        lines.push(
+          `Issues recorded for ${args.bucket}: ${issues.map((issue) => `${issue.title} (${issue.status})`).join('; ')}.`,
+        )
       return {
         model: lines.join('\n'),
         note: problems.length
           ? `${problems.length} finding${problems.length === 1 ? '' : 's'}`
           : blind.length
             ? 'partly blind'
-            : 'clean',
+            : 'no findings',
         view: {
           kind: 'config' as const,
           bucket: args.bucket,

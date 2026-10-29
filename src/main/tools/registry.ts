@@ -49,7 +49,8 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
   {
     name: 'object',
     group: 'read',
-    description: 'One object: head, tags or ACL. Metadata values are never returned.',
+    description:
+      'One object: head, tags, ACL and a bounded text preview. Metadata names only, never values.',
     cost: 'cheap',
     coverage: 'object',
     readOnly: true,

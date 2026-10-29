@@ -353,7 +353,11 @@ export function ChangePlanView({ plan, t }: { plan: ChangePlan; t: Dict }) {
         <p className="plan-summary">{planSummary(plan, t)}</p>
         <p className="quiet">
           {plan.baseline
-            ? fill(t.planBaseline, { when: new Date(plan.baseline.at).toLocaleString() })
+            ? fill(t.planBaseline, {
+                when: new Date(plan.baseline.at).toLocaleString(),
+                read: plan.baseline.processed,
+                total: plan.baseline.visible,
+              })
             : t.planNoBaseline}
         </p>
       </div>

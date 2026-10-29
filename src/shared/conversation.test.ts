@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { Live, UiEntry } from './contract'
-import { callFor, latestPlans, pendingQuestion, thread, transcriptMarkdown } from './conversation'
+import {
+  callFor,
+  pendingQuestion,
+  supersededPlans,
+  thread,
+  transcriptMarkdown,
+} from './conversation'
 import { answer, request, survey, tool } from './testing'
 
 describe('the conversation thread', () => {
@@ -85,22 +91,18 @@ describe('the conversation thread', () => {
     expect(pendingQuestion([...items, ...thread([request('A')])])).toBeNull()
   })
 
-  it('shows one plan per turn: the newest', () => {
+  it('keeps every plan call, and knows which ones a later update in the turn replaced', () => {
     const plan = (id: string, note: string) =>
       tool('plan', { kind: 'plan', steps: [], note }, { id })
-    const items = latestPlans(
-      thread([
-        request('A'),
-        plan('p1', 'first'),
-        plan('p2', 'second'),
-        request('B'),
-        plan('p3', 'third'),
-      ]),
-    )
-    expect(items.filter((item) => item.kind === 'tool').map((item) => item.id)).toEqual([
-      'p2',
-      'p3',
+    const items = thread([
+      request('A'),
+      plan('p1', 'first'),
+      plan('p2', 'second'),
+      request('B'),
+      plan('p3', 'third'),
     ])
+    expect(items.filter((item) => item.kind === 'tool')).toHaveLength(3)
+    expect([...supersededPlans(items)]).toEqual(['p1'])
   })
 
   it('saves the conversation as Markdown', () => {

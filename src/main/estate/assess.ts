@@ -12,8 +12,6 @@ import type { AppDb } from '../db'
 import { BY_CODE, type Decision } from './rules'
 
 export class Assessor {
-  readonly totals: Assessed = { opened: 0, resolved: 0, recurred: 0 }
-
   constructor(
     private readonly db: AppDb,
     private readonly conversationId: string | null,
@@ -47,7 +45,6 @@ export class Assessor {
       if (result.event === 'resolved')
         observations.push({ provider: providerId, bucket, code, verdict: false })
     }
-    this.add(delta)
     return { delta, observations }
   }
 
@@ -76,19 +73,6 @@ export class Assessor {
         }
       }
     }
-    this.add({ opened: 0, resolved, recurred: 0 })
     return { resolved, observations }
-  }
-
-  private add(delta: Assessed): void {
-    this.totals.opened += delta.opened
-    this.totals.resolved += delta.resolved
-    this.totals.recurred += delta.recurred
-  }
-
-  /** What this reading changed, or undefined when it changed nothing. */
-  summary(): Assessed | undefined {
-    const { opened, resolved, recurred } = this.totals
-    return opened || resolved || recurred ? { ...this.totals } : undefined
   }
 }
