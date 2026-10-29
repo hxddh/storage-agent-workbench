@@ -8,8 +8,8 @@ Organizations, KMS, Access Analyzer, CloudWatch, CloudTrail, EC2, Lambda,
 DynamoDB, RDS, CloudFront, Route 53, Config, Security Hub, GuardDuty, ECR, SNS,
 SQS, Secrets Manager, SSM, Service Quotas, Support, Backup and Cost Explorer.
 The exceptions are STS `GetSessionToken`, `GetFederationToken`,
-`GetWebIdentityToken`, KMS `GetParametersForImport` and the secret-store reads
-listed in [tools.md](tools.md). What the agent can
+`GetWebIdentityToken`, KMS `GetParametersForImport` and the secret-store or registry-credential
+reads listed in [tools.md](tools.md). What the agent can
 actually read is what the account's credentials allow.
 
 Every permission is optional. A denied call comes back as the service's error,

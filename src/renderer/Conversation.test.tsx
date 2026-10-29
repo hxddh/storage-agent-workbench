@@ -176,6 +176,55 @@ describe('the conversation', () => {
     expect(onAnswer).toHaveBeenCalledWith('Prod')
   })
 
+  it('draws a chart series separately instead of flattening it', async () => {
+    render(
+      <Conversation
+        {...props}
+        view={view([
+          user('u1', 'Compare accounts'),
+          {
+            id: 'chart',
+            kind: 'tool',
+            at: '',
+            name: 'render',
+            target: 'Compare',
+            status: 'done',
+            note: '1 block',
+            ms: 2,
+            view: {
+              kind: 'render',
+              title: 'Compare',
+              doc: {
+                version: 1,
+                blocks: [
+                  {
+                    type: 'chart',
+                    spec: {
+                      mark: 'line',
+                      x: 'day',
+                      y: 'count',
+                      series: 'account',
+                      data: [
+                        { day: 'Mon', count: 1, account: 'Prod' },
+                        { day: 'Tue', count: 2, account: 'Prod' },
+                        { day: 'Mon', count: 3, account: 'Staging' },
+                        { day: 'Tue', count: 4, account: 'Staging' },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ])}
+      />,
+    )
+    fireEvent.click(document.querySelector('.step-line')!)
+    await waitFor(() => expect(document.querySelectorAll('.chart-line')).toHaveLength(2))
+    expect(document.querySelector('.chart-series')?.textContent).toContain('Prod')
+    expect(document.querySelector('.chart-series')?.textContent).toContain('Staging')
+  })
+
   it('shows a call as the service answered it', async () => {
     render(
       <Conversation

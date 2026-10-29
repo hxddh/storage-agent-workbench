@@ -44,6 +44,7 @@ const names = [
   '25-render-light.png',
   '26-agent-tool-light.png',
   '27-delegate-light.png',
+  '28-chart-series-light.png',
 ]
 let failed = 0
 for (const name of names) {

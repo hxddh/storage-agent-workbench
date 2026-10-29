@@ -150,7 +150,7 @@ including CJK substrings, use `LIKE`.
 Settings fetches the provider's model list. The context window is inferred
 from the model id (unknown models get 128k), and reasoning is on at medium for
 known reasoning models and off otherwise. The output budget is a bounded
-default of `min(32,000, context window)` tokens. Every model gets the same
+default of `min(8,192, context window)` tokens. Every model gets the same
 tools and prompt.
 
 ## Settings

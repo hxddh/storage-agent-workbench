@@ -126,7 +126,8 @@ prove the harness runs; they are not a model-quality score. See
 
 - No storage put, delete or mutate call exists. Only operations whose names
   say they read run, and the few reads that hand out credentials do not.
-  Secret-store reads (Secrets Manager and SSM parameters) are refused.
+  Secret-store and registry-credential reads (ECR, Secrets Manager and SSM
+  parameters) are refused.
 - Secrets are sealed with Electron `safeStorage`, or a local AES-256-GCM key
   file when no OS keyring exists. A profile account stores a profile name,
   never a key. The renderer never receives a credential.
@@ -144,7 +145,7 @@ prove the harness runs; they are not a model-quality score. See
   without an account it asks for one.
 - The harness sets no round ceiling, call budget or fixed output cap; **Stop**
   is yours. The model's output budget is a bounded default of
-  `min(32,000, context window)` tokens.
+  `min(8,192, context window)` tokens.
 - An object body streams to the task folder; `max_bytes` can stop it earlier.
   A 64 KiB preview is returned with a `ref`, and `more` reads any offset.
 - Installers are signed and notarized only when every signing secret is

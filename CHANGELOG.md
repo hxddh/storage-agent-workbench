@@ -29,7 +29,7 @@ The agent owns more of its own work, and the window shows less app machinery.
   the result carries a 64 KiB preview and a ref, and `more` reads any offset.
   `max_bytes` can stop the stream earlier.
 - **No hidden output probe.** The model's output budget is a bounded default
-  of `min(32,000, context window)` tokens. The dead `learnOutputLimit` path
+  of `min(8,192, context window)` tokens. The dead `learnOutputLimit` path
   is gone.
 - **Schema 18.** `agent_tools` is added; 17 migrates in place. Older
   incompatible layouts are backed up before reset, and `tasks/` is renamed,
@@ -41,7 +41,8 @@ The agent owns more of its own work, and the window shows less app machinery.
 - **Safety.** `scrub()` removes the caller's actual account id and account
   fields, not every 12-digit number. Policy parsing is limited to policy-shaped fields. ARN
   redaction preserves the IAM ARN prefix. Memory SQL cannot reach host tables.
-  Secret-store reads (Secrets Manager and SSM parameters) are refused.
+  Secret-store and registry-credential reads (ECR, Secrets Manager and SSM
+  parameters) are refused.
 - **Quality.** Unit tests, E2E render/method/delegate paths, visual baselines,
   budget, contrast, audit, SBOM and the smoke eval/bench run in CI. The visual
   gate now fails on a missing capture instead of skipping it.

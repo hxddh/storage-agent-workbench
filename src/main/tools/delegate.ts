@@ -1,6 +1,6 @@
 import { defineTool } from '@earendil-works/pi-durable'
 import type { ToolDetails } from '@shared/contract'
-import { redact } from '../security/redact'
+import { escapeTags, redact } from '../security/redact'
 import type { ToolDeps } from './policy'
 import { Type } from './policy'
 
@@ -84,7 +84,7 @@ export function delegateTool(deps: ToolDeps) {
             type: 'text' as const,
             text:
               status === 'done'
-                ? `<untrusted-data source="delegate">\n${answer || '(no answer)'}\n</untrusted-data>`
+                ? `<untrusted-data source="delegate">\n${escapeTags(redact(answer || '(no answer)'))}\n</untrusted-data>`
                 : `The child agent ${status}: ${note}`,
           },
         ],

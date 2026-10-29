@@ -191,6 +191,12 @@ describe('one read-only call', () => {
     expect(() => checkCall(config, { service: 'ssm', operation: 'GetParameter' })).toThrow(
       /not a read/,
     )
+    expect(() => checkCall(config, { service: 'ecr', operation: 'GetAuthorizationToken' })).toThrow(
+      /not a read/,
+    )
+    expect(() => checkCall(config, { service: 'dynamodb', operation: 'Query' })).not.toThrow()
+    expect(() => checkCall(config, { service: 'dynamodb', operation: 'Scan' })).not.toThrow()
+    expect(operationsOf('dynamodb')).toEqual(expect.arrayContaining(['Query', 'Scan']))
     expect(() => checkCall(config, { service: 's3', operation: 'GetNothing' })).toThrow(
       /no operation/,
     )

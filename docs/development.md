@@ -113,7 +113,8 @@ Node.
   `10-sidebar-compact`, `11-home-compact`, `12-settings-compact`,
   `13-memory-light`, `14-change-light`, `20-home-zh`, `21-settings-error-zh`,
   `23-tool-detail`, `24-citation-open`, `25-render-light`,
-  `26-agent-tool-light`, `27-delegate-light`, `02e-settings-methods` and `02f-settings-memory`. It
+  `26-agent-tool-light`, `27-delegate-light`, `28-chart-series-light`, `02e-settings-methods` and
+  `02f-settings-memory`. It
   fails on a missing capture, a size change, a global pixel change above 5%,
   or any 64px tile that is mostly changed, so a missing control is not hidden
   by a large unchanged window. `--update` writes a new baseline for every

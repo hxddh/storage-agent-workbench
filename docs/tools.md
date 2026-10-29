@@ -46,9 +46,10 @@ client. The input is the operation's own, with the field names the SDK uses.
   `Describe`, `Lookup`, `Search`, `Select`, `Simulate`, `BatchGet`, `Query` or
   `Scan`. The `NEVER` list excludes reads that hand out credentials or start
   state on the service: STS `GetSessionToken`, `GetFederationToken` and
-  `GetWebIdentityToken`, and KMS `GetParametersForImport`. Secret-store reads
-  are refused too: Secrets Manager `GetSecretValue` and `BatchGetSecretValue`,
-  SSM `GetParameter`, `GetParameters`, `GetParametersByPath` and
+  `GetWebIdentityToken`, and KMS `GetParametersForImport`. Secret-store and
+  registry-credential reads are refused too: ECR `GetAuthorizationToken`,
+  Secrets Manager `GetSecretValue` and `BatchGetSecretValue`, SSM
+  `GetParameter`, `GetParameters`, `GetParametersByPath` and
   `GetParameterHistory`. Anything else is refused. An unknown service or
   operation fails with the list of services or of that service's reads.
 - **Scope.** On a scoped account, an S3 or S3 Control input whose `Bucket` is
@@ -112,7 +113,8 @@ Returned strings are scrubbed and redacted.
 `render` takes `{title?, doc}` where `doc` is
 `{version: 1, blocks: [...]}`. Blocks may nest arbitrarily and include:
 `markdown`, `section`, `stack`, `row`, `table`, `chart` (bar, line, area or
-point), `code`, `callout`, `kv`, `tree`, `diff`, `timeline` and `link`.
+point; an optional `series` column splits the data), `code`, `callout`, `kv`,
+`tree`, `diff`, `timeline` and `link`.
 `shared/view.ts` validates and sanitises the tree; the window owns rendering
 and accessibility. A view is data, never HTML or executable code. Limits are
 2 MiB, depth 12, 2,000 blocks, 20,000 table/chart rows and 10,000 tree nodes.
