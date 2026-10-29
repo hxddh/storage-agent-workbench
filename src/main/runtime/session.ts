@@ -19,7 +19,7 @@ import {
   type ToolRegistration,
 } from '@earendil-works/pi-durable'
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
-import type { AppEvent, Live, TaskModel, TaskSummary, UiEntry } from '@shared/contract'
+import type { AppEvent, TaskModel, TaskSummary, UiEntry } from '@shared/contract'
 import type { AppDb } from '../db'
 import type { Estate } from '../estate/estate'
 import { contextFor } from '../model-catalog'
@@ -89,17 +89,12 @@ export function parseTaskModel(raw: string | null | undefined): TaskModel | null
 export class Runtime {
   /** Tasks whose last run failed; the sidebar marks them. */
   readonly failed = new Set<string>()
-  /** The live slot of a scripted run, which has no pi generation to show. */
-  readonly scripted = new Map<string, Live>()
-  /** Stop for a scripted run; a model run stops through pi's abort. */
-  readonly stops = new Map<string, AbortController>()
   private digest = ''
 
   private constructor(
     readonly deps: RuntimeDeps,
     readonly pi: Harness,
     readonly tools: ToolDeps,
-    /** The registered tools; a scripted run calls the same ones the model does. */
     readonly registry: ToolRegistration[],
   ) {}
 

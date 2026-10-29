@@ -411,7 +411,7 @@ export function surveyTool(deps: ToolDeps) {
         target: config.name,
         note: `${read.length} bucket${read.length === 1 ? '' : 's'}${
           changed.opened ? ` · ${changed.opened} new issue${changed.opened === 1 ? '' : 's'}` : ''
-        }${pending > 0 ? ` · ${pending} pending` : ''}`,
+        }${changed.resolved ? ` · ${changed.resolved} resolved` : ''}${pending > 0 ? ` · ${pending} pending` : ''}`,
         view: {
           kind: 'survey' as const,
           provider: config.name,

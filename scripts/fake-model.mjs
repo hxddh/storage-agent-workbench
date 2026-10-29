@@ -62,12 +62,6 @@ function plan(body) {
     return /evidence="([^"]+)"/.exec(text)?.[1] ?? ''
   }
 
-  // The harness asks once when the answer names something no read returned.
-  if (/no tool result in this task shows|which no tool result/i.test(ask)) {
-    console.log('GROUNDING_CORRECTION')
-    return { text: 'The readings do not show that name.' }
-  }
-
   if (ask.includes('clarify') && !called.has('ask')) {
     return {
       tool: call('call_ask_1', 'ask', {
@@ -76,6 +70,22 @@ function plan(body) {
         note: 'The scope changes the evidence.',
       }),
     }
+  }
+
+  // "Accept the encryption risk on demo-public": read memory, then ask the user to confirm.
+  if (ask.includes('accept')) {
+    if (!called.has('estate')) return { tool: call('call_estate_accept', 'estate', {}) }
+    if (!called.has('accept_risk')) {
+      const topic = /logging/.test(ask) ? /logging/i : /encryption/i
+      const line = (output.get('estate') ?? '')
+        .split('\n')
+        .find((row) => topic.test(row) && row.includes('demo-public'))
+      const code = /· rule ([a-z_]+)/.exec(line ?? '')?.[1] ?? 'no_encryption'
+      return {
+        tool: call('call_accept_1', 'accept_risk', { bucket: 'demo-public', code }),
+      }
+    }
+    return { text: 'I asked you to confirm accepting that risk on `demo-public`.' }
   }
 
   if (ask.includes('access method') && !called.has('skill')) {
@@ -194,7 +204,7 @@ function plan(body) {
     text = '8 risks are open; the highest severity is public exposure on `demo-public`.'
     source = 'estate'
   } else if (ask.includes('ghost')) {
-    text = '`demo-public` is public and so is `ghost-bucket`.'
+    text = 'No read returned a bucket named ghost-bucket, so I cannot say it is exposed; `demo-public` is the public one.'
     source = 'survey'
   } else if (publicBucket && publicBucket !== 'demo-public') {
     text = `\`${publicBucket}\` is publicly accessible.`

@@ -2,7 +2,7 @@ import type { EntryRecord } from '@earendil-works/pi-durable'
 import type { ToolDetails, ToolView } from '@shared/contract'
 import { describe, expect, it } from 'vitest'
 import { callKey } from '../tools/policy'
-import { answerCorrection, blockReason, maxRounds, runView, tierFor } from './agent'
+import { blockReason, maxRounds, runView, tierFor } from './agent'
 
 let seq = 0
 const at = () => 1_700_000_000_000 + seq++
@@ -71,22 +71,6 @@ const config = (bucket: string): ToolView => ({
   exposure: 'public',
   findings: [],
 })
-
-const survey: ToolView = {
-  kind: 'survey',
-  provider: 'Demo',
-  providerId: 'p',
-  buckets: {
-    columns: ['Bucket', 'Public'],
-    rows: [
-      ['demo', 'public'],
-      ['other', 'no'],
-    ],
-  },
-  issues: [],
-  coverage: { visible: 2, processed: 2, truncated: false, pending: 0, denied: [], unknown: [] },
-  changed: { opened: 0, resolved: 0, recurred: 0 },
-}
 
 describe('model tiers', () => {
   it('gives a small context model fewer rounds and a large one more', () => {
@@ -167,54 +151,5 @@ describe('run guards from durable entries', () => {
   it('lets memory be read again as it changes', () => {
     const view = runView([request(), call('c1', 'estate', {}), result('c1', 'estate', {}, null)])
     expect(blockReason(view, 'mid', 'estate', {}, new Set())).toBeUndefined()
-  })
-})
-
-describe('the one answer correction', () => {
-  const read = () =>
-    runView([request(), call('s1', 'survey', {}), result('s1', 'survey', {}, survey)])
-
-  it('accepts a cited, grounded answer', () => {
-    expect(answerCorrection(read(), '`demo` is public. [1](#ev-s1)')).toBeUndefined()
-  })
-
-  it('asks for a name no tool showed, with the wording the harness always uses', () => {
-    expect(answerCorrection(read(), '`demo` and `ghost` are public. [1](#ev-s1)')).toMatch(
-      /`ghost`, which no tool result in this task shows/,
-    )
-  })
-
-  it('asks for a citation when a paragraph names a read bucket without one', () => {
-    expect(answerCorrection(read(), '`demo` is public.')).toMatch(/without citing/)
-  })
-
-  it('asks once: a run that already has a correction is left to the window', () => {
-    const corrected = runView([
-      request(),
-      call('s1', 'survey', {}),
-      result('s1', 'survey', {}, survey),
-      {
-        id: 'v1',
-        kind: 'pi.user',
-        model: [{ role: 'user', content: 'Your answer names `ghost`…', timestamp: at() }],
-      } as unknown as EntryRecord,
-    ])
-    expect(answerCorrection(corrected, '`ghost` again.')).toBeUndefined()
-  })
-
-  it('does not judge prose when the task has read nothing', () => {
-    expect(answerCorrection(runView([request()]), '`anything`')).toBeUndefined()
-  })
-
-  it('never judges whether the prose calls the account clean', () => {
-    const partial = runView([
-      request(),
-      call('s1', 'survey', {}),
-      result('s1', 'survey', {}, {
-        ...survey,
-        coverage: { ...(survey as { coverage: object }).coverage, denied: ['other'] },
-      } as ToolView),
-    ])
-    expect(answerCorrection(partial, 'No bucket is public. [1](#ev-s1)')).toBeUndefined()
   })
 })

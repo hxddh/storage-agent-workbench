@@ -25,7 +25,7 @@ const names = [
   '02c-settings-dark.png',
   '02d-settings-account-form.png',
   '03-task-light.png',
-  '04-survey-light.png',
+  '04-follow-up-light.png',
   '05-estate-light.png',
   '06-task-dark.png',
   '07-home-dark.png',
@@ -36,16 +36,12 @@ const names = [
   '12-settings-compact.png',
   '13-history-light.png',
   '14-plan-light.png',
-  '15-plan-reverified.png',
+  '15-accept-confirm.png',
   '16-settings-schedule.png',
-  '17-finding-focus.png',
-  '18-evidence-panel.png',
-  '19-risks-multi-bucket.png',
   '20-home-zh.png',
   '21-settings-error-zh.png',
-  '22-work-expanded.png',
   '23-tool-detail.png',
-  '24-evidence-peek.png',
+  '24-citation-open.png',
 ]
 let failed = 0
 for (const name of names) {

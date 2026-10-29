@@ -7,7 +7,6 @@ const api: AgentApi = {
   older: (taskId, before) => ipcRenderer.invoke('agent:older', taskId, before),
   createTask: (text, attachments, context) =>
     ipcRenderer.invoke('agent:createTask', text, attachments, context),
-  check: () => ipcRenderer.invoke('agent:check'),
   send: (taskId, text, attachments, context) =>
     ipcRenderer.invoke('agent:send', taskId, text, attachments, context),
   estateRefs: (query) => ipcRenderer.invoke('agent:estateRefs', query),
@@ -20,7 +19,6 @@ const api: AgentApi = {
   deleteTask: (taskId) => ipcRenderer.invoke('agent:deleteTask', taskId),
   retryTask: (taskId) => ipcRenderer.invoke('agent:retryTask', taskId),
   continueTask: (taskId) => ipcRenderer.invoke('agent:continueTask', taskId),
-  recheckTask: (taskId) => ipcRenderer.invoke('agent:recheckTask', taskId),
   search: (query) => ipcRenderer.invoke('agent:search', query),
   notes: () => ipcRenderer.invoke('agent:notes'),
   deleteNote: (id) => ipcRenderer.invoke('agent:deleteNote', id),

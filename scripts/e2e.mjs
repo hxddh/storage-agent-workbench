@@ -1,7 +1,8 @@
 /**
- * End-to-end run against the fake model and fake S3. Drives the real window:
- * configure a model and an account, ask a question, wait for the answer, then
- * inspect the agent trace and its evidence.
+ * End-to-end run against the fake model and fake S3. Drives the real window as
+ * a conversation: configure a model and an account, talk to the agent, and
+ * check that its tool calls, answers, questions and confirmations appear in
+ * the thread where they happened.
  *
  *   node scripts/e2e.mjs
  */
@@ -19,7 +20,6 @@ const dataDir = mkdtempSync(join(tmpdir(), 'sa-e2e-'))
 const s3Port = 9110
 const modelPort = 9210
 
-const seen = new Set()
 
 function start(script, port) {
   const child = spawn(process.execPath, [join(root, script), String(port)], {
@@ -27,7 +27,6 @@ function start(script, port) {
     env: { ...process.env, SLOW_MS: '350' },
   })
   child.stdout.on('data', (data) => {
-    if (String(data).includes('GROUNDING_CORRECTION')) seen.add('correction')
     process.stdout.write(`[${script}] ${data}`)
   })
   child.stderr.on('data', (data) => process.stderr.write(`[${script}] ${data}`))
@@ -58,53 +57,45 @@ const fail = async (message) => {
   process.exit(1)
 }
 
-const openTrace = async () => {
-  await page.waitForSelector('.run-work-head', { timeout: 60_000 })
-  const head = page.locator('.run-work-head')
-  if ((await head.getAttribute('aria-expanded')) === 'false') await head.click()
-  await page.waitForSelector('.run-work .activity-list', { timeout: 5_000 })
-}
-
-const openFindings = async () => {
-  const button = page.locator('.run-evidence-button', { hasText: 'Findings' })
-  if (!(await button.count())) await fail('the findings strip is missing')
-  await button.click()
-  await page.waitForSelector('.run-finding-line', { timeout: 5_000 })
-}
-
+/** Open one tool call in the thread by its label and return its row. */
 const openTool = async (label) => {
-  await openTrace()
-  const row = page.locator('.activity-item.tool', { hasText: label }).first()
-  if (!(await row.count())) await fail(`trace row missing: ${label}`)
-  await row.locator('.activity-line').click()
+  const row = page.locator('.step.tool', { hasText: label }).last()
+  if (!(await row.count())) await fail(`tool call missing: ${label}`)
+  if ((await row.locator('.step-line').getAttribute('aria-expanded')) === 'false')
+    await row.locator('.step-line').click()
+  await row.locator('.step-detail').waitFor({ timeout: 5_000 })
   return row
 }
 
 /**
- * A re-check is its own run: wait for it to start and settle, then for its
- * trace, which opens by itself. Toggling the trace header before the run lands
- * would race the page's own open.
+ * A turn is settled once this message is the last thing the user said, the
+ * agent is no longer working, and it has replied (text or a question).
  */
-const waitRecheck = async () => {
-  await page.waitForSelector('.run-tag:has-text("Re-check")', { timeout: 30_000 })
+const waitSettled = async (message) => {
+  await page.waitForFunction(
+    (text) => [...document.querySelectorAll('.msg.user')].at(-1)?.textContent?.startsWith(text),
+    message,
+    { timeout: 60_000 },
+  )
   await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
-  await openTrace()
-  await page.waitForSelector('.activity-item.reverify', { timeout: 30_000 })
+  await page.waitForFunction(
+    () => {
+      const items = [...document.querySelectorAll('.conversation > *')]
+      const user = items.findLastIndex((item) => item.classList.contains('msg') && item.classList.contains('user'))
+      return items.slice(user + 1).some((item) => item.querySelector?.('.msg.agent') || item.classList.contains('agent'))
+    },
+    null,
+    { timeout: 60_000 },
+  )
 }
 
-/** A model run is settled when the composer is no longer in its stop state. */
-const waitSettled = async (request) => {
-  // Wait for this request's own run first: before it lands, the page still
-  // shows the previous run (or none), and the composer is not yet in its stop state.
-  if (request)
-    await page.waitForFunction(
-      (text) => document.querySelector('.run-question')?.textContent === text,
-      request,
-      { timeout: 60_000 },
-    )
-  await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
-  await page.waitForSelector('.run-answer .verdict, .run-clarify', { timeout: 60_000 })
-  await page.waitForSelector('.run-work-head', { timeout: 60_000 })
+/** The agent's last text in the thread. */
+const lastText = () => page.locator('.msg.agent.text').last().innerText()
+
+const say = async (text) => {
+  await page.locator('.composer textarea').fill(text)
+  await page.keyboard.press('Enter')
+  await waitSettled(text)
 }
 
 const checkA11y = async (label) => {
@@ -151,54 +142,34 @@ try {
   await page.locator('#accKey').fill('demo-key')
   await page.locator('#accSecret').fill('demo-secret')
   await page.getByLabel('Path-style addressing').check()
-  const accountForm = page.locator('.account').last()
-  await accountForm.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.locator('.account').last().getByRole('button', { name: 'Save', exact: true }).click()
   await page.waitForTimeout(1000)
-  const accounts = await page.locator('.account-name').count()
-  console.log('ACCOUNTS:', accounts)
-  if (accounts < 1) await fail('account was not saved')
+  if ((await page.locator('.account-name').count()) < 1) await fail('account was not saved')
   await checkA11y('settings')
-
   await page.getByRole('button', { name: 'Close settings' }).click()
   await page.waitForSelector('.home-ledger-row', { timeout: 5_000 })
   console.log('HOME OVERVIEW OK')
   await checkA11y('home')
 
-  // Model-free account check: the same readers produce a run without a model.
+  // "Check account" is a message to the agent; the agent reads with its tools.
   await page.getByRole('button', { name: 'Check account' }).click()
-  await page.waitForSelector('.brief .verdict', { timeout: 120_000 })
-  const auditText = await page.locator('.brief').innerText()
-  if (!/risk|problem|No open/i.test(auditText)) await fail('audit produced no conclusion')
-  console.log('AUDIT OK:', auditText.replace(/\s+/g, ' ').slice(0, 180))
-  await checkA11y('audit')
-  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-audit.png') })
-
-  await page.locator('.composer textarea').fill('Which buckets are public?')
-  await page.keyboard.press('Enter')
-
-  await page.waitForSelector('.run-strip .run-dot', { timeout: 10_000 })
-  await page.waitForTimeout(600)
+  await page.waitForSelector('.msg.user', { timeout: 10_000 })
+  await page.waitForSelector('.step.tool', { timeout: 30_000 })
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-running.png') })
+  await waitSettled('Check my storage accounts')
+  if (!(await page.locator('.step.tool', { hasText: 'Read account' }).count()))
+    await fail('the check did not read the account')
+  console.log('CHECK OK:', (await lastText()).replace(/\s+/g, ' ').slice(0, 160))
+  for (const gone of ['Earlier in this task', 'Not checked', 'Worked for'])
+    if (await page.getByText(gone).count()) await fail(`report scaffolding is back: ${gone}`)
 
-  await waitSettled('Which buckets are public?')
-  if (await page.locator('.run-plan').count()) await fail('a finished plan is still visible')
-  await page.locator('.run-answer .run-cite').first().click()
-  await page.waitForSelector('.run-peek', { timeout: 5_000 })
-  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-peek.png') })
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
-  await openTrace()
-  await openFindings()
-  const body = await page.locator('body').innerText()
-  console.log('ANSWER OK')
-  console.log(body.slice(0, 1200))
-  if ((await page.locator('.verdict code.ungrounded').count()) !== 0)
-    await fail('a grounded verdict was marked')
-  await page.locator('.run-finding-main').first().click()
-  await page.waitForSelector('.run-work-head[aria-expanded="true"]', { timeout: 5_000 })
-  console.log('EVIDENCE OK')
-  await page.waitForTimeout(200)
-  await checkA11y('answer')
-  await page.waitForTimeout(350)
+  // The conversation continues in the same task: a second turn below the first.
+  await say('Which buckets are public?')
+  if ((await page.locator('.msg.user').count()) !== 2) await fail('the follow-up is not in the same thread')
+  await page.locator('.msg.agent .cite').last().click()
+  await page.waitForSelector('.step.tool .step-detail', { timeout: 5_000 })
+  console.log('ANSWER OK:', (await lastText()).replace(/\s+/g, ' ').slice(0, 160))
+  await checkA11y('conversation')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-answer.png') })
 
   // @ points at a remembered bucket without typing its name.
@@ -208,104 +179,47 @@ try {
   await page.waitForSelector('.context-chip', { timeout: 5_000 })
   console.log('CONTEXT PICKER OK')
   await page.locator('.context-chip button').click()
+  await page.locator('.composer textarea').fill('')
 
-  // A genuinely ambiguous request ends in one clarifying question; choosing
-  // an option sends the answer as the next run.
+  // A genuinely ambiguous request: the agent asks, an option answers.
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('Please clarify which account to read')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.run-clarify', { timeout: 60_000 })
-  const clarify = await page.locator('.run-clarify').innerText()
-  if (!clarify.includes('Which account should I read?')) await fail('clarify question missing')
-  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-clarify.png') })
+  await page.waitForSelector('.msg.agent.question', { timeout: 60_000 })
+  if (!(await page.locator('.msg.agent.question').innerText()).includes('Which account should I read?'))
+    await fail('clarify question missing')
   await page.getByRole('button', { name: 'Demo', exact: true }).click()
   await waitSettled('Demo')
   console.log('CLARIFY OK')
-  await page.locator('.composer textarea').fill('')
 
-  // Re-verify is model-free: it re-reads the buckets this task touched.
-  await page.getByRole('button', { name: 'More actions' }).click()
-  await page.getByRole('menuitem', { name: 'Re-check' }).click()
-  await waitRecheck()
-  await page.locator('.activity-item.reverify .activity-line').click()
-  await page.waitForSelector('.activity-reverify', { timeout: 5_000 })
-  const reverify = await page.locator('.activity-reverify').innerText()
-  console.log('REVERIFY:', reverify.replace(/\s+/g, ' ').slice(0, 160))
-
-  // Access paths: policy, ACL, identity, key and analyzer grants in one chain.
-  await page.locator('.composer textarea').fill('Who can read demo-public?')
-  await page.keyboard.press('Enter')
-  await waitSettled('Who can read demo-public?')
-  await openTool('Reviewed configuration')
-  await page.waitForSelector('.access-chain .access-row', { timeout: 10_000 })
-  const access = await page.locator('.access-chain').innerText()
-  console.log('ACCESS OK:', access.replace(/\s+/g, ' ').slice(0, 180))
-  await page.locator('.access-chain').scrollIntoViewIfNeeded()
+  // Access paths open in place under their call.
+  await say('Who can read demo-public?')
+  const access = await openTool('Reviewed configuration')
+  await access.locator('.access-chain .access-row').first().waitFor({ timeout: 10_000 })
+  console.log('ACCESS OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-access.png') })
 
-  // Accepting a risk is the user's call; it folds the finding and survives a reload.
+  // Accepting a risk is the user's act: the agent asks, the user confirms.
   await page.getByRole('button', { name: 'New task' }).click()
-  await page.waitForSelector('.home', { timeout: 5_000 })
-  await page.locator('.composer textarea').fill('Which buckets are public?')
-  await page.keyboard.press('Enter')
-  await waitSettled('Which buckets are public?')
-  await openFindings()
-  const encryption = page.locator('.run-finding-line', { hasText: 'No default encryption' }).first()
-  await encryption.hover()
-  await encryption.getByRole('button', { name: 'Accept risk' }).click()
-  await page.waitForSelector('text=1 accepted', { timeout: 5_000 })
+  await say('Accept the encryption risk on demo-public')
+  await page.waitForSelector('.msg.agent.confirm', { timeout: 10_000 })
+  await page.locator('.msg.agent.confirm').getByRole('button', { name: 'Accept risk' }).click()
+  await page.waitForSelector('.msg.agent.confirm >> text=Accepted.', { timeout: 5_000 })
   console.log('ACCEPT OK')
 
-  // The user applies the fix outside the app; the agent re-reads that bucket only.
+  // The user applies the fix outside the app; the agent re-reads that bucket.
   await fetch(`http://127.0.0.1:${s3Port}/__fake/fix?bucket=demo-public`, { method: 'POST' })
-  await page.locator('.composer textarea').fill('I applied the fix to demo-public')
-  await page.keyboard.press('Enter')
-  await waitSettled('I applied the fix to demo-public')
-  await page.waitForSelector('text=no longer public', { timeout: 60_000 })
-  await openFindings()
-  await page.waitForSelector('.run-panel-label.ok', { timeout: 10_000 })
-  const fixed = await page.locator('.run-panel-label.ok').innerText()
-  console.log('VERIFY OK:', fixed)
-  await page.locator('.run-history-head').click()
-  await page.waitForSelector('.run-turn-head', { timeout: 5_000 })
-  await page.locator('.run-turn-head').first().click()
-  await page.waitForSelector('.run-turn-body', { timeout: 5_000 })
-  console.log('HISTORY OK')
-  if (await page.locator('.run-finding-line', { hasText: 'publicly accessible' }).count())
-    await fail('a fixed finding is still on the page')
-  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-verified.png') })
-
-  // An answer naming a bucket no tool returned is corrected once; the correction replaces it.
-  await page.getByRole('button', { name: 'New task' }).click()
-  await page.locator('.composer textarea').fill('Is ghost-bucket exposed?')
-  await page.keyboard.press('Enter')
-  await waitSettled('Is ghost-bucket exposed?')
-  await page.waitForSelector('.verdict:has-text("readings do not show")', { timeout: 60_000 })
-  if (!seen.has('correction')) await fail('the harness did not ask for a grounded answer')
-  console.log('GROUNDING OK')
+  await say('I applied the fix to demo-public')
+  if (!(await lastText()).includes('no longer public')) await fail('the re-read did not land')
+  console.log('VERIFY OK')
 
   await page.getByRole('button', { name: 'New task' }).click()
-  await page.locator('.composer textarea').fill('Show the change plan for demo-private')
-  await page.keyboard.press('Enter')
-  await waitSettled('Show the change plan for demo-private')
-  await openTool('Prepared a change plan')
-  await page.waitForSelector('.plan', { timeout: 10_000 })
-  await page.waitForSelector('text=AWS CLI', { timeout: 60_000 })
-  const changeBody = await page.locator('body').innerText()
+  await say('Show the change plan for demo-private')
+  const change = await openTool('Prepared a change plan')
+  await change.locator('.plan').first().waitFor({ timeout: 10_000 })
+  await page.waitForSelector('text=AWS CLI', { timeout: 10_000 })
   console.log('CHANGE OK')
-  console.log(changeBody.slice(0, 900))
-  await page.waitForTimeout(350)
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-change.png') })
-
-  // Re-verify compares the account with the plan; it does not assume the user applied it.
-  await page.getByRole('button', { name: 'More actions' }).click()
-  await page.getByRole('menuitem', { name: 'Re-check' }).click()
-  await waitRecheck()
-  await page.locator('.activity-item.reverify .activity-line').click()
-  await page.waitForSelector('.activity-reverify', { timeout: 5_000 })
-  const planReverify = await page.locator('.activity-reverify').innerText()
-  console.log('PLAN REVERIFY:', planReverify.replace(/\s+/g, ' ').slice(0, 200))
-  if (!planReverify.includes('not applied')) await fail('an unapplied plan step was not reported')
 
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('Check demo-private again')
@@ -315,71 +229,33 @@ try {
   await page.waitForSelector('text=Stopped.', { timeout: 10_000 })
   console.log('STOP OK')
   await page.getByRole('button', { name: 'Continue' }).click()
+  await page.waitForSelector('.conversation-divider', { timeout: 10_000 })
   await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
-  await page.waitForSelector('.run-answer .verdict', { timeout: 60_000 })
-  await openFindings()
+  await page.waitForSelector('.msg.agent.text', { timeout: 60_000 })
   console.log('CONTINUE OK')
 
-  // Create one task in this session and find it by a distinctive title. This
-  // also proves a model task reaches the durable task list, not only the view.
   await page.getByRole('button', { name: 'New task' }).click()
-  await page.locator('.composer textarea').fill('Searchable demo question')
-  await page.keyboard.press('Enter')
-  await waitSettled('Searchable demo question')
-  await openFindings()
+  await say('Searchable demo question')
   await page.waitForTimeout(400)
-
   await page.locator('.sidebar-search input').click()
   await page.keyboard.type('Searchable')
   await page.waitForSelector('.search-hit', { timeout: 10_000 })
-  const hits = await page.locator('.search-hit').count()
-  console.log('SEARCH HITS:', hits)
-  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-search.png') })
+  console.log('SEARCH HITS:', await page.locator('.search-hit').count())
   await page.locator('.sidebar-search input').fill('abort rule')
   await page.waitForSelector('.search-hit:has-text("abort rule")', { timeout: 10_000 })
   await page.locator('.search-hit', { hasText: 'abort rule' }).first().click()
-  // The change plan's task was re-checked since: its answer is an earlier run now.
-  await page.waitForSelector(
-    '.brief .verdict:has-text("abort rule"), .run-turn-summary:has-text("abort rule")',
-    { timeout: 10_000 },
-  )
+  await page.waitForSelector('.msg.agent.text:has-text("abort rule")', { timeout: 10_000 })
   console.log('SEARCH OPEN OK')
 
-  await page.locator('.sidebar-search input').fill('multipart')
-  await page.waitForSelector('.search-hit:has-text("multipart")', { timeout: 10_000 })
-  await page.locator('.search-hit', { hasText: 'multipart' }).first().click()
-  await page.waitForSelector('.run-finding-line', { timeout: 10_000 })
-  console.log('SEARCH FINDING OK')
-
-  // Read-only code mode: the rows and the script are both in the trace.
+  // Read-only code mode: the rows and the script open under the query call.
   await page.getByRole('button', { name: 'New task' }).click()
-  await page.locator('.composer textarea').fill('What are the largest prefixes in demo-public?')
-  await page.keyboard.press('Enter')
-  await page.waitForSelector('text=holds everything', { timeout: 60_000 })
-  await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
-  await openTool('Ran a read-only query')
-  await page.waitForSelector('.table-block table', { timeout: 10_000 })
-  const firstCell = await page.locator('.table-block table tbody td').first().innerText()
+  await say('What are the largest prefixes in demo-public?')
+  const query = await openTool('Ran a read-only query')
+  const firstCell = await query.locator('.table-block table tbody td').first().innerText()
   if (firstCell !== 'reports/') await fail(`query rows: ${firstCell}`)
-  await page.waitForSelector('.activity-detail pre.code:has-text("tools.list")', { timeout: 5_000 })
-  if (await page.locator('.verdict code.ungrounded').count()) await fail('a grounded query verdict was marked')
+  await query.locator('pre.code:has-text("tools.list")').waitFor({ timeout: 5_000 })
   console.log('QUERY OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-query.png') })
-
-  // Keyboard: j moves between findings.
-  await page.getByRole('button', { name: 'New task' }).click()
-  await page.locator('.composer textarea').fill('Which issues are open?')
-  await page.keyboard.press('Enter')
-  await waitSettled('Which issues are open?')
-  await openFindings()
-  await page.locator('.run-finding-main').first().focus()
-  await page.keyboard.press('j')
-  const moved = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('.run-finding-main')]
-    return rows.indexOf(document.activeElement) === 1
-  })
-  if (!moved) await fail('j did not move to the next finding')
-  console.log('KEYS OK')
 
   // Demo storage: an in-process account, offered once.
   await page.getByRole('button', { name: 'Settings' }).click()

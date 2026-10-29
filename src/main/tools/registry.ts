@@ -95,6 +95,15 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
     readOnly: true,
   },
   {
+    name: 'accept_risk',
+    group: 'memory',
+    description:
+      'Ask the user to confirm accepting a risk they asked to accept. Changes nothing itself.',
+    cost: 'cheap',
+    coverage: 'memory',
+    readOnly: true,
+  },
+  {
     name: 'query',
     group: 'query',
     description: 'Read-only code over buckets, objects, capacity, access and datasets.',

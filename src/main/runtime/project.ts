@@ -14,8 +14,6 @@ import type {
   Live,
   LiveTool,
   NoticeCode,
-  ReverifyReport,
-  RunTrigger,
   ToolDetails,
   ToolName,
   ToolStatus,
@@ -81,19 +79,12 @@ function isDetails(value: unknown): value is Partial<ToolDetails> & { target: st
   return Boolean(value) && typeof value === 'object' && 'target' in (value as object)
 }
 
-/** What a run-starting entry carries. */
+/** What a user message carries. */
 export interface RunData {
-  trigger: RunTrigger
+  trigger: 'user'
   text?: string
   attachments?: AttachmentRef[]
   context?: ContextRef[]
-}
-
-/** A scripted call: the same shaped details `agentTool()` returns to a model run. */
-export interface CallData {
-  name: ToolName
-  at: string
-  details: ToolDetails
 }
 
 function toolEntry(
@@ -131,11 +122,9 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
     const at = iso(message?.timestamp)
     switch (entry.kind) {
       case 'sa.run': {
-        const data = (entry.data ?? {}) as Partial<RunData> & { at?: string }
-        if (data.trigger === 'check' || data.trigger === 'recheck') {
-          out.push({ id, kind: 'check', at: data.at ?? at, mode: data.trigger })
-          break
-        }
+        const data = (entry.data ?? {}) as Partial<RunData> & { trigger?: string }
+        // 35.0 wrote a scripted check's start here; its calls and answer follow as entries.
+        if (data.trigger && data.trigger !== 'user') break
         out.push({
           id,
           kind: 'user',
@@ -147,7 +136,9 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
         break
       }
       case 'sa.steer': {
-        const data = (entry.data ?? {}) as Partial<RunData>
+        const data = (entry.data ?? {}) as Partial<RunData> & { trigger?: string }
+        // 35.0 wrote a scripted check's start here; its calls and answer follow as entries.
+        if (data.trigger && data.trigger !== 'user') break
         out.push({
           id,
           kind: 'steer',
@@ -161,12 +152,13 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       case 'sa.resume':
         out.push({ id, kind: 'resume', at })
         break
+      // 35.0 scripted checks: their calls and answer read as ordinary conversation items.
       case 'sa.call': {
-        const data = entry.data as CallData | undefined
+        const data = entry.data as { name?: string; at?: string; details?: ToolDetails } | undefined
         const name = toolName(data?.name)
-        if (data && name)
+        if (data?.details && name)
           out.push(
-            toolEntry(id, data.at, name, data.details, {
+            toolEntry(id, data.at ?? at, name, data.details, {
               isError: data.details.status !== 'done',
               text: '',
             }),
@@ -175,13 +167,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       }
       case 'sa.answer': {
         const data = entry.data as { text?: string; at?: string } | undefined
-        if (data?.text)
-          out.push({ id, kind: 'answer', at: data.at ?? at, text: data.text, source: 'check' })
-        break
-      }
-      case 'sa.reverify': {
-        const data = entry.data as ReverifyReport | undefined
-        if (data) out.push({ id, kind: 'reverify', at: data.at, report: data })
+        if (data?.text) out.push({ id, kind: 'answer', at: data.at ?? at, text: data.text })
         break
       }
       case 'sa.notice': {
@@ -204,14 +190,6 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
         })
         break
       }
-      // `pi.user` entries are the harness's own messages to the model: a
-      // correction is part of the run, and the window shows it.
-      case 'pi.user': {
-        const text = textOf(message)
-        if (text)
-          out.push({ id, kind: 'validation', at, text: redact(text).slice(0, 1200), tone: 'warn' })
-        break
-      }
       case 'pi.assistant': {
         if (!message) break
         for (const part of parts(message))
@@ -224,7 +202,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
             text: redact(thinkingOf(message)).slice(0, 4000),
           })
         const text = textOf(message)
-        if (text) out.push({ id, kind: 'answer', at, text, source: 'model' })
+        if (text) out.push({ id, kind: 'answer', at, text })
         else if (message.stopReason === 'error' && message.errorMessage)
           out.push({
             id,

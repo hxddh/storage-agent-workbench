@@ -13,10 +13,6 @@ export function request(text = 'Which buckets are public?', id = `u${seq++}`): U
   return { id, kind: 'user', at: at(seq), text, attachments: [] }
 }
 
-export function check(mode: 'check' | 'recheck' = 'check', id = `c${seq++}`): UiEntry {
-  return { id, kind: 'check', at: at(seq), mode }
-}
-
 export function tool(
   name: ToolName,
   view: ToolView | null,
@@ -43,8 +39,8 @@ export function tool(
   }
 }
 
-export function answer(text: string, source: 'model' | 'check' = 'model'): UiEntry {
-  return { id: `a${seq++}`, kind: 'answer', at: at(seq), text, source }
+export function answer(text: string): UiEntry {
+  return { id: `a${seq++}`, kind: 'answer', at: at(seq), text }
 }
 
 export function issue(

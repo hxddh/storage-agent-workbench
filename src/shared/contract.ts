@@ -26,6 +26,7 @@ export type ToolName =
   | 'skill'
   | 'plan'
   | 'ask'
+  | 'accept_risk'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
 export type CheckSchedule = 'off' | 'daily' | 'weekly'
@@ -86,42 +87,6 @@ export interface ProbeCheck {
   ok: boolean
   detail: string
   ms: number
-}
-
-export interface ReverifyChange {
-  bucket: string
-  code: string
-  title: string
-  before: 'open' | 'accepted' | 'clear' | 'undecided'
-  after: 'open' | 'accepted' | 'clear' | 'undecided'
-}
-
-export interface ReverifyPlanStep {
-  bucket: string
-  code: string
-  title: string
-  status: 'confirmed' | 'not_applied' | 'unknown'
-}
-
-export interface ReverifyPlan {
-  steps: ReverifyPlanStep[]
-  confirmed: number
-  notApplied: number
-  unknown: number
-}
-
-export interface ReverifyReport {
-  at: string
-  checked: number
-  skipped: number
-  /** The task touched more than the per-run replay budget. */
-  truncated?: boolean
-  changes: ReverifyChange[]
-  opened: number
-  resolved: number
-  undecided: number
-  /** Present when the task contains a change plan. */
-  plan?: ReverifyPlan
 }
 
 export interface PermissionGap {
@@ -333,6 +298,8 @@ export type ToolView =
     }
   | { kind: 'plan'; steps: PlanStep[]; note?: string }
   | { kind: 'question'; question: string; options: string[]; note?: string }
+  /** A request for the user to accept (or reopen) a risk; only the user's click changes it. */
+  | { kind: 'accept'; issue: IssueRow; accept: boolean }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'
 
@@ -409,11 +376,8 @@ export interface StagedFile extends AttachmentRef {
   token: string
 }
 
-/** What starts a run. A check and a re-check are scripted runs; they call the same tools. */
-export type RunTrigger = 'user' | 'check' | 'recheck'
-
 export type UiEntry =
-  /** A user request: it starts a run. */
+  /** A user message: it starts a turn. */
   | {
       id: string
       kind: 'user'
@@ -422,9 +386,7 @@ export type UiEntry =
       attachments: AttachmentRef[]
       context?: ContextRef[]
     }
-  /** A scripted run: an account check or a re-check of the task's reads. No model. */
-  | { id: string; kind: 'check'; at: string; mode: 'check' | 'recheck' }
-  /** A steer joins the running run; it is not a new request. */
+  /** A message sent while the agent works; it joins the running turn. */
   | {
       id: string
       kind: 'steer'
@@ -433,19 +395,10 @@ export type UiEntry =
       attachments: AttachmentRef[]
       context?: ContextRef[]
     }
-  /** `check`: written by the scripted run from its own calls, not by a model. */
-  | {
-      id: string
-      kind: 'answer'
-      at: string
-      text: string
-      streaming?: boolean
-      source?: 'model' | 'check'
-    }
+  /** The model's text. A turn can hold several, between tool calls. */
+  | { id: string; kind: 'answer'; at: string; text: string; streaming?: boolean }
   /** A provider-supplied reasoning summary. It is not a tool result. */
   | { id: string; kind: 'reasoning'; at: string; text: string }
-  /** The harness asked the model to correct a claim; the correction is visible. */
-  | { id: string; kind: 'validation'; at: string; text: string; tone: 'info' | 'warn' }
   | {
       id: string
       kind: 'tool'
@@ -473,10 +426,8 @@ export type UiEntry =
       action?: 'retry' | 'continue'
     }
   | { id: string; kind: 'compaction'; at: string; text: string }
-  /** The user asked a stopped run to continue: a boundary inside the run, not a request. */
+  /** The user asked a stopped turn to continue. */
   | { id: string; kind: 'resume'; at: string }
-  /** A re-check's comparison of the task's earlier conclusions with its fresh calls. */
-  | { id: string; kind: 'reverify'; at: string; report: ReverifyReport }
 
 export interface TaskSummary {
   id: string
@@ -663,7 +614,7 @@ export type AppEvent =
   | { type: 'open'; taskId: string }
   | { type: 'bootstrap' }
 
-export type AppCommand = 'settings' | 'new-task' | 'stop' | 'search' | 'reverify'
+export type AppCommand = 'settings' | 'new-task' | 'stop' | 'search'
 
 /** A model already running on this machine (Ollama, LM Studio). */
 export interface LocalModel {
@@ -684,8 +635,6 @@ export interface AgentApi {
     before: string,
   ): Promise<{ entries: UiEntry[]; hasOlder: boolean; cursor: string | null }>
   createTask(text: string, attachments: string[], context?: ContextRef[]): Promise<TaskView>
-  /** Start a scripted account check (no model) in a new task. */
-  check(): Promise<TaskView>
   send(taskId: string, text: string, attachments: string[], context?: ContextRef[]): Promise<void>
   /** Use a different model for this task's next run; null restores Settings. */
   setTaskModel(taskId: string, model: TaskModel | null): Promise<void>
@@ -697,8 +646,6 @@ export interface AgentApi {
   deleteTask(taskId: string): Promise<void>
   retryTask(taskId: string): Promise<void>
   continueTask(taskId: string): Promise<void>
-  /** Re-read what the task read, as a scripted run in the same task. */
-  recheckTask(taskId: string): Promise<void>
   search(query: string): Promise<SearchHit[]>
   notes(): Promise<NoteRow[]>
   deleteNote(id: string): Promise<void>
@@ -745,6 +692,7 @@ export const TOOL_LABEL: Record<ToolName, string> = {
   skill: 'Read a method',
   plan: 'Published a plan',
   ask: 'Asked a question',
+  accept_risk: 'Asked to accept a risk',
 }
 
 /** Capability groups used by the prompt and documentation, not another tool. */
@@ -765,4 +713,5 @@ export const TOOL_GROUP: Record<
   skill: 'skill',
   plan: 'plan',
   ask: 'ask',
+  accept_risk: 'memory',
 }

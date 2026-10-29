@@ -189,7 +189,7 @@ describe('entry projection', () => {
     ])
   })
 
-  it('projects a scripted check as a boundary, ordinary calls and its answer', () => {
+  it('reads a 35.0 scripted check as ordinary calls and an answer', () => {
     const out = entries([
       { id: 'run1', kind: 'sa.run', data: { trigger: 'check', at: '2026-10-24T12:00:00.000Z' } },
       {
@@ -219,16 +219,15 @@ describe('entry projection', () => {
         },
       },
     ])
-    expect(out.map((entry) => entry.kind)).toEqual(['check', 'tool', 'answer'])
-    expect(out[0]).toMatchObject({ mode: 'check' })
-    expect(out[1]).toMatchObject({
+    expect(out.map((entry) => entry.kind)).toEqual(['tool', 'answer'])
+    expect(out[0]).toMatchObject({
       name: 'survey',
       target: 'Demo',
       evidenceId: 'chk_1',
       key: 'k1',
       assessed: { opened: 1 },
     })
-    expect(out[2]).toMatchObject({ source: 'check' })
+    expect(out[1]).toMatchObject({ text: '1 risk is open across 1 bucket, including `demo`.' })
   })
 
   it('keeps a steer apart from a request', () => {
@@ -243,7 +242,7 @@ describe('entry projection', () => {
     expect(out[0]).toMatchObject({ kind: 'steer', text: 'Only the finance account' })
   })
 
-  it('shows a harness correction as a validation event and a resume as a boundary', () => {
+  it('does not show the harness messages to the model, and shows a resume', () => {
     const out = entries([
       { id: 'e10', kind: 'pi.user', model: [{ role: 'user', content: 'Rewrite the verdict' }] },
       {
@@ -252,8 +251,7 @@ describe('entry projection', () => {
         model: [{ role: 'user', content: 'Continue', timestamp: 3 }],
       },
     ])
-    expect(out[0]).toMatchObject({ kind: 'validation', text: 'Rewrite the verdict' })
-    expect(out[1]).toEqual({ id: 'e11', kind: 'resume', at: new Date(3).toISOString() })
+    expect(out).toEqual([{ id: 'e11', kind: 'resume', at: new Date(3).toISOString() }])
   })
 
   it('drops a tool result for a tool this app does not have', () => {

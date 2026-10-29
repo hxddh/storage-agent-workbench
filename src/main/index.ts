@@ -132,11 +132,6 @@ function buildMenu(): void {
           accelerator: 'CmdOrCtrl+.',
           click: () => sendCommand('stop'),
         },
-        {
-          label: 'Re-verify task',
-          accelerator: 'CmdOrCtrl+Shift+R',
-          click: () => sendCommand('reverify'),
-        },
         ...(isMac
           ? []
           : [

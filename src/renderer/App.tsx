@@ -17,7 +17,9 @@ import type { SettingsPane } from './Settings'
 // Settings is a sheet most launches never open; the run and its Markdown
 // bundle load when a task opens. Home and the composer are the first paint.
 const Settings = lazy(() => import('./Settings').then((module) => ({ default: module.Settings })))
-const Run = lazy(() => import('./Run').then((module) => ({ default: module.Run })))
+const Conversation = lazy(() =>
+  import('./Conversation').then((module) => ({ default: module.Conversation })),
+)
 
 import { Sidebar } from './Sidebar'
 
@@ -151,10 +153,6 @@ export function App() {
         const current = viewRef.current
         if (current?.live) void window.agent.stop(current.task.id)
       }
-      if (command === 'reverify') {
-        const current = viewRef.current
-        if (current && !current.live) void window.agent.recheckTask(current.task.id)
-      }
     })
   }, [newTask, openSettings])
 
@@ -222,12 +220,14 @@ export function App() {
     await refresh()
   }
 
+  /** "Check account" is a message to the agent, in a new task. */
   const check = async () => {
     setCheckError(null)
     setStarting(true)
     try {
-      const next = await window.agent.check()
-      setView(next)
+      setView(null)
+      const created = await window.agent.createTask(dict(lang).checkAccountPrompt, [], [])
+      setView(created)
       setFocusId(null)
       setSidebarOpen(false)
       void refresh()
@@ -244,7 +244,8 @@ export function App() {
     try {
       await window.agent.addDemoAccount()
       await refresh()
-      await check()
+      // With a model, the agent looks at the demo straight away; without one there is nobody to ask.
+      if (boot?.model) await check()
     } catch (error) {
       setCheckError(error instanceof Error ? error.message : String(error))
     }
@@ -317,25 +318,15 @@ export function App() {
         </div>
         {view ? (
           <Suspense fallback={null}>
-            <Run
+            <Conversation
               key={view.task.id}
               view={view}
               lang={lang}
               focusId={focusId}
               onRetry={() => void window.agent.retryTask(view.task.id)}
               onContinue={() => void window.agent.continueTask(view.task.id)}
-              onRecheck={() =>
-                void window.agent
-                  .recheckTask(view.task.id)
-                  .catch((error) =>
-                    setCheckError(error instanceof Error ? error.message : String(error)),
-                  )
-              }
-              onClarify={(text) => void submit(text, [])}
+              onAnswer={(text) => void submit(text, [])}
               onOlder={loadOlder}
-              onCheck={() => void check()}
-              checking={starting}
-              modelLabel={boot?.model?.modelId ?? null}
               models={localModels}
               onModel={(model) => void setModel(model)}
             />

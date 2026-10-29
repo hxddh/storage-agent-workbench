@@ -115,9 +115,20 @@ export class App {
         this.scheduleAttempts.set(account.id, new Date().toISOString())
         const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
         const title = `${this.settings.get().language === 'zh' ? '定期检查' : 'Scheduled check'} · ${account.name} · ${stamp}`
+        // A scheduled check is a message to the agent; without a model there is no check.
+        if (!this.settings.get().model) continue
+        const zh = this.settings.get().language === 'zh'
+        const text = zh
+          ? `检查存储账号 ${account.name}：读取所有存储桶，说明有哪些风险，以及哪些内容没能读到。`
+          : `Check the storage account ${account.name}: read every bucket, tell me which risks are open, and what you could not read.`
         const taskId = await this.tasks.newTask(title)
-        // The engine's settlement notifies like any other run.
-        await this.engine.check(taskId, [account.id])
+        await this.engine.submit(
+          taskId,
+          text,
+          [],
+          [{ kind: 'account', providerId: account.id, label: account.name }],
+        )
+        await this.tasks.waitForIdle(taskId)
       }
     } catch {
       // A scheduled read must never take down the window. Its task page keeps

@@ -121,14 +121,16 @@ export function Home({
               )}
             </div>
             <div className="home-actions">
-              <button
-                className="btn primary home-audit"
-                type="button"
-                disabled={auditing}
-                onClick={onAudit}
-              >
-                {auditing ? t.checkingAccount : t.checkAccount}
-              </button>
+              {hasModel && (
+                <button
+                  className="btn primary home-audit"
+                  type="button"
+                  disabled={auditing}
+                  onClick={onAudit}
+                >
+                  {auditing ? t.checkingAccount : t.checkAccount}
+                </button>
+              )}
               <button className="home-link" type="button" onClick={onAddAccount}>
                 {t.addAccount}
               </button>
@@ -138,7 +140,7 @@ export function Home({
                 </button>
               )}
             </div>
-            {!hasModel && <p className="hint home-hint">{t.checkAccountHint}</p>}
+            {!hasModel && <p className="hint home-hint">{t.emptyNoModel}</p>}
           </>
         ) : (
           <>

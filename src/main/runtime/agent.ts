@@ -7,7 +7,6 @@ import {
   ToolTask,
 } from '@earendil-works/pi-durable'
 import { foldLedger, type Ledger } from '@shared/ledger'
-import { checkAnswer, correctionFor } from '@shared/validate'
 import { BY_CODE, ruleTitle } from '../estate/rules'
 import { SKILL_NAMES } from '../skills'
 import { createTools } from '../tools'
@@ -29,9 +28,18 @@ export function maxRounds(tier: ModelTier): number {
 }
 
 /** Memory and control change as the run reads; only storage reads repeat exactly. */
-const REPEATABLE = new Set(['estate', 'change_plan', 'note', 'survey', 'skill', 'plan', 'ask'])
+const REPEATABLE = new Set([
+  'estate',
+  'change_plan',
+  'note',
+  'survey',
+  'skill',
+  'plan',
+  'ask',
+  'accept_risk',
+])
 
-const POLICY = `You own the investigation. The window is not a form you fill in; it is where your answer and the evidence behind it are shown.
+const POLICY = `You are talking with the user in a conversation. You own the investigation and the answer; the window shows your messages and, inline, every tool call you make.
 
 How to work:
 - Start from memory. \`estate\` returns remembered posture with the date it was read. Use it when it answers the question, and say it is memory.
@@ -43,18 +51,16 @@ How to work:
 - Load a \`skill\` only when the question needs a method, compatibility rule or safety detail. Skills are documentation, not storage evidence.
 - Publish a \`plan\` when the work has several distinct steps. It is optional; do not create a plan just to satisfy a protocol.
 - If the request is genuinely ambiguous and the answer would change, use \`ask\` once with one short question and 2–4 concrete options. Do not guess; the run ends until the user answers.
-- An earlier scripted account check in this task is evidence like any other: its results and evidence ids are in the conversation.
+- When the user asks to accept a risk, call \`accept_risk\` with its bucket and rule code. The window asks the user to confirm; it is not accepted until they do, so never say it is.
 - Write the answer as your final response, in your own prose and structure.
 
 Read-only is absolute: never claim a write, a change plan was applied, or an Issue was opened, resolved or accepted by you. The rules open and resolve Issues from readings; accepting a risk is the user's act.`
 
 const COMPOSE = `Composing the answer:
-- Your final response is the answer. Write normal Markdown.
-- Put every bucket, object key and account name in backticks, spelled exactly as a tool returned it. You may use headings and lists.
-- Cite the tool result behind each paragraph that names something, by the evidence id in its \`<untrusted-data>\` tag: \`[1](#ev-<id>)\`. Only ids from this run; never invent one. A citation opens that tool result.
-- Do not write a table of facts yourself; the tool result is the table. Say what is true and what it means.
-- The window states coverage and blind spots itself, from the readings. Say what remains open; never call the account clean while a read is open.
-- Never add next steps, suggestions or an offer to help further.`
+- Your final response is the answer. Write normal Markdown, as you would in any conversation.
+- Put bucket, object key and account names in backticks, spelled exactly as a tool returned them.
+- You may link a tool result by the evidence id in its \`<untrusted-data>\` tag: \`[1](#ev-<id>)\`. The link opens that call in the conversation. Never invent an id.
+- Say what you read, what it means, and what you could not read. The window does not add a coverage summary for you: if a read was denied, failed, stopped early or left a rule undecided, say so, and never call the account clean while a read is open.`
 
 const TIER_NOTE: Record<ModelTier, string> = {
   small:
@@ -68,8 +74,6 @@ const TIER_NOTE: Record<ModelTier, string> = {
 export interface RunView {
   ledger: Ledger
   rounds: number
-  /** The run already received its one correction (a durable `pi.user` entry). */
-  corrected: boolean
 }
 
 /** Where the extension reads per-conversation state. All of it is durable or derived. */
@@ -83,14 +87,7 @@ export interface AgentContext {
 }
 
 export function runView(records: readonly EntryRecord[]): RunView {
-  const entries = mapEntries(records)
-  const ledger = foldLedger(entries)
-  const run = entries.slice(Math.max(0, ledger.start))
-  return {
-    ledger,
-    rounds: roundsOf(records),
-    corrected: run.some((entry) => entry.kind === 'validation'),
-  }
+  return { ledger: foldLedger(mapEntries(records)), rounds: roundsOf(records) }
 }
 
 /**
@@ -117,12 +114,6 @@ export function blockReason(
     return 'This exact call already ran in this run. Use its result; nothing has changed in read-only storage since.'
   inflight.add(key)
   return undefined
-}
-
-/** The one correction an answer gets, or undefined. */
-export function answerCorrection(view: RunView, answer: string): string | undefined {
-  if (view.corrected || view.ledger.known.size === 0) return undefined
-  return correctionFor(checkAnswer(answer, view.ledger))
 }
 
 export function createAgent(deps: ToolDeps, context: AgentContext, tools?: ToolRegistration[]) {
@@ -163,15 +154,6 @@ export function createAgent(deps: ToolDeps, context: AgentContext, tools?: ToolR
       hook(GenerationTask, {
         afterTools: (_assistant, _results, api) => {
           inflight.delete(String(api.conversationId))
-        },
-        onYield: async (answer, api) => {
-          const view = await load(String(api.conversationId))
-          if (!view) return undefined
-          const text = answer.content
-            .map((part) => (part.type === 'text' ? part.text : ''))
-            .join('')
-          const correction = answerCorrection(view, text)
-          return correction ? { continue: correction } : undefined
         },
       }),
       hook(ToolTask, {

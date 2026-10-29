@@ -19,7 +19,7 @@ import type {
   TaskView,
   UiEntry,
 } from '@shared/contract'
-import { searchRows } from '@shared/trace'
+import { searchRows } from '@shared/conversation'
 import { deriveTitle, LiveTracker, mapEntries, usageOf } from './project'
 import { searchTasks } from './search'
 import { CONTEXT, parseTaskModel, type Runtime } from './session'
@@ -61,9 +61,8 @@ export class Tasks {
     return id
   }
 
-  /** Whether a run (model or scripted) is going in this task. */
+  /** Whether a turn is running in this task. */
   async busy(taskId: string): Promise<boolean> {
-    if (this.runtime.scripted.has(taskId)) return true
     const conversation = await this.runtime.conversation(taskId)
     if (!conversation) return false
     const state = await conversation.viewState(CONTEXT)
@@ -338,11 +337,10 @@ export class Tasks {
   }
 
   private liveOf(view: ConversationView, taskId: string): Live | null {
-    return this.runtime.scripted.get(taskId) ?? this.live.map(view, taskId)
+    return this.live.map(view, taskId)
   }
 
   private stateOf(taskId: string): TaskSummary['state'] {
-    if (this.runtime.scripted.has(taskId)) return 'working'
     const nodes = Object.values(this.graph).filter((node) => node.conversationId === taskId)
     if (nodes.some((node) => node.status && node.status !== 'done')) return 'working'
     if (this.runtime.failed.has(taskId)) return 'attention'
@@ -356,6 +354,7 @@ export class Tasks {
     for (const entry of entries)
       if (entry.kind === 'tool' && (entry.view?.kind === 'survey' || entry.view?.kind === 'estate'))
         for (const issue of entry.view.issues) ids.add(issue.id)
+      else if (entry.kind === 'tool' && entry.view?.kind === 'accept') ids.add(entry.view.issue.id)
     return this.deps.db.issueStatuses([...ids])
   }
 
@@ -401,7 +400,6 @@ export class Tasks {
               .filter((node) => node.status && node.status !== 'done' && node.conversationId)
               .map((node) => node.conversationId),
           )
-          for (const id of this.runtime.scripted.keys()) working.add(id)
           this.deps.working?.(working.size)
           void this.refreshList()
         }

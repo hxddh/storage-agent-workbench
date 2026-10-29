@@ -1,26 +1,12 @@
 /**
- * The run ledger: what the current run has read, folded from durable entries.
+ * The turn ledger: what the current turn has read, folded from durable entries.
  *
- * One fold serves the agent's guards in the main process (repeated reads,
- * grounding, citations), the window's scope line and **Not checked** strip, and
- * the reading records. Nothing here lives in memory between calls: a restarted
- * process rebuilds the same ledger from the same entries.
- *
- * A run starts at the latest request or scripted check. Coverage, calls and
- * evidence belong to the run; known names belong to the task, because the model
- * sees the whole task.
+ * It serves the agent loop's guards in the main process (repeated reads, the
+ * round budget) and the reading records Home shows. It is not shown in the
+ * conversation: the agent says what it read. Nothing here lives in memory
+ * between calls; a restarted process rebuilds the same ledger from the entries.
  */
-import type {
-  AttachmentRef,
-  Live,
-  PermissionGap,
-  RunTrigger,
-  ToolName,
-  ToolStatus,
-  ToolView,
-  UiEntry,
-} from './contract'
-import { namesInView } from './grounding'
+import type { Live, PermissionGap, ToolName, ToolStatus, ToolView, UiEntry } from './contract'
 
 export interface CallFact {
   id: string
@@ -68,27 +54,12 @@ export interface UndecidedFact {
   count: number
 }
 
-/** One cited tool result: what it names, so a citation can be checked against a claim. */
-export interface EvidenceRef {
-  entryId: string
-  name: ToolName
-  target: string
-  status: ToolStatus
-  view: ToolView | null
-  names: Set<string>
-}
-
 export interface Ledger {
-  /** Index of the entry that started the current run; -1 when the task has none. */
+  /** Index of the user message that started the current turn; -1 when the task has none. */
   start: number
-  trigger: RunTrigger | null
-  /** The current run's calls with an argument key, and how their last attempt ended. */
+  /** The current turn's calls with an argument key, and how their last attempt ended. */
   calls: Map<string, { attempts: number; last: 'done' | 'failed' }>
-  /** Every name a finished tool result in the task shows, plus attached file names. */
-  known: Set<string>
-  /** The current run's tool results by every id a citation may use. */
-  evidence: Map<string, EvidenceRef>
-  /** The current run's tool calls, live ones included. Plan, ask and skill are not calls. */
+  /** The current turn's tool calls, live ones included. Control tools are not calls. */
   checks: CallFact[]
   coverage: CoverageFact[]
   blind: BlindFact[]
@@ -125,7 +96,7 @@ const STORAGE_READS = new Set<ToolName>([
   'probe',
   'query',
 ])
-const NOT_CALLS = new Set<ToolName>(['plan', 'ask', 'skill'])
+const NOT_CALLS = new Set<ToolName>(['plan', 'ask', 'skill', 'accept_risk'])
 const NOT_READS = new Set<ToolName>(['estate', 'change_plan', 'note'])
 const UNFINISHED = new Set<ToolStatus>(['failed', 'refused', 'stopped', 'timeout'])
 
@@ -134,27 +105,11 @@ function later(a: string | null, b: string): string {
   return Date.parse(b) > Date.parse(a) ? b : a
 }
 
-/** The index of the entry that starts the current run: the latest request or check. */
+/** The index of the user message that starts the current turn. */
 export function runStart(entries: readonly UiEntry[]): number {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const kind = entries[index]!.kind
-    if (kind === 'user' || kind === 'check') return index
-  }
+  for (let index = entries.length - 1; index >= 0; index -= 1)
+    if (entries[index]!.kind === 'user') return index
   return -1
-}
-
-/** Every run's boundaries, oldest first. Entries before the first request belong to it. */
-export function runRanges(entries: readonly UiEntry[]): [number, number][] {
-  const starts: number[] = []
-  entries.forEach((entry, index) => {
-    if (entry.kind === 'user' || entry.kind === 'check') starts.push(index)
-  })
-  if (!starts.length || starts[0]! > 0) starts.unshift(0)
-  return starts.map((start, index) => [start, starts[index + 1] ?? entries.length])
-}
-
-function attachments(entry: UiEntry): AttachmentRef[] {
-  return entry.kind === 'user' || entry.kind === 'steer' ? entry.attachments : []
 }
 
 function accessGap(view: ToolView): number {
@@ -224,18 +179,7 @@ function foldCoverage(coverage: Map<string, CoverageFact>, view: ToolView, at: s
 
 export function foldLedger(entries: readonly UiEntry[], live?: Live | null): Ledger {
   const start = runStart(entries)
-  const first = entries[start]
-  const trigger: RunTrigger | null =
-    first?.kind === 'user' ? 'user' : first?.kind === 'check' ? first.mode : null
-  const known = new Set<string>()
-  for (const entry of entries) {
-    for (const file of attachments(entry)) known.add(file.name)
-    if (entry.kind === 'tool' && entry.status === 'done' && !NOT_CALLS.has(entry.name))
-      namesInView(entry.view, entry.target, known, entry.name)
-  }
-
   const calls: Ledger['calls'] = new Map()
-  const evidence: Ledger['evidence'] = new Map()
   const checks: CallFact[] = []
   for (const entry of entries.slice(Math.max(0, start))) {
     if (entry.kind !== 'tool') continue
@@ -246,17 +190,6 @@ export function foldLedger(entries: readonly UiEntry[], live?: Live | null): Led
         last: entry.status === 'done' ? 'done' : 'failed',
       })
     }
-    const names = new Set<string>()
-    if (entry.status === 'done') namesInView(entry.view, entry.target, names, entry.name)
-    const ref: EvidenceRef = {
-      entryId: entry.id,
-      name: entry.name,
-      target: entry.target,
-      status: entry.status,
-      view: entry.view,
-      names,
-    }
-    for (const id of [entry.evidenceId, entry.callId, entry.id]) if (id) evidence.set(id, ref)
     if (NOT_CALLS.has(entry.name)) continue
     checks.push({
       id: entry.id,
@@ -329,10 +262,7 @@ export function foldLedger(entries: readonly UiEntry[], live?: Live | null): Led
 
   return {
     start,
-    trigger,
     calls,
-    known,
-    evidence,
     checks,
     coverage: [...coverage.values()],
     blind: [...blind.values()],

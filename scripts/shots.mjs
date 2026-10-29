@@ -70,69 +70,58 @@ await page.getByRole('button', { name: 'Close settings' }).click()
 await page.waitForSelector('.home-ledger-row', { timeout: 5_000 })
 await page.waitForTimeout(350)
 await page.screenshot({ path: join(out, '01b-home-configured-light.png') })
-await page.locator('.composer textarea').fill('Which buckets are public?')
-await page.keyboard.press('Enter')
-await page.waitForSelector('.verdict', { timeout: 60_000 })
-await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
+/** Send a message and wait for the agent to finish its turn. */
+async function say(text) {
+  await page.locator('.composer textarea').fill(text)
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(
+    (request) => [...document.querySelectorAll('.msg.user')].at(-1)?.textContent?.startsWith(request),
+    text,
+    { timeout: 60_000 },
+  )
+  await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
+  await page.waitForTimeout(350)
+}
+
+/** Open one call in the conversation by its label. */
+async function openStep(label) {
+  const row = page.locator('.step.tool', { hasText: label }).last()
+  if ((await row.locator('.step-line').getAttribute('aria-expanded')) === 'false')
+    await row.locator('.step-line').click()
+  await row.locator('.step-detail').waitFor({ timeout: 5_000 })
+  return row
+}
+
+await say('Which buckets are public?')
 await page.locator('.scroll').evaluate((element) => {
   element.scrollTop = 0
 })
 await page.waitForTimeout(350)
 await page.screenshot({ path: join(out, '03-task-light.png') })
 
-// A citation opens evidence in place; the full record is the trace.
-await page.locator('.run-answer .run-cite').first().click()
-await page.waitForSelector('.run-peek', { timeout: 5_000 })
-await page.waitForTimeout(250)
-await page.screenshot({ path: join(out, '24-evidence-peek.png') })
-await page.getByRole('button', { name: 'Close', exact: true }).click()
+// A citation opens the call it names, in place in the conversation.
+await page.locator('.msg.agent.text .cite').first().click()
+await page.waitForSelector('.step-detail', { timeout: 5_000 })
+await page.waitForTimeout(400)
+await page.screenshot({ path: join(out, '24-citation-open.png') })
+await page.locator('.step.tool .step-line[aria-expanded="true"]').first().click()
 
-// The trace is a summary after the answer settles; expanding it must restore
-// the same calls and let one call open its shaped result.
-await page.locator('.run-work-head').click()
-await page.waitForTimeout(250)
-await page.screenshot({ path: join(out, '22-work-expanded.png') })
-await page.locator('.activity-item.tool .activity-line').first().click()
+await (await openStep('Read account')).scrollIntoViewIfNeeded()
 await page.waitForTimeout(250)
 await page.screenshot({ path: join(out, '23-tool-detail.png') })
 
-await page.locator('.run-evidence-button', { hasText: 'Findings' }).click()
-await page.waitForSelector('.run-finding-line', { timeout: 2_000 })
+// A follow-up is the next message in the same conversation.
+await say('Who can read demo-public?')
 await page.waitForTimeout(250)
-await page.screenshot({ path: join(out, '18-evidence-panel.png') })
-await page.waitForTimeout(250)
-await page.screenshot({ path: join(out, '19-risks-multi-bucket.png') })
-await page.locator('.run-finding-line').first().scrollIntoViewIfNeeded()
-await page.waitForTimeout(350)
-await page.screenshot({ path: join(out, '04-survey-light.png') })
+await page.screenshot({ path: join(out, '04-follow-up-light.png') })
 
 await page.getByRole('button', { name: 'New task' }).click()
-await page.locator('.composer textarea').fill('Which issues are open?')
-await page.keyboard.press('Enter')
-await page.waitForSelector('text=8 risks are open', { timeout: 60_000 })
-await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
-await page.waitForTimeout(400)
+await say('Which issues are open?')
 await page.screenshot({ path: join(out, '05-estate-light.png') })
-await page.locator('.run-evidence-button', { hasText: 'Findings' }).click()
-await page.waitForSelector('.run-finding-line', { timeout: 2_000 })
-await page.locator('.run-finding-main').first().focus()
-await page.waitForTimeout(200)
-await page.screenshot({ path: join(out, '17-finding-focus.png') })
 
 await page.getByRole('button', { name: 'New task' }).click()
-await page.locator('.composer textarea').fill('What history do you remember?')
-await page.keyboard.press('Enter')
-await page.waitForSelector('text=The history records', { timeout: 60_000 })
-await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
-await page.waitForTimeout(400)
-const workHead = page.locator('.run-work-head')
-if ((await workHead.getAttribute('aria-expanded')) === 'false') await workHead.click()
-await page
-  .locator('.activity-item.tool', { hasText: 'Recalled memory' })
-  .first()
-  .locator('.activity-line')
-  .click()
-await page.waitForSelector('.table-block table', { timeout: 5_000 })
+await say('What history do you remember?')
+await openStep('Recalled memory')
 await page.locator('.table-block table').last().scrollIntoViewIfNeeded()
 await page.waitForTimeout(350)
 await page.screenshot({ path: join(out, '13-history-light.png') })
@@ -154,7 +143,7 @@ await page.waitForTimeout(300)
 await page.waitForTimeout(350)
   await page.screenshot({ path: join(out, '07-home-dark.png') })
 
-// The live state must read as work in progress, not a finished brief.
+// The live state must read as the agent working.
 await page.getByRole('button', { name: 'Settings' }).click()
 await page.getByRole('button', { name: 'Appearance', exact: true }).click()
 await page.getByRole('button', { name: 'Light', exact: true }).click()
@@ -167,30 +156,21 @@ await page.waitForTimeout(450)
 await page.screenshot({ path: join(out, '08-live-light.png') })
 await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
 
-// One deterministic change plan, then the same task re-verified against it.
+// One deterministic change plan, inline where the agent prepared it.
 await page.getByRole('button', { name: 'New task' }).click()
-await page.locator('.composer textarea').fill('Show the change plan for demo-private')
-await page.keyboard.press('Enter')
-await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
-await page.locator('.run-work-head').click()
-await page
-  .locator('.activity-item.tool', { hasText: 'Prepared a change plan' })
-  .first()
-  .locator('.activity-line')
-  .click()
-await page.waitForSelector('.plan', { timeout: 10_000 })
-await page.locator('.plan').scrollIntoViewIfNeeded()
+await say('Show the change plan for demo-private')
+await openStep('Prepared a change plan')
+await page.locator('.plan').first().scrollIntoViewIfNeeded()
 await page.waitForTimeout(350)
 await page.screenshot({ path: join(out, '14-plan-light.png') })
-await page.getByRole('button', { name: 'More actions' }).click()
-await page.getByRole('menuitem', { name: 'Re-check' }).click()
-await page.waitForSelector('.activity-item.reverify', { timeout: 30_000 })
-await page.locator('.activity-item.reverify .activity-line').click()
-await page.waitForSelector('.activity-reverify', { timeout: 5_000 })
-const planReverify = await page.locator('.activity-reverify').innerText()
-console.log('PLAN REVERIFY:', planReverify.replace(/\s+/g, ' ').slice(0, 200))
-await page.locator('.activity-reverify').scrollIntoViewIfNeeded()
-await page.screenshot({ path: join(out, '15-plan-reverified.png') })
+
+// Accepting a risk: the agent asks, the window waits for the user.
+await page.getByRole('button', { name: 'New task' }).click()
+await say('Accept the encryption risk on demo-public')
+await page.waitForSelector('.msg.agent.confirm', { timeout: 10_000 })
+await page.locator('.msg.agent.confirm').scrollIntoViewIfNeeded()
+await page.waitForTimeout(250)
+await page.screenshot({ path: join(out, '15-accept-confirm.png') })
 
 // Narrow window: navigation must stay reachable from Home, not only tasks.
 await app.evaluate(({ BrowserWindow }) => {

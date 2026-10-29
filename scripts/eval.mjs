@@ -1,8 +1,8 @@
 /**
  * Agent evaluation: a real model drives the real window against fake S3
- * profiles, and each run is scored on what the product promises — findings
- * that match the storage, a grounded verdict, honesty about blind reads,
- * memory before surveys, and few calls.
+ * profiles, and each run is scored on what the product promises — reads whose
+ * findings match the storage, an answer that names what it found and what it
+ * could not read, memory before surveys, and few calls.
  *
  *   EVAL_PROVIDER=anthropic EVAL_MODEL=claude-sonnet-5-5 EVAL_API_KEY=… \
  *     xvfb-run -a node scripts/eval.mjs [--only name] [--runs 3]
@@ -328,89 +328,56 @@ async function ask(page, text) {
   await page.waitForTimeout(400)
 }
 
-async function readBrief(page) {
-  const openTrace = async () => {
-    const head = page.locator('.run-work-head')
-    if (!(await head.count())) return
-    if ((await head.getAttribute('aria-expanded')) === 'false') await head.click()
-    await page.waitForTimeout(80)
+/** Open a call in the conversation, so its shaped result is in the page. */
+async function openSteps(page, label) {
+  const rows = page.locator('.step.tool', { hasText: label })
+  for (let index = 0; index < (await rows.count()); index += 1) {
+    const line = rows.nth(index).locator('.step-line')
+    if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
   }
-  const openEvidence = async (label) => {
-    const button = page.locator('.run-evidence-button', { hasText: label })
-    if (!(await button.count())) return false
-    if ((await button.getAttribute('aria-expanded')) === 'false') await button.click()
-    await page.waitForTimeout(80)
-    return true
-  }
+  await page.waitForTimeout(80)
+  return rows
+}
 
-  await openTrace()
-  const base = await page.evaluate(() => {
+async function readBrief(page) {
+  // The findings are what the agent's reads returned: the Issues in each survey result.
+  await openSteps(page, 'Read account')
+  await openSteps(page, 'Read a method')
+  await openSteps(page, 'Prepared a change plan')
+  return page.evaluate(() => {
     const text = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
+    const surveys = [...document.querySelectorAll('.step.tool')].filter(
+      (row) => text(row.querySelector('.step-title')) === 'Read account',
+    )
+    const last = surveys.at(-1)
+    const findings = last
+      ? [...last.querySelectorAll('.issue-group')].flatMap((group) => {
+          const heading = text(group.querySelector('.issue-group-title'))
+          return [...group.querySelectorAll('.issue')].map((row) => ({
+            bucket: heading || text(row.querySelector('.bucket')),
+            title: text(row.querySelector('span:not(.sev):not(.bucket):not(.code)')),
+          }))
+        })
+      : []
+    const answers = [...document.querySelectorAll('.msg.agent.text .prose')]
     return {
-      verdict: text(document.querySelector('.run-answer .verdict')),
-      ungrounded: [...document.querySelectorAll('.run-answer .verdict code.ungrounded')].map(
-        text,
-      ),
-      receipt: text(document.querySelector('.run-work-detail')),
+      verdict: text(answers.at(-1)),
+      findings,
+      resolvedFold: surveys.some((row) => / resolved/.test(text(row.querySelector('.step-note')))),
+      fixShown: document.querySelectorAll('.step-detail .plan, .step-detail .tabs').length > 0,
+      methods: [...document.querySelectorAll('.step.tool')]
+        .filter((row) => text(row.querySelector('.step-title')) === 'Read a method')
+        .flatMap((row) => [...row.querySelectorAll('.view-title')].map(text)),
+      receipt: `${document.querySelectorAll('.step.tool').length} calls`,
     }
   })
-
-  const findings = []
-  let resolvedFold = false
-  if (await openEvidence('Findings')) {
-    const risks = await page.evaluate(() => {
-      const text = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
-      return {
-        findings: [...document.querySelectorAll('.run-finding-line')].map((row) => ({
-          title: text(row.querySelector('.run-finding-title')),
-          bucket: text(row.querySelector('.run-finding-bucket')),
-        })),
-        resolvedFold: Boolean(document.querySelector('.run-panel-label.ok')),
-      }
-    })
-    findings.push(...risks.findings)
-    resolvedFold = risks.resolvedFold
-  }
-
-  let blindShown = false
-  if (await openEvidence('Not checked'))
-    blindShown = (await page.locator('.run-coverage-panel .blind').count()) > 0
-
-  let methods = []
-  const method = page.locator('.activity-item.tool', { hasText: 'Read a method' }).first()
-  if (await method.count()) {
-    await method.locator('.activity-line').click()
-    methods = await page.locator('.activity-detail .view-title').allInnerTexts()
-  }
-
-  let fixShown = false
-  const change = page.locator('.activity-item.tool', { hasText: 'Prepared a change plan' }).first()
-  if (await change.count()) {
-    await change.locator('.activity-line').click()
-    fixShown = (await page.locator('.activity-detail .plan, .activity-detail .tabs').count()) > 0
-  }
-
-  return {
-    verdict: base.verdict,
-    ungrounded: base.ungrounded,
-    findings,
-    resolvedFold,
-    blindShown,
-    fixShown,
-    receipt: base.receipt,
-    methods,
-  }
 }
 
 async function checks(page) {
-  const head = page.locator('.run-work-head')
-  if ((await head.count()) && (await head.getAttribute('aria-expanded')) === 'false')
-    await head.click()
-  await page.waitForTimeout(80)
-  return page.$$eval('.activity-item.tool', (rows) =>
+  return page.$$eval('.step.tool', (rows) =>
     rows
       .map((row) => ({
-        verb: row.querySelector('.activity-title')?.textContent ?? '',
+        verb: row.querySelector('.step-title')?.textContent ?? '',
         status:
           ['done', 'failed', 'stopped', 'timeout', 'refused', 'running'].find((name) =>
             row.classList.contains(name),
@@ -427,17 +394,15 @@ function score(scenario, brief, allChecks, lastTurnChecks, elapsedMs) {
   const has = (bucket, title) => brief.findings.some((f) => f.bucket === bucket && f.title === title)
   for (const [bucket, title] of e.findings ?? []) check(`finding: ${title} on ${bucket}`, has(bucket, title))
   for (const [bucket, title] of e.absent ?? []) check(`no finding: ${title} on ${bucket}`, !has(bucket, title))
-  for (const name of e.mentions ?? []) check(`verdict names ${name}`, brief.verdict.includes(name), false)
-  check('verdict grounded', brief.ungrounded.length === 0)
-  check('verdict at most two sentences', (brief.verdict.match(/[.!?。！？](\s|$)/g) ?? []).length <= 2, false)
+  for (const name of e.mentions ?? []) check(`answer names ${name}`, brief.verdict.includes(name), false)
   if (e.honest) {
-    check('verdict says the question is open', HONEST.test(brief.verdict))
-    check('verdict never claims clean', !CLEAN_CLAIM.test(brief.verdict))
+    check('answer says the question is open', HONEST.test(brief.verdict))
+    check('answer never claims clean', !CLEAN_CLAIM.test(brief.verdict))
   }
   if (e.method) check(`loads method ${e.method}`, brief.methods.includes(e.method))
-  if (e.blindShown) check('brief shows the blind spot', brief.blindShown)
-  if (e.resolvedFold) check('brief shows what was fixed', brief.resolvedFold)
-  if (e.fixShown) check('brief shows the fix', brief.fixShown)
+  if (e.blindShown) check('answer names the unread part', HONEST.test(brief.verdict))
+  if (e.resolvedFold) check('the re-read shows what was fixed', brief.resolvedFold)
+  if (e.fixShown) check('the conversation shows the fix', brief.fixShown)
   if (e.firstCall) check(`first call is ${e.firstCall}`, lastTurnChecks[0]?.verb === e.firstCall)
   if (e.usesTool)
     check(`uses ${e.usesTool}`, allChecks.some((c) => c.verb === e.usesTool && c.status === 'done'))

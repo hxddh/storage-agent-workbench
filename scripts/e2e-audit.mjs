@@ -1,10 +1,10 @@
 /**
- * First-run proof: no model, no account, one click.
+ * First-run proof: no model, no account.
  *
- * The window must offer the in-process demo account explicitly, run the
- * deterministic account check, and render a run whose sentences come only
- * from the reading. The Composer stays disabled because free-form questions
- * still need a model.
+ * Everything the app reads, the agent reads, so without a model there is
+ * nobody to ask. The window offers the in-process demo account once; adding
+ * it adds the account and starts nothing. The Composer stays disabled and the
+ * window points at setting up a model.
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -34,26 +34,25 @@ try {
   await page.waitForTimeout(1200)
   const demo = page.getByRole('button', { name: 'Try with demo storage' })
   if ((await demo.count()) !== 1) await fail('first run does not offer exactly one demo action')
-
-  await demo.click()
-  await page.waitForSelector('.run-answer .verdict', { timeout: 120_000 })
-  const text = await page.locator('.brief').innerText()
-  if (!/risk|problem|No open|could not be read/i.test(text))
-    await fail('audit produced no conclusion')
-  const scope = await page.locator('.run-scope').innerText()
-  if (!/open questions?|Not fully checked/.test(scope) || !/blocked/.test(scope))
-    await fail(`partial reads are not named in the scope line: ${scope}`)
-  if (await page.locator('.run-answer .verdict code.ungrounded').count())
-    await fail('a model-free verdict named something no check returned')
   if (!(await page.locator('.composer textarea').isDisabled()))
     await fail('the composer accepted free-form input without a model')
-  await page.locator('.run-evidence-button', { hasText: 'Findings' }).click()
-  await page.waitForSelector('.run-finding-line', { timeout: 5_000 })
-  if ((await page.locator('.run-finding-main').count()) === 0)
-    await fail('the demo account produced no risks')
+
+  await demo.click()
+  await page.waitForSelector('.home-ledger-row', { timeout: 30_000 })
+  await page.waitForTimeout(800)
+  if (await page.locator('.conversation').count())
+    await fail('adding the demo without a model started a conversation')
+  if ((await page.locator('.task-row-wrap').count()) > 0)
+    await fail('adding the demo without a model created a task')
+  if (await page.getByRole('button', { name: 'Check account' }).count())
+    await fail('Check account is offered with nobody to ask')
+  if (!(await page.locator('.composer textarea').isDisabled()))
+    await fail('the composer accepted free-form input without a model')
+  if ((await page.getByRole('button', { name: 'Set up a model' }).count()) === 0)
+    await fail('the window does not point at setting up a model')
 
   await page.screenshot({ path: out })
-  console.log('NO-MODEL AUDIT OK:', text.replace(/\s+/g, ' ').slice(0, 180))
+  console.log('NO-MODEL FIRST RUN OK: demo added, nothing run, composer waits for a model')
 } catch (error) {
   await fail(error.message)
 } finally {

@@ -301,7 +301,7 @@ export function estateTools(deps: ToolDeps) {
             .slice(0, 8)
             .map(
               (issue) =>
-                `[${issue.severity}] ${issue.title} — ${issue.bucket}${issue.detail ? ` (${issue.detail})` : ''}`,
+                `[${issue.severity}] ${issue.title} — ${issue.bucket || 'account'} · rule ${issue.code}${issue.detail ? ` (${issue.detail})` : ''}`,
             ),
           ...(historyTable
             ? [
@@ -692,6 +692,42 @@ export function estateTools(deps: ToolDeps) {
           model: `Remembered (${scope}): ${text}`,
           note: 'saved',
           view: { kind: 'note' as const, text: note.text },
+        }
+      },
+    }),
+
+    agentTool(deps, {
+      name: 'accept_risk',
+      description:
+        'Ask the user to accept (or reopen) one risk they told you to accept. It changes nothing by itself: the window shows a confirmation, and only the user accepts. Name the risk by its bucket and rule code from `estate`.',
+      parameters: Type.Object({
+        provider_id: providerParam,
+        bucket: Type.String({
+          description: 'The bucket the risk is on; an empty string for the account-wide rule.',
+        }),
+        code: Type.String({ description: 'The rule code, as `estate` lists it.' }),
+        accept: Type.Optional(
+          Type.Boolean({
+            description: 'true to accept (default), false to reopen an accepted one.',
+          }),
+        ),
+      }),
+      timeoutMs: 10_000,
+      target: (args) => args.bucket || 'account',
+      run: async (args) => {
+        const config = await deps.providers.resolve(args.provider_id)
+        const record = await deps.db.findIssue(config.id, args.bucket, args.code)
+        if (!record || record.status === 'resolved')
+          throw new Error(
+            `No open or accepted risk '${args.code}' on ${args.bucket || 'the account'}.`,
+          )
+        const [issue] = deps.estate.toRows([record], deps.lang())
+        const accept = args.accept ?? true
+        return {
+          model: `The window asks the user to ${accept ? 'accept' : 'reopen'} "${issue!.title}" on ${issue!.bucket || 'the account'}. It is not ${accept ? 'accepted' : 'reopened'} until the user confirms; do not say it is.`,
+          target: issue!.bucket || 'account',
+          note: 'waiting for the user',
+          view: { kind: 'accept' as const, issue: issue!, accept },
         }
       },
     }),

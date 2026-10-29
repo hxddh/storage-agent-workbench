@@ -1,23 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { UiEntry } from './contract'
-import { foldLedger, readState, runRanges, runStart } from './ledger'
-import { check, request, survey, tool } from './testing'
+import { foldLedger, readState, runStart } from './ledger'
+import { request, survey, tool } from './testing'
 
-describe('run boundaries', () => {
-  it('starts a run at the latest request or scripted check, never at a steer', () => {
+describe('turn boundaries', () => {
+  it('starts a turn at the latest user message, never at a steer', () => {
     const entries: UiEntry[] = [
       request('first'),
       tool('survey', survey(['a'])),
-      check('recheck'),
-      tool('survey', survey(['a'], { scoped: true })),
+      request('second'),
       { id: 's', kind: 'steer', at: '', text: 'narrow it', attachments: [] },
     ]
     expect(runStart(entries)).toBe(2)
-    expect(foldLedger(entries).trigger).toBe('recheck')
-    expect(runRanges(entries)).toEqual([
-      [0, 2],
-      [2, 5],
-    ])
   })
 })
 
@@ -113,17 +107,5 @@ describe('calls, names and evidence', () => {
     })
     const ledger = foldLedger([request(), keyed('failed'), request('again'), keyed('failed')])
     expect(ledger.calls.get('k')).toEqual({ attempts: 1, last: 'failed' })
-  })
-
-  it('knows names from the whole task, evidence from the run', () => {
-    const ledger = foldLedger([
-      request(),
-      tool('survey', survey(['old']), { id: 'e1' }),
-      request('again'),
-      tool('survey', survey(['new']), { id: 'e2' }),
-    ])
-    expect(ledger.known.has('old')).toBe(true)
-    expect(ledger.evidence.has('e1')).toBe(false)
-    expect(ledger.evidence.get('e2')?.names.has('new')).toBe(true)
   })
 })

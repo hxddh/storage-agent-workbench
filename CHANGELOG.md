@@ -1,3 +1,51 @@
+## 36.0.0 — 2026-10-29
+
+The window is a conversation with the agent. Each task is one thread: your
+messages, and between them what the agent did and said, in order. The app no
+longer runs checks of its own, writes a coverage line, or rebuilds the answer
+into report sections. 35.x tasks open as conversations.
+
+### Changed
+
+- **A conversation, not a run page.** `shared/conversation.ts` projects the
+  entries into one ordered thread: messages (a steer shows where it was said),
+  the agent's text, provider reasoning as returned, each tool call as a step
+  you can open in place, the agent's plan (its newest version per turn), a
+  clarifying question with one-click options, notices with Retry or Continue,
+  and a divider where a stopped turn was continued. Follow-ups are the next
+  message in the same thread. `Conversation.tsx` replaces `Run`, `Answer`,
+  `Trace`, `Evidence` and `EarlierRuns`.
+- **Every read goes through the agent.** `Check account` and scheduled checks
+  send the agent a message; they need a model. Without one the window offers the
+  demo account, adds it when asked, and says to set up a model.
+- **Accepting a risk is asked in the conversation.** The new `accept_risk` tool
+  (14 tools) names a risk by bucket and rule code; the window shows a
+  confirmation, and only your click accepts or reopens it. The estate lists each
+  Issue's rule code so the agent can name it.
+- **Survey steps say what a read resolved** (`· n resolved`).
+- **Home copy** no longer says a model is optional.
+
+### Removed
+
+- The scripted account check and re-check (`Engine.check()`,
+  `Engine.recheck()`, `runtime/check.ts`, `runtime/reverify-plan.ts`,
+  `sa.reverify`, the Re-verify task menu item, plan step statuses).
+- App-level answer validation: ungrounded-name marking, unresolved-citation
+  notices, the answer correction hook (`shared/validate.ts`,
+  `shared/grounding.ts`). The prompt asks the agent to say what it read and what
+  it could not; the safety boundaries — read-only, bucket scope, redaction, the
+  untrusted-data envelope — are unchanged.
+- The scope line, the Findings and Not checked strips, Earlier in this task, the
+  "Worked for" summary and `shared/trace.ts`. About 1,600 lines of styles and 130
+  strings that only they used.
+
+### Checks
+
+- `scripts/e2e.mjs`, `e2e-audit.mjs`, `bench.mjs`, `eval.mjs` and `shots.mjs`
+  read the conversation. The bench drops the check-parity, re-check and
+  validation scenarios and adds `follow-up` and `accept-risk`; the no-model
+  first-run proof checks that nothing runs without a model.
+
 ## 35.0.0 — 2026-10-29
 
 One engine, one log, one reducer. A model run and a scripted check are the same
