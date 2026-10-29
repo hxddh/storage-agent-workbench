@@ -29,9 +29,10 @@ commit from a green `main`; do not use the tag workflow as a substitute for CI.
    then `scripts/bench.mjs --runs 3` against the primary and the secondary
    model. If it does not exist, it runs `scripts/eval.mjs --smoke` and
    `scripts/bench.mjs --smoke`. A smoke
-   report proves the harness and trace plumbing run; it is not a model-quality
-   score. The bench scores the trace and answer (calls, coverage, citations,
-   steer, resume, re-check, model choice), not the app's facts projection.
+   report proves the harness and conversation plumbing run; it is not a
+   model-quality score. The bench scores the conversation the agent produced
+   (calls, citations, clarify, steer, resume, follow-ups, risk acceptance, model
+   choice) and what it said.
 2. **Signing detection** — checks all seven signing secrets. Only when every one
    is present is the build marked signed.
 3. **Build** — macOS x64 and arm64 (`.dmg`, `.zip`), Windows NSIS `.exe`, Linux
@@ -62,10 +63,10 @@ application itself still has the read-only, scope and secret boundaries in
 
 Real-model evaluation is valuable but not guaranteed by the repository alone:
 it needs a provider key and model variables. The release records a smoke result
-when they are absent. The eval covers 29 storage scenarios; the bench covers 15
-agent-behavior scenarios and scores the trace and answer, including a retry
-after a steer, a scripted check's parity with a model run, a question after a
-check, and a re-check as its own run. The bench gate: every must-pass check
+when they are absent. The eval covers 29 storage scenarios; the bench covers 14
+agent-behavior scenarios and scores the conversation, including a retry after a
+steer, a follow-up in the same thread and accepting a risk only after the
+user's click. The bench gate: every must-pass check
 passes in every run and at least 90% of soft checks pass. A smoke bench uses the
 same gate (the fake model is deterministic, so a failure is a plumbing
 regression). Reports are attached and named after the model, never the key. A
@@ -109,12 +110,15 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest release is **35.0.0** (2026-10-29). Earlier release notes
+The latest release is **36.0.0** (2026-10-29). Earlier release notes
 may describe retired behavior; they are history. Keep `README.md`,
 `CHANGELOG.md` and this paragraph in step with the next tag, and refresh
-`docs/screenshot.png` if the surface changed. 35.0 is one engine: a model run
-and a scripted check call the same tools and leave the same entries; the run's
-state is derived from those entries; Issues change only in `estate/assess.ts`;
-the answer is validated for structure, never wording; and one reducer
-(`shared/trace.ts`) renders every run. Migration 15 starts the task history
-over and keeps accounts, memory, Issues and readings.
+`docs/screenshot.png` if the surface changed. 36.0 makes the window a
+conversation: each task is one thread of the user's messages and the agent's
+steps and text, projected by `shared/conversation.ts`; every read goes through
+the agent, so `Check account` and scheduled checks need a model; accepting a
+risk is asked with `accept_risk` and done only by the user's click. The
+scripted check and re-check, app-level answer validation, the scope line and
+the evidence strips were removed. Issues still change only in
+`estate/assess.ts`, loop guards still derive from durable entries, and the
+schema head stays at 15; 35.x tasks open as conversations.

@@ -333,16 +333,25 @@ function AgentText({
   streaming,
   t,
   onCite,
+  resolves,
 }: {
   text: string
   streaming: boolean
   t: Dict
   onCite: (evidenceId: string) => boolean
+  /** Whether a call with this id is in the conversation; a link to nothing is not a button. */
+  resolves: (evidenceId: string) => boolean
 }) {
   const [copied, setCopied] = useState(false)
   const components = {
     a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
       const raw = href?.match(/^#ev-(.+)$/)?.[1]
+      if (raw && !resolves(decodeURIComponent(raw)))
+        return (
+          <sup className="cite missing" title={t.citeMissing}>
+            {children}
+          </sup>
+        )
       if (raw)
         return (
           <button
@@ -574,7 +583,13 @@ export function Conversation({
             case 'text':
               return (
                 <div key={item.id} data-item-id={item.id}>
-                  <AgentText text={item.text} streaming={item.streaming} t={t} onCite={onCite} />
+                  <AgentText
+                    text={item.text}
+                    streaming={item.streaming}
+                    t={t}
+                    onCite={onCite}
+                    resolves={(id) => Boolean(callFor(items, id))}
+                  />
                 </div>
               )
             case 'tool':

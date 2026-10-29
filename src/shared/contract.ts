@@ -449,7 +449,7 @@ export interface Live {
 export interface SearchHit {
   taskId: string
   title: string
-  kind: 'title' | 'user' | 'answer' | 'finding'
+  kind: 'title' | 'user' | 'answer'
   snippet: string
   matchStart: number
   matchLength: number
@@ -556,8 +556,6 @@ export interface AppSettings {
   theme: Theme
   /** A system notification when a run finishes while the window is in the background. */
   notify: boolean
-  /** A remembered finding older than this is marked possibly stale. */
-  staleDays: number
   /** Notes older than this are hidden from Memory; 0 keeps every note. */
   noteTtlDays: number
 }

@@ -325,11 +325,6 @@ export function Settings({
     await onChanged()
   }
 
-  const setStaleDays = async (staleDays: number) => {
-    await window.agent.saveSettings({ staleDays })
-    await onChanged()
-  }
-
   const setNoteTtl = async (noteTtlDays: number) => {
     await window.agent.saveSettings({ noteTtlDays })
     await onChanged()
@@ -825,20 +820,6 @@ export function Settings({
 
               <section className="section" hidden={pane !== 'memory'}>
                 <p className="settings-desc">{t.settingsMemoryDesc}</p>
-                <div className="field">
-                  <label htmlFor="staleDays">{t.staleAfter}</label>
-                  <select
-                    id="staleDays"
-                    value={boot.settings.staleDays}
-                    onChange={(event) => void setStaleDays(Number(event.target.value))}
-                  >
-                    {[1, 3, 7, 14, 30, 90].map((days) => (
-                      <option key={days} value={days}>
-                        {fill(t.staleDays, { n: days })}
-                      </option>
-                    ))}
-                  </select>
-                </div>
                 <div className="field">
                   <label htmlFor="noteTtl">{t.noteTtl}</label>
                   <select

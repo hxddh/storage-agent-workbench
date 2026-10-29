@@ -234,7 +234,7 @@ edit; the key fields are never pre-filled. Each account has an opt-in
 off/daily/weekly scheduled check, sent to the agent as a message while the app
 is open and a model is set.
 
-Memory holds the stale-after and note-age settings and lists the 100 most recent forgettable notes; the
+Memory holds the note-age setting and lists the 100 most recent forgettable notes; the
 store itself is capped at 500.
 Appearance holds language, theme and the background-notification switch.
 
@@ -265,8 +265,8 @@ a real button reachable by keyboard: each step line is a button with
 Copy answer also appear on focus. The page has one visually hidden `h1`. Focus
 is trapped in the Settings sheet and returns to the trigger on close.
 
-The E2E runs axe on Settings, Home and the conversation and fails on serious or critical
-violations. This is a floor, not a certification.
+The E2E runs axe on Settings, Home and the conversation and fails on serious
+or critical violations. This is a floor, not a certification.
 
 ## Writing
 

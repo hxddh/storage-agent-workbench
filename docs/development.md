@@ -38,11 +38,12 @@ Issue lifecycle (opened, resolved, gone, accepted, recurred), schema migrations,
 scope and the tool floor, code mode (sandbox, budgets, timeout, import), demo
 storage, generated change plans and impact, log normalization and IP masking,
 CSV/Parquet import and the aggregate whitelist, the search index, entry → UI
-projection, the run ledger and trace reducer, structural answer validation and
-citation resolution, run guards rebuilt from durable entries, the scripted check
-answers, migration 15, redaction, provider capabilities, posture
-diffs, permission diagnosis, model windows, access evaluation, reading records
-and plan-aware re-checks. `Run.test.tsx` runs in jsdom; the rest use Node.
+projection (including 35.x entries), the turn ledger, the conversation
+projection (order, steers, the live slot, citations, the newest plan per turn,
+Markdown), turn guards rebuilt from durable entries, migration 15, redaction,
+provider capabilities, posture diffs, permission diagnosis, model windows,
+access evaluation and reading records. `Conversation.test.tsx` and
+`Composer.test.tsx` run in jsdom; the rest use Node.
 
 ### Domain and compatibility
 
@@ -65,33 +66,46 @@ and plan-aware re-checks. `Run.test.tsx` runs in jsdom; the rest use Node.
 
 - `scripts/e2e.mjs` builds the app and drives the real Electron window against
   `scripts/fake-s3.mjs` (delayed so a running check is observable) and
-  `scripts/fake-model.mjs`. It covers model setup and test, a scripted account
-  check, a model answer, findings, citation resolution, axe (serious/critical
-  violations fail), `@` focus, a re-check run, access rows, accepting a risk, applying a change outside the
-  app and proving it, grounding correction, a generated change plan,
-  a plan-aware re-check, stop/continue, search (including an earlier run's
-  answer), code-mode rows and the demo
-  account. The audit E2E exercises the same run surface without a model.
-- `scripts/e2e-audit.mjs` starts with no model and no account, chooses demo
-  storage explicitly, waits for the deterministic run, checks that the
-  composer stays disabled and captures the no-model state.
-- `scripts/shots.mjs` captures Home, Settings, task, data, estate and dark-mode
-  states under `.amp/in/artifacts`.
+  `scripts/fake-model.mjs` and drives it as a conversation. It covers model
+  setup and test, Check account as a message (and that the 35.x scaffolding
+  `Earlier in this task`, `Not checked` and `Worked for` is gone), a follow-up
+  in the same thread, a citation opening its call, axe (serious/critical
+  violations fail), `@` focus, a clarifying question answered by an option,
+  access rows, accepting a risk through the confirmation card, applying a fix
+  outside the app and the agent's re-read, a generated change plan,
+  stop/continue, search (opening an agent text), code-mode rows and the demo
+  account.
+- `scripts/e2e-audit.mjs` starts with no model and no account, checks that the
+  composer is disabled, chooses demo storage explicitly, and checks that this
+  only adds the account: no task, no conversation, no **Check account**, and
+  **Set up a model** is offered. It captures the no-model state.
+- `scripts/shots.mjs` captures Home, Settings, the conversation (task, citation
+  open, tool detail, follow-up, estate, history, live, plan, risk
+  confirmation), dark-mode, compact and Chinese states under
+  `.amp/in/artifacts`.
 - `scripts/visual.mjs` compares those captures to `visual/baseline`. It rejects
   a global pixel change above 5% and any 64px tile with a large local change,
   so a missing control is not hidden by a large unchanged window.
 - `scripts/perf.mjs` launches three times and fails when the median time to a
   visible composer exceeds 1,000 ms.
-- `scripts/budget.mjs` excludes the lazy Settings/Run/Markdown chunks and
-  fails when the initial renderer JavaScript exceeds 500 KiB.
+- `scripts/budget.mjs` excludes the lazily loaded `Settings`, `Conversation`
+  and `Markdown` chunks and fails when the remaining renderer JavaScript
+  exceeds 500 KiB.
 
 ### Evaluation
 
-`scripts/eval.mjs` has 29 scenarios. It scores findings, grounded answers,
-blind-spot honesty, memory-first and estate-history behavior, open-read
-closure, verify-after-fix, code mode, access questions, method routing,
+`scripts/eval.mjs` has 29 scenarios. It scores findings (the Issue rows in the
+conversation's survey steps), answers that name what was found and what could
+not be read, blind-spot honesty, memory-first and estate-history behavior,
+verify-after-fix, code mode, access questions, method routing,
 prompt-injection-shaped object names and call counts. The script runs the real
 window against fake S3.
+
+`scripts/bench.mjs` has 14 agent-behavior scenarios scored on the conversation:
+`public-account`, `blind-acl`, `memory-first`, `clarify`, `fix-plan`, `query`,
+`unknown-bucket`, `citation-validity`, `stop-continue`, `steer`,
+`model-switch`, `retry-after-steer`, `follow-up` and `accept-risk`. `--smoke`
+runs them with the fake model.
 
 ```bash
 xvfb-run -a node scripts/eval.mjs --smoke
@@ -140,8 +154,8 @@ tagged release builds all three platforms or publishes nothing.
   packaging without them, but must not present that as a quality or signing
   claim.
 - There is no automated native-dialog test for the file picker or save dialog.
-- Search indexes titles, requests, risks and the answer summary only; it does
-  not index attachments or every object name. FTS5 trigram ranks longer
+- Search indexes titles, user messages and the agent's text only; it does not
+  index tool results, attachments or every object name. FTS5 trigram ranks longer
   queries; short CJK queries use LIKE. It returns at most 20 hits.
 - The sidebar shows the 500 most recently updated tasks; Settings lists the 100
   most recent notes. Older rows remain in SQLite but are not shown.

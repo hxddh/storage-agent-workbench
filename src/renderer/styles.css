@@ -2732,6 +2732,14 @@ pre.code {
   padding: 1px 4px;
   cursor: pointer;
 }
+sup.cite.missing {
+  vertical-align: baseline;
+  position: relative;
+  top: -0.45em;
+  color: var(--ink-3);
+  background: var(--line);
+  cursor: help;
+}
 
 .steps {
   list-style: none;

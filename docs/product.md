@@ -236,7 +236,7 @@ into every prompt. The answer format does not change.
 - **Accounts** — provider kind (auto or explicit), endpoint, region, keys or
   AWS profile, optional bucket scope and path-style addressing. The account
   list shows the masked key id or profile name.
-- **Memory** — a stale-after setting, a note age filter and the notes the agent
+- **Memory** — a note age filter and the notes the agent
   wrote. Notes can be forgotten here.
 - **Appearance** — English/Chinese, system/light/dark, notification switch.
 - **Version** — installed version and the update state; a missing feed says so

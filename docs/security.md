@@ -120,7 +120,7 @@ unread", not "this is the complete set of principals who can reach the bucket".
   correct the agent's text; the prompt tells it to say what it could not read,
   and every call it made, failed ones included, stays visible as a step where it
   happened. A citation link only opens a step the task holds; one that matches
-  no call does nothing. Tool output is wrapped as untrusted data before the
+  no call is shown as plain text, not a link. Tool output is wrapped as untrusted data before the
   model sees it. Links in model prose open in the system browser; the trusted
   window never navigates to one.
 - **The vault fallback is local**: without an OS keyring, the AES key file and

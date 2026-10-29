@@ -101,6 +101,18 @@ describe('the conversation', () => {
     await waitFor(() => expect(document.querySelector('.step-detail')).toBeTruthy())
   })
 
+  it('does not offer a link to a call the conversation does not hold', async () => {
+    render(
+      <Conversation
+        {...props}
+        view={view([user('u1', 'Q'), call, text('a1', 'Read [1](#ev-ev1), not [2](#ev-gone).')])}
+      />,
+    )
+    await waitFor(() => expect(document.querySelectorAll('.cite')).toHaveLength(2))
+    expect(document.querySelectorAll('button.cite')).toHaveLength(1)
+    expect(document.querySelector('sup.cite.missing')?.getAttribute('title')).toMatch(/No call/)
+  })
+
   it('answers a clarifying question with one click while the agent waits', () => {
     const onAnswer = vi.fn()
     render(

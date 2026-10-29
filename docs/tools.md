@@ -2,9 +2,11 @@
 
 Fourteen tools in one pi extension (`runtime/agent.ts`), grouped by capability
 in `tools/registry.ts`: **read**, **query**, **memory**, **change_plan**,
-**plan**, **skill** and **ask**. Tools go through `agentTool()`, which applies account scope, a timeout, an audit
-row, redaction and the untrusted-data envelope, and attaches a typed `view`, a
-`status` (`done`, `failed`, `refused`, `timeout`, `stopped`) and an `evidenceId`.
+**plan**, **skill** and **ask**. Every tool except the three control tools goes
+through `agentTool()`, which applies account scope, a timeout, an audit row,
+redaction and the untrusted-data envelope, and attaches a typed `view`, a
+`status` (`done`, `failed`, `refused`, `timeout`, `stopped`) and an
+`evidenceId`.
 
 `plan`, `skill` and `ask` are control tools. They shape the turn and never read
 storage. `change_plan` generates text from remembered Issues; the app never
@@ -35,8 +37,8 @@ and no report block protocol, and a turn may hold several texts between tool
 calls. The model may link a tool result by the actual evidence id from the
 `<untrusted-data evidence="…">` tag, for example `[1](#ev-call_survey_1)`. In
 the window the link is a small button; clicking it opens that call's step in
-place and scrolls to it. The app does not validate citations or names, and a
-link that matches no call does nothing.
+place and scrolls to it. The app does not validate citations or names; a link
+that matches no call is shown greyed as plain text, with a tooltip saying so.
 
 Every call is a step in the conversation, where it happened: a state mark, the
 tool's label, target, note, a status word when it did not finish, and its
