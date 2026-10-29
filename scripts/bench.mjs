@@ -1,7 +1,7 @@
 /**
  * Agent-behavior bench. Unlike eval.mjs, this scores the conversation the
- * agent produced (calls, citations, clarify, steer/resume, follow-ups, risk
- * acceptance) and what it said.
+ * agent produced (calls, citations, clarify, steer/resume, follow-ups, a
+ * change for the user to apply) and what it said.
  *
  *   EVAL_PROVIDER=anthropic EVAL_MODEL=... EVAL_API_KEY=... \
  *     xvfb-run -a node scripts/bench.mjs
@@ -46,9 +46,10 @@ if (!model.id || !model.key) {
 
 const HONEST = /(could not|couldn't|can't|cannot|unknown|undecided|open|unable|not (be )?(read|decided|determined)|无法|未能|未知|不确定)/i
 const CLEAN_CLAIM = /(no (bucket|buckets) (is|are) public|nothing is public|all buckets are private|没有.*公开)/i
+const WRITE_CLAIM = /\b(I(?:'ve| have)? (applied|changed|updated|fixed|enabled|deleted)|(is|was|has been) (applied|fixed|enabled|deleted)\b)|已(应用|修复|修改|删除)/i
 const buckets = {
-  'demo-public': { public: true, encryption: true },
-  'demo-private': { encryption: true, blocked: true },
+  'web-assets': { public: true, encryption: true },
+  'data-lake': { encryption: true, blocked: true },
   'finance-exports': { aclDenied: true, encryption: true, blocked: true },
 }
 
@@ -56,7 +57,7 @@ const scenarios = [
   {
     name: 'public-account',
     turns: ['Which buckets are public?'],
-    expect: { tools: ['Read account'], answer: 'demo-public', citations: 1 },
+    expect: { tools: ['Listed buckets', 'Read configuration'], answer: 'web-assets', citations: 1 },
   },
   {
     name: 'blind-acl',
@@ -64,10 +65,11 @@ const scenarios = [
     expect: { honest: true, noClean: true },
   },
   {
-    name: 'memory-first',
+    // What the agent noted in one task, it knows in the next.
+    name: 'memory',
     turns: ['Survey my account.'],
     then: { newTask: true, ask: 'What did you find last time?' },
-    expect: { firstTool: 'Recalled memory', answer: 'demo-public' },
+    expect: { answer: 'web-assets' },
   },
   {
     name: 'clarify',
@@ -75,13 +77,14 @@ const scenarios = [
     expect: { clarify: true, calls: 0 },
   },
   {
-    name: 'fix-plan',
-    turns: ['Survey my account.', 'Give me the fix for demo-private'],
-    expect: { tools: ['Prepared a change plan'], plan: 1, answer: 'demo-private' },
+    // The agent writes the change itself and never says it made it.
+    name: 'fix',
+    turns: ['Give me the fix for data-lake'],
+    expect: { tools: ['Read configuration'], command: 'data-lake', noWrite: true },
   },
   {
     name: 'query',
-    turns: ['What are the largest prefixes in demo-public?'],
+    turns: ['What are the largest prefixes in web-assets?'],
     expect: { tools: ['Ran a read-only query'], table: 'reports/' },
   },
   {
@@ -98,14 +101,14 @@ const scenarios = [
   {
     name: 'stop-continue',
     flow: 'stop-continue',
-    turns: ['Check demo-private again'],
-    expect: { resume: 1, answer: 'demo-public' },
+    turns: ['Check data-lake again'],
+    expect: { resume: 1, answer: 'web-assets' },
   },
   {
     name: 'steer',
     flow: 'steer',
     turns: ['Survey my account.'],
-    expect: { steer: 1, answer: 'demo-public' },
+    expect: { steer: 1, answer: 'web-assets' },
   },
   {
     name: 'model-switch',
@@ -123,19 +126,13 @@ const scenarios = [
   {
     // A follow-up is a new message in the same conversation, not a new report.
     name: 'follow-up',
-    turns: ['Which buckets are public?', 'Who can read demo-public?'],
-    expect: { messages: 2, replies: 2, tools: ['Reviewed configuration'], citations: 1, unresolved: 0 },
-  },
-  {
-    // Accepting a risk is the user's act: the agent asks, the user confirms.
-    name: 'accept-risk',
-    flow: 'accept',
-    turns: ['Accept the logging risk on demo-public'],
-    expect: { confirm: true, acceptedBeforeClick: false, accepted: true },
+    turns: ['Which buckets are public?', 'Who can read web-assets?'],
+    expect: { messages: 2, replies: 2, tools: ['Read configuration'], citations: 1, unresolved: 0 },
   },
 ]
 
-const s3 = await startFakeS3({ buckets })
+// Latency like a real endpoint, so Stop and a steer land while the turn runs.
+const s3 = await startFakeS3({ buckets, slowMs: 350 })
 const fakeModel = smoke
   ? spawn(process.execPath, [join(root, 'scripts/fake-model.mjs'), '9230'], { stdio: 'ignore' })
   : null
@@ -238,7 +235,6 @@ async function readTrace() {
       steer: document.querySelectorAll('.msg.user.steer').length,
       resume: document.querySelectorAll('.conversation-divider').length,
       clarify: document.querySelectorAll('.msg.agent.question').length,
-      confirm: document.querySelectorAll('.msg.agent.confirm').length,
       model: document.querySelector('.conversation-model select')?.value ?? '',
       request: text(users.at(-1)?.querySelector('p')),
       messages: users.length,
@@ -253,13 +249,10 @@ async function readTrace() {
   }
   const table = page.locator('.step-detail .table-block table')
   if (await table.count()) data.table = await table.first().locator('tbody td').first().innerText()
-  const changeRow = page.locator('.step.tool', { hasText: 'Prepared a change plan' }).first()
-  if (await changeRow.count()) {
-    const line = changeRow.locator('.step-line')
-    if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
-    await page.waitForTimeout(120)
-    data.change = await page.locator('.step-detail .change-plan, .step-detail .tabs').count()
-  }
+  data.code = await page
+    .locator('.msg.agent.text pre')
+    .allInnerTexts()
+    .then((blocks) => blocks.join('\n'))
   return data
 }
 
@@ -274,7 +267,8 @@ function score(scenario, trace) {
   if (e.citations) check(`has ${e.citations} citation(s)`, trace.citations >= e.citations)
   if (e.unresolved !== undefined)
     check('no unresolved citations', trace.unresolved <= e.unresolved)
-  if (e.plan) check('shows a change plan', (trace.change ?? 0) > 0)
+  if (e.command) check(`writes a command for ${e.command}`, (trace.code ?? '').includes(e.command))
+  if (e.noWrite) check('never claims the change was made', !WRITE_CLAIM.test(trace.answer))
   if (e.steer) check('shows the steer in the trace', trace.steer > 0)
   if (e.steer === 0) check('the steer is not in the retried run', trace.steer === 0)
   if (e.request) check(`the run's request is "${e.request}"`, trace.request === e.request)
@@ -293,10 +287,6 @@ function score(scenario, trace) {
     )
   if (e.messages) check(`${e.messages} user messages in one conversation`, trace.messages === e.messages)
   if (e.replies) check(`the agent replied ${e.replies} times`, trace.replies >= e.replies)
-  if (e.confirm) check('asks the user to confirm', trace.confirm > 0)
-  if (e.acceptedBeforeClick === false)
-    check('not accepted before the user confirms', trace.acceptedBeforeClick === false)
-  if (e.accepted) check('accepted once the user confirms', trace.accepted === true)
   return results
 }
 
@@ -328,7 +318,7 @@ async function runScenario(scenario) {
     await page.locator('.composer textarea').fill(scenario.turns[0])
     await page.keyboard.press('Enter')
     await page.waitForSelector('.run-strip .run-dot', { timeout: 10_000 })
-    await page.locator('.composer textarea').fill('Focus on demo-public')
+    await page.locator('.composer textarea').fill('Focus on web-assets')
     await page.keyboard.press('Enter')
     await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 180_000 })
     trace = await readTrace()
@@ -336,7 +326,7 @@ async function runScenario(scenario) {
     await page.locator('.composer textarea').fill(scenario.turns[0])
     await page.keyboard.press('Enter')
     await page.waitForSelector('.run-strip .run-dot', { timeout: 10_000 })
-    await page.locator('.composer textarea').fill('Focus on demo-public')
+    await page.locator('.composer textarea').fill('Focus on web-assets')
     await page.keyboard.press('Enter')
     await idle()
     const id = await page.locator('.conversation[data-task-id]').getAttribute('data-task-id')
@@ -356,19 +346,6 @@ async function runScenario(scenario) {
       ),
     )
     trace.steer = items.slice(items.lastIndexOf('user')).filter((kind) => kind === 'steer').length
-  } else if (scenario.flow === 'accept') {
-    await ask(scenario.turns[0])
-    trace = await readTrace()
-    const box = page.locator('.msg.agent.confirm').last()
-    trace.acceptedBeforeClick = (await box.locator('text=Accepted.').count()) > 0
-    if (await box.count()) {
-      await box.getByRole('button', { name: 'Accept risk' }).click()
-      trace.accepted = await box
-        .locator('text=Accepted.')
-        .waitFor({ timeout: 10_000 })
-        .then(() => true)
-        .catch(() => false)
-    }
   } else if (scenario.flow === 'model-switch') {
     await ask(scenario.turns[0])
     const id = await page.locator('.conversation[data-task-id]').getAttribute('data-task-id')

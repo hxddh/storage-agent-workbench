@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { Live, UiEntry } from './contract'
 import { callFor, pendingQuestion, thread, transcriptMarkdown } from './conversation'
-import { answer, request, survey, tool } from './testing'
+import { answer, buckets, request, tool } from './testing'
 
 describe('the conversation thread', () => {
   it('keeps every message, step and text in the order it happened, across turns', () => {
     const entries: UiEntry[] = [
       request('Which buckets are public?'),
       { id: 'r1', kind: 'reasoning', at: '', text: 'Read the account first.' },
-      tool('survey', survey(['a']), { id: 's1' }),
+      tool('buckets', buckets(['a']), { id: 's1' }),
       answer('`a` is private.'),
       request('And the access paths?'),
       tool('config', null, { id: 'c1', status: 'failed', target: 'a' }),
@@ -28,9 +28,9 @@ describe('the conversation thread', () => {
   it('shows a steer as the user speaking, inside the running turn', () => {
     const items = thread([
       request(),
-      { id: 's', kind: 'steer', at: '', text: 'Only demo', attachments: [] },
+      { id: 's', kind: 'steer', at: '', text: 'Only logs', attachments: [] },
     ])
-    expect(items[1]).toMatchObject({ kind: 'user', steer: true, text: 'Only demo' })
+    expect(items[1]).toMatchObject({ kind: 'user', steer: true, text: 'Only logs' })
   })
 
   it('appends the live slot: running calls, a reasoning summary and streaming text', () => {
@@ -60,34 +60,37 @@ describe('the conversation thread', () => {
     const live: Live = {
       phase: 'tool',
       tools: [
-        { callId: 's1', name: 'survey', target: '', note: null, status: 'done', startedAt: '' },
+        { callId: 's1', name: 'buckets', target: '', note: null, status: 'done', startedAt: '' },
       ],
       reasoning: null,
       text: null,
       startedAt: '',
     }
-    const items = thread([request(), tool('survey', survey(['a']), { id: 's1' })], live)
+    const items = thread([request(), tool('buckets', buckets(['a']), { id: 's1' })], live)
     expect(items.filter((item) => item.kind === 'tool')).toHaveLength(1)
   })
 
   it('links a citation to its call, and knows when the agent is waiting on a question', () => {
     const items = thread([
       request(),
-      tool('survey', survey(['a']), { id: 's1' }),
+      tool('buckets', buckets(['a']), { id: 's1' }),
       tool(
         'ask',
         { kind: 'question', question: 'Which account?', options: ['A', 'B'] },
         { id: 'q1' },
       ),
     ])
-    expect(callFor(items, 's1')).toMatchObject({ name: 'survey' })
+    expect(callFor(items, 's1')).toMatchObject({ name: 'buckets' })
     expect(pendingQuestion(items)).toBe('q1')
     expect(pendingQuestion([...items, ...thread([request('A')])])).toBeNull()
   })
 
   it('saves the conversation as Markdown, with reasoning and what each call returned', () => {
     const call = {
-      ...(tool('survey', survey(['a']), { target: 'Demo' }) as Extract<UiEntry, { kind: 'tool' }>),
+      ...(tool('buckets', buckets(['a']), { target: 'Prod' }) as Extract<
+        UiEntry,
+        { kind: 'tool' }
+      >),
       output: '<untrusted-data>1 bucket</untrusted-data>',
     }
     const text = transcriptMarkdown(
@@ -99,7 +102,7 @@ describe('the conversation thread', () => {
       ]),
     )
     expect(text).toBe(
-      '**You:** Q?\n\n> Read it.\n\n> survey · Demo · done\n\n````text\n<untrusted-data>1 bucket</untrusted-data>\n````\n\nA.',
+      '**You:** Q?\n\n> Read it.\n\n> buckets · Prod · done\n\n````text\n<untrusted-data>1 bucket</untrusted-data>\n````\n\nA.',
     )
   })
 })

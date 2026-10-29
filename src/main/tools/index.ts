@@ -1,22 +1,22 @@
 import type { ToolRegistration } from '@earendil-works/pi-durable'
+import { accountTool } from './account'
 import { bucketTools } from './browse'
 import { configTool } from './config'
 import { askTool } from './control'
-import { estateTools } from './estate'
+import { noteTool } from './note'
 import type { ToolDeps } from './policy'
 import { probeTool } from './probe'
 import { queryTool } from './query'
-import { surveyTool } from './survey'
 
 export function createTools(deps: ToolDeps): ToolRegistration[] {
   return [
-    // Asking the user is the one tool that does not read storage.
-    askTool(),
-    surveyTool(deps),
     ...bucketTools(deps),
     configTool(deps),
+    accountTool(deps),
     probeTool(deps),
-    ...estateTools(deps),
     queryTool(deps),
+    noteTool(deps),
+    // Asking the user is the one tool that does not read storage.
+    askTool(),
   ] as ToolRegistration[]
 }

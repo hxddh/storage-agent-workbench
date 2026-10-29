@@ -21,8 +21,6 @@ import {
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
 import type { AppEvent, TaskModel, TaskSummary, UiEntry } from '@shared/contract'
 import type { AppDb } from '../db'
-import type { Estate } from '../estate/estate'
-import { contextFor } from '../model-catalog'
 import type { Providers } from '../providers'
 import type { Vault } from '../security/vault'
 import type { Settings } from '../settings'
@@ -44,7 +42,6 @@ export type RunOutcome = 'answered' | 'failed' | 'stopped'
 export interface RuntimeDeps {
   db: AppDb
   providers: Providers
-  estate: Estate
   settings: Settings
   vault: Vault
   models: ReturnType<typeof createModels>
@@ -103,11 +100,9 @@ export class Runtime {
     const tools: ToolDeps = {
       db: deps.db,
       providers: deps.providers,
-      estate: deps.estate,
       datasetsDir: deps.dirs.datasets,
       uploadsDir: deps.dirs.uploads,
       lang: () => deps.settings.get().language,
-      accessSessions: new Map(),
     }
     const list = createTools(tools)
     let runtime: Runtime | null = null

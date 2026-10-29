@@ -14,7 +14,6 @@ import { STSClient } from '@aws-sdk/client-sts'
 import { fromIni } from '@aws-sdk/credential-provider-ini'
 import type { Account, AccountInput } from '@shared/contract'
 import type { AppDb, ProviderRow } from './db'
-import { DEMO_ENDPOINT, demoHandler } from './demo/storage'
 import { capabilitiesOf, detectProviderKind, type ProviderCapabilities } from './s3/capabilities'
 import { maskKey } from './security/redact'
 import type { Vault } from './security/vault'
@@ -98,6 +97,7 @@ export function emulatorControl(
 }
 
 export class Providers {
+  private readonly names = new Map<string, { at: number; names: string[] }>()
   private readonly clients = new Map<string, S3Client>()
   private readonly services = new Map<
     string,
@@ -131,7 +131,6 @@ export class Providers {
       accessKeyMasked: row.auth === 'profile' ? '' : maskKey(row.access_key_id),
       hasSessionToken: Boolean(row.session_ref),
       scope: parseScope(row.scope_json),
-      schedule: row.schedule === 'daily' || row.schedule === 'weekly' ? row.schedule : 'off',
     }))
   }
 
@@ -200,7 +199,6 @@ export class Providers {
       created_at: existing?.created_at ?? new Date().toISOString(),
       auth,
       profile,
-      schedule: input.schedule === 'daily' || input.schedule === 'weekly' ? input.schedule : 'off',
     })
     this.forget(id)
     const account = (await this.list()).find((a) => a.id === id)
@@ -208,21 +206,19 @@ export class Providers {
     return account
   }
 
-  /** Add the in-process demo account, once. */
-  async addDemo(): Promise<Account> {
-    const existing = (await this.list()).find((account) => account.endpoint === DEMO_ENDPOINT)
-    if (existing) return existing
-    return this.save({
-      name: 'Demo storage',
-      kind: 'aws',
-      endpoint: DEMO_ENDPOINT,
-      region: 'us-east-1',
-      forcePathStyle: true,
-      auth: 'keys',
-      accessKeyId: 'AKIADEMODEMODEMODEMO',
-      secretAccessKey: 'demo',
-      scope: { buckets: [] },
-    })
+  /** The bucket names an account lists now, within its scope; cached for a minute. */
+  async bucketNames(id: string): Promise<string[]> {
+    const cached = this.names.get(id)
+    if (cached && Date.now() - cached.at < 60_000) return cached.names
+    const config = await this.config(id)
+    const response = await this.client(config).send(new ListBucketsCommand({}))
+    const names = (response.Buckets ?? [])
+      .map((bucket) => bucket.Name ?? '')
+      .filter(
+        (name) => name && (!config.scope.buckets.length || config.scope.buckets.includes(name)),
+      )
+    this.names.set(id, { at: Date.now(), names })
+    return names
   }
 
   async remove(id: string): Promise<void> {
@@ -253,17 +249,14 @@ export class Providers {
     const cached = this.clients.get(key)
     if (cached) return cached
     const credentials = this.credentialsOf(provider)
-    const demo = provider.endpoint === DEMO_ENDPOINT
     const client = new S3Client({
       region: target,
       endpoint: provider.endpoint || undefined,
-      forcePathStyle: demo || provider.forcePathStyle,
-      followRegionRedirects: !demo,
+      forcePathStyle: provider.forcePathStyle,
+      followRegionRedirects: true,
       credentials,
-      maxAttempts: demo ? 1 : 2,
-      requestHandler: demo
-        ? (demoHandler(provider.id) as never)
-        : { requestTimeout: 20_000, connectionTimeout: 5_000 },
+      maxAttempts: 2,
+      requestHandler: { requestTimeout: 20_000, connectionTimeout: 5_000 },
     })
     this.clients.set(key, client)
     return client
@@ -271,8 +264,7 @@ export class Providers {
 
   /** An AWS account: the account-wide and CloudWatch reads apply. */
   isAws(provider: ProviderConfig): boolean {
-    // The provider kind is the explicit answer; the demo endpoint only imitates AWS.
-    return provider.kind === 'aws' && provider.endpoint !== DEMO_ENDPOINT
+    return provider.kind === 'aws'
   }
 
   private credentialsOf(provider: ProviderConfig) {
@@ -358,6 +350,7 @@ export class Providers {
   }
 
   private forget(id: string): void {
+    this.names.delete(id)
     for (const map of [this.clients, this.services] as Map<string, { destroy(): void }>[]) {
       for (const [key, client] of map) {
         if (key.startsWith(`${id}:`)) {

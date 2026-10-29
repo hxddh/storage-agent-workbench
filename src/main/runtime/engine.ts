@@ -3,8 +3,8 @@
  *
  * Every turn is pi's durable loop: the user writes, the model reads with its
  * tools and answers. This installs the task's model, submits the message, and
- * settles the turn: notices, the search index, reading records and the estate
- * digest. There is no second driver and no scripted run.
+ * settles the turn: notices, the search index and the memory digest. There is
+ * no second driver and no scripted run.
  */
 import { configure } from '@earendil-works/pi-durable'
 import type { AttachmentRef, ContextRef, NoticeCode } from '@shared/contract'
@@ -12,7 +12,6 @@ import { escapeTags } from '../security/redact'
 import { MAX_ROUNDS, runView } from './agent'
 import { installModel } from './model'
 import type { RunData } from './project'
-import { turnSurveys } from './readings'
 import { CONTEXT, type RunOutcome, type Runtime } from './session'
 import type { Tasks } from './tasks'
 
@@ -172,14 +171,12 @@ export class Engine {
         error instanceof Error ? error.message.slice(0, 200) : undefined,
       )
     } finally {
-      this.runtime.tools.accessSessions?.delete(taskId)
       if (outcome === 'failed') this.runtime.failed.add(taskId)
       const records = await this.runtime.records(taskId)
       const view = records ? runView(records) : null
       if (view && view.rounds > MAX_ROUNDS) await this.notice(conversation, 'budget', 'warn')
       await this.deps.db.touchTask(taskId)
       await this.tasks.index(taskId).catch(() => undefined)
-      if (outcome !== 'failed') await this.recordReadings(taskId).catch(() => undefined)
       await this.runtime.refreshDigest()
       await this.tasks.refreshList()
       const summary = await this.tasks.summary(taskId)
@@ -203,22 +200,6 @@ export class Engine {
         ...(action ? { action } : {}),
       })
       .catch(() => undefined)
-  }
-
-  /** One reading row per account the turn surveyed account-wide: counts only. */
-  private async recordReadings(taskId: string): Promise<void> {
-    for (const survey of turnSurveys(await this.runtime.entries(taskId))) {
-      const { providerId, at, ...counts } = survey
-      await this.deps.db.insertReading({
-        conversationId: taskId,
-        providerId,
-        at: at || new Date().toISOString(),
-        trigger: 'task',
-        ...counts,
-        openHigh: await this.deps.db.countOpenHigh(providerId),
-        openTotal: await this.deps.db.countOpenIssues(providerId),
-      })
-    }
   }
 }
 

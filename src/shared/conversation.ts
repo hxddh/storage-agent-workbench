@@ -13,7 +13,6 @@ import type {
   ContextRef,
   Live,
   NoticeCode,
-  ToolName,
   ToolStatus,
   ToolView,
   UiEntry,
@@ -38,7 +37,7 @@ export type ThreadItem =
       /** The durable entry id; null while the call is live. */
       entryId: string | null
       at: string
-      name: ToolName
+      name: string
       target: string
       status: ToolStatus
       note: string | null

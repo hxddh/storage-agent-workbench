@@ -47,7 +47,6 @@ const EMPTY_ACCOUNT: AccountInput = {
   secretAccessKey: '',
   sessionToken: '',
   scope: { buckets: [] },
-  schedule: 'off',
 }
 
 export function Settings({
@@ -72,12 +71,6 @@ export function Settings({
     { id: 'appearance' as const, label: t.appearance, icon: Palette },
   ]
   const active = panes.find((item) => item.id === pane) ?? panes[0]!
-  const scheduleLabel = (schedule: Account['schedule']) =>
-    schedule === 'daily'
-      ? t.schedule_daily
-      : schedule === 'weekly'
-        ? t.schedule_weekly
-        : t.schedule_off
   const kindLabel = (kind: Account['kind']) => kindName(t, kind)
   const [provider, setProvider] = useState<Provider>(
     (boot.model?.provider as Provider) ?? 'compatible',
@@ -123,14 +116,6 @@ export function Settings({
     setModelId(model.modelId)
     setBaseUrl(model.baseUrl)
     setApiKey('local')
-  }
-
-  const addDemo = async () => {
-    await window.agent.addDemoAccount()
-    await onChanged()
-    const fresh = await window.agent.bootstrap()
-    setAccounts(fresh.accounts)
-    setShowForm(false)
   }
 
   const forget = async (id: string) => {
@@ -293,7 +278,6 @@ export function Settings({
       secretAccessKey: '',
       sessionToken: '',
       scope: { buckets: account.scope.buckets },
-      schedule: account.schedule ?? 'off',
     })
     setShowForm(true)
     setAccountStatus(null)
@@ -570,8 +554,6 @@ export function Settings({
                       {account.scope.buckets.length
                         ? `${t.scope}: ${account.scope.buckets.join(', ')}`
                         : t.allBuckets}
-                      {' · '}
-                      {t.schedule}: {scheduleLabel(account.schedule)}
                     </div>
                     {accountTest?.id === account.id && (
                       <div className={accountTest.ok ? 'ok-text' : 'error-text'}>
@@ -736,24 +718,6 @@ export function Settings({
                       />
                       <span className="hint">{t.scopeHint}</span>
                     </div>
-                    <div className="field">
-                      <label htmlFor="accSchedule">{t.schedule}</label>
-                      <select
-                        id="accSchedule"
-                        value={form.schedule ?? 'off'}
-                        onChange={(event) =>
-                          setForm({
-                            ...form,
-                            schedule: event.target.value as AccountInput['schedule'],
-                          })
-                        }
-                      >
-                        <option value="off">{t.schedule_off}</option>
-                        <option value="daily">{t.schedule_daily}</option>
-                        <option value="weekly">{t.schedule_weekly}</option>
-                      </select>
-                      <span className="hint">{t.scheduleHint}</span>
-                    </div>
                     <label className="check-field">
                       <input
                         type="checkbox"
@@ -796,13 +760,6 @@ export function Settings({
                       <Plus size={13} strokeWidth={1.8} aria-hidden="true" />
                       {t.addAccount}
                     </button>
-                    {!accounts.some((account) =>
-                      account.endpoint.includes('demo.storage-agent'),
-                    ) && (
-                      <button className="btn ghost" type="button" onClick={() => void addDemo()}>
-                        {t.tryDemo}
-                      </button>
-                    )}
                   </div>
                 )}
               </section>

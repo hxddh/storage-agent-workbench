@@ -9,11 +9,10 @@ import { rm } from 'node:fs/promises'
 import type { ConversationView, TaskGraph, WatchHandle } from '@earendil-works/pi-durable'
 import type {
   ContextRef,
-  EstateRef,
-  IssueRow,
   Live,
   NoteRow,
   SearchHit,
+  StorageRef,
   TaskModel,
   TaskSummary,
   TaskView,
@@ -78,7 +77,7 @@ export class Tasks {
     await conversation?.waitForIdle(CONTEXT)
   }
 
-  /** Names the user pointed at, checked against the estate and the account scope. */
+  /** Names the user pointed at, checked against the accounts and their scope. */
   async sanitizeContext(context: ContextRef[]): Promise<ContextRef[]> {
     if (!Array.isArray(context) || context.length === 0) return []
     const accounts = await this.deps.providers.list()
@@ -94,26 +93,15 @@ export class Tasks {
       const bucket = typeof raw.bucket === 'string' ? raw.bucket : ''
       if (!bucket || (account.scope.buckets.length && !account.scope.buckets.includes(bucket)))
         continue
-      if (raw.kind === 'issue') {
-        const issueId = typeof raw.issueId === 'string' ? raw.issueId : ''
-        const issue = issueId ? await this.deps.db.getIssue(issueId) : undefined
-        if (!issue || issue.provider_id !== account.id) continue
-        out.push({
-          kind: 'issue',
-          providerId: account.id,
-          label: `${issue.bucket || account.name} · ${issue.code.replace(/_/g, ' ')}`.slice(0, 120),
-          bucket,
-          issueId,
-        })
-      } else out.push({ kind: 'bucket', providerId: account.id, label: bucket, bucket })
+      out.push({ kind: 'bucket', providerId: account.id, label: bucket, bucket })
     }
     return out
   }
 
-  async estateRefs(query: string): Promise<EstateRef[]> {
+  async storageRefs(query: string): Promise<StorageRef[]> {
     const accounts = await this.deps.providers.list()
     const term = query.trim().toLowerCase()
-    const refs: EstateRef[] = []
+    const refs: StorageRef[] = []
     for (const account of accounts) {
       if (!term || account.name.toLowerCase().includes(term))
         refs.push({
@@ -123,46 +111,22 @@ export class Tasks {
           label: account.name,
           detail: account.endpoint || 'AWS',
         })
-      const buckets = (await this.deps.db.listBuckets(account.id))
-        .filter((row) => !term || row.name.toLowerCase().includes(term))
+      // The buckets the account lists now; the app keeps no memory of them.
+      const buckets = (await this.deps.providers.bucketNames(account.id).catch(() => []))
+        .filter((name) => !term || name.toLowerCase().includes(term))
         .slice(0, 12)
-      for (const bucket of buckets)
+      for (const name of buckets)
         refs.push({
-          id: `b:${account.id}:${bucket.name}`,
+          id: `b:${account.id}:${name}`,
           kind: 'bucket',
           providerId: account.id,
-          label: bucket.name,
-          bucket: bucket.name,
+          label: name,
+          bucket: name,
           detail: account.name,
-        })
-      const issues = (
-        await this.deps.db.listIssues({ providerId: account.id, status: 'open', limit: 40 })
-      ).filter(
-        (issue) =>
-          !term ||
-          issue.bucket.toLowerCase().includes(term) ||
-          issue.code.toLowerCase().includes(term),
-      )
-      for (const issue of issues.slice(0, 6))
-        refs.push({
-          id: `i:${issue.id}`,
-          kind: 'issue',
-          providerId: account.id,
-          label: `${issue.bucket || account.name} · ${issue.code.replace(/_/g, ' ')}`,
-          bucket: issue.bucket,
-          issueId: issue.id,
-          detail: issue.severity,
         })
       if (refs.length >= 24) break
     }
     return refs.slice(0, 24)
-  }
-
-  async acceptIssue(id: string, accepted: boolean): Promise<void> {
-    const issue = await this.deps.db.setAccepted(id, accepted)
-    if (!issue) return
-    this.deps.emit({ type: 'issues', statuses: { [issue.id]: issue.status } })
-    await this.runtime.refreshDigest()
   }
 
   search(query: string): Promise<SearchHit[]> {
@@ -284,7 +248,6 @@ export class Tasks {
         cursor: slice[0]?.id ?? null,
         usage: usageOf(state.value),
         model: parseTaskModel(meta.model_json),
-        issueStatus: await this.issueStatus(entries),
       }
     } finally {
       state.dispose()
@@ -340,17 +303,6 @@ export class Tasks {
     if (nodes.some((node) => node.status && node.status !== 'done')) return 'working'
     if (this.runtime.failed.has(taskId)) return 'attention'
     return 'ready'
-  }
-
-  private async issueStatus(
-    entries: readonly UiEntry[],
-  ): Promise<Record<string, IssueRow['status']>> {
-    const ids = new Set<string>()
-    for (const entry of entries)
-      if (entry.kind === 'tool' && (entry.view?.kind === 'survey' || entry.view?.kind === 'estate'))
-        for (const issue of entry.view.issues) ids.add(issue.id)
-      else if (entry.kind === 'tool' && entry.view?.kind === 'accept') ids.add(entry.view.issue.id)
-    return this.deps.db.issueStatuses([...ids])
   }
 
   private async watch(taskId: string): Promise<void> {

@@ -43,9 +43,9 @@ describe('inventory import and aggregation', () => {
       csv,
       [
         '"bucket","key","size","storage_class","last_modified_date"',
-        '"demo","a.bin",100,"STANDARD","2026-01-01T00:00:00Z"',
-        '"demo","b.bin",200,"STANDARD","2026-01-02T00:00:00Z"',
-        '"demo","c.bin",100,"GLACIER","2026-01-03T00:00:00Z"',
+        '"logs","a.bin",100,"STANDARD","2026-01-01T00:00:00Z"',
+        '"logs","b.bin",200,"STANDARD","2026-01-02T00:00:00Z"',
+        '"logs","c.bin",100,"GLACIER","2026-01-03T00:00:00Z"',
       ].join('\n'),
     )
     const db = join(dir, 'data.sqlite')
@@ -84,13 +84,13 @@ describe('inventory import and aggregation', () => {
     const first = join(dir, 'part-1.csv')
     const second = join(dir, 'part-2.csv')
     const header = '"bucket","key","size","storage_class","last_modified_date"\n'
-    writeFileSync(first, `${header}"demo","a.bin",100,"STANDARD","2026-01-01"\n`)
-    writeFileSync(second, `${header}"demo","b.bin",200,"GLACIER","2026-01-02"\n`)
+    writeFileSync(first, `${header}"logs","a.bin",100,"STANDARD","2026-01-01"\n`)
+    writeFileSync(second, `${header}"logs","b.bin",200,"GLACIER","2026-01-02"\n`)
     const db = join(dir, 'all.sqlite')
     const result = await importInventoryFiles({
       files: [first, second],
       destPath: db,
-      fallbackBucket: 'demo',
+      fallbackBucket: 'logs',
     })
     expect(result.rows).toBe(2)
     expect(countRows(db, 'inventory')).toBe(2)
@@ -100,14 +100,14 @@ describe('inventory import and aggregation', () => {
     const dir = temp()
     const files = [1, 2, 3].map((n) => {
       const file = join(dir, `part-${n}.csv`)
-      writeFileSync(file, `"bucket","key","size"\n"demo","${n}.bin",${n}\n`)
+      writeFileSync(file, `"bucket","key","size"\n"logs","${n}.bin",${n}\n`)
       return file
     })
     const db = join(dir, 'limited.sqlite')
     const result = await importInventoryFiles({
       files,
       destPath: db,
-      fallbackBucket: 'demo',
+      fallbackBucket: 'logs',
       maxRows: 2,
     })
     expect(result.rows).toBe(2)

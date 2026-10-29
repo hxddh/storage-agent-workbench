@@ -4,21 +4,16 @@ import { type Static, type TSchema, Type } from '@earendil-works/pi-ai'
 import { defineTool, type ToolRegistration } from '@earendil-works/pi-durable'
 import type { ToolDetails, ToolName, ToolView } from '@shared/contract'
 import type { AppDb } from '../db'
-import { Assessor } from '../estate/assess'
-import type { Estate } from '../estate/estate'
 import type { ProviderConfig, Providers } from '../providers'
-import type { AccessSession } from '../s3/access'
+import { scrub } from '../s3/raw'
 import { bound, escapeTags, redact, redactView } from '../security/redact'
 
 export interface ToolDeps {
   db: AppDb
   providers: Providers
-  estate: Estate
   datasetsDir: (conversationId: string) => string
   uploadsDir: (conversationId: string) => string
   lang: () => string
-  /** One access session per run, so IAM and SCPs are read once across buckets. */
-  accessSessions?: Map<string, AccessSession>
 }
 
 export interface ToolRun {
@@ -31,8 +26,6 @@ export interface ToolRun {
   provider: (id?: string) => Promise<{ config: ProviderConfig; client: S3Client }>
   /** The client for a bucket's own region; undefined for a single-region endpoint. */
   regional?: (region: string) => S3Client
-  /** The rules' only path to Issues. A tool reads; this applies what the rules decided. */
-  assess: Assessor
 }
 
 export class ScopeError extends Error {}
@@ -100,7 +93,6 @@ export function agentTool<T extends TSchema>(
       const signal = context.abortSignal ? AbortSignal.any([context.abortSignal, timeout]) : timeout
       const conversationId = String(api.conversationId)
       const callArgs = argsSummary(args)
-      const assess = new Assessor(deps.db, conversationId)
       let regional: ((region: string) => S3Client) | undefined
       let progressNote: string | null = null
       let detailsWrite = Promise.resolve()
@@ -146,7 +138,6 @@ export function agentTool<T extends TSchema>(
           get regional() {
             return regional
           },
-          assess,
         })
         await deps.db.audit({
           conversationId,
@@ -175,7 +166,8 @@ export function agentTool<T extends TSchema>(
           details: details as never,
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
+        // A provider's error can name the account; it never reaches the model or the window.
+        const message = scrub(error instanceof Error ? error.message : String(error)) as string
         const status: ToolDetails['status'] =
           error instanceof ScopeError
             ? 'refused'

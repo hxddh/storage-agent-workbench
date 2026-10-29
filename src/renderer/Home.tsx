@@ -21,8 +21,6 @@ export function Home({
   onSetup,
   onAddAccount,
   onUseLocal,
-  onDemo,
-  onAudit,
   tasks,
   onOpenTask,
 }: {
@@ -30,8 +28,6 @@ export function Home({
   onSetup: () => void
   onAddAccount: () => void
   onUseLocal: (model: LocalModel) => Promise<void>
-  onDemo: () => void
-  onAudit: () => void
   tasks: TaskSummary[]
   onOpenTask: (id: string) => void
 }) {
@@ -79,75 +75,52 @@ export function Home({
       <div className="home-inner">
         <h1>{t.homeTitle}</h1>
         {hasAccount ? (
-          <>
-            {/* The accounts the agent can read. What they hold is for the agent to read and say. */}
-            <ul className="home-accounts" aria-label={t.homeAccounts}>
-              {boot.accounts.map((account) => (
-                <li className="home-account" key={account.id}>
-                  <span className="home-account-name">{account.name}</span>
-                  <span className="home-account-kind">{kindName(t, account.kind)}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="home-actions">
-              {hasModel && (
-                <button className="btn primary home-audit" type="button" onClick={onAudit}>
-                  {t.checkAccount}
-                </button>
-              )}
-              <button className="home-link" type="button" onClick={onAddAccount}>
-                {t.addAccount}
-              </button>
-              {!hasModel && (
-                <button className="home-link" type="button" onClick={onSetup}>
-                  {t.setModel}
-                </button>
-              )}
-            </div>
-            {!hasModel && <p className="hint home-hint">{t.emptyNoModel}</p>}
-          </>
+          // The accounts the agent can read. What they hold is for the agent to read and say.
+          <ul className="home-accounts" aria-label={t.homeAccounts}>
+            {boot.accounts.map((account) => (
+              <li className="home-account" key={account.id}>
+                <span className="home-account-name">{account.name}</span>
+                <span className="home-account-kind">{kindName(t, account.kind)}</span>
+              </li>
+            ))}
+          </ul>
         ) : (
-          <>
-            <p className="home-lede">{hasModel ? t.homeNoEstate : t.homeNoModel}</p>
-            <div className="home-actions">
-              <button className="btn primary" type="button" onClick={onDemo}>
-                {t.tryDemo}
-              </button>
-              <button className="btn" type="button" onClick={onAddAccount}>
-                {t.addAccount}
-              </button>
-            </div>
-
-            {!hasModel && local.length > 0 && (
-              <div className="home-local">
-                <span className="home-local-label">{t.localModels}</span>
-                {local.map((model) => (
-                  <button
-                    className="home-prompt"
-                    key={`${model.source}:${model.modelId}`}
-                    type="button"
-                    disabled={starting !== null}
-                    onClick={() => void startLocal(model)}
-                  >
-                    <Sparkles size={12} strokeWidth={1.7} aria-hidden="true" />
-                    <span>{fill(t.useLocal, { model: model.modelId })}</span>
-                    <span className="hint">{model.source}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="home-foot">
-              {!hasModel && (
-                <button className="home-link" type="button" onClick={onSetup}>
-                  {t.setModel}
-                </button>
-              )}
-              <span className="hint">{t.demoHint}</span>
-            </div>
-            {localError && <p className="brief-error">{localError}</p>}
-          </>
+          <p className="home-lede">{hasModel ? t.homeNoEstate : t.homeNoModel}</p>
         )}
+        <div className="home-actions">
+          <button
+            className={hasAccount ? 'home-link' : 'btn primary'}
+            type="button"
+            onClick={onAddAccount}
+          >
+            {t.addAccount}
+          </button>
+          {!hasModel && (
+            <button className="home-link" type="button" onClick={onSetup}>
+              {t.setModel}
+            </button>
+          )}
+        </div>
+        {!hasModel && local.length > 0 && (
+          <div className="home-local">
+            <span className="home-local-label">{t.localModels}</span>
+            {local.map((model) => (
+              <button
+                className="home-prompt"
+                key={`${model.source}:${model.modelId}`}
+                type="button"
+                disabled={starting !== null}
+                onClick={() => void startLocal(model)}
+              >
+                <Sparkles size={12} strokeWidth={1.7} aria-hidden="true" />
+                <span>{fill(t.useLocal, { model: model.modelId })}</span>
+                <span className="hint">{model.source}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {!hasModel && hasAccount && <p className="hint home-hint">{t.emptyNoModel}</p>}
+        {localError && <p className="brief-error">{localError}</p>}
         {tasks.length > 0 && (
           <section className="home-recent" aria-label={t.homeRecent}>
             <div className="home-recent-head">

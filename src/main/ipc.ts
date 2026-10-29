@@ -45,8 +45,8 @@ export function registerIpc(app: App): void {
     },
   )
 
-  ipcMain.handle('agent:estateRefs', (_event, query: string) =>
-    app.tasks.estateRefs(String(query ?? '').slice(0, 120)),
+  ipcMain.handle('agent:storageRefs', (_event, query: string) =>
+    app.tasks.storageRefs(String(query ?? '').slice(0, 120)),
   )
   ipcMain.handle('agent:setTaskModel', (_event, taskId: string, model: TaskModel | null) =>
     app.tasks.setTaskModel(taskId, model),
@@ -141,17 +141,7 @@ export function registerIpc(app: App): void {
 
   ipcMain.handle('agent:awsProfiles', () => awsProfiles())
 
-  ipcMain.handle('agent:addDemoAccount', async () => {
-    const account = await app.providers.addDemo()
-    await app.runtime.refreshDigest()
-    return account
-  })
-
   ipcMain.handle('agent:localModels', () => detectLocalModels())
-
-  ipcMain.handle('agent:acceptIssue', (_event, id: string, accepted: boolean) =>
-    app.tasks.acceptIssue(String(id), Boolean(accepted)),
-  )
 
   ipcMain.handle('agent:installUpdate', () => app.installUpdate?.())
 

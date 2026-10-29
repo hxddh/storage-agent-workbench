@@ -9,7 +9,7 @@ const api: AgentApi = {
     ipcRenderer.invoke('agent:createTask', text, attachments, context),
   send: (taskId, text, attachments, context) =>
     ipcRenderer.invoke('agent:send', taskId, text, attachments, context),
-  estateRefs: (query) => ipcRenderer.invoke('agent:estateRefs', query),
+  storageRefs: (query) => ipcRenderer.invoke('agent:storageRefs', query),
   setTaskModel: (taskId, model) => ipcRenderer.invoke('agent:setTaskModel', taskId, model),
   steer: (taskId, text, attachments, context) =>
     ipcRenderer.invoke('agent:steer', taskId, text, attachments, context),
@@ -31,10 +31,8 @@ const api: AgentApi = {
       'agent:stagePaths',
       files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
     ),
-  acceptIssue: (id, accepted) => ipcRenderer.invoke('agent:acceptIssue', id, accepted),
   awsProfiles: () => ipcRenderer.invoke('agent:awsProfiles'),
   installUpdate: () => ipcRenderer.invoke('agent:installUpdate'),
-  addDemoAccount: () => ipcRenderer.invoke('agent:addDemoAccount'),
   localModels: () => ipcRenderer.invoke('agent:localModels'),
   saveAccount: (input) => ipcRenderer.invoke('agent:saveAccount', input),
   deleteAccount: (id) => ipcRenderer.invoke('agent:deleteAccount', id),

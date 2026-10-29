@@ -1,13 +1,12 @@
 /**
  * The fake S3 over HTTP, for end-to-end runs and domain tests. The responder
- * itself lives in `src/main/demo/fake-s3-core.mjs`, which the app's demo
- * account also uses in process.
+ * itself lives in `scripts/fake-s3-core.mjs`.
  *
  *   node scripts/fake-s3.mjs 9100
  */
 import { createServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_BUCKETS, respond } from '../src/main/demo/fake-s3-core.mjs'
+import { DEFAULT_BUCKETS, respond } from './fake-s3-core.mjs'
 
 export { DEFAULT_BUCKETS }
 

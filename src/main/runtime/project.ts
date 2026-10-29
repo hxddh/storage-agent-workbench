@@ -17,6 +17,7 @@ import type {
   ToolDetails,
   ToolName,
   ToolStatus,
+  ToolView,
   UiEntry,
   Usage,
 } from '@shared/contract'
@@ -70,8 +71,21 @@ function thinkingOf(message: ModelMessage | undefined): string {
     .trim()
 }
 
-function toolName(value: string | undefined): ToolName | null {
-  return value && TOOL_NAMES.has(value as ToolName) ? (value as ToolName) : null
+const VIEW_KINDS = new Set<string>([
+  'buckets',
+  'objects',
+  'object',
+  'raw',
+  'probe',
+  'note',
+  'query',
+  'question',
+])
+
+/** A view this version renders; a call from an earlier version shows what the agent received. */
+function viewOf(name: string, view: ToolView | null | undefined): ToolView | null {
+  if (!view || !TOOL_NAMES.has(name as ToolName) || !VIEW_KINDS.has(view.kind)) return null
+  return view
 }
 
 /** `agentTool()` details; 17.x results carry the same shape without `status`. */
@@ -90,7 +104,7 @@ export interface RunData {
 function toolEntry(
   id: string,
   at: string,
-  name: ToolName,
+  name: string,
   details: (Partial<ToolDetails> & { target: string }) | null,
   fallback: { isError: boolean; text: string; ms?: number; callId?: string },
 ): UiEntry {
@@ -105,7 +119,7 @@ function toolEntry(
     note: details ? (details.note ?? null) : fallback.isError ? blockedNote(fallback.text) : null,
     args: details?.args ?? null,
     ms: details?.ms ?? fallback.ms ?? null,
-    view: details?.view ?? null,
+    view: viewOf(name, details?.view),
     ...(fallback.callId ? { callId: fallback.callId } : {}),
     ...(details?.evidenceId ? { evidenceId: details.evidenceId } : {}),
     ...(fallback.text ? { output: fallback.text } : {}),
@@ -154,7 +168,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       // 35.0 scripted checks: their calls and answer read as ordinary conversation items.
       case 'sa.call': {
         const data = entry.data as { name?: string; at?: string; details?: ToolDetails } | undefined
-        const name = toolName(data?.name)
+        const name = data?.name
         if (data?.details && name)
           out.push(
             toolEntry(id, data.at ?? at, name, data.details, {
@@ -225,7 +239,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       }
       case 'pi.tool-result': {
         if (!message) break
-        const name = toolName(message.toolName ?? toolNames.get(message.toolCallId ?? ''))
+        const name = message.toolName ?? toolNames.get(message.toolCallId ?? '')
         if (!name) break
         const details = isDetails(message.details) ? message.details : null
         // A result without our details came from pi itself: the call never
@@ -291,7 +305,7 @@ export class LiveTracker {
     this.runStarted.set(taskId, startedAt)
     const tools: LiveTool[] = []
     for (const slot of live.tools ?? []) {
-      const name = toolName(slot.name)
+      const name = slot.name
       if (!name) continue
       const details = isDetails(slot.details) ? slot.details : null
       const since = this.toolStarted.get(slot.callId) ?? new Date().toISOString()

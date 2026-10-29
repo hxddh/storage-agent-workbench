@@ -1,111 +1,77 @@
 ## 36.0.0 — 2026-10-29
 
-The window is a conversation with the agent. Each task is one thread: your
-messages, and between them what the agent did and said, in order. The app no
-longer runs checks of its own, writes a coverage line, or rebuilds the answer
-into report sections. 35.x tasks open as conversations.
+Storage Agent is a native agent. The model reads, judges and says what it
+found; the app gives it read-only tools that return what the storage APIs
+return, keeps the safety boundaries, and shows each call where it happened. The
+rule engine, Issues, change plans, scripted and scheduled checks, and demo
+storage are gone. Each task is one conversation. 35.x tasks open as
+conversations; their calls to removed tools show what the agent received.
 
 ### Changed
 
-- **A conversation, not a run page.** `shared/conversation.ts` projects the
-  entries into one ordered thread: messages (a steer shows where it was said),
-  the agent's text, provider reasoning as returned, each tool call as a step
-  you can open in place, a
-  clarifying question with one-click options, notices with Retry or Continue,
-  and a divider where a stopped turn was continued. Follow-ups are the next
-  message in the same thread. `Conversation.tsx` replaces `Run`, `Answer`,
-  `Trace`, `Evidence` and `EarlierRuns`.
-- **Every read goes through the agent.** `Check account` and scheduled checks
-  send the agent a message; they need a model. Without one the window offers the
-  demo account, adds it when asked, and says to set up a model.
-- **Accepting a risk is asked in the conversation.** The new `accept_risk` tool
-  names a risk by bucket and rule code; the window shows a
-  confirmation, and only your click accepts or reopens it. The estate lists each
-  Issue's rule code so the agent can name it.
-- **Survey steps say what a read resolved** (`· n resolved`).
-- **Home lists the accounts and nothing about them.** The risk ledger (open
-  high/total, last complete reading, new risks since, "clear") was the app's own
-  verdict on an account; it is gone. Readings stay as the agent's memory.
-- **Home copy** no longer says a model is optional; "Recent runs" is "Recent
-  tasks", and notices say the agent stopped or hit an error.
-
-- **The harness overrides the agent only at the round budget.** The
-  repeated-read block (and the argument key behind it) is gone: whether to read
-  something again is the agent's call. A call the budget blocked stays in the
-  conversation as a step that did not run.
-- **The window never shows more than the agent got.** `objects`, `object`,
-  `buckets`, `config`, `survey` and `estate` send the model the rows, preview,
-  grants and Issues their views show, and every step can open `What the agent
-  received`: the exact text of its result. `object` returns metadata names,
-  never values, as its description always said.
-- **No app verdict in memory.** Reading records keep a survey's counts; the
-  `complete` column is dropped (migration 16), `estate` history shows the
-  counts, and a change plan's baseline is the latest account survey.
-- **The prompt describes the tools, not a workflow.** POLICY no longer tells the
-  agent to start from memory, when to plan or stop, or to read at most five
-  buckets; the tier note states the round budget. Continue sends `Continue.`
-- **`change_plan` plans what the agent names**: a bucket and a rule code plan
-  that change whether or not an Issue is open.
-- **No plan tool, no method tool (12 tools).** `plan` made the agent publish a
-  checklist for the window to draw, and `skill` made it load method documents;
-  both were process scaffolding. The agent says its plan in its own words, and
-  what the methods said is in the descriptions of the tools they were about.
-  `ask` takes options only if the agent wants them.
-- Every step, question and confirmation can show what the agent received, the
-  Markdown export carries reasoning and each call's output, `change_plan` and
-  `query` send the agent the commands and rows they show, and a result cut to
-  fit says so in its step. Reasoning is shown in full. An `@` bucket the estate has not read yet is no
-  longer dropped. Tool views no longer say "No problems found" or "clean".
-
-- **No unreasonable limits on the agent.** The 14/24/32 per-model round
-  budget and the model tiers behind it are gone: one 100-round runaway ceiling
-  remains, the same for every model. `objects` reads S3's full 1,000-key page
-  and pages on with a `next` token; `survey` re-reads any number of named
-  buckets; `query` scripts, `ask` questions and notes have no length caps and
-  notes no count cap. The sandbox's call, listing, time and memory budgets stay.
-- **The prompt no longer repeats the tools or pushes memory.** The generated
-  capability list (with cost and coverage labels) is gone — each tool's own
-  description says what it does, without "use it before/when" — and the digest
-  names the accounts and notes only; Issues and history are read with `estate`.
-- **The app does not speak for you.** Check account fills the composer with
-  `Check my storage accounts.` for you to send; adding the demo starts nothing;
-  a scheduled check's message only names its account. Step notes are counts
-  ("2 findings · 1 unread", "3 of 4 ok"), not verdicts like "partly blind".
-
-- **The agent reads what the user gave it, in full.** `query` gains `rows()`:
-  one redacted page (≤1,000) of an attached log or inventory at a time, by
-  whitelisted filters, no SQL; `aggregate` returns up to 1,000 groups and says
-  when it cut. `object` previews the first 8 KiB of any object, sniffing text
-  instead of trusting the content type. Evidence lists (policy actions and
-  conditions, access-path actions, permission gaps, posture changes, CloudTrail
-  events) are no longer cut; CloudTrail attribution stays at six buckets per
-  survey because its lookups are rate-limited, and says how many it skipped.
-  `estate` history takes a `limit` and says when more exist; `change_plan`
-  reads every open Issue; the `principal` lookup examines every remembered
-  bucket; error and script output are no longer cut short — `bound()` is the
-  one size limit, and it says when it cuts. A reply that reaches the model's
-  output limit is marked as cut. Probe latency is measured, not judged.
+- **Tools return data, not judgements.** `config` reads one bucket's
+  configuration section by section (location, policy, policy status, public
+  access block, ACL, ownership, encryption, versioning, object lock, lifecycle,
+  replication, CORS, website, logging, notification, inventory, tagging), each
+  as `{ status, value }` or `{ status, error }`, with the policy parsed. The new
+  `account` tool reads AWS account-level data the same way: the account-wide
+  public access block, IAM authorization details (paged), the SCPs that apply,
+  a KMS key policy, Access Analyzer findings, CloudWatch storage metrics and
+  CloudTrail events (paged). `buckets` lists every bucket in scope. Nothing
+  decides what is public, risky or missing; the agent does, and says so.
+- **Account ids are scrubbed, not hidden behind verdicts.** Every 12-digit
+  number in a read, and in any tool's error text, becomes `<account>`.
+- **A conversation, not a run page.** One ordered thread: your messages (a
+  steer shows where it was said), the agent's text, provider reasoning in full,
+  each tool call as a step you open in place with exactly what the agent
+  received, clarifying questions with one-click options, notices with Retry or
+  Continue, and a divider where a stopped turn was continued. A `config` or
+  `account` step opens as its sections, each with its status and JSON.
+- **The agent writes any change itself.** There is no `change_plan`: a fix is
+  the agent's own text (a CLI command, a policy) for you to apply, and the
+  prompt says only a later read shows it applied.
+- **Memory is the agent's notes.** The prompt's memory block names the accounts
+  and the first 12 notes; `note` writes one. `@` offers accounts and the bucket
+  names an account lists now.
+- **One override: a 100-round runaway ceiling** per turn, the same for every
+  model. No repeated-read block, no per-model budgets, no working limits; the
+  sandbox's call, listing, time and memory budgets stay. The prompt states the
+  hard rules and does not prescribe a workflow.
+- **Home lists the accounts and nothing about them**, with Add an account, Set
+  up a model when there is none, and local models when found. It sends nothing
+  for you.
 
 ### Removed
 
-- The scripted account check and re-check (`Engine.check()`,
-  `Engine.recheck()`, `runtime/check.ts`, `runtime/reverify-plan.ts`,
-  `sa.reverify`, the Re-verify task menu item, plan step statuses).
-- App-level answer validation: ungrounded-name marking, unresolved-citation
-  notices, the answer correction hook (`shared/validate.ts`,
-  `shared/grounding.ts`). The prompt asks the agent to say what it read and what
-  it could not; the safety boundaries — read-only, bucket scope, redaction, the
-  untrusted-data envelope — are unchanged.
-- The scope line, the Findings and Not checked strips, Earlier in this task, the
-  "Worked for" summary and `shared/trace.ts`. About 1,600 lines of styles and 130
-  strings that only they used.
+- The rule engine and Issues (`estate/rules.ts`, `assess.ts`, `estate.ts`,
+  `changes.ts`), severities, findings, posture memory and its diffs, reading
+  records, and the `survey`, `estate`, `change_plan` and `accept_risk` tools,
+  with the confirmation step that accepted a risk.
+- App-made access verdicts: `s3/facts.ts`, `access.ts`, `policy.ts`,
+  `permissions.ts`, `changes.ts`, `metrics.ts` and the coverage and blind-spot
+  summaries built on them.
+- The scripted account check and re-check, scheduled checks and their setting,
+  the Check account button and its canned message.
+- Demo storage: the in-process demo account and Try with demo storage. The fake
+  S3 is a test fixture in `scripts/` only.
+- App-level answer validation (ungrounded names, unresolved-citation notices,
+  answer correction), the scope line, Findings and Not checked strips, Earlier
+  in this task and the "Worked for" summary. The `plan` and `skill` tools.
+- Migration 16 drops `issues`, `issue_events`, `readings`, `posture_changes` and
+  `buckets`, and the providers' `schedule`, `account_json` and `account_at`.
+  Accounts, notes and tasks stay.
 
 ### Checks
 
 - `scripts/e2e.mjs`, `e2e-audit.mjs`, `bench.mjs`, `eval.mjs` and `shots.mjs`
-  read the conversation. The bench drops the check-parity, re-check and
-  validation scenarios and adds `follow-up` and `accept-risk`; the no-model
-  first-run proof checks that nothing runs without a model.
+  read the conversation. The fake model works like an agent: it lists the
+  buckets, reads each configuration and answers from what it read. `eval.mjs`
+  scores what the agent said against the fake storage's known truth and never
+  counts calls against it; the bench adds `memory` and `fix` (a command for the
+  user, never a claimed write). The no-model first-run proof checks that nothing
+  is added or run on its own. The moto compatibility test reads `config` and
+  `account` against an independent AWS emulator and checks the account id never
+  reaches the agent.
 
 ## 35.0.0 — 2026-10-29
 

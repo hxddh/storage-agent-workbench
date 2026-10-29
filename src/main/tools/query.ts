@@ -26,7 +26,7 @@ import {
   type S3Client,
 } from '@aws-sdk/client-s3'
 import { CodemodeSandbox, type CodemodeTool } from '@earendil-works/pi-codemode'
-import type { AccessCoverage, Chart, Table } from '@shared/contract'
+import type { Chart, Table } from '@shared/contract'
 import { parse as parseCsv } from 'csv-parse/sync'
 import { parquetReadObjects } from 'hyparquet'
 import {
@@ -37,13 +37,10 @@ import {
   readRows,
 } from '../analysis/aggregate'
 import { datasetBytes, importDataset, importInventoryFiles } from '../analysis/import'
-import { decide } from '../estate/rules'
 import type { ProviderConfig } from '../providers'
-import { type AccessSession, readAccess } from '../s3/access'
-import { readAccount, UNREAD_ACCOUNT } from '../s3/account'
-import { readBucket } from '../s3/facts'
-import { readCapacity } from '../s3/metrics'
+import { readConfig, SECTIONS, type Section } from '../s3/raw'
 import { redact } from '../security/redact'
+import { readAccountLevel } from './account'
 import { agentTool, assertInScope, providerParam, type ToolDeps, Type } from './policy'
 
 export const QUERY_BUDGET = {
@@ -56,13 +53,11 @@ export const QUERY_BUDGET = {
 
 /** The primitives as the model sees them, in the tool description. */
 export const QUERY_API = `Primitives (all read-only, all async, all scoped to the account):
-  buckets(): {name, region}[]
+  buckets(): {name, region, created}[]   // region as ListBuckets returns it (null when the provider does not)
   list({bucket, prefix?, delimiter?, kind?: "objects"|"versions"|"uploads", token?, max?}): {items: {key, size, modified, storageClass, versionId?, latest?, deleteMarker?}[], prefixes: string[], next: string|null}   // max ≤ 1000 per page
   head({bucket, key}): {size, contentType, modified, storageClass, encryption, versionId, metadataKeys}
-  config({bucket, aspect?: "security"|"lifecycle"|"observability"}): {exposure, statuses, issues}   // issues: rule codes the reading proves
-  capacity({bucket}): {bytes, objects, byClass, growthBytes, monthlyUsd} | null   // AWS CloudWatch only
-  estate(): {buckets: {name, readAt, posture}[], issues: {bucket, code, severity, status}[]}
-  principal({bucket?, principal?, limit?}): {bucket?, paths, coverage}   // effective access for one bucket, or remembered buckets a principal reaches
+  config({bucket, sections?}): {region, <section>: {status, value?, error?}}   // the bucket's configuration as S3 returns it; sections as the config tool takes them
+  account({read, bucket?, key?, days?, token?, region?}): {status, value?, error?}   // the account tool's reads (public_access_block, iam, scps, kms_key_policy, access_analyzer, storage_metrics, cloudtrail); AWS only
   inventory({bucket, maxRows?, full?}): {file, rows, format, manifestAt, truncated, note}   // one manifest page, or full?: import every manifest file into a local dataset for aggregate()
   dataset({file, kind?}): {file, kind, rows, columns}   // import one attached access log or inventory
   aggregate({file, metric, groupBy?, filters?, limit?}): {rows, truncated}   // limit ≤ 1000 groups
@@ -134,21 +129,17 @@ interface Context {
   client: S3Client
   signal: AbortSignal
   regional?: (region: string) => S3Client
-  account?: () => Promise<import('../s3/account').AccountFacts>
   usage: {
     calls: number
     listed: number
-    coverage?: AccessCoverage
-    blind?: { source: string; status: string }[]
   }
-  /** Buckets the script read: they ground what the verdict says about it. */
+  /** Buckets the script read, listed with its result. */
   touched: Set<string>
   datasets: Map<string, { kind: DatasetKind; path: string; rows: number }>
 }
 
 function primitives(ctx: Context): CodemodeTool[] {
   const { deps, config, client } = ctx
-  const aws = deps.providers.isAws(config)
   const charge = (calls: number, listed = 0) => {
     ctx.usage.calls += Math.max(0, calls)
     ctx.usage.listed += listed
@@ -177,19 +168,20 @@ function primitives(ctx: Context): CodemodeTool[] {
       description: 'Buckets in scope with their region.',
       execute: async () => {
         spend()
-        const response = await send<{ Buckets?: { Name?: string; BucketRegion?: string }[] }>(
-          new ListBucketsCommand({}),
-        )
-        const remembered = new Map(
-          (await deps.db.listBuckets(config.id)).map((row) => [row.name, row.region]),
-        )
+        const response = await send<{
+          Buckets?: { Name?: string; BucketRegion?: string; CreationDate?: Date }[]
+        }>(new ListBucketsCommand({}))
         return (response.Buckets ?? [])
-          .map((b) => b.Name ?? '')
           .filter(
-            (name) =>
-              name && (config.scope.buckets.length === 0 || config.scope.buckets.includes(name)),
+            (b) =>
+              b.Name &&
+              (config.scope.buckets.length === 0 || config.scope.buckets.includes(b.Name)),
           )
-          .map((name) => ({ name, region: remembered.get(name) ?? config.region }))
+          .map((b) => ({
+            name: b.Name,
+            region: b.BucketRegion ?? null,
+            created: b.CreationDate ? new Date(b.CreationDate).toISOString() : null,
+          }))
       },
     },
     {
@@ -362,76 +354,40 @@ function primitives(ctx: Context): CodemodeTool[] {
     },
     {
       name: 'config',
-      description:
-        'One bucket’s configuration reading: exposure, statuses and the rules it proves.',
+      description: 'One bucket’s configuration, section by section, as S3 returns it.',
       execute: async (args) => {
         const bucket = bucketArg(args)
-        const aspect = String((args as { aspect?: unknown })?.aspect ?? 'security')
-        const wanted = aspect === 'lifecycle' || aspect === 'observability' ? aspect : 'security'
-        spend()
-        const facts = await readBucket(client, bucket, {
-          aspects: new Set([wanted]),
+        const wanted = (args as { sections?: unknown })?.sections
+        const sections = (
+          Array.isArray(wanted) && wanted.length
+            ? wanted.filter((item): item is Section => SECTIONS.includes(item as Section))
+            : SECTIONS
+        ) as Section[]
+        charge(sections.length)
+        const read = await readConfig(client, bucket, sections, {
           signal: ctx.signal,
           regional: ctx.regional,
-          defaultRegion: config.region,
-          aws,
-          account: (await ctx.account?.()) ?? UNREAD_ACCOUNT,
+          defaultRegion: config.region || 'us-east-1',
         })
-        const statuses: Record<string, string> = {}
-        for (const key of [
-          'versioning',
-          'encryption',
-          'lifecycle',
-          'policy',
-          'policyStatus',
-          'pab',
-          'ownership',
-          'acl',
-          'cors',
-          'logging',
-        ] as const)
-          if (facts[key].status !== 'unread') statuses[key] = facts[key].status
-        return {
-          region: facts.region,
-          exposure:
-            facts.exposure.verdict === null
-              ? 'unknown'
-              : facts.exposure.verdict
-                ? 'public'
-                : 'not public',
-          statuses,
-          issues: Object.entries(decide(facts))
-            .filter(([, d]) => d.verdict)
-            .map(([code]) => code),
-        }
+        return { region: read.region, ...read.sections }
       },
     },
     {
-      name: 'capacity',
-      description:
-        'CloudWatch size, objects, storage classes and growth for one bucket (AWS only).',
+      name: 'account',
+      description: 'Account-level reads on AWS, as the APIs return them.',
       execute: async (args) => {
-        const bucket = bucketArg(args)
-        if (!aws) return null
+        const a = (args ?? {}) as Record<string, unknown>
+        if (typeof a.bucket === 'string' && a.bucket) bucketArg(a)
         spend()
-        const region =
-          (await deps.db.listBuckets(config.id)).find((row) => row.name === bucket)?.region ??
-          config.region
-        const result = await readCapacity(
-          deps.providers.cloudwatch(config, region),
-          [bucket],
-          ctx.signal,
-        )
-        const value = result.capacity.get(bucket)
-        return value
-          ? {
-              bytes: value.bytes,
-              objects: value.objects,
-              byClass: value.byClass,
-              growthBytes: value.growthBytes,
-              monthlyUsd: value.monthlyUsd,
-            }
-          : null
+        return readAccountLevel(deps, config, {
+          read: String(a.read ?? '') as never,
+          bucket: typeof a.bucket === 'string' ? a.bucket : undefined,
+          key: typeof a.key === 'string' ? a.key : undefined,
+          days: typeof a.days === 'number' ? a.days : undefined,
+          token: typeof a.token === 'string' ? a.token : undefined,
+          region: typeof a.region === 'string' ? a.region : undefined,
+          signal: ctx.signal,
+        })
       },
     },
     {
@@ -831,145 +787,6 @@ function primitives(ctx: Context): CodemodeTool[] {
         }
       },
     },
-    {
-      name: 'principal',
-      description:
-        'Who can reach a bucket (effective access), or — when no bucket is named — which remembered buckets a principal apparently reaches. Conditions and unread sources are reported, never treated as clean.',
-      execute: async (args) => {
-        const a = args as { bucket?: unknown; principal?: unknown; limit?: unknown }
-        const wanted = String(a.principal ?? '')
-          .trim()
-          .toLowerCase()
-        // Access paths redact the account id; match the same shape so a full
-        // ARN argument still finds a policy path that names it.
-        const needle = wanted.replace(/\b\d{12}\b/g, '<account>')
-        const limit = Math.max(1, Number(a.limit) || Number.POSITIVE_INFINITY)
-        const session: AccessSession = {}
-        const readOne = async (bucket: string) => {
-          const name = bucketArg({ bucket })
-          spend()
-          const facts = await readBucket(client, name, {
-            aspects: new Set(['security']),
-            signal: ctx.signal,
-            regional: ctx.regional,
-            defaultRegion: config.region,
-            aws,
-            account: (await ctx.account?.()) ?? UNREAD_ACCOUNT,
-          })
-          const before = session.calls ?? 0
-          const access = await readAccess({
-            bucket: name,
-            facts,
-            aws,
-            iam: aws && config.caps.iam ? deps.providers.iam(config) : undefined,
-            kms:
-              aws && config.caps.kms && facts.encryption.value?.keyArn
-                ? deps.providers.kms(config, facts.region)
-                : undefined,
-            analyzer:
-              aws && config.caps.accessAnalyzer
-                ? deps.providers.accessAnalyzer(config, facts.region)
-                : undefined,
-            organizations: aws ? deps.providers.organizations(config) : undefined,
-            signal: ctx.signal,
-            session,
-          })
-          // The access reader makes many account-wide requests; charge only
-          // the delta, because the session totals are cumulative across buckets.
-          charge((access.calls ?? 0) - before)
-          return {
-            bucket: name,
-            paths: access.paths.filter(
-              (item) =>
-                !needle ||
-                item.principal.toLowerCase().includes(needle) ||
-                item.principal.includes('*') ||
-                item.principal === 'AllUsers' ||
-                item.public,
-            ),
-            coverage: access.coverage,
-            blind: access.blind,
-          }
-        }
-        if (a.bucket) {
-          const result = await readOne(String(a.bucket))
-          ctx.usage.coverage = result.coverage
-          ctx.usage.blind = result.blind
-          return result
-        }
-        spend()
-        const listed = await send<{ Buckets?: { Name?: string }[] }>(new ListBucketsCommand({}))
-        const visible = (listed.Buckets ?? []).flatMap((bucket) =>
-          bucket.Name &&
-          (config.scope.buckets.length === 0 || config.scope.buckets.includes(bucket.Name))
-            ? [bucket.Name]
-            : [],
-        )
-        const allRemembered = visible.length
-          ? visible
-          : (await deps.db.listBuckets(config.id))
-              .map((row) => row.name)
-              .filter(
-                (bucket) =>
-                  config.scope.buckets.length === 0 || config.scope.buckets.includes(bucket),
-              )
-        const remembered = allRemembered.slice(0, limit)
-        const results = []
-        for (const bucket of remembered) results.push(await readOne(bucket))
-        const coverage = {
-          principals: results.reduce((n, item) => n + item.coverage.principals, 0),
-          evaluated: results.reduce((n, item) => n + item.coverage.evaluated, 0),
-          undecided: results.reduce((n, item) => n + item.coverage.undecided, 0),
-          truncated:
-            remembered.length < allRemembered.length ||
-            results.some((item) => item.coverage.truncated),
-          sources: [...new Set(results.flatMap((item) => item.coverage.sources))],
-          bucketsExamined: remembered.length,
-          bucketsTotal: allRemembered.length,
-        }
-        ctx.usage.coverage = coverage
-        ctx.usage.blind = [
-          ...new Map(
-            results.flatMap((item) =>
-              item.blind.map((blind) => [`${blind.source}:${blind.status}`, blind]),
-            ),
-          ).values(),
-        ]
-        return { buckets: results, coverage }
-      },
-    },
-    {
-      name: 'estate',
-      description: 'What the agent remembers: buckets with their last reading, and Issues.',
-      execute: async () => {
-        spend()
-        const rows = await deps.db.listBuckets(config.id)
-        const issues = await deps.db.listIssues({
-          providerId: config.id,
-          status: 'open',
-          limit: 1000,
-        })
-        return {
-          buckets: rows.map((row) => {
-            let posture: Record<string, unknown> = {}
-            try {
-              posture = row.posture_json
-                ? (JSON.parse(row.posture_json) as Record<string, unknown>)
-                : {}
-            } catch {
-              posture = {}
-            }
-            return { name: row.name, readAt: row.posture_at, region: row.region, posture }
-          }),
-          issues: issues.map((issue) => ({
-            bucket: issue.bucket,
-            code: issue.code,
-            severity: issue.severity,
-            status: issue.status,
-          })),
-        }
-      },
-    },
   ]
 }
 
@@ -977,7 +794,7 @@ function primitives(ctx: Context): CodemodeTool[] {
 export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
   return agentTool(deps, {
     name: 'query',
-    description: `Answer a question no other tool can by running a short read-only JavaScript script over the account: largest prefixes, data untouched for a year, objects by storage class, versions piling up, buckets by size. \`list\` is one bounded page; S3 Inventory reads the latest manifest, or imports every manifest file into a local dataset with its inventory date. Attached logs and inventories import as datasets that answer whitelisted aggregates. A truncated page or import is not exhaustive.\n${QUERY_API}`,
+    description: `Answer a question no other tool can by running a short read-only JavaScript script over the account: largest prefixes, data untouched for a year, objects by storage class, versions piling up, buckets by size. \`list\` is one bounded page; S3 Inventory reads the latest manifest, or imports every manifest file into a local dataset with its inventory date. Attached logs and inventories import as datasets that answer whitelisted aggregates and pages of rows.\n${QUERY_API}`,
     parameters: Type.Object({
       provider_id: providerParam,
       title: Type.Optional(Type.String({ description: 'A name for the result.' })),
@@ -987,24 +804,8 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
     target: (args) => (args.title ?? '').slice(0, 80),
     run: async (args, run) => {
       const { config, client } = await run.provider(args.provider_id)
-      const usage: {
-        calls: number
-        listed: number
-        coverage?: AccessCoverage
-        blind?: { source: string; status: string }[]
-      } = { calls: 0, listed: 0 }
+      const usage = { calls: 0, listed: 0 }
       const touched = new Set<string>()
-      const aws = deps.providers.isAws(config)
-      let accountFacts: import('../s3/account').AccountFacts | null = null
-      const account = async () => {
-        if (!aws) return UNREAD_ACCOUNT
-        accountFacts ??= await readAccount(
-          deps.providers.sts(config),
-          deps.providers.control(config),
-          run.signal,
-        )
-        return accountFacts
-      }
       const sandbox = new CodemodeSandbox({
         tools: primitives({
           deps,
@@ -1012,7 +813,6 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
           client,
           signal: run.signal,
           regional: run.regional,
-          account,
           usage,
           touched,
           conversationId: run.conversationId,
@@ -1068,8 +868,6 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
           calls: usage.calls,
           listed: usage.listed,
           buckets: [...touched].slice(0, 200),
-          ...(usage.coverage ? { coverage: usage.coverage } : {}),
-          ...(usage.blind?.length ? { blind: usage.blind } : {}),
         },
       }
     },

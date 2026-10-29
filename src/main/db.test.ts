@@ -14,7 +14,7 @@ describe('search index', () => {
   it('finds a Chinese substring inside an answer', async () => {
     const db = await open()
     await db.replaceSearchDocs('c1', [
-      { entryId: 'e1', kind: 'answer', text: 'demo-public 是公开的存储桶', at: '' },
+      { entryId: 'e1', kind: 'answer', text: 'web-assets 是公开的存储桶', at: '' },
     ])
     const hits = await db.searchDocs('存储')
     expect(hits).toHaveLength(1)
@@ -77,10 +77,11 @@ describe('schema', () => {
     const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
     expect(version?.user_version).toBe(HOST_SCHEMA_VERSION)
     expect((await db.getProvider('p'))?.auth).toBe('keys')
-    expect((await db.getIssue('i'))?.detail).toBeNull()
+    const issues = await raw.all("SELECT name FROM sqlite_master WHERE name = 'issues'")
+    expect(issues).toEqual([])
   })
 
-  it('starts the task history over at 35 but keeps accounts, Issues and readings', async () => {
+  it('starts the task history over at 35 but keeps accounts', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sa-mig35-'))
     const raw = await openNodeSqliteDatabase(join(dir, 'v34.sqlite'))
     const first = await AppDb.open(raw)
@@ -89,19 +90,12 @@ describe('schema', () => {
       CREATE TABLE pi_entries (id INTEGER PRIMARY KEY, conversation_id INTEGER REFERENCES pi_conversations(id));
       INSERT INTO pi_conversations VALUES (1);
       INSERT INTO pi_entries VALUES (1, 1);
+      INSERT INTO providers (id, name, endpoint, region, force_path_style, secret_ref, scope_json, created_at)
+        VALUES ('p', 'Kept', '', 'us-east-1', 0, 'ref', '{"buckets":[]}', '2026');
       PRAGMA user_version = 14;
     `)
     await first.upsertTaskMeta({ conversationId: '1', title: 'Old task' })
     await first.replaceSearchDocs('1', [{ entryId: 'e', kind: 'answer', text: 'old', at: '' }])
-    const issue = await first.upsertIssue({
-      providerId: 'p',
-      bucket: 'b',
-      code: 'public_exposure',
-      severity: 'high',
-      observed: true,
-      conversationId: '1',
-    })
-    expect(issue.event).toBe('opened')
     const db = await AppDb.open(raw)
     expect(db.resetTasks).toBe(true)
     expect(await db.listTaskMeta()).toEqual([])
@@ -110,33 +104,41 @@ describe('schema', () => {
       "SELECT name FROM sqlite_master WHERE name LIKE 'pi\\_%' ESCAPE '\\'",
     )
     expect(tables).toEqual([])
-    expect((await db.listIssues({ status: 'open' })).map((row) => row.bucket)).toEqual(['b'])
-    const events = await db.listIssueEvents({ limit: 5 })
-    expect(events.every((event) => event.conversation_id === null)).toBe(true)
+    expect((await db.getProvider('p'))?.name).toBe('Kept')
     // Opening the head again changes nothing.
     expect((await AppDb.open(raw)).resetTasks).toBe(false)
   })
 
-  it('drops the 35.x reading verdict and keeps the counts and the tasks', async () => {
+  it('drops the 35.x rule memory and keeps accounts, notes and tasks', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sa-mig36-'))
     const raw = await openNodeSqliteDatabase(join(dir, 'v35.sqlite'))
     await raw.exec(`
-      CREATE TABLE readings (id TEXT PRIMARY KEY, conversation_id TEXT, provider_id TEXT NOT NULL,
-        at TEXT NOT NULL, trigger TEXT NOT NULL, complete INTEGER NOT NULL DEFAULT 0,
-        visible INTEGER NOT NULL DEFAULT 0, processed INTEGER NOT NULL DEFAULT 0,
-        pending INTEGER NOT NULL DEFAULT 0, denied INTEGER NOT NULL DEFAULT 0,
-        unknown INTEGER NOT NULL DEFAULT 0, truncated INTEGER NOT NULL DEFAULT 0,
-        open_high INTEGER NOT NULL DEFAULT 0, open_total INTEGER NOT NULL DEFAULT 0);
-      CREATE INDEX readings_provider_at ON readings (provider_id, complete, at);
-      INSERT INTO readings (id, conversation_id, provider_id, at, trigger, complete, visible, processed)
-        VALUES ('r1', 'c1', 'p', '2026-01-01T00:00:00.000Z', 'check', 1, 4, 4);
+      CREATE TABLE providers (id TEXT PRIMARY KEY, name TEXT NOT NULL, endpoint TEXT NOT NULL,
+        region TEXT NOT NULL, force_path_style INTEGER NOT NULL DEFAULT 0, access_key_id TEXT,
+        secret_ref TEXT NOT NULL, session_ref TEXT, scope_json TEXT NOT NULL DEFAULT '{"buckets":[]}',
+        created_at TEXT NOT NULL, schedule TEXT NOT NULL DEFAULT 'off', account_json TEXT, account_at TEXT);
+      INSERT INTO providers (id, name, endpoint, region, secret_ref, created_at, schedule)
+        VALUES ('p', 'Kept', '', 'us-east-1', 'ref', '2026', 'daily');
+      CREATE TABLE readings (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, complete INTEGER);
+      CREATE TABLE issues (id TEXT PRIMARY KEY);
+      CREATE TABLE issue_events (id TEXT PRIMARY KEY);
+      CREATE TABLE posture_changes (id TEXT PRIMARY KEY);
+      CREATE TABLE buckets (provider_id TEXT, name TEXT);
+      INSERT INTO readings VALUES ('r1', 'p', 1);
       PRAGMA user_version = 15;
     `)
     const db = await AppDb.open(raw)
+    await db.upsertTaskMeta({ conversationId: '7', title: 'Kept task' })
     expect(db.resetTasks).toBe(false)
-    const columns = await raw.all<{ name: string }>('PRAGMA table_info(readings)')
-    expect(columns.map((column) => column.name)).not.toContain('complete')
-    expect(await db.latestReading('p')).toMatchObject({ id: 'r1', visible: 4, processed: 4 })
+    const gone = await raw.all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('readings', 'issues', 'issue_events', 'posture_changes', 'buckets')",
+    )
+    expect(gone).toEqual([])
+    const columns = await raw.all<{ name: string }>('PRAGMA table_info(providers)')
+    expect(columns.map((column) => column.name)).not.toContain('schedule')
+    expect(columns.map((column) => column.name)).not.toContain('account_json')
+    expect((await db.getProvider('p'))?.name).toBe('Kept')
+    expect((await db.listTaskMeta()).map((row) => row.title)).toContain('Kept task')
     const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
     expect(version?.user_version).toBe(HOST_SCHEMA_VERSION)
   })
@@ -161,107 +163,9 @@ describe('provider deletion', () => {
   it('removes provider and bucket notes but keeps estate memory', async () => {
     const db = await open()
     await db.insertNote({ scope: 'provider', ref: 'p', text: 'account note', author: 'agent' })
-    await db.insertNote({ scope: 'bucket', ref: 'p/demo', text: 'bucket note', author: 'agent' })
+    await db.insertNote({ scope: 'bucket', ref: 'p/logs', text: 'bucket note', author: 'agent' })
     await db.insertNote({ scope: 'estate', ref: null, text: 'estate note', author: 'agent' })
     await db.deleteProvider('p')
     expect((await db.listNotes()).map((note) => note.text)).toEqual(['estate note'])
-  })
-})
-
-describe('issue lifecycle', () => {
-  const observe = (db: AppDb, observed: boolean, detail?: string) =>
-    db.upsertIssue({
-      providerId: 'p',
-      bucket: 'b',
-      code: 'cors_all_origins',
-      severity: 'medium',
-      observed,
-      detail,
-      conversationId: null,
-    })
-
-  it('opens, keeps its evidence, accepts, and only a clean reading ends acceptance', async () => {
-    const db = await open()
-    const opened = await observe(db, true, "A CORS rule allows origin '*'")
-    expect(opened.event).toBe('opened')
-    expect(opened.issue?.detail).toBe("A CORS rule allows origin '*'")
-    await db.setAccepted(opened.issue!.id, true)
-    expect((await observe(db, true)).issue?.status).toBe('accepted')
-    expect((await observe(db, false)).event).toBe('resolved')
-    const back = await observe(db, true)
-    expect(back.event).toBe('recurred')
-    expect(back.issue?.status).toBe('open')
-  })
-
-  it('never lets acceptance reopen a resolved Issue', async () => {
-    const db = await open()
-    const opened = await observe(db, true)
-    await observe(db, false)
-    expect((await db.setAccepted(opened.issue!.id, true))?.status).toBe('resolved')
-  })
-
-  it('hides a bucket that is gone and brings it back when it is seen again', async () => {
-    const db = await open()
-    await db.upsertBucket('p', 'b', {})
-    await db.markGone('p', ['b'])
-    expect(await db.countBuckets('p')).toBe(0)
-    await db.upsertBucket('p', 'b', {})
-    expect(await db.countBuckets('p')).toBe(1)
-  })
-
-  it('keeps each reading’s counts and returns the latest one, with no verdict', async () => {
-    const db = await open()
-    await db.insertReading({
-      conversationId: 'c1',
-      providerId: 'p',
-      at: '2026-01-01T00:00:00.000Z',
-      trigger: 'check',
-      visible: 3,
-      processed: 3,
-      pending: 0,
-      denied: 0,
-      unknown: 0,
-      truncated: 0,
-      openHigh: 1,
-      openTotal: 2,
-    })
-    await db.insertReading({
-      conversationId: 'c2',
-      providerId: 'p',
-      at: '2026-01-02T00:00:00.000Z',
-      trigger: 'task',
-      visible: 3,
-      processed: 2,
-      pending: 1,
-      denied: 0,
-      unknown: 0,
-      truncated: 0,
-      openHigh: 2,
-      openTotal: 3,
-    })
-    expect((await db.listReadings({ providerId: 'p' })).map((row) => row.processed)).toEqual([2, 3])
-    expect((await db.latestReading('p'))?.at).toBe('2026-01-02T00:00:00.000Z')
-    expect(await db.latestReading('p')).not.toHaveProperty('complete')
-  })
-
-  it('reads Issue events with the Issue they belong to, and filters them', async () => {
-    const db = await open()
-    const opened = await observe(db, true, 'The policy is public')
-    const issue = opened.issue!
-    await db.insertEvent(issue.id, 'c1', 'accepted', '2020-01-01T00:00:00.000Z', null)
-    const events = await db.listIssueEvents({
-      providerId: 'p',
-      bucket: 'b',
-      code: 'cors_all_origins',
-    })
-    expect(events.map((event) => event.kind)).toEqual(['opened', 'accepted'])
-    expect(events[0]).toMatchObject({
-      bucket: 'b',
-      code: 'cors_all_origins',
-      provider_id: 'p',
-      detail: 'The policy is public',
-    })
-    expect(await db.listIssueEvents({ bucket: 'other' })).toHaveLength(0)
-    expect(await db.listIssueEvents({ since: '2021-01-01T00:00:00.000Z' })).toHaveLength(1)
   })
 })

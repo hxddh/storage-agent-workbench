@@ -2,9 +2,8 @@
  * First-run proof: no model, no account.
  *
  * Everything the app reads, the agent reads, so without a model there is
- * nobody to ask. The window offers the in-process demo account once; adding
- * it adds the account and starts nothing. The Composer stays disabled and the
- * window points at setting up a model.
+ * nobody to ask. The window adds nothing on its own and runs nothing: it
+ * offers to set up a model and add an account, and the composer waits.
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -32,27 +31,20 @@ const fail = async (message) => {
 
 try {
   await page.waitForTimeout(1200)
-  const demo = page.getByRole('button', { name: 'Try with demo storage' })
-  if ((await demo.count()) !== 1) await fail('first run does not offer exactly one demo action')
-  if (!(await page.locator('.composer textarea').isDisabled()))
-    await fail('the composer accepted free-form input without a model')
-
-  await demo.click()
-  await page.waitForSelector('.home-account', { timeout: 30_000 })
-  await page.waitForTimeout(800)
-  if (await page.locator('.conversation').count())
-    await fail('adding the demo without a model started a conversation')
-  if ((await page.locator('.task-row-wrap').count()) > 0)
-    await fail('adding the demo without a model created a task')
-  if (await page.getByRole('button', { name: 'Check account' }).count())
-    await fail('Check account is offered with nobody to ask')
   if (!(await page.locator('.composer textarea').isDisabled()))
     await fail('the composer accepted free-form input without a model')
   if ((await page.getByRole('button', { name: 'Set up a model' }).count()) === 0)
     await fail('the window does not point at setting up a model')
+  if ((await page.getByRole('button', { name: 'Add an account' }).count()) === 0)
+    await fail('the window does not offer to add an account')
+  for (const gone of ['Check account', 'Try with demo storage'])
+    if (await page.getByRole('button', { name: gone }).count()) await fail(`${gone} is offered`)
+  if (await page.locator('.home-account').count()) await fail('an account appeared on its own')
+  if (await page.locator('.conversation').count()) await fail('a conversation started on its own')
+  if ((await page.locator('.task-row-wrap').count()) > 0) await fail('a task was created on its own')
 
   await page.screenshot({ path: out })
-  console.log('NO-MODEL FIRST RUN OK: demo added, nothing run, composer waits for a model')
+  console.log('NO-MODEL FIRST RUN OK: nothing added, nothing run, composer waits for a model')
 } catch (error) {
   await fail(error.message)
 } finally {

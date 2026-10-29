@@ -45,14 +45,11 @@ async function configure() {
   await page.getByRole('button', { name: 'Save', exact: true }).first().click()
   await page.waitForTimeout(400)
   await page.screenshot({ path: join(out, '02d-settings-account-form.png') })
-  await page.locator('#accSchedule').scrollIntoViewIfNeeded()
-  await page.waitForTimeout(200)
-  await page.screenshot({ path: join(out, '16-settings-schedule.png') })
-  await page.locator('#accName').fill('Demo')
+  await page.locator('#accName').fill('Prod')
   await page.locator('#accEndpoint').fill(`http://127.0.0.1:${s3Port}`)
   await page.locator('#accRegion').fill('us-east-1')
-  await page.locator('#accKey').fill('demo-key')
-  await page.locator('#accSecret').fill('demo-secret')
+  await page.locator('#accKey').fill('logs-key')
+  await page.locator('#accSecret').fill('logs-secret')
   await page.getByLabel('Path-style addressing').check()
   await page.locator('.account').last().getByRole('button', { name: 'Save', exact: true }).click()
   await page.waitForTimeout(600)
@@ -106,25 +103,19 @@ await page.waitForTimeout(400)
 await page.screenshot({ path: join(out, '24-citation-open.png') })
 await page.locator('.step.tool .step-line[aria-expanded="true"]').first().click()
 
-await (await openStep('Read account')).scrollIntoViewIfNeeded()
+await (await openStep('Read configuration')).scrollIntoViewIfNeeded()
 await page.waitForTimeout(250)
 await page.screenshot({ path: join(out, '23-tool-detail.png') })
 
 // A follow-up is the next message in the same conversation.
-await say('Who can read demo-public?')
+await say('Who can read web-assets?')
 await page.waitForTimeout(250)
 await page.screenshot({ path: join(out, '04-follow-up-light.png') })
 
+// What the agent noted in one task, it knows in the next.
 await page.getByRole('button', { name: 'New task' }).click()
-await say('Which issues are open?')
-await page.screenshot({ path: join(out, '05-estate-light.png') })
-
-await page.getByRole('button', { name: 'New task' }).click()
-await say('What history do you remember?')
-await openStep('Recalled memory')
-await page.locator('.table-block table').last().scrollIntoViewIfNeeded()
-await page.waitForTimeout(350)
-await page.screenshot({ path: join(out, '13-history-light.png') })
+await say('What did you find last time?')
+await page.screenshot({ path: join(out, '13-memory-light.png') })
 
 await page.getByRole('button', { name: 'Settings' }).click()
 await page.getByRole('button', { name: 'Appearance', exact: true }).click()
@@ -156,21 +147,12 @@ await page.waitForTimeout(450)
 await page.screenshot({ path: join(out, '08-live-light.png') })
 await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
 
-// One deterministic change plan, inline where the agent prepared it.
+// A change is the agent's own text, for the user to apply.
 await page.getByRole('button', { name: 'New task' }).click()
-await say('Show the change plan for demo-private')
-await openStep('Prepared a change plan')
-await page.locator('.change-plan').first().scrollIntoViewIfNeeded()
+await say('Give me the fix for data-lake')
+await page.locator('.msg.agent.text pre').last().scrollIntoViewIfNeeded()
 await page.waitForTimeout(350)
-await page.screenshot({ path: join(out, '14-plan-light.png') })
-
-// Accepting a risk: the agent asks, the window waits for the user.
-await page.getByRole('button', { name: 'New task' }).click()
-await say('Accept the encryption risk on demo-public')
-await page.waitForSelector('.msg.agent.confirm', { timeout: 10_000 })
-await page.locator('.msg.agent.confirm').scrollIntoViewIfNeeded()
-await page.waitForTimeout(250)
-await page.screenshot({ path: join(out, '15-accept-confirm.png') })
+await page.screenshot({ path: join(out, '14-change-light.png') })
 
 // Narrow window: navigation must stay reachable from Home, not only tasks.
 await app.evaluate(({ BrowserWindow }) => {

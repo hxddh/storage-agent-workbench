@@ -1,6 +1,7 @@
 /**
- * A fake OpenAI-compatible chat endpoint for local end-to-end runs.
- * It calls survey, then config on the public bucket, then answers.
+ * A fake OpenAI-compatible chat endpoint for local end-to-end runs. It works
+ * like an agent with one call per round: it lists the buckets, reads each
+ * configuration it needs, and writes its answer from what the reads returned.
  *
  *   node scripts/fake-model.mjs 9200
  */
@@ -14,183 +15,131 @@ const call = (id, name, args) => ({
   function: { name, arguments: JSON.stringify(args) },
 })
 
+const ACCESS = ['policy', 'policy_status', 'acl', 'public_access_block']
+
 function plan(body) {
   const messages = Array.isArray(body.messages) ? body.messages : []
+  const system = messages
+    .filter((message) => message.role === 'system')
+    .map((message) => (typeof message.content === 'string' ? message.content : JSON.stringify(message.content)))
+    .join('\n')
   const lastUserIndex = messages.findLastIndex((message) => message.role === 'user')
   const lastUser = messages[lastUserIndex]
-  // Tool results of the current turn only: a task can hold several turns.
+  // Calls of the current turn only: a task can hold several turns.
   const turn = messages.slice(lastUserIndex + 1)
-  const toolMessages = turn.filter((message) => message.role === 'tool')
-  const ask = String(lastUser?.content ?? '').toLowerCase()
+  const ask = String(
+    typeof lastUser?.content === 'string' ? lastUser.content : JSON.stringify(lastUser?.content ?? ''),
+  ).toLowerCase()
 
-  const names = new Map()
+  /** Every call of this turn, with its arguments and what it returned. */
+  const calls = []
   for (const message of turn) {
-    if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) continue
-    for (const call of message.tool_calls) {
-      if (call?.id && call?.function?.name) names.set(call.id, call.function.name)
-    }
-  }
-  const called = new Set(names.values())
-  const output = new Map()
-  for (const message of toolMessages) {
-    const name = names.get(message.tool_call_id)
-    if (!name) continue
-    output.set(
-      name,
-      typeof message.content === 'string'
-        ? message.content
-        : JSON.stringify(message.content ?? ''),
-    )
-  }
-  const toolText = [...output.values()].join('\n')
-  const surveyText = [...output.entries()]
-    .filter(([name]) => name === 'survey')
-    .map(([, text]) => text)
-    .join('\n')
-  const publicBucket =
-    (/(?:^|\n)Public:\s*([A-Za-z0-9._-]+)/.exec(surveyText)?.[1] ?? '').replace(
-      /[.,]+$/,
-      '',
-    ) || null
-  const evidence = (name) => {
-    const text = output.get(name) ?? ''
-    return /evidence="([^"]+)"/.exec(text)?.[1] ?? ''
-  }
-
-  if (ask.includes('clarify') && !called.has('ask')) {
-    return {
-      tool: call('call_ask_1', 'ask', {
-        question: 'Which account should I read?',
-        options: ['Demo', 'Production'],
-        note: 'The scope changes the evidence.',
-      }),
-    }
-  }
-
-  // "Accept the encryption risk on demo-public": read memory, then ask the user to confirm.
-  if (ask.includes('accept')) {
-    if (!called.has('estate')) return { tool: call('call_estate_accept', 'estate', {}) }
-    if (!called.has('accept_risk')) {
-      const topic = /logging/.test(ask) ? /logging/i : /encryption/i
-      const line = (output.get('estate') ?? '')
-        .split('\n')
-        .find((row) => topic.test(row) && row.includes('demo-public'))
-      const code = /· rule ([a-z_]+)/.exec(line ?? '')?.[1] ?? 'no_encryption'
-      return {
-        tool: call('call_accept_1', 'accept_risk', { bucket: 'demo-public', code }),
+    if (message.role === 'assistant' && Array.isArray(message.tool_calls))
+      for (const item of message.tool_calls) {
+        let args = {}
+        try {
+          args = JSON.parse(item.function?.arguments || '{}')
+        } catch {}
+        calls.push({ id: item.id, name: item.function?.name, args, text: '' })
       }
+    if (message.role === 'tool') {
+      const found = calls.find((item) => item.id === message.tool_call_id)
+      if (found)
+        found.text =
+          typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')
     }
-    return { text: 'I asked you to confirm accepting that risk on `demo-public`.' }
   }
+  const made = (name) => calls.filter((item) => item.name === name)
+  const evidence = (item) => /evidence="([^"]+)"/.exec(item?.text ?? '')?.[1] ?? ''
+  const cite = (item) => (evidence(item) ? ` [1](#ev-${evidence(item)})` : '')
+  const n = calls.length
+  const next = (name, args) => ({ tool: call(`call_${name}_${n + 1}`, name, args) })
+
+  if (ask.includes('clarify') && !made('ask').length)
+    return next('ask', {
+      question: 'Which account should I read?',
+      options: ['Staging', 'Production'],
+      note: 'The scope changes the evidence.',
+    })
 
   // A provider reasoning summary arrives with the first call of a turn.
-  const reasoning = ask.includes('public')
-    ? 'Read the account-wide public access block first, then inspect each bucket policy.'
-    : ask.includes('change plan')
-      ? 'Find the open finding, keep the existing lifecycle configuration intact, and prepare one user-applied text.'
-      : ask.includes('issue')
-        ? 'Read remembered posture and current open findings before choosing the five most useful risks.'
-        : null
+  const reasoning =
+    n === 0 && ask.includes('public')
+      ? 'List the buckets, then read each one’s policy status, ACL and public access block.'
+      : null
   const first = (result) => (reasoning ? { reasoning, ...result } : result)
 
-  if (
-    !called.has('survey') &&
-    !called.has('estate') &&
-    !called.has('config') &&
-    !called.has('query') &&
-    !called.has('change_plan')
-  ) {
-    if (ask.includes('applied')) {
-      return first({ tool: call('call_survey_1', 'survey', { buckets: ['demo-public'] }) })
-    }
-    if (ask.includes('who can read')) {
-      return first({ tool: call('call_access_1', 'config', { bucket: 'demo-public', aspect: 'access' }) })
-    }
-    if (ask.includes('largest')) {
-      return first({
-        tool: call('call_query_1', 'query', {
-          title: 'Largest prefixes in demo-public',
-          code: "const sizes = {}; let token = null; do { const page = await tools.list({ bucket: 'demo-public', token }); for (const o of page.items) { const p = o.key.split('/')[0] + '/'; sizes[p] = (sizes[p] ?? 0) + o.size } token = page.next } while (token); return Object.entries(sizes).map(([prefix, bytes]) => ({ prefix, bytes }))",
+  // Memory is the notes in the prompt; the agent answers from them.
+  if (ask.includes('last time') || ask.includes('what did you find')) {
+    const notes = (/Notes \([^)]*\): (.*)/.exec(system)?.[1] ?? '').split(' | ')
+    const note = notes.find((text) => text.includes('public'))?.replace(/\.+$/, '')
+    return { text: note ? `I noted earlier: ${note}.` : 'I have no notes from an earlier check.' }
+  }
+
+  const bucketArg = /`?([a-z0-9][a-z0-9.-]*-[a-z0-9.-]+)`?/.exec(ask.replace(/^.*?(for|on|of|read|in|check) /, ''))?.[1]
+
+  if (ask.includes('largest')) {
+    const query = made('query')[0]
+    if (!query)
+      return first(
+        next('query', {
+          title: `Largest prefixes in ${bucketArg ?? 'web-assets'}`,
+          code: `const sizes = {}; let token = null; do { const page = await tools.list({ bucket: '${bucketArg ?? 'web-assets'}', token }); for (const o of page.items) { const p = o.key.split('/')[0] + '/'; sizes[p] = (sizes[p] ?? 0) + o.size } token = page.next } while (token); return Object.entries(sizes).sort((a, b) => b[1] - a[1]).map(([prefix, bytes]) => ({ prefix, bytes }))`,
         }),
-      })
-    }
-    if (ask.includes('fix') || ask.includes('change plan')) {
-      return first({ tool: call('call_change_1', 'change_plan', { bucket: 'demo-private', code: 'no_abort_mpu' }) })
-    }
-    if (ask.includes('history') || ask.includes('changed')) {
-      return first({ tool: call('call_history_1', 'estate', { history: true }) })
-    }
-    if (ask.includes('what did you find') || ask.includes('last time')) {
-      return first({ tool: call('call_estate_1', 'estate', {}) })
-    }
-    if (ask.includes('issue')) {
-      return first({ tool: call('call_estate_1', 'estate', {}) })
-    }
-    return first({ tool: call('call_survey_1', 'survey', {}) })
+      )
+    const top = /"prefix":\s*"([^"]+)"/.exec(query.text)?.[1] ?? 'no prefix'
+    return { text: `\`${top}\` holds the most bytes in \`${bucketArg ?? 'web-assets'}\`.${cite(query)}` }
   }
 
-  if (
-    called.has('survey') &&
-    !called.has('config') &&
-    ask.includes('public') &&
-    !ask.includes('who can read') &&
-    !ask.includes('fix') &&
-    !ask.includes('issue') &&
-    !ask.includes('largest')
-  ) {
+  // A named bucket: read what the question needs of it, then answer.
+  const named = bucketArg && !ask.includes('public?') ? bucketArg : null
+  if (named && (ask.includes('who can read') || ask.includes('applied') || ask.includes('fix') || ask.includes('change plan') || ask.includes('again'))) {
+    const sections = ask.includes('fix') || ask.includes('change plan') ? ['lifecycle'] : ACCESS
+    const read = made('config').find((item) => item.args.bucket === named)
+    if (!read) return first(next('config', { bucket: named, sections }))
+    if (ask.includes('who can read'))
+      return {
+        text: /"Principal": "\*"/.test(read.text)
+          ? `The bucket policy grants anonymous read on \`${named}\`.${cite(read)}`
+          : `Nothing in the policy or ACL of \`${named}\` grants anonymous read.${cite(read)}`,
+      }
+    if (ask.includes('applied'))
+      return {
+        text: /"IsPublic": true/.test(read.text)
+          ? `\`${named}\` is still public.${cite(read)}`
+          : `\`${named}\` is no longer public.${cite(read)}`,
+      }
+    if (ask.includes('fix') || ask.includes('change plan'))
+      return {
+        text: `To abort incomplete multipart uploads on \`${named}\`, keep its current rules and add one:${cite(read)}\n\n\`\`\`sh\naws s3api put-bucket-lifecycle-configuration --bucket ${named} --lifecycle-configuration file://lifecycle.json\n\`\`\`\n\nThis adds an abort rule; I have not applied it.`,
+      }
+  }
+
+  // Everything else: list the buckets, read each one's access, then say what was read.
+  const listing = made('buckets')[0]
+  if (!listing) return first(next('buckets', {}))
+  const names = listing.text
+    .split('\n')
+    .map((line) => line.split('\t')[0]?.trim())
+    .filter((name) => name && /^[a-z0-9][a-z0-9.-]+$/.test(name) && name !== 'bucket')
+  if (ask.includes('ghost'))
     return {
-      tool: call('call_config_1', 'config', {
-        bucket: publicBucket ?? 'demo-public',
-        aspect: 'security',
-      }),
+      text: `No read returned a bucket named ghost-bucket, so I cannot say anything about it. This account holds ${names.map((name) => `\`${name}\``).join(', ')}.${cite(listing)}`,
     }
-  }
-
-
-
-
-  let text = 'Only `demo-public` is public. `demo-private` is private and blocks public access.'
-  let source = 'survey'
-  if (ask.includes('applied')) {
-    text = '`demo-public` is no longer public.'
-    source = 'survey'
-  } else if (ask.includes('who can read')) {
-    text = 'The public bucket policy is the anonymous grant on `demo-public`.'
-    source = 'config'
-  } else if (ask.includes('largest')) {
-    text = '`reports/` holds everything in `demo-public`.'
-    source = 'query'
-  } else if (ask.includes('fix') || ask.includes('change plan')) {
-    text = 'Add an abort rule for incomplete uploads on `demo-private`.'
-    source = 'change_plan'
-  } else if (ask.includes('what did you find') || ask.includes('last time')) {
-    text = 'Last time, `demo-public` was public and `demo-private` had an open multipart-upload risk.'
-    source = 'estate'
-  } else if (ask.includes('history') || ask.includes('changed')) {
-    text = 'The history records open risks on `demo-public` and `demo-private`.'
-    source = 'estate'
-  } else if (ask.includes('issue')) {
-    text = '8 risks are open; the highest severity is public exposure on `demo-public`.'
-    source = 'estate'
-  } else if (ask.includes('ghost')) {
-    text = 'No read returned a bucket named ghost-bucket, so I cannot say it is exposed; `demo-public` is the public one.'
-    source = 'survey'
-  } else if (publicBucket && publicBucket !== 'demo-public') {
-    text = `\`${publicBucket}\` is publicly accessible.`
-    source = 'survey'
-  }
-  if (
-    ask.includes('public') &&
-    !ask.includes('who can read') &&
-    (/denied|unknown/i.test(surveyText) || surveyText.includes('finance-exports'))
-  ) {
-    text = '`demo-public` is public, but one bucket ACL could not be read, so the account is not fully checked.'
-    source = 'survey'
-  }
-  const id = evidence(source)
-  if (id) text += ` [1](#ev-${id})`
-  return { text }
-
+  const unread = names.find((name) => !made('config').some((item) => item.args.bucket === name))
+  if (unread) return next('config', { bucket: unread, sections: ACCESS })
+  const reads = made('config')
+  const open = reads.filter((item) => /"IsPublic": true/.test(item.text) || /AllUsers/.test(item.text))
+  const denied = reads.filter((item) => /"status": "access_denied"/.test(item.text))
+  const publicText = open.length
+    ? `${open.map((item) => `\`${item.args.bucket}\``).join(', ')} ${open.length === 1 ? 'is' : 'are'} public${cite(open[0])}.`
+    : 'No bucket policy status or ACL I read makes a bucket public.'
+  const deniedText = denied.length
+    ? ` I could not read every section of ${denied.map((item) => `\`${item.args.bucket}\``).join(', ')} (access denied), so that bucket is not fully checked.`
+    : ''
+  if (open.length && !made('note').length && (ask.includes('survey') || ask.includes('check')))
+    return next('note', { text: `${open.map((item) => item.args.bucket).join(', ')} public at last check.` })
+  return { text: `${publicText}${deniedText}` }
 }
 
 function chunk(res, payload) {

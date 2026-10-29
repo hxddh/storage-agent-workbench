@@ -1,8 +1,8 @@
 /**
  * End-to-end run against the fake model and fake S3. Drives the real window as
  * a conversation: configure a model and an account, talk to the agent, and
- * check that its tool calls, answers, questions and confirmations appear in
- * the thread where they happened.
+ * check that its tool calls, answers and questions appear in the thread where
+ * they happened.
  *
  *   node scripts/e2e.mjs
  */
@@ -136,11 +136,11 @@ try {
   if (!/Connected|ok/i.test(modelStatus)) await fail(`model test: ${modelStatus}`)
 
   await page.getByRole('button', { name: 'Storage accounts', exact: true }).click()
-  await page.locator('#accName').fill('Demo')
+  await page.locator('#accName').fill('Prod')
   await page.locator('#accEndpoint').fill(`http://127.0.0.1:${s3Port}`)
   await page.locator('#accRegion').fill('us-east-1')
-  await page.locator('#accKey').fill('demo-key')
-  await page.locator('#accSecret').fill('demo-secret')
+  await page.locator('#accKey').fill('logs-key')
+  await page.locator('#accSecret').fill('logs-secret')
   await page.getByLabel('Path-style addressing').check()
   await page.locator('.account').last().getByRole('button', { name: 'Save', exact: true }).click()
   await page.waitForTimeout(1000)
@@ -151,42 +151,42 @@ try {
   console.log('HOME OVERVIEW OK')
   await checkA11y('home')
 
-  // "Check account" puts a message in the composer; nothing is sent until the user sends it.
-  await page.getByRole('button', { name: 'Check account' }).click()
-  await page.waitForTimeout(300)
-  if ((await page.locator('.composer textarea').inputValue()) !== 'Check my storage accounts.')
-    await fail('Check account did not put its message in the composer')
-  if (await page.locator('.msg.user').count()) await fail('Check account sent a message for the user')
-  await page.keyboard.press('Enter')
-  await page.waitForSelector('.msg.user', { timeout: 10_000 })
-  await page.waitForSelector('.step.tool', { timeout: 30_000 })
-  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-running.png') })
-  await waitSettled('Check my storage accounts')
-  if (!(await page.locator('.step.tool', { hasText: 'Read account' }).count()))
-    await fail('the check did not read the account')
-  console.log('CHECK OK:', (await lastText()).replace(/\s+/g, ' ').slice(0, 160))
-  for (const gone of ['Earlier in this task', 'Not checked', 'Worked for'])
-    if (await page.getByText(gone).count()) await fail(`report scaffolding is back: ${gone}`)
+  // Home lists the accounts and nothing more: no canned check, no demo.
+  for (const gone of ['Check account', 'Try with demo storage'])
+    if (await page.getByRole('button', { name: gone }).count()) await fail(`${gone} is back`)
 
-  // The conversation continues in the same task: a second turn below the first.
+  // The agent lists the buckets, reads each configuration, and answers from what it read.
   await say('Which buckets are public?')
-  if ((await page.locator('.msg.user').count()) !== 2) await fail('the follow-up is not in the same thread')
+  for (const label of ['Listed buckets', 'Read configuration'])
+    if (!(await page.locator('.step.tool', { hasText: label }).count()))
+      await fail(`the agent did not call: ${label}`)
+  if (!(await lastText()).includes('web-assets')) await fail('the answer does not name web-assets')
+  for (const gone of ['Earlier in this task', 'Not checked', 'Worked for', 'Findings'])
+    if (await page.getByText(gone).count()) await fail(`report scaffolding is back: ${gone}`)
   await page.locator('.msg.agent .cite').last().click()
   await page.waitForSelector('.step.tool .step-detail', { timeout: 5_000 })
-  // A step shows exactly what the agent received, and it holds the table the view shows.
-  const received = page.locator('.step.tool .step-detail .step-output').first()
+  // A step shows the read section by section, and exactly what the agent received.
+  const cited = page.locator('.step.tool:has(.step-detail)').first()
+  await cited.locator('.raw-sections').waitFor({ timeout: 5_000 })
+  const received = cited.locator('.step-output')
   await received.locator('summary').click()
   const sent = await received.locator('pre').innerText()
-  if (!sent.includes('<untrusted-data') || !sent.includes('demo-private'))
+  if (!sent.includes('<untrusted-data') || !sent.includes('IsPublic'))
     await fail(`the step does not show what the agent received: ${sent.slice(0, 120)}`)
   console.log('ANSWER OK:', (await lastText()).replace(/\s+/g, ' ').slice(0, 160))
   await checkA11y('conversation')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-answer.png') })
 
+  // The conversation continues in the same task: a second turn below the first.
+  await say('Who can read web-assets?')
+  if ((await page.locator('.msg.user').count()) !== 2) await fail('the follow-up is not in the same thread')
+  if (!(await lastText()).includes('anonymous read')) await fail('the follow-up answer is missing')
+  console.log('FOLLOW-UP OK')
+
   // @ points at a remembered bucket without typing its name.
-  await page.locator('.composer textarea').fill('@demo')
+  await page.locator('.composer textarea').fill('@web')
   await page.waitForSelector('.ref-picker .ref-row', { timeout: 5_000 })
-  await page.locator('.ref-row', { hasText: 'demo-public' }).first().click()
+  await page.locator('.ref-row', { hasText: 'web-assets' }).first().click()
   await page.waitForSelector('.context-chip', { timeout: 5_000 })
   console.log('CONTEXT PICKER OK')
   await page.locator('.context-chip button').click()
@@ -199,41 +199,27 @@ try {
   await page.waitForSelector('.msg.agent.question', { timeout: 60_000 })
   if (!(await page.locator('.msg.agent.question').innerText()).includes('Which account should I read?'))
     await fail('clarify question missing')
-  await page.getByRole('button', { name: 'Demo', exact: true }).click()
-  await waitSettled('Demo')
+  await page.getByRole('button', { name: 'Staging', exact: true }).click()
+  await waitSettled('Staging')
   console.log('CLARIFY OK')
 
-  // Access paths open in place under their call.
-  await say('Who can read demo-public?')
-  const access = await openTool('Reviewed configuration')
-  await access.locator('.access-chain .access-row').first().waitFor({ timeout: 10_000 })
-  console.log('ACCESS OK')
-  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-access.png') })
-
-  // Accepting a risk is the user's act: the agent asks, the user confirms.
-  await page.getByRole('button', { name: 'New task' }).click()
-  await say('Accept the encryption risk on demo-public')
-  await page.waitForSelector('.msg.agent.confirm', { timeout: 10_000 })
-  await page.locator('.msg.agent.confirm').getByRole('button', { name: 'Accept risk' }).click()
-  await page.waitForSelector('.msg.agent.confirm >> text=Accepted.', { timeout: 5_000 })
-  console.log('ACCEPT OK')
-
   // The user applies the fix outside the app; the agent re-reads that bucket.
-  await fetch(`http://127.0.0.1:${s3Port}/__fake/fix?bucket=demo-public`, { method: 'POST' })
-  await say('I applied the fix to demo-public')
+  await fetch(`http://127.0.0.1:${s3Port}/__fake/fix?bucket=web-assets`, { method: 'POST' })
+  await say('I applied the fix to web-assets')
   if (!(await lastText()).includes('no longer public')) await fail('the re-read did not land')
   console.log('VERIFY OK')
 
+  // A change is the agent's own text for the user to apply.
   await page.getByRole('button', { name: 'New task' }).click()
-  await say('Show the change plan for demo-private')
-  const change = await openTool('Prepared a change plan')
-  await change.locator('.change-plan').first().waitFor({ timeout: 10_000 })
-  await page.waitForSelector('text=AWS CLI', { timeout: 10_000 })
+  await say('Give me the fix for data-lake')
+  await page.waitForSelector('.msg.agent.text pre:has-text("put-bucket-lifecycle-configuration")', {
+    timeout: 10_000,
+  })
   console.log('CHANGE OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-change.png') })
 
   await page.getByRole('button', { name: 'New task' }).click()
-  await page.locator('.composer textarea').fill('Check demo-private again')
+  await page.locator('.composer textarea').fill('Check data-lake again')
   await page.keyboard.press('Enter')
   await page.waitForSelector('.run-strip .run-dot', { timeout: 10_000 })
   await page.getByRole('button', { name: 'Stop' }).click()
@@ -255,7 +241,7 @@ try {
   console.log('CONTINUE OK')
 
   await page.getByRole('button', { name: 'New task' }).click()
-  await say('Searchable demo question')
+  await say('Searchable logs question')
   await page.waitForTimeout(400)
   await page.locator('.sidebar-search input').click()
   await page.keyboard.type('Searchable')
@@ -269,23 +255,13 @@ try {
 
   // Read-only code mode: the rows and the script open under the query call.
   await page.getByRole('button', { name: 'New task' }).click()
-  await say('What are the largest prefixes in demo-public?')
+  await say('What are the largest prefixes in web-assets?')
   const query = await openTool('Ran a read-only query')
   const firstCell = await query.locator('.table-block table tbody td').first().innerText()
   if (firstCell !== 'reports/') await fail(`query rows: ${firstCell}`)
   await query.locator('pre.code:has-text("tools.list")').waitFor({ timeout: 5_000 })
   console.log('QUERY OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-query.png') })
-
-  // Demo storage: an in-process account, offered once.
-  await page.getByRole('button', { name: 'Settings' }).click()
-  await page.getByRole('button', { name: 'Storage accounts', exact: true }).click()
-  await page.getByRole('button', { name: 'Try with demo storage' }).click()
-  await page.waitForSelector('.account-name:has-text("Demo storage")', { timeout: 5_000 })
-  if (await page.getByRole('button', { name: 'Try with demo storage' }).count())
-    await fail('the demo was offered twice')
-  console.log('DEMO OK')
-  await page.getByRole('button', { name: 'Close settings' }).click()
 
   const db = readFileSync(join(dataDir, 'storage-agent.db'))
   console.log('DB BYTES:', db.length)

@@ -41,7 +41,7 @@ export function redactDeep(value: unknown, depth = 0): unknown {
 
 /** Walk a tool view and redact every string without dropping rows or columns. */
 export function redactView(value: unknown, depth = 0): unknown {
-  if (depth > 8) return null
+  if (depth > 64) return null
   if (typeof value === 'string') return redact(value)
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
   if (Array.isArray(value)) return value.map((item) => redactView(item, depth + 1))

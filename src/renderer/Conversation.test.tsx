@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { TaskView, UiEntry } from '@shared/contract'
-import { issue, survey } from '@shared/testing'
+import { buckets } from '@shared/testing'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Conversation } from './Conversation'
@@ -13,7 +13,6 @@ function view(entries: UiEntry[], extra: Partial<TaskView> = {}): TaskView {
     hasOlder: false,
     cursor: null,
     usage: null,
-    issueStatus: {},
     ...extra,
   }
 }
@@ -30,12 +29,12 @@ const call: UiEntry = {
   id: 'call-entry',
   kind: 'tool',
   at: '2026-01-01T00:00:01Z',
-  name: 'survey',
-  target: 'Demo',
+  name: 'buckets',
+  target: 'Prod',
   status: 'done',
   note: '1 bucket',
   ms: 1200,
-  view: survey(['demo']),
+  view: buckets(['logs']),
   callId: 'ev1',
   evidenceId: 'ev1',
 }
@@ -58,7 +57,7 @@ const props = {
 beforeEach(() => {
   Object.defineProperty(window, 'agent', {
     configurable: true,
-    value: { acceptIssue: vi.fn(async () => undefined), saveText: vi.fn() },
+    value: { saveText: vi.fn() },
   })
   Element.prototype.scrollIntoView = vi.fn()
 })
@@ -73,7 +72,7 @@ describe('the conversation', () => {
         view={view([
           user('u1', 'Which buckets are public?'),
           call,
-          text('a1', '`demo` is private.'),
+          text('a1', '`logs` is private.'),
           user('u2', 'Thanks — what about access?'),
           text('a2', 'Nothing grants public access.'),
         ])}
@@ -92,7 +91,7 @@ describe('the conversation', () => {
     render(
       <Conversation
         {...props}
-        view={view([user('u1', 'Q'), call, text('a1', '`demo` is private [1](#ev-ev1).')])}
+        view={view([user('u1', 'Q'), call, text('a1', '`logs` is private [1](#ev-ev1).')])}
       />,
     )
     expect(document.querySelector('.step-detail')).toBeNull()
@@ -130,42 +129,51 @@ describe('the conversation', () => {
             status: 'done',
             note: null,
             ms: 0,
-            view: { kind: 'question', question: 'Which account?', options: ['Demo', 'Prod'] },
+            view: { kind: 'question', question: 'Which account?', options: ['Prod', 'Staging'] },
           },
         ])}
       />,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Demo' }))
-    expect(onAnswer).toHaveBeenCalledWith('Demo')
+    fireEvent.click(screen.getByRole('button', { name: 'Prod' }))
+    expect(onAnswer).toHaveBeenCalledWith('Prod')
   })
 
-  it('accepts a risk only when the user confirms it', () => {
-    const risk = issue('demo', 'no_encryption')
-    const entries: UiEntry[] = [
-      user('u1', 'Accept the encryption risk'),
-      {
-        id: 'acc',
-        kind: 'tool',
-        at: '',
-        name: 'accept_risk',
-        target: 'demo',
-        status: 'done',
-        note: null,
-        ms: 0,
-        view: { kind: 'accept', issue: risk, accept: true },
-      },
-    ]
-    const { rerender } = render(<Conversation {...props} view={view(entries)} />)
-    expect(window.agent.acceptIssue).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Accept risk' }))
-    expect(window.agent.acceptIssue).toHaveBeenCalledWith(risk.id, true)
-    rerender(
-      <Conversation {...props} view={view(entries, { issueStatus: { [risk.id]: 'accepted' } })} />,
+  it('shows a configuration read section by section, as S3 returned it', async () => {
+    render(
+      <Conversation
+        {...props}
+        view={view([
+          user('u1', 'Is logs public?'),
+          {
+            id: 'cfg',
+            kind: 'tool',
+            at: '',
+            name: 'config',
+            target: 'logs',
+            status: 'done',
+            note: '1 available · 1 access denied',
+            ms: 10,
+            view: {
+              kind: 'raw',
+              title: 'logs',
+              value: {
+                region: 'us-east-1',
+                policy: { status: 'available', value: { Statement: [{ Principal: '*' }] } },
+                acl: { status: 'access_denied', error: 'AccessDenied: denied' },
+              },
+            },
+          },
+        ])}
+      />,
     )
-    expect(screen.getByText('Accepted.')).toBeTruthy()
+    fireEvent.click(document.querySelector('.step-line')!)
+    await waitFor(() => expect(document.querySelector('.raw-sections')).toBeTruthy())
+    expect(screen.getByText('access denied')).toBeTruthy()
+    expect(screen.getByText('AccessDenied: denied')).toBeTruthy()
+    expect(document.querySelector('.raw-section pre')?.textContent).toContain('"Principal": "*"')
   })
 
-  it('shows a confirmation that could not be asked as a failed step', () => {
+  it('shows a call from an earlier version as a step with what the agent received', async () => {
     render(
       <Conversation
         {...props}
@@ -176,16 +184,19 @@ describe('the conversation', () => {
             kind: 'tool',
             at: '',
             name: 'accept_risk',
-            target: 'demo',
-            status: 'failed',
-            note: 'No open risk',
+            target: 'logs',
+            status: 'done',
+            note: null,
             ms: 0,
             view: null,
+            output: '<untrusted-data>Asked the user.</untrusted-data>',
           },
         ])}
       />,
     )
-    expect(document.querySelector('.step.tool.failed')).toBeTruthy()
+    expect(screen.getByText('Asked to accept a risk')).toBeTruthy()
+    fireEvent.click(document.querySelector('.step-line')!)
+    await waitFor(() => expect(screen.getByText(/Asked the user\./)).toBeTruthy())
     expect(document.querySelector('.msg.agent.confirm')).toBeNull()
   })
 

@@ -23,7 +23,6 @@ export interface FakeReply {
 }
 
 export const DEFAULT_BUCKETS: Record<string, FakeBucket>
-export const DEMO_BUCKETS: Record<string, FakeBucket>
 export function objectsOf(
   config: FakeBucket,
 ): { key: string; size: number; modified?: string; storageClass?: string }[]

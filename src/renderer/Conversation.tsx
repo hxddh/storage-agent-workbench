@@ -24,7 +24,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { type Dict, dict, fill, toolLabel } from './i18n'
+import { type Dict, dict, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
 import { noticeText } from './notice'
 import { duration } from './time'
@@ -178,39 +178,6 @@ function QuestionStep({
               {option}
             </button>
           ))}
-        </div>
-      )}
-      <Received output={item.output} t={t} />
-    </div>
-  )
-}
-
-/** The agent asked the user to accept a risk; only this click accepts it. */
-function AcceptStep({ item, status, t }: { item: Tool; status: string | undefined; t: Dict }) {
-  if (item.view?.kind !== 'accept') return null
-  const { issue, accept } = item.view
-  const done = accept ? status === 'accepted' : status === 'open'
-  return (
-    <div className="msg agent confirm">
-      <p>
-        {fill(accept ? t.confirmAccept : t.confirmReopen, {
-          title: issue.title,
-          bucket: issue.bucket || t.accountWide,
-        })}
-      </p>
-      {status === 'resolved' ? (
-        <p className="quiet">{t.confirmResolved}</p>
-      ) : done ? (
-        <p className="quiet">{accept ? t.confirmAccepted : t.confirmReopened}</p>
-      ) : (
-        <div className="question-options">
-          <button
-            className="btn primary"
-            type="button"
-            onClick={() => void window.agent.acceptIssue(issue.id, accept)}
-          >
-            {accept ? t.acceptRisk : t.reopen}
-          </button>
         </div>
       )}
       <Received output={item.output} t={t} />
@@ -477,10 +444,8 @@ export function Conversation({
   // Steps between two messages render as one list, so a turn reads top to bottom.
   const blocks: (ThreadItem | ThreadItem[])[] = []
   for (const item of items) {
-    // A question or a confirmation speaks to the user; a call that failed is a step like any other.
-    const step =
-      item.kind === 'thought' ||
-      (item.kind === 'tool' && item.view?.kind !== 'question' && item.view?.kind !== 'accept')
+    // A question speaks to the user; a call that failed is a step like any other.
+    const step = item.kind === 'thought' || (item.kind === 'tool' && item.view?.kind !== 'question')
     const last = blocks.at(-1)
     if (step && Array.isArray(last)) last.push(item)
     else blocks.push(step ? [item] : item)
@@ -582,21 +547,12 @@ export function Conversation({
                 </div>
               )
             case 'tool':
-              return item.name === 'ask' ? (
+              return (
                 <QuestionStep
                   key={item.id}
                   item={item}
                   pending={pending === item.id}
                   onAnswer={onAnswer}
-                  t={t}
-                />
-              ) : (
-                <AcceptStep
-                  key={item.id}
-                  item={item}
-                  status={
-                    item.view?.kind === 'accept' ? view.issueStatus[item.view.issue.id] : undefined
-                  }
                   t={t}
                 />
               )

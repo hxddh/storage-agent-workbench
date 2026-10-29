@@ -4,11 +4,9 @@ import type { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { AppEvent, Bootstrap, ModelInput, TaskSummary, UpdateState } from '@shared/contract'
 import { app } from 'electron'
 import { AppDb } from './db'
-import { Estate } from './estate/estate'
 import { Providers } from './providers'
 import { Engine } from './runtime/engine'
 import { createModelSet, testModel, testModelDraft } from './runtime/model'
-import { isScheduleDue } from './runtime/schedule'
 import { type RunOutcome, Runtime, runtimeDirs } from './runtime/session'
 import { Tasks } from './runtime/tasks'
 import { Vault } from './security/vault'
@@ -26,7 +24,6 @@ export interface ShellHooks {
 export class App {
   db!: AppDb
   providers!: Providers
-  estate!: Estate
   settings!: Settings
   vault!: Vault
   runtime!: Runtime
@@ -39,9 +36,6 @@ export class App {
   private database!: Database
   private dataDir = ''
   private readonly models = createModelSet()
-  private scheduleTimer: ReturnType<typeof setInterval> | null = null
-  private scheduleBusy = false
-  private readonly scheduleAttempts = new Map<string, string>()
   private hooks: ShellHooks = {
     emit: () => undefined,
     settled: () => undefined,
@@ -62,14 +56,12 @@ export class App {
     }
     this.vault = new Vault(dataDir)
     this.providers = new Providers(this.db, this.vault)
-    this.estate = new Estate(this.db)
     this.staging = new Staging(join(dataDir, 'staging'))
     await this.staging.clear()
 
     this.runtime = await Runtime.open(this.database, {
       db: this.db,
       providers: this.providers,
-      estate: this.estate,
       settings: this.settings,
       vault: this.vault,
       models: this.models,
@@ -85,51 +77,6 @@ export class App {
 
   setHooks(hooks: ShellHooks): void {
     this.hooks = hooks
-    this.startSchedules()
-  }
-
-  /** Opt-in checks run only while the app process is open. */
-  private startSchedules(): void {
-    if (this.scheduleTimer) return
-    this.scheduleTimer = setInterval(() => void this.runScheduled(), 60_000)
-    this.scheduleTimer.unref?.()
-    void this.runScheduled()
-  }
-
-  private async runScheduled(): Promise<void> {
-    if (this.scheduleBusy) return
-    this.scheduleBusy = true
-    try {
-      for (const account of await this.providers.list()) {
-        if (!isScheduleDue(account.schedule, undefined)) continue
-        const last = (await this.db.listReadings({ providerId: account.id, limit: 1 }))[0]
-        if (!isScheduleDue(account.schedule, last?.at ?? this.scheduleAttempts.get(account.id)))
-          continue
-        this.scheduleAttempts.set(account.id, new Date().toISOString())
-        const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
-        const title = `${this.settings.get().language === 'zh' ? '定期检查' : 'Scheduled check'} · ${account.name} · ${stamp}`
-        // A scheduled check is a message to the agent; without a model there is no check.
-        if (!this.settings.get().model) continue
-        const zh = this.settings.get().language === 'zh'
-        // The schedule the user set is the request; how to check is the agent's.
-        const text = zh
-          ? `检查存储账号 ${account.name}。`
-          : `Check the storage account ${account.name}.`
-        const taskId = await this.tasks.newTask(title)
-        await this.engine.submit(
-          taskId,
-          text,
-          [],
-          [{ kind: 'account', providerId: account.id, label: account.name }],
-        )
-        await this.tasks.waitForIdle(taskId)
-      }
-    } catch {
-      // A scheduled read must never take down the window. Its task page keeps
-      // any failure it wrote; the next interval can try again.
-    } finally {
-      this.scheduleBusy = false
-    }
   }
 
   setUpdate(update: UpdateState): void {
@@ -177,8 +124,6 @@ export class App {
   }
 
   async dispose(): Promise<void> {
-    if (this.scheduleTimer) clearInterval(this.scheduleTimer)
-    this.scheduleTimer = null
     await this.tasks?.close().catch(() => undefined)
     await this.runtime?.close().catch(() => undefined)
     await this.database?.close().catch(() => undefined)

@@ -22,7 +22,7 @@ describe('ask', () => {
   it('asks a question, with or without options, and ends the turn', async () => {
     const result = await execute(askTool(), {
       question: '  Which account should I read?  ',
-      options: [' Demo ', ' Production ', ''],
+      options: [' Prod ', ' Production ', ''],
       note: 'Scope changes the answer.',
     })
     const view = result.details?.view as {
@@ -32,7 +32,7 @@ describe('ask', () => {
     }
     expect(view.kind).toBe('question')
     expect(view.question).toBe('Which account should I read?')
-    expect(view.options).toEqual(['Demo', 'Production'])
+    expect(view.options).toEqual(['Prod', 'Production'])
     expect(result.control).toEqual({ terminate: true })
     const open = await execute(askTool(), { question: 'What should I focus on?' })
     expect(open.details?.view).toMatchObject({ kind: 'question', options: [] })

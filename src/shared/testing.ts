@@ -2,7 +2,7 @@
  * Entry builders for tests: a run as the window receives it. Not imported by
  * application code.
  */
-import type { IssueRow, ToolName, ToolView, UiEntry } from './contract'
+import type { ToolName, ToolView, UiEntry } from './contract'
 
 let seq = 0
 export function at(offset = 0): string {
@@ -43,53 +43,10 @@ export function answer(text: string): UiEntry {
   return { id: `a${seq++}`, kind: 'answer', at: at(seq), text }
 }
 
-export function issue(
-  bucket: string,
-  code = 'public_exposure',
-  overrides: Partial<IssueRow> = {},
-): IssueRow {
+/** A `buckets` result listing these names. */
+export function buckets(names: string[]): Extract<ToolView, { kind: 'buckets' }> {
   return {
-    id: `i-${bucket}-${code}`,
-    provider: 'p1',
-    bucket,
-    code,
-    severity: code === 'public_exposure' ? 'high' : 'medium',
-    status: 'open',
-    title: code === 'public_exposure' ? 'Bucket is publicly accessible' : 'No default encryption',
-    detail: null,
-    openedAt: at(),
-    lastSeenAt: at(),
-    recurred: 0,
-    ...overrides,
-  }
-}
-
-type SurveyView = Extract<ToolView, { kind: 'survey' }>
-
-export function survey(
-  buckets: string[],
-  overrides: Partial<Omit<SurveyView, 'coverage'>> & {
-    coverage?: Partial<SurveyView['coverage']>
-  } = {},
-): Extract<ToolView, { kind: 'survey' }> {
-  const { coverage, ...rest } = overrides
-  return {
-    kind: 'survey',
-    provider: 'Demo',
-    providerId: 'p1',
-    buckets: { columns: ['Bucket', 'Public'], rows: buckets.map((name) => [name, 'no']) },
-    issues: [],
-    coverage: {
-      visible: buckets.length,
-      processed: buckets.length,
-      truncated: false,
-      pending: 0,
-      denied: [],
-      unknown: [],
-      gone: [],
-      ...coverage,
-    },
-    changed: { opened: 0, resolved: 0, recurred: 0 },
-    ...rest,
+    kind: 'buckets',
+    rows: { columns: ['Bucket', 'Created'], rows: names.map((name) => [name, '2026-01-01']) },
   }
 }

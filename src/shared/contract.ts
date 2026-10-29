@@ -6,50 +6,28 @@
  * shaped for display.
  */
 
-export type Severity = 'high' | 'medium' | 'low'
 export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high'
 export type ModelProvider = 'anthropic' | 'openai' | 'compatible'
 export type Lang = 'en' | 'zh'
 export type Theme = 'light' | 'dark' | 'system'
 
 export type ToolName =
-  | 'survey'
   | 'buckets'
   | 'objects'
   | 'object'
   | 'config'
+  | 'account'
   | 'probe'
-  | 'estate'
-  | 'change_plan'
-  | 'note'
   | 'query'
+  | 'note'
   | 'ask'
-  | 'accept_risk'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
-export type CheckSchedule = 'off' | 'daily' | 'weekly'
 
 export interface Table {
   columns: string[]
   rows: (string | number | null)[][]
   truncated?: boolean
-}
-
-export interface IssueRow {
-  id: string
-  provider: string
-  bucket: string
-  code: string
-  severity: Severity
-  /** `accepted` is the user's decision; the model can never set it. */
-  status: 'open' | 'resolved' | 'accepted'
-  title: string
-  detail: string | null
-  /** The AWS Security Hub control the rule matches, when one does. */
-  control?: string
-  openedAt: string
-  lastSeenAt: string
-  recurred: number
 }
 
 export interface NoteRow {
@@ -65,103 +43,11 @@ export interface NoteRow {
  * One line of a review. `blind` is a read that could not see: it is shown, and
  * it never counts as clean. Codes are rule codes, `advice:*` or `blind:*`.
  */
-export interface ConfigFinding {
-  severity: Severity | 'ok' | 'blind'
-  title: string
-  detail: string
-  code?: string
-}
-
-/** What one reading decided about one rule on one bucket. */
-export interface Observation {
-  provider: string
-  bucket: string
-  code: string
-  verdict: boolean
-}
-
 export interface ProbeCheck {
   name: string
   ok: boolean
   detail: string
   ms: number
-}
-
-export interface PermissionGap {
-  bucket: string
-  item: string
-  action: string
-}
-
-export interface PostureChange {
-  bucket: string
-  field: string
-  before: string
-  after: string
-  at: string
-}
-
-export interface AccessPath {
-  source: 'policy' | 'acl' | 'iam' | 'trust' | 'kms' | 'access-analyzer'
-  principal: string
-  actions: string[]
-  condition: string | null
-  public: boolean
-  note: string | null
-}
-
-/** How much of the effective-access question a reading actually covered. */
-export interface AccessCoverage {
-  principals: number
-  evaluated: number
-  undecided: number
-  truncated: boolean
-  sources: string[]
-  /** Present on a principal-first reverse query. */
-  bucketsExamined?: number
-  bucketsTotal?: number
-}
-
-export interface ChangeFormat {
-  label: string
-  language: 'bash' | 'hcl' | 'json'
-  text: string
-}
-
-export interface Impact {
-  verdict: 'low' | 'caution' | 'unknown'
-  reasons: string[]
-  gap: string | null
-}
-
-export interface ChangePlanStep {
-  id: string
-  bucket: string
-  codes: string[]
-  title: string
-  severity: Severity
-  formats: ChangeFormat[]
-  impact: Impact
-  notes: string[]
-  status: 'ready' | 'manual'
-  blockers: string[]
-}
-
-export interface ChangePlan {
-  steps: ChangePlanStep[]
-  /** The latest account survey the plan was made against, as counts. */
-  baseline: {
-    at: string
-    visible: number
-    processed: number
-    pending: number
-    denied: number
-    unknown: number
-    openHigh: number
-    openTotal: number
-  } | null
-  residual: { bucket: string; code: string; title: string }[]
-  summary: string
 }
 
 export interface Chart {
@@ -172,49 +58,6 @@ export interface Chart {
 }
 
 export type ToolView =
-  | {
-      kind: 'survey'
-      provider: string
-      providerId?: string
-      /** The read was narrowed to named buckets; it does not prove the account's coverage. */
-      scoped?: boolean
-      buckets: Table
-      issues: IssueRow[]
-      /** Open Issues of the account in the estate; `issues` may hold fewer. */
-      issueTotal?: number
-      /** Rules this survey could not decide because an aspect was blind. */
-      undecided?: { bucket: string; code: string; title: string }[]
-      observations?: Observation[]
-      /** Account-wide posture: the S3 Control public access block. */
-      account?: { pab: 'on' | 'partial' | 'off' | 'unknown' | 'n/a' }
-      /** The account block was decided by this survey, not just remembered. */
-      accountRead?: boolean
-      /** Storage totals from CloudWatch, when the account publishes them. */
-      capacity?: { bytes: number; objects: number; monthlyUsd: number; buckets: number } | null
-      coverage: {
-        visible: number
-        processed: number
-        truncated: boolean
-        pending?: number
-        denied: string[]
-        unknown: string[]
-        gone?: string[]
-      }
-      changed: { opened: number; resolved: number; recurred: number }
-      /** Access-denied reads and the IAM action each one needs. */
-      permissions?: PermissionGap[]
-      /** Differences from the last remembered posture, when this was not the first read. */
-      postureChanges?: PostureChange[]
-      /** CloudTrail attribution for a difference; absent when nothing changed. */
-      attribution?: {
-        status: 'ok' | 'denied' | 'unsupported' | 'error'
-        events: { at: string; event: string; actor: string }[]
-        from?: string
-        to?: string
-        days?: number
-        truncated?: boolean
-      }
-    }
   | { kind: 'buckets'; rows: Table }
   | { kind: 'objects'; rows: Table }
   | {
@@ -222,54 +65,15 @@ export type ToolView =
       facts: [string, string][]
       preview: { language: string; text: string } | null
     }
-  | {
-      kind: 'config'
-      bucket: string
-      providerId?: string
-      aspect?: 'security' | 'lifecycle' | 'observability' | 'access'
-      /** Who can reach the bucket, from policy, ACL, IAM, KMS and Access Analyzer. */
-      access?: AccessPath[]
-      accessBlind?: { source: string; status: string }[]
-      accessCoverage?: AccessCoverage
-      exposure?: 'public' | 'not public' | 'unknown'
-      findings: ConfigFinding[]
-      /** Issues this review opened or kept, so a finding can be accepted. */
-      issues?: IssueRow[]
-      observations?: Observation[]
-      permissions?: PermissionGap[]
-    }
+  /** A read returned as the API returned it: sections or documents, shown as JSON. */
+  | { kind: 'raw'; title: string; value: unknown }
   | { kind: 'probe'; endpoint: string; checks: ProbeCheck[] }
-  | {
-      kind: 'estate'
-      providerId?: string
-      /** The bucket the read was narrowed to; its Issue list covers only that bucket. */
-      bucket?: string | null
-      /** The oldest remembered reading in the table: memory is only as fresh as this. */
-      readAt?: string | null
-      buckets: Table | null
-      issues: IssueRow[]
-      notes: NoteRow[]
-      /** Issue life-cycle events and posture changes, when history was requested. */
-      history?: Table
-    }
-  | {
-      kind: 'change'
-      providerId?: string
-      bucket: string
-      code: string
-      formats: ChangeFormat[]
-      impact: Impact
-      /** A merged, ordered change plan; its first step is also exposed above. */
-      plan?: ChangePlan
-      /** More buckets or rules generated by the same batch request; the first is above. */
-      batch?: { bucket: string; code: string; formats: ChangeFormat[]; impact: Impact }[]
-    }
   | { kind: 'note'; text: string }
   | {
       kind: 'query'
       providerId?: string
       title: string
-      /** The script that produced the rows: the evidence for them. */
+      /** The script that produced the rows. */
       code: string
       rows: Table
       chart: Chart | null
@@ -278,14 +82,8 @@ export type ToolView =
       listed: number
       /** Buckets the script read. */
       buckets?: string[]
-      /** Coverage of the access question when the script called principal(). */
-      coverage?: AccessCoverage
-      /** Sources the access question could not read. */
-      blind?: { source: string; status: string }[]
     }
   | { kind: 'question'; question: string; options: string[]; note?: string }
-  /** A request for the user to accept (or reopen) a risk; only the user's click changes it. */
-  | { kind: 'accept'; issue: IssueRow; accept: boolean }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'
 
@@ -304,19 +102,12 @@ export interface ToolDetails {
   evidenceId?: string
 }
 
-/** The Issue transitions one reading caused. The model never causes one. */
-export interface Assessed {
-  opened: number
-  resolved: number
-  recurred: number
-}
-
 /** App notices are codes; the window words them in the user's language. */
 export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'budget' | 'cut'
 
 export interface LiveTool {
   callId: string
-  name: ToolName
+  name: string
   target: string
   note: string | null
   args?: string | null
@@ -340,15 +131,14 @@ export interface AttachmentRef {
 
 /** A name the user pointed at. Focus only: scope is still the security boundary. */
 export interface ContextRef {
-  kind: 'account' | 'bucket' | 'issue'
+  kind: 'account' | 'bucket'
   providerId: string
   label: string
   bucket?: string
-  issueId?: string
 }
 
 /** One row in the composer's @ picker. */
-export interface EstateRef extends ContextRef {
+export interface StorageRef extends ContextRef {
   id: string
   detail: string
 }
@@ -385,7 +175,8 @@ export type UiEntry =
       id: string
       kind: 'tool'
       at: string
-      name: ToolName
+      /** A current tool's name, or one an earlier version had. */
+      name: string
       target: string
       status: ToolStatus
       note: string | null
@@ -447,8 +238,6 @@ export interface TaskView {
   usage: Usage | null
   /** A per-task model override; null means the model in Settings. */
   model?: TaskModel | null
-  /** Current estate status of every Issue the task's results mention; the user may have accepted one since. */
-  issueStatus: Record<string, IssueRow['status']>
 }
 
 /** A task's model spend, from pi's usage ledger. Cost is zero when the price is unknown. */
@@ -476,8 +265,6 @@ export interface Account {
   accessKeyMasked: string
   hasSessionToken: boolean
   scope: { buckets: string[] }
-  /** Opt-in read-only checks while the app is open. */
-  schedule?: CheckSchedule
 }
 
 export interface AccountInput {
@@ -493,7 +280,6 @@ export interface AccountInput {
   secretAccessKey?: string
   sessionToken?: string
   scope: { buckets: string[] }
-  schedule?: CheckSchedule
 }
 
 export interface ModelSettings {
@@ -568,7 +354,6 @@ export type AppEvent =
   | { type: 'patch'; taskId: string; entryId: string; patch: Partial<UiEntry> }
   | { type: 'live'; taskId: string; live: Live | null }
   | { type: 'usage'; taskId: string; usage: Usage | null }
-  | { type: 'issues'; statuses: Record<string, IssueRow['status']> }
   | { type: 'update'; update: UpdateState }
   /** The user clicked a notification for this task. */
   | { type: 'open'; taskId: string }
@@ -598,7 +383,7 @@ export interface AgentApi {
   send(taskId: string, text: string, attachments: string[], context?: ContextRef[]): Promise<void>
   /** Use a different model for this task's next run; null restores Settings. */
   setTaskModel(taskId: string, model: TaskModel | null): Promise<void>
-  estateRefs(query: string): Promise<EstateRef[]>
+  storageRefs(query: string): Promise<StorageRef[]>
   steer(taskId: string, text: string, attachments: string[], context?: ContextRef[]): Promise<void>
   stop(taskId: string): Promise<void>
   renameTask(taskId: string, title: string): Promise<void>
@@ -619,13 +404,10 @@ export interface AgentApi {
   saveAccount(input: AccountInput): Promise<Account>
   deleteAccount(id: string): Promise<void>
   testAccount(id: string): Promise<{ ok: boolean; detail: string }>
-  acceptIssue(id: string, accepted: boolean): Promise<void>
   awsProfiles(): Promise<string[]>
   /** Stage files dropped or pasted into the composer. */
   stageFiles(files: File[]): Promise<StagedFile[]>
   installUpdate(): Promise<void>
-  /** Add the in-process demo account: a sample estate, no network. */
-  addDemoAccount(): Promise<Account>
   localModels(): Promise<LocalModel[]>
   saveModel(input: ModelInput): Promise<void>
   listModels(input: ModelListInput): Promise<{ models: CatalogModel[]; detail: string }>

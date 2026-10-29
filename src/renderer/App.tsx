@@ -42,9 +42,6 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [fatal, setFatal] = useState(false)
   const [searchSignal, setSearchSignal] = useState(0)
-  // Only while a check is being started; the run itself shows its progress.
-  const [seed, setSeed] = useState<{ text: string; at: number } | null>(null)
-  const [checkError, setCheckError] = useState<string | null>(null)
   const restored = useRef(false)
 
   const lang = boot?.settings.language ?? 'en'
@@ -95,12 +92,6 @@ export function App() {
         setView((current) =>
           current && current.task.id === event.taskId
             ? { ...current, usage: event.usage }
-            : current,
-        )
-      } else if (event.type === 'issues') {
-        setView((current) =>
-          current
-            ? { ...current, issueStatus: { ...current.issueStatus, ...event.statuses } }
             : current,
         )
       } else if (event.type === 'update') {
@@ -220,24 +211,6 @@ export function App() {
     await refresh()
   }
 
-  /** "Check account" is a message to the agent, in a new task. */
-  // Check account puts a message in the composer; the user edits it and sends it.
-  const check = () => {
-    setView(null)
-    setSidebarOpen(false)
-    setSeed({ text: dict(lang).checkAccountPrompt, at: Date.now() })
-  }
-
-  const startDemo = async () => {
-    setCheckError(null)
-    try {
-      await window.agent.addDemoAccount()
-      await refresh()
-    } catch (error) {
-      setCheckError(error instanceof Error ? error.message : String(error))
-    }
-  }
-
   const steer = async (text: string, tokens: string[], context: ContextRef[]) => {
     if (!view) return
     await window.agent.steer(view.task.id, text, tokens, context)
@@ -324,13 +297,10 @@ export function App() {
             onSetup={() => openSettings('model')}
             onAddAccount={() => openSettings('accounts')}
             onUseLocal={startLocal}
-            onDemo={() => void startDemo()}
-            onAudit={check}
             tasks={tasks}
             onOpenTask={(id) => void openTask(id)}
           />
         ) : null}
-        {checkError && <p className="brief-error audit-error">{checkError}</p>}
         <Composer
           lang={lang}
           modelLabel={boot?.model?.modelId ?? null}
@@ -342,7 +312,6 @@ export function App() {
           key={view?.task.id ?? 'new'}
           onOpenSettings={() => openSettings('model')}
           draftKey={view?.task.id ?? 'new'}
-          seed={view ? null : seed}
         />
       </main>
       {settingsOpen && boot && (

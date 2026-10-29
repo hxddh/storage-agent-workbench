@@ -32,7 +32,7 @@ describe('entry projection', () => {
         model: [
           {
             role: 'assistant',
-            content: [{ type: 'text', text: 'demo-public is public.' }],
+            content: [{ type: 'text', text: 'web-assets is public.' }],
             timestamp: 1_700_000_000_000,
           },
         ],
@@ -50,7 +50,7 @@ describe('entry projection', () => {
       },
     ])
     expect(out).toHaveLength(1)
-    expect(out[0]).toMatchObject({ kind: 'answer', text: 'demo-public is public.' })
+    expect(out[0]).toMatchObject({ kind: 'answer', text: 'web-assets is public.' })
   })
 
   it('keeps a provider reasoning summary separate from the answer', () => {
@@ -63,7 +63,7 @@ describe('entry projection', () => {
             role: 'assistant',
             content: [
               { type: 'thinking', thinking: 'Check the policy before answering.' },
-              { type: 'text', text: 'demo-public is public.' },
+              { type: 'text', text: 'web-assets is public.' },
             ],
             timestamp: 1_700_000_000_000,
           },
@@ -75,7 +75,7 @@ describe('entry projection', () => {
       kind: 'reasoning',
       text: 'Check the policy before answering.',
     })
-    expect(out[1]).toMatchObject({ kind: 'answer', text: 'demo-public is public.' })
+    expect(out[1]).toMatchObject({ kind: 'answer', text: 'web-assets is public.' })
   })
 
   it('turns a tool result into one row with its view', () => {
@@ -87,10 +87,10 @@ describe('entry projection', () => {
           {
             role: 'toolResult',
             toolCallId: 'call-1',
-            toolName: 'survey',
+            toolName: 'buckets',
             content: [{ type: 'text', text: 'ok' }],
             details: {
-              target: 'Demo',
+              target: 'Prod',
               note: '2 buckets',
               args: '{"provider_id":"p1"}',
               view: { kind: 'buckets', rows: { columns: ['Bucket'], rows: [['a']] } },
@@ -104,8 +104,8 @@ describe('entry projection', () => {
     ])
     expect(out[0]).toMatchObject({
       kind: 'tool',
-      name: 'survey',
-      target: 'Demo',
+      name: 'buckets',
+      target: 'Prod',
       status: 'done',
       args: '{"provider_id":"p1"}',
       ms: 12,
@@ -125,7 +125,7 @@ describe('entry projection', () => {
             toolCallId: 'call-2',
             toolName: 'config',
             content: [{ type: 'text', text: 'Access denied' }],
-            details: { target: 'demo', note: 'Access denied', view: null, ms: 3 },
+            details: { target: 'logs', note: 'Access denied', view: null, ms: 3 },
             isError: true,
             timestamp: 1,
           },
@@ -155,7 +155,7 @@ describe('entry projection', () => {
             toolCallId: 'call-3',
             toolName: 'survey',
             content: [{ type: 'text', text: 'Public: aborted-uploads, timed-out-logs.' }],
-            details: { target: 'Demo', note: null, view: null, ms: 5, status: 'done' },
+            details: { target: 'Prod', note: null, view: null, ms: 5, status: 'done' },
             isError: false,
             timestamp: 1,
           },
@@ -171,7 +171,7 @@ describe('entry projection', () => {
             toolName: 'config',
             content: [{ type: 'text', text: 'Timed out' }],
             details: {
-              target: 'demo',
+              target: 'logs',
               note: 'Timed out',
               view: null,
               ms: 90_000,
@@ -199,13 +199,13 @@ describe('entry projection', () => {
           name: 'survey',
           at: '2026-10-24T12:00:00.000Z',
           details: {
-            target: 'Demo',
+            target: 'Prod',
             note: '1 bucket',
             ms: 4,
             status: 'done',
             evidenceId: 'chk_1',
             key: 'k1',
-            view: { kind: 'buckets', rows: { columns: ['Bucket'], rows: [['demo']] } },
+            view: { kind: 'buckets', rows: { columns: ['Bucket'], rows: [['logs']] } },
           },
         },
       },
@@ -213,7 +213,7 @@ describe('entry projection', () => {
         id: 'ans1',
         kind: 'sa.answer',
         data: {
-          text: '1 risk is open across 1 bucket, including `demo`.',
+          text: '1 risk is open across 1 bucket, including `logs`.',
           at: '2026-10-24T12:00:01.000Z',
         },
       },
@@ -221,10 +221,10 @@ describe('entry projection', () => {
     expect(out.map((entry) => entry.kind)).toEqual(['tool', 'answer'])
     expect(out[0]).toMatchObject({
       name: 'survey',
-      target: 'Demo',
+      target: 'Prod',
       evidenceId: 'chk_1',
     })
-    expect(out[1]).toMatchObject({ text: '1 risk is open across 1 bucket, including `demo`.' })
+    expect(out[1]).toMatchObject({ text: '1 risk is open across 1 bucket, including `logs`.' })
   })
 
   it('keeps a steer apart from a request', () => {
@@ -251,17 +251,34 @@ describe('entry projection', () => {
     expect(out).toEqual([{ id: 'e11', kind: 'resume', at: new Date(3).toISOString() }])
   })
 
-  it('drops a tool result for a tool this app does not have', () => {
+  it('keeps a call to a tool this version does not have, with what the agent received', () => {
     const out = entries([
       {
         id: 'e12',
         kind: 'pi.tool-result',
         model: [
-          { role: 'toolResult', toolCallId: 'x', toolName: 'shell', content: [], timestamp: 1 },
+          {
+            role: 'toolResult',
+            toolCallId: 'x',
+            toolName: 'survey',
+            content: [{ type: 'text', text: 'Tool survey not found' }],
+            details: {
+              target: 'Old',
+              view: { kind: 'survey', buckets: { columns: [], rows: [] } },
+            },
+            isError: true,
+            timestamp: 1,
+          },
         ],
       },
     ])
-    expect(out).toHaveLength(0)
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      kind: 'tool',
+      name: 'survey',
+      view: null,
+      output: 'Tool survey not found',
+    })
   })
 
   it('says when a reply was cut at the model’s output limit', () => {

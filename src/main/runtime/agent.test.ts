@@ -37,7 +37,7 @@ function result(
   status: ToolDetails['status'] = 'done',
 ): EntryRecord {
   const details: ToolDetails = {
-    target: String(args.bucket ?? 'Demo'),
+    target: String(args.bucket ?? 'Prod'),
     note: null,
     view,
     ms: 5,
@@ -62,21 +62,18 @@ function result(
 }
 
 const config = (bucket: string): ToolView => ({
-  kind: 'config',
-  bucket,
-  providerId: 'p',
-  aspect: 'security',
-  exposure: 'public',
-  findings: [],
+  kind: 'raw',
+  title: bucket,
+  value: { policy: { status: 'not_configured' } },
 })
 
 describe('the turn guard, from durable entries', () => {
   it('leaves repeating a call to the agent', () => {
-    const args = { bucket: 'demo', aspect: 'security' }
+    const args = { bucket: 'logs', sections: ['policy'] }
     const view = runView([
       request(),
       call('c1', 'config', args),
-      result('c1', 'config', args, config('demo')),
+      result('c1', 'config', args, config('logs')),
       call('c2', 'config', args),
       result('c2', 'config', args, null, 'failed'),
     ])
@@ -84,11 +81,11 @@ describe('the turn guard, from durable entries', () => {
   })
 
   it('starts every turn with a fresh budget', () => {
-    const args = { bucket: 'demo' }
+    const args = { bucket: 'logs' }
     const view = runView([
       request(),
       call('c1', 'config', args),
-      result('c1', 'config', args, config('demo')),
+      result('c1', 'config', args, config('logs')),
       request('Again'),
     ])
     expect(view.rounds).toBe(0)

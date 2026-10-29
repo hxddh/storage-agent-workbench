@@ -6,16 +6,13 @@ import type { ToolName } from '@shared/contract'
  * second time.
  */
 export const TOOL_NAMES: readonly ToolName[] = [
-  'survey',
   'buckets',
   'objects',
   'object',
   'config',
+  'account',
   'probe',
-  'estate',
-  'change_plan',
-  'note',
-  'accept_risk',
   'query',
+  'note',
   'ask',
 ]
