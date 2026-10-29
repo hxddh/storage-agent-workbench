@@ -191,7 +191,14 @@ async function newTask() {
 async function ask(text) {
   await page.locator('.composer textarea').fill(text)
   await page.keyboard.press('Enter')
+  // This request's own run must land before "not running" means anything.
+  await page.waitForFunction(
+    (request) => document.querySelector('.run-question')?.textContent === request,
+    text,
+    { timeout: 60_000 },
+  )
   await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 180_000 })
+  await page.waitForSelector('.run-answer .verdict, .run-clarify', { timeout: 180_000 })
   await page.waitForTimeout(250)
 }
 
