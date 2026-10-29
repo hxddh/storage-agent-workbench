@@ -2626,6 +2626,69 @@ sup.cite.missing {
 .chart-point {
   fill: var(--accent);
 }
+.chart-bar.series-1 {
+  fill: var(--ok);
+}
+.chart-line.series-1 {
+  stroke: var(--ok);
+}
+.chart-point.series-1 {
+  fill: var(--ok);
+}
+.chart-area.series-1 {
+  fill: var(--ok);
+}
+.chart-bar.series-2 {
+  fill: var(--warn);
+}
+.chart-line.series-2 {
+  stroke: var(--warn);
+}
+.chart-point.series-2 {
+  fill: var(--warn);
+}
+.chart-area.series-2 {
+  fill: var(--warn);
+}
+.chart-bar.series-3 {
+  fill: var(--danger);
+}
+.chart-line.series-3 {
+  stroke: var(--danger);
+}
+.chart-point.series-3 {
+  fill: var(--danger);
+}
+.chart-area.series-3 {
+  fill: var(--danger);
+}
+.chart-series {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 5px;
+  color: var(--ink-3);
+  font-size: 11.75px;
+}
+.chart-series span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.chart-series i {
+  width: 12px;
+  height: 2px;
+  background: var(--accent);
+}
+.chart-series i.series-1 {
+  background: var(--ok);
+}
+.chart-series i.series-2 {
+  background: var(--warn);
+}
+.chart-series i.series-3 {
+  background: var(--danger);
+}
 .view-chart figcaption {
   display: flex;
   justify-content: space-between;

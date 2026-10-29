@@ -21,21 +21,29 @@ function tableOf(block: Extract<ViewBlock, { type: 'table' }>): Table {
 }
 
 function ChartBlock({ spec, t }: { spec: ChartSpec; t: Dict }) {
-  const values = spec.data
-    .map((row) => Number(row[spec.y]))
-    .filter((value) => Number.isFinite(value))
-  if (values.length < 2) return <p className="quiet">{t.noRows}</p>
+  const groups = new Map<string, { label: string; value: number }[]>()
+  for (const row of spec.data) {
+    const value = Number(row[spec.y])
+    if (!Number.isFinite(value)) continue
+    const name = spec.series ? String(row[spec.series] ?? '') : ''
+    const points = groups.get(name) ?? []
+    points.push({ label: String(row[spec.x] ?? ''), value })
+    groups.set(name, points)
+  }
+  const entries = [...groups.entries()]
+  const all = entries.flatMap(([, points]) => points)
+  if (all.length < 2) return <p className="quiet">{t.noRows}</p>
   const width = 720
   const height = 220
   const pad = 24
-  const min = Math.min(...values, 0)
-  const max = Math.max(...values, 1)
+  const min = Math.min(...all.map((point) => point.value), 0)
+  const max = Math.max(...all.map((point) => point.value), 1)
   const span = max - min || 1
-  const x = (index: number) => pad + (index * (width - pad * 2)) / Math.max(1, values.length - 1)
+  const slots = Math.max(...entries.map(([, points]) => points.length))
+  const x = (index: number) => pad + (index * (width - pad * 2)) / Math.max(1, slots - 1)
   const y = (value: number) => height - pad - ((value - min) / span) * (height - pad * 2)
-  const points = values.map((value, index) => `${x(index)},${y(value)}`).join(' ')
-  const area = `${pad},${height - pad} ${points} ${width - pad},${height - pad}`
-  const labels = spec.data.map((row) => String(row[spec.x] ?? ''))
+  const bar = (width - pad * 2) / Math.max(1, slots)
+  const labels = Array.from({ length: slots }, (_, index) => entries[0]?.[1][index]?.label ?? '')
   return (
     <figure className="view-chart">
       <svg
@@ -54,35 +62,60 @@ function ChartBlock({ spec, t }: { spec: ChartSpec; t: Dict }) {
             className="chart-grid"
           />
         ))}
-        {spec.mark === 'bar' ? (
-          values.map((value, index) => {
-            const bar = (width - pad * 2) / values.length
-            return (
+        {entries.map(([, points], series) =>
+          spec.mark === 'bar' ? (
+            points.map((point, index) => (
               <rect
                 key={index}
-                x={x(index) - bar * 0.35}
-                y={y(value)}
-                width={bar * 0.7}
-                height={height - pad - y(value)}
-                className="chart-bar"
+                x={x(index) - bar / 2 + (series * bar) / entries.length}
+                y={y(point.value)}
+                width={(bar / entries.length) * 0.8}
+                height={height - pad - y(point.value)}
+                className={`chart-bar series-${series}`}
               />
-            )
-          })
-        ) : (
-          <>
-            {spec.mark === 'area' && <polygon points={area} className="chart-area" />}
-            <polyline points={points} className="chart-line" />
-            {spec.mark === 'point' &&
-              values.map((value, index) => (
-                <circle key={index} cx={x(index)} cy={y(value)} r={3} className="chart-point" />
-              ))}
-          </>
+            ))
+          ) : (
+            <g key={series}>
+              {spec.mark === 'area' && (
+                <polygon
+                  points={`${pad},${height - pad} ${points
+                    .map((point, index) => `${x(index)},${y(point.value)}`)
+                    .join(' ')} ${width - pad},${height - pad}`}
+                  className={`chart-area series-${series}`}
+                />
+              )}
+              <polyline
+                points={points.map((point, index) => `${x(index)},${y(point.value)}`).join(' ')}
+                className={`chart-line series-${series}`}
+              />
+              {spec.mark === 'point' &&
+                points.map((point, index) => (
+                  <circle
+                    key={index}
+                    cx={x(index)}
+                    cy={y(point.value)}
+                    r={3}
+                    className={`chart-point series-${series}`}
+                  />
+                ))}
+            </g>
+          ),
         )}
       </svg>
       <figcaption>
         <span>{spec.xLabel ?? spec.x}</span>
         <span>{spec.yLabel ?? spec.y}</span>
       </figcaption>
+      {spec.series && entries.length > 1 && (
+        <div className="chart-series">
+          {entries.map(([name], index) => (
+            <span key={`${name}:${index}`}>
+              <i className={`series-${index}`} />
+              {name || '—'}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="chart-labels">
         {labels.map((label, index) => (
           <span key={index}>{label}</span>

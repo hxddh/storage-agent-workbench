@@ -79,7 +79,7 @@ said. A **turn** is one user message and the agent's work on it.
     A default exists only where it protects the user's machine, and the agent
     can change it: the sandbox's memory (`memory_mb`) and how much of a body
     one read holds (`max_bytes`). The model's output budget is a bounded
-    default of `min(32,000, context window)` tokens.
+    default of `min(8,192, context window)` tokens.
 12. The app does not speak for the user. Home has no canned prompts; Continue
     sends `Continue.`
 

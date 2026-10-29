@@ -196,7 +196,7 @@ export class MemoryStore {
       params.push(input.scope === 'task' ? (input.conversationId ?? null) : null)
     }
     if (input.prefix) {
-      clauses.push('key LIKE ?')
+      clauses.push("key LIKE ? ESCAPE '\\'")
       params.push(`${input.prefix.replace(/[%_\\]/g, (m) => `\\${m}`)}%`)
     }
     if (input.tag) {

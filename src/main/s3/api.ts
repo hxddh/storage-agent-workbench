@@ -76,7 +76,8 @@ const MODULES: Record<string, Record<string, unknown>> = {
 export const SERVICES = Object.keys(MODULES)
 
 /** Operations whose names say they read. */
-const READ = /^(Get|List|Head|Describe|Lookup|Search|Select|Simulate|BatchGet|Query|Scan)[A-Z]/
+const READ =
+  /^(?:Get|List|Head|Describe|Lookup|Search|Select|Simulate|BatchGet|Query|Scan)(?:[A-Z]|$)/
 
 /**
  * Reads that hand out credentials or start state on the service side. They
@@ -88,6 +89,7 @@ const NEVER = new Set([
   'sts:GetWebIdentityToken',
   'kms:GetParametersForImport',
   // Secret stores: their read operations return the secret itself.
+  'ecr:GetAuthorizationToken',
   'secretsmanager:GetSecretValue',
   'secretsmanager:BatchGetSecretValue',
   'ssm:GetParameter',

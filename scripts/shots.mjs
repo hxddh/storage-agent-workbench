@@ -150,6 +150,12 @@ await openStep('Delegated to a child agent')
 await page.waitForTimeout(350)
 await page.screenshot({ path: join(out, '27-delegate-light.png') })
 
+await page.getByRole('button', { name: 'New task' }).click()
+await say('Compare accounts over time')
+await openStep('Composed a view')
+await page.waitForTimeout(350)
+await page.screenshot({ path: join(out, '28-chart-series-light.png') })
+
 await page.getByRole('button', { name: 'Settings' }).click()
 await page.getByRole('button', { name: 'Memory', exact: true }).click()
 await page.waitForTimeout(350)

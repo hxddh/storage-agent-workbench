@@ -123,6 +123,41 @@ function plan(body) {
     return { text: `I rendered the buckets I read.${cite(view)}` }
   }
 
+
+  // A chart with two series, to exercise the renderer's series split.
+  if (ask.includes('compare accounts over time') || ask.includes('chart series')) {
+    const view = made('render')[0]
+    if (!view)
+      return next('render', {
+        title: 'Account trend',
+        doc: {
+          version: 1,
+          blocks: [
+            {
+              type: 'chart',
+              spec: {
+                mark: 'line',
+                x: 'day',
+                y: 'objects',
+                series: 'account',
+                xLabel: 'Day',
+                yLabel: 'Objects',
+                data: [
+                  { day: 'Mon', objects: 120, account: 'Prod' },
+                  { day: 'Tue', objects: 180, account: 'Prod' },
+                  { day: 'Wed', objects: 210, account: 'Prod' },
+                  { day: 'Mon', objects: 80, account: 'Staging' },
+                  { day: 'Tue', objects: 95, account: 'Staging' },
+                  { day: 'Wed', objects: 140, account: 'Staging' },
+                ],
+              },
+            },
+          ],
+        },
+      })
+    return { text: `The chart keeps the two accounts separate.${cite(view)}` }
+  }
+
   // A method the agent writes and reuses.
   if (ask.includes('method') || ask.includes('reuse')) {
     const save = made('tool').find((item) => item.args.action === 'save')

@@ -65,9 +65,10 @@ export function installModel(
   const baseUrl = baseUrlOf(stored)
   const contextWindow = stored.contextWindow > 0 ? stored.contextWindow : 128_000
   const reasoning = stored.thinking !== 'off'
-  // A bounded default; a provider that accepts more can still be used. The
-  // app no longer makes a hidden probe call to discover the limit.
-  const maxTokens = outputLimit ?? Math.min(32_000, contextWindow)
+  // A conservative output budget every supported provider accepts. The
+  // context window is not an output ceiling; asking for more than a provider
+  // allows fails the whole turn before it can answer.
+  const maxTokens = outputLimit ?? Math.min(8_192, contextWindow)
   const { api, streams } = apiOf(stored)
 
   const model = {

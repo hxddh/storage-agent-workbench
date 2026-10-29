@@ -68,7 +68,7 @@ much to read, whether to delegate, what to remember and how long to work are
 the agent's. **Stop** is the user's control.
 
 The model's output budget is a bounded default of
-`min(32,000, context window)` tokens. There is no hidden probe call to learn a
+`min(8,192, context window)` tokens. There is no hidden probe call to learn a
 provider's maximum. A reply that stops at the limit gets a `cut` notice.
 
 A result longer than one piece (24,000 characters) is kept whole in the task

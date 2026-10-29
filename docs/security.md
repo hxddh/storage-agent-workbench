@@ -8,7 +8,8 @@
    Scan and it exists on a bundled SDK client. `NEVER` refuses the reads that
    hand out credentials or start state on the service (STS `GetSessionToken`,
    `GetFederationToken`, `GetWebIdentityToken`; KMS `GetParametersForImport`).
-   Secret-store reads are refused too: Secrets Manager `GetSecretValue` and
+   Secret-store and registry-credential reads are refused too: ECR
+   `GetAuthorizationToken`, Secrets Manager `GetSecretValue` and
    `BatchGetSecretValue`, SSM `GetParameter`, `GetParameters`,
    `GetParametersByPath` and `GetParameterHistory`. A refused call sends
    nothing. There is no shell, raw HTTP proxy, write
