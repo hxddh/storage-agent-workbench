@@ -39,7 +39,7 @@ scope and the tool floor, code mode (sandbox, budgets, timeout, import), demo
 storage, generated change plans and impact, log normalization and IP masking,
 CSV/Parquet import and the aggregate whitelist, the search index, entry → UI
 projection (including 35.x entries and budget-blocked calls), the conversation
-projection (order, steers, the live slot, citations, replaced plans, Markdown),
+projection (order, steers, the live slot, citations, what each call returned, Markdown),
 the round budget rebuilt from durable entries, migrations 15 and 16, redaction,
 provider capabilities, posture diffs, permission diagnosis, model windows,
 access evaluation and reading records. `Conversation.test.tsx` and
@@ -80,7 +80,7 @@ access evaluation and reading records. `Conversation.test.tsx` and
   only adds the account: no task, no conversation, no **Check account**, and
   **Set up a model** is offered. It captures the no-model state.
 - `scripts/shots.mjs` captures Home, Settings, the conversation (task, citation
-  open, tool detail, follow-up, estate, history, live, plan, risk
+  open, tool detail, follow-up, estate, history, live, change plan, risk
   confirmation), dark-mode, compact and Chinese states under
   `.amp/in/artifacts`.
 - `scripts/visual.mjs` compares those captures to `visual/baseline`. It rejects
@@ -94,10 +94,10 @@ access evaluation and reading records. `Conversation.test.tsx` and
 
 ### Evaluation
 
-`scripts/eval.mjs` has 29 scenarios. It scores findings (the Issue rows in the
+`scripts/eval.mjs` has 28 scenarios. It scores findings (the Issue rows in the
 conversation's survey steps), answers that name what was found and what could
 not be read, blind-spot honesty, memory-first and estate-history behavior,
-verify-after-fix, code mode, access questions, method routing,
+verify-after-fix, code mode, access questions,
 prompt-injection-shaped object names and call counts. The script runs the real
 window against fake S3.
 

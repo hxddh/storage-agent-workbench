@@ -155,9 +155,13 @@ export function agentTool<T extends TSchema>(
           outcome: 'ok',
         })
         const evidenceId = api.callId ? String(api.callId) : undefined
+        const sent = bound(result.model)
+        // When the result was cut for the model, the step says so: the view may hold more.
+        const cut = sent !== result.model ? 'the agent got part of this result' : null
+        const note = [result.note ? redact(result.note) : null, cut].filter(Boolean).join(' · ')
         const details: ToolDetails = {
           target: redact(result.target ?? target),
-          note: result.note ? redact(result.note) : null,
+          note: note || null,
           args: callArgs,
           view: redactView(result.view) as ToolView,
           ms: Date.now() - started,
@@ -167,7 +171,7 @@ export function agentTool<T extends TSchema>(
         // Let every queued progress write land before the final shaped result.
         await detailsWrite
         return {
-          output: [{ type: 'text' as const, text: envelope(bound(result.model), evidenceId) }],
+          output: [{ type: 'text' as const, text: envelope(sent, evidenceId) }],
           details: details as never,
         }
       } catch (error) {

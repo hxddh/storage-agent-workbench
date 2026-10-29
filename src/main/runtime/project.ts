@@ -252,7 +252,7 @@ export function roundsOf(entries: readonly EntryRecord[]): number {
   return rounds
 }
 
-/** A result pi wrote without running the tool; its text is not shown. */
+/** A result pi wrote without running the tool (a budget block); its text is the step's output. */
 function blockedNote(text: string): string | null {
   return text ? 'Did not run' : null
 }

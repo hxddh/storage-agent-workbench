@@ -142,7 +142,7 @@ export function probeTool(deps: ToolDeps) {
         model: checks
           .map((check) => `${check.ok ? 'ok' : 'fail'} ${check.name}: ${check.detail}`)
           .join('\n'),
-        note: checks.every((check) => check.ok) ? 'all checks passed' : 'a check failed',
+        note: `${checks.filter((check) => check.ok).length} of ${checks.length} ok`,
         view: { kind: 'probe' as const, endpoint, checks },
       }
     },

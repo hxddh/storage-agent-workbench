@@ -10,7 +10,7 @@ into report sections. 35.x tasks open as conversations.
 - **A conversation, not a run page.** `shared/conversation.ts` projects the
   entries into one ordered thread: messages (a steer shows where it was said),
   the agent's text, provider reasoning as returned, each tool call as a step
-  you can open in place, the agent's plan (each update where it was made), a
+  you can open in place, a
   clarifying question with one-click options, notices with Retry or Continue,
   and a divider where a stopped turn was continued. Follow-ups are the next
   message in the same thread. `Conversation.tsx` replaces `Run`, `Answer`,
@@ -19,7 +19,7 @@ into report sections. 35.x tasks open as conversations.
   send the agent a message; they need a model. Without one the window offers the
   demo account, adds it when asked, and says to set up a model.
 - **Accepting a risk is asked in the conversation.** The new `accept_risk` tool
-  (14 tools) names a risk by bucket and rule code; the window shows a
+  names a risk by bucket and rule code; the window shows a
   confirmation, and only your click accepts or reopens it. The estate lists each
   Issue's rule code so the agent can name it.
 - **Survey steps say what a read resolved** (`· n resolved`).
@@ -46,8 +46,15 @@ into report sections. 35.x tasks open as conversations.
   buckets; the tier note states the round budget. Continue sends `Continue.`
 - **`change_plan` plans what the agent names**: a bucket and a rule code plan
   that change whether or not an Issue is open.
-- Every `plan` call stays in the thread; a replaced one folds to one line.
-  Reasoning is shown in full. An `@` bucket the estate has not read yet is no
+- **No plan tool, no method tool (12 tools).** `plan` made the agent publish a
+  checklist for the window to draw, and `skill` made it load method documents;
+  both were process scaffolding. The agent says its plan in its own words, and
+  what the methods said is in the descriptions of the tools they were about.
+  `ask` takes options only if the agent wants them.
+- Every step, question and confirmation can show what the agent received, the
+  Markdown export carries reasoning and each call's output, `change_plan` and
+  `query` send the agent the commands and rows they show, and a result cut to
+  fit says so in its step. Reasoning is shown in full. An `@` bucket the estate has not read yet is no
   longer dropped. Tool views no longer say "No problems found" or "clean".
 
 ### Removed

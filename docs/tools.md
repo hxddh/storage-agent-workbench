@@ -1,15 +1,16 @@
 # Tools
 
-Fourteen tools in one pi extension (`runtime/agent.ts`), grouped by capability
-in `tools/registry.ts`: **read**, **query**, **memory**, **change_plan**,
-**plan**, **skill** and **ask**. Every tool except the three control tools goes
-through `agentTool()`, which applies account scope, a timeout, an audit row,
-redaction and the untrusted-data envelope, and attaches a typed `view`, a
+Twelve tools in one pi extension (`runtime/agent.ts`), grouped by capability
+in `tools/registry.ts`: **read**, **query**, **memory**, **change_plan** and
+**ask**. Every tool except `ask` goes through `agentTool()`, which applies
+account scope, a timeout, an audit row, redaction and the untrusted-data envelope, and attaches a typed `view`, a
 `status` (`done`, `failed`, `refused`, `timeout`, `stopped`) and an
 `evidenceId`.
 
-`plan`, `skill` and `ask` are control tools. They shape the turn and never read
-storage. `change_plan` generates text from remembered Issues; the app never
+`ask` is the one tool that does not read storage: it puts a question to the
+user. 36.0 removed `plan` (a checklist the window drew) and `skill` (method
+documents the agent loaded); the agent says its plan in its own words, and what
+a method said now lives in the description of the tool it is about. `change_plan` generates text from remembered Issues; the app never
 applies it. `accept_risk` asks the user to confirm accepting a risk; it changes
 nothing itself.
 
@@ -21,14 +22,12 @@ nothing itself.
 | read | `object` | `provider_id?`, `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`) | facts (metadata names only, never values) and the text preview | fact list, bounded text preview |
 | read | `config` | `provider_id?`, `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules not triggered, exposure, missing permissions, the bucket's Issues; for `access`, every grant, blind source, missing permission and coverage | finding list, observations, access chain and coverage |
 | read | `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`) | check outcomes | check list |
-| read | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | first 40 rows, call/listing counts, script output | table, bar chart, script, buckets read |
+| read | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | every row on the page (up to 500), call/listing counts, script output | table, bar chart, script, buckets read |
 | memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | the remembered bucket table with age, every Issue (each line has `· rule <code>`), notes; with `history`, Issue events, posture changes and reading counts | bucket table, Issues, notes, optional history table |
 | memory | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
 | memory | `accept_risk` | `provider_id?`, `bucket` (empty for the account rule), `code` (the rule code as `estate` lists it), `accept?` (default true; false reopens) | the window asks the user; it is not accepted until they confirm | confirmation card with **Accept risk** or **Reopen** |
 | change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue; both plan that change for that bucket, Issue or not) | one change plan: baseline (latest account survey, as counts), merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
-| plan | `plan` | `steps` (1–6), `note?` | optional plan recorded | pending/active/done/blocked checklist; a version replaced later in the turn shows as one line |
-| skill | `skill` | `name?` | one method, or the four methods | a `Read a method` step; not a check |
-| ask | `ask` | `question` (≤300), `options` (1–4), `note?` | one question; the turn ends until the user answers | the question as an agent message, with one button per option while it waits |
+| ask | `ask` | `question` (≤300), `options?` (≤6), `note?` | the question; the turn ends until the user answers | the question as an agent message, with a button per option, if any, while it waits |
 
 ## Answer and citations
 
@@ -84,20 +83,6 @@ accepted; a larger file is reported instead of silently cut. With `full: true`,
 every manifest file is imported into a local dataset, bounded to 1,000 files,
 128 MiB per file, 512 MiB total and 2,000,000 rows. `aggregate` is the only way
 to query that dataset.
-
-## Skills
-
-Four on-demand methods: `access`, `change`, `inventory`, `capacity`. Skills are
-documentation for the model, not storage evidence and not checks. A method the
-agent loads is a `Read a method` step like any other call.
-
-## Plan
-
-`plan` is optional; the agent decides whether to use it. It renders 1–6 steps
-with pending/active/done/blocked states as a `Plan` block among the turn's
-steps. The agent revises it by calling `plan` again; every call stays in the
-thread, and a version replaced later in the same turn shows as one line,
-`Plan · updated below` (`supersededPlans()` in `shared/conversation.ts`).
 
 ## Accepting a risk
 

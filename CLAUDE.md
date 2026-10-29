@@ -94,20 +94,20 @@ second queue, no SSE, no HTTP server. `viewState()`/`watch()` are the stream.
 
 ## Agent
 
-One extension, fourteen tools (`tools/registry.ts` generates the capability
+One extension, twelve tools (`tools/registry.ts` generates the capability
 section). Seven reads (`survey`, `buckets`, `objects`, `object`, `config`,
 `probe`, `query`), memory (`estate`, `note`, `accept_risk`), `change_plan`, and
-the control tools `plan`, `skill`, `ask`. The agent's text is the answer; there
-is no answer tool and no report protocol. `query` exists because questions over
+`ask`. The agent's text is the answer; there is no answer tool, no report
+protocol, no plan tool and no method tool — the agent says its plan in its own
+words, and a tool's description carries how to use it. `query` exists because questions over
 many objects or buckets cannot go through a fixed tool without flooding context;
 adding a storage tool requires saying why `query` cannot do the job.
 
 Prompt sections: identity, time, policy (with the turn's tier), capabilities,
 compose, estate digest, language. The digest lists the first 12 of N open Issues
 and notes and says so. The model may link a call as `[1](#ev-<id>)`; a link
-opens that call in place. It never authors an Issue transition. `skill` loads
-one of four methods (access, change, inventory, capacity); a method is
-documentation, not evidence. Provider reasoning is shown only as returned.
+opens that call in place. It never authors an Issue transition. Provider
+reasoning is shown in full, as returned.
 
 `change_plan` returns one plan for open Issues, or for a bucket and change the
 agent names: lifecycle rules merge per bucket, a policy merge only when the
@@ -134,7 +134,7 @@ events and readings keep history with a null conversation id.
 ## Window
 
 `Sidebar · conversation · Composer`, plus a full-screen Settings sheet. The
-conversation (messages, inline steps, plan, clarify, risk confirmation,
+conversation (messages, inline steps, what each call returned, clarify, risk confirmation,
 notices, Stop/Continue/Retry) and the keyboard map are specified in
 `docs/design.md`. There are no evidence strips, scope line, earlier-runs fold or
 "worked for" summary, and Home lists accounts without saying anything about

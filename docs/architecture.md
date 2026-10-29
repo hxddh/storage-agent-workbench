@@ -9,7 +9,7 @@ Electron main                              Renderer (sandboxed)
   ipc.ts      the only IPC surface           Composer, Settings (lazy)
   preload     contextBridge, CJS
   runtime     session · engine · tasks · agent
-  tools       read-only tools + plan/skill/ask/accept_risk
+  tools       read-only tools + ask/accept_risk
   estate      rules, assess (the only Issue writer), change plans
   s3          readers, policy, access, changes
   analysis    one SQLite file per dataset
@@ -44,8 +44,9 @@ and the window renders them through one projection.
 ```
 
 - **One driver.** The model reads with its tools, calls them in parallel where
-  it can, may publish a plan, ask one question or ask the user to accept a
-  risk, and writes its text. There is no scripted run: `Check account` and a
+  it can, may ask the user a question or ask them to accept a risk, and writes
+  its text. There is no plan tool and no method tool: the agent says its plan
+  in its own words, and the tool descriptions carry what the methods said. There is no scripted run: `Check account` and a
   scheduled check are user messages (`src/main/app.ts`,
   `src/renderer/App.tsx`).
 - **One settlement.** Every turn settles in `Engine.settle()`: the budget
@@ -107,8 +108,8 @@ never replaces another task's mid-turn.
    `agentTool()`; result text is never parsed for it.
 5. A tool reads; it never writes an Issue. `agentTool()` hands each call an
    `Assessor` (`estate/assess.ts`), the only module that turns rule decisions
-   into Issue transitions. The transitions are recorded on the call
-   (`assessed`); a survey's step note says how many Issues opened or resolved.
+   into Issue transitions; a survey's step note says how many Issues opened or
+   resolved.
    `accept_risk` changes nothing: it returns an `accept` view, and only the
    user's click on the confirmation card calls `AppDb.setAccepted` (through
    `Tasks.acceptIssue`).
@@ -182,14 +183,14 @@ Coverage, unread sources and truncation stay in the view.
 | `main/estate/changes.ts` | change formats and impact preview |
 | `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details, key, evidence id, assessor |
 | `main/tools/registry.ts` | the capability manifest and generated prompt section |
-| `main/tools/control.ts` | `plan`, `skill` and `ask` |
+| `main/tools/control.ts` | `ask` |
 | `main/tools/estate.ts` | `estate`, `note`, `change_plan` and `accept_risk` |
 | `main/tools/query.ts` | code mode: read-only primitives, datasets, inventory, budgets |
 | `main/s3/*` | readers: facts, policy, account, metrics, access, changes, capabilities, permissions |
 | `shared/contract.ts` | the one type contract |
 | `main/runtime/readings.ts` | the turn's account surveys as reading records (counts) |
-| `shared/conversation.ts` | the one projection: thread, replaced plans, citation lookup, search rows, Markdown transcript |
-| `renderer/Conversation.tsx` | the thread: messages, steps, plan, question, confirmation, notices, overflow menu, task model |
+| `shared/conversation.ts` | the one projection: thread, citation lookup, search rows, Markdown transcript |
+| `renderer/Conversation.tsx` | the thread: messages, steps, what each call returned, question, confirmation, notices, overflow menu, task model |
 | `renderer/Composer.tsx` | message, steer, stop, files, `@` focus, the live status strip |
 | `renderer/Home.tsx` | accounts list, Check account, demo and model setup |
 | `renderer/Views.tsx` | typed views of tool results |

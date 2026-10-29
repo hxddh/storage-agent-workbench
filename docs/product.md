@@ -74,9 +74,6 @@ The scripted, model-free check and re-check of 35.x were removed in 36.0.
   summary appears as a `Thought` step; when the provider returns none, the open
   step says so. Completed, failed, refused, stopped and timed-out calls stay in
   order.
-- The agent may publish a short plan; it appears as a `Plan` block among the
-  steps. Each update is a step where it was made; a replaced version folds to
-  one line. Whether to plan at all is the agent's choice.
 - Every step can show exactly what the agent received from that call, so the
   page never shows more than the agent saw.
 - The agent's text is normal Markdown, and a turn can hold several texts
@@ -106,10 +103,10 @@ The scripted, model-free check and re-check of 35.x were removed in 36.0.
 
 ## Clarifying questions
 
-When a request is genuinely ambiguous and the answer would change, the agent
-may call `ask` once with one short question and 2–4 options. The question is an
-agent message; while it waits, each option is a button that sends that option
-as the next message. Typing an answer in the composer works the same way.
+The agent may call `ask` with a question and, if it wants, up to six options.
+The question is an agent message; while it waits, each option is a button that
+sends that option as the next message, and typing an answer in the composer
+works the same way.
 
 ## Accepting a risk
 
@@ -227,8 +224,7 @@ The provider reports the model list in Settings. The context window is inferred
 (unknown models fall back to 128k), and reasoning is on at medium for known
 reasoning models, off otherwise. Context below 64k is a small model, below 200k
 mid, otherwise large. Small gets a 14-round budget, mid 24 and large 32. The
-agent asks for one of the four method cards with `skill`; they are not injected
-into every prompt. The answer format does not change.
+answer format does not change.
 
 ## Settings
 
@@ -314,9 +310,9 @@ re-check of 35.x was removed in 36.0.
 
 The estate is remembered bucket posture with the date it was read, open and
 accepted Issues with their evidence, notes, the latest change rows and a compact
-`readings` history (trigger, coverage counts, open totals and whether the read
-was complete). The prompt tells the agent to start from memory, to say when an
-answer is memory, and to read before it concludes.
+`readings` history (trigger, coverage counts and open totals; no verdict). The
+prompt says what memory is — remembered, with the date it was read, not a
+fresh read — and leaves when to use it to the agent.
 
 `estate` also answers temporal questions with `history: true`: Issue events
 (opened, resolved, recurred, gone, accepted, reopened), posture changes and

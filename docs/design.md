@@ -139,13 +139,9 @@ removed in 36.0.
   without a result says `Waiting for the first result.` A call the round budget
   blocked is a failed step with the note `Did not run`.
 - **Thought** — a provider reasoning summary is a `Thought` step, `Thinking`
-  while it streams. It opens to the summary as returned, in full; when the provider
-  returned none it says `This model did not return a reasoning summary.` No
+  while it streams. It opens to the summary as returned, in full; when the
+  provider returned none it says `This model did not return a reasoning summary.` No
   replacement narrative is invented.
-- **Plan** — a `Plan` block among the steps: the agent's note and 1–6 items
-  with a mark each (circle pending, loader active, check done, triangle blocked
-  in `--warn`). Every `plan` call stays where it was made; a version the agent
-  replaced later in the turn folds to one line, `Plan · updated below`.
 - **Agent text** — plain Markdown at 15px, no bubble. A citation
   `[1](#ev-<id>)` is a small superscript button on `--accent-soft`; clicking it
   opens that call's step and scrolls it to the centre. While text streams it
@@ -202,8 +198,8 @@ accent dot, the phase (`Thinking`, `Writing`, `Reading <target>`, or
 elapsed time; when the last call failed it says `<tool>: Failed`. Before the
 first step arrives, a `Thinking` line sits under the message. The running call
 is open in place; every earlier step stays above it. The send button becomes a
-steer button, and **Stop** sits beside it. A stopped turn keeps its steps and
-plan; **Continue** resumes in the same task.
+steer button, and **Stop** sits beside it. A stopped turn keeps its steps;
+**Continue** resumes in the same task.
 
 ### Keyboard and pointer
 

@@ -1,7 +1,7 @@
 import type { ToolRegistration } from '@earendil-works/pi-durable'
 import { bucketTools } from './browse'
 import { configTool } from './config'
-import { askTool, planTool, skillTool } from './control'
+import { askTool } from './control'
 import { estateTools } from './estate'
 import type { ToolDeps } from './policy'
 import { probeTool } from './probe'
@@ -10,10 +10,7 @@ import { surveyTool } from './survey'
 
 export function createTools(deps: ToolDeps): ToolRegistration[] {
   return [
-    // Control tools. They do not read storage; they publish the optional plan
-    // or return a method card.
-    planTool(),
-    skillTool(),
+    // Asking the user is the one tool that does not read storage.
     askTool(),
     surveyTool(deps),
     ...bucketTools(deps),

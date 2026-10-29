@@ -11,7 +11,7 @@ export function configTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'config',
     description:
-      'Review one bucket read-only in depth: exposure (policy, ACL, public access block), CORS, encryption, lifecycle and cleanup, logging and tags, or access (who can reach it, from bucket policy, ACL, IAM, KMS and Access Analyzer).',
+      'Review one bucket read-only in depth: exposure (policy, ACL, public access block), CORS, encryption, lifecycle and cleanup, logging and tags, or access (who can reach it, from bucket policy, ACL, IAM, inherited SCPs when Organizations permits, KMS key policy and Access Analyzer). Access rows are grants, not one merged authorization verdict; it reports principal coverage, undecided conditions and truncation, and a denied source is unread, not an empty grant list. Service principals, federated identities and some external policies stay outside the enumerated evidence.',
     parameters: Type.Object({
       provider_id: providerParam,
       bucket: bucketParam,

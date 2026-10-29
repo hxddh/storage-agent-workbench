@@ -343,7 +343,7 @@ export function estateTools(deps: ToolDeps) {
     agentTool(deps, {
       name: 'change_plan',
       description:
-        'Build one change plan: a baseline, merged steps with AWS CLI/Terraform/API text, impact from the remembered posture, manual blockers and residual findings. Omit bucket and code for every open Issue, set either to narrow it, or set both to plan that change for that bucket whether or not an Issue is open. Read-only; the user applies it, and only a later read shows it took effect.',
+        'Build one change plan: a baseline, merged steps with AWS CLI/Terraform/API text, impact from the remembered posture, manual blockers and residual findings. Omit bucket and code for every open Issue, set either to narrow it, or set both to plan that change for that bucket whether or not an Issue is open. Lifecycle rules merge per bucket, because a lifecycle put replaces the whole configuration; a policy is merged only when the current one was read and names no account id, otherwise the step is manual with its blocker. Read-only; the user applies it, and only a later read shows it took effect.',
       parameters: Type.Object({
         provider_id: providerParam,
         bucket: Type.Optional(
@@ -631,15 +631,18 @@ export function estateTools(deps: ToolDeps) {
         const first = steps[0]!
         const lines = [
           `Change plan: ${summary}.`,
-          ...steps.map(
-            (step, index) =>
+          // The step text, impact and notes the window shows, so the agent can quote them.
+          ...steps.map((step, index) =>
+            [
               `${index + 1}. ${step.bucket || 'account'} — ${step.title} [${step.status}] (${step.codes.join(', ')}).${
                 step.blockers.length ? ` ${step.blockers.join(' ')}` : ''
               }`,
+              `   impact: ${step.impact.verdict}${step.impact.reasons.length ? ` — ${step.impact.reasons.join('; ')}` : ''}${step.impact.gap ? ` (${step.impact.gap})` : ''}`,
+              ...step.notes.map((note) => `   note: ${note}`),
+              ...step.formats.map((format) => `   ${format.label}:\n${format.text}`),
+            ].join('\n'),
           ),
-          ...residual
-            .slice(0, 10)
-            .map((item) => `residual: ${item.bucket || 'account'} — ${item.title}`),
+          ...residual.map((item) => `residual: ${item.bucket || 'account'} — ${item.title}`),
           baseline
             ? `Baseline: account survey ${baseline.at.slice(0, 10)}, ${baseline.processed}/${baseline.visible} buckets read${
                 baseline.pending ? `, ${baseline.pending} pending` : ''

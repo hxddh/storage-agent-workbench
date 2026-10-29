@@ -8,7 +8,7 @@ roadmap and not a substitute for the code.
 | [product.md](product.md) | Tasks as conversations, Home, Check account, access evidence, memory and limits |
 | [architecture.md](architecture.md) | Processes, runtime flow, modules and storage layout |
 | [data-model.md](data-model.md) | Host tables, pi tables, datasets and retention |
-| [tools.md](tools.md) | The fourteen tools grouped by capability, citations, change_plan, code mode and limits |
+| [tools.md](tools.md) | The twelve tools grouped by capability, citations, change_plan, code mode and limits |
 | [security.md](security.md) | Secrets, scope, redaction, evidence and the trust boundary |
 | [iam.md](iam.md) | The read-only IAM actions and what each one enables |
 | [capabilities.md](capabilities.md) | Provider capability matrix |
@@ -41,8 +41,6 @@ roadmap and not a substitute for the code.
   agent's memory. It holds no verdict and is never shown in the window.
 - **Thought** — a provider-supplied reasoning summary, never a fabricated chain
   of thought. An omitted summary stays visibly omitted.
-- **Method** — a `skill` workflow the agent loaded (access, change, inventory,
-  capacity). It is documentation, not a check or storage evidence.
 - **Risk** — the user-facing problem proved by a reading. An **Issue** is its
   durable database record; the word Issue is not shown in the window.
 - **Check** — **Check account** and a scheduled check send the agent a message

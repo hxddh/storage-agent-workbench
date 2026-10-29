@@ -171,24 +171,6 @@ export function thread(entries: readonly UiEntry[], live: Live | null = null): T
   return items
 }
 
-/**
- * The plan is one checklist the agent keeps updating. Every `plan` call stays
- * in the thread; the ones a later call in the same turn replaced are returned
- * here, so the window can show them as one line instead of a stale checklist.
- */
-export function supersededPlans(items: readonly ThreadItem[]): Set<string> {
-  const superseded = new Set<string>()
-  let last: string | null = null
-  for (const item of items) {
-    if (item.kind === 'user' && !item.steer) last = null
-    else if (item.kind === 'tool' && item.name === 'plan' && item.view?.kind === 'plan') {
-      if (last) superseded.add(last)
-      last = item.id
-    }
-  }
-  return superseded
-}
-
 /** The tool call a `[n](#ev-<id>)` link in the agent's text points at. */
 export function callFor(items: readonly ThreadItem[], evidenceId: string): ThreadItem | undefined {
   return items.find(
@@ -205,17 +187,28 @@ export function pendingQuestion(items: readonly ThreadItem[]): string | null {
     : null
 }
 
-/** The conversation as Markdown: messages and the calls between them. */
+/**
+ * The conversation as Markdown: messages, the agent's text and reasoning, and
+ * every call with what it returned to the agent.
+ */
 export function transcriptMarkdown(items: readonly ThreadItem[]): string {
   const parts: string[] = []
   for (const item of items) {
     if (item.kind === 'user') parts.push(`**You:** ${item.text}`)
     else if (item.kind === 'text') parts.push(item.text)
-    else if (item.kind === 'tool')
+    else if (item.kind === 'thought' && item.text)
+      parts.push(
+        item.text
+          .split('\n')
+          .map((line) => `> ${line}`)
+          .join('\n'),
+      )
+    else if (item.kind === 'tool') {
       parts.push(
         `> ${item.name}${item.target ? ` · ${item.target}` : ''} · ${item.status}${item.note ? ` · ${item.note}` : ''}`,
       )
-    else if (item.kind === 'notice' && item.text) parts.push(`> ${item.text}`)
+      if (item.output) parts.push(`\`\`\`\`text\n${item.output}\n\`\`\`\``)
+    } else if (item.kind === 'notice' && item.text) parts.push(`> ${item.text}`)
   }
   return parts.join('\n\n')
 }

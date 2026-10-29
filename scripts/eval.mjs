@@ -216,12 +216,6 @@ const SCENARIOS = [
     expect: { mentions: ['shared'], maxCalls: 5 },
   },
   {
-    name: 'method-routing',
-    buckets: { shared: { public: true, encryption: true } },
-    turns: [{ ask: 'Load the access method, then tell me who can read shared.' }],
-    expect: { method: 'Access evidence', mentions: ['shared'], maxCalls: 6 },
-  },
-  {
     name: 'empty-account',
     buckets: {},
     turns: [{ ask: 'Is anything public?' }],
@@ -342,7 +336,6 @@ async function openSteps(page, label) {
 async function readBrief(page) {
   // The findings are what the agent's reads returned: the Issues in each survey result.
   await openSteps(page, 'Read account')
-  await openSteps(page, 'Read a method')
   await openSteps(page, 'Prepared a change plan')
   return page.evaluate(() => {
     const text = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
@@ -365,9 +358,6 @@ async function readBrief(page) {
       findings,
       resolvedFold: surveys.some((row) => / resolved/.test(text(row.querySelector('.step-note')))),
       fixShown: document.querySelectorAll('.step-detail .plan, .step-detail .tabs').length > 0,
-      methods: [...document.querySelectorAll('.step.tool')]
-        .filter((row) => text(row.querySelector('.step-title')) === 'Read a method')
-        .flatMap((row) => [...row.querySelectorAll('.view-title')].map(text)),
       receipt: `${document.querySelectorAll('.step.tool').length} calls`,
     }
   })
@@ -382,8 +372,7 @@ async function checks(page) {
           ['done', 'failed', 'stopped', 'timeout', 'refused', 'running'].find((name) =>
             row.classList.contains(name),
           ) ?? '',
-      }))
-      .filter((row) => row.verb !== 'Read a method'),
+      })),
   )
 }
 
@@ -399,7 +388,6 @@ function score(scenario, brief, allChecks, lastTurnChecks, elapsedMs) {
     check('answer says the question is open', HONEST.test(brief.verdict))
     check('answer never claims clean', !CLEAN_CLAIM.test(brief.verdict))
   }
-  if (e.method) check(`loads method ${e.method}`, brief.methods.includes(e.method))
   if (e.blindShown) check('answer names the unread part', HONEST.test(brief.verdict))
   if (e.resolvedFold) check('the re-read shows what was fixed', brief.resolvedFold)
   if (e.fixShown) check('the conversation shows the fix', brief.fixShown)

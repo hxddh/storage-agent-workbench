@@ -1,6 +1,6 @@
 import type { ToolName } from '@shared/contract'
 
-export type ToolGroup = 'read' | 'query' | 'memory' | 'change_plan' | 'plan' | 'skill' | 'ask'
+export type ToolGroup = 'read' | 'query' | 'memory' | 'change_plan' | 'ask'
 export type ToolCost = 'cheap' | 'moderate' | 'expensive'
 export type ToolCoverage = 'account' | 'bucket' | 'object' | 'memory' | 'none'
 
@@ -114,25 +114,9 @@ export const TOOL_MANIFEST: readonly ToolManifestEntry[] = [
     composition: true,
   },
   {
-    name: 'skill',
-    group: 'skill',
-    description: 'Load one method card. Documentation, not storage evidence.',
-    cost: 'cheap',
-    coverage: 'none',
-    readOnly: true,
-  },
-  {
-    name: 'plan',
-    group: 'plan',
-    description: 'Publish or revise the optional investigation plan.',
-    cost: 'cheap',
-    coverage: 'none',
-    readOnly: true,
-  },
-  {
     name: 'ask',
     group: 'ask',
-    description: 'Ask one clarifying question and end the run until the user answers.',
+    description: 'Ask the user a question and end the turn until they answer.',
     cost: 'cheap',
     coverage: 'none',
     readOnly: true,
@@ -151,8 +135,8 @@ export function manifestPrompt(): string {
     (tool) =>
       `- \`${tool.name}\` (${tool.group}, ${tool.cost}, ${tool.coverage}): ${tool.description}`,
   )
-  return `Your capabilities (the window shows the trace of what you actually called):
+  return `Your tools (the window shows every call you make and what it returned):
 ${rows.join('\n')}
 
-Use the cheapest read that answers the question. \`survey\` is account breadth, \`config\` is bucket depth, \`query\` is the composition primitive for many objects or buckets. The tool output carries an \`evidence\` id in its \`<untrusted-data>\` opening tag. Use only ids you received.`
+Each tool result carries an \`evidence\` id in its \`<untrusted-data>\` opening tag.`
 }

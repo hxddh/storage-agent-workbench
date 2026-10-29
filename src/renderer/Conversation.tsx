@@ -9,7 +9,6 @@ import {
 import {
   callFor,
   pendingQuestion,
-  supersededPlans,
   type ThreadItem,
   thread,
   transcriptMarkdown,
@@ -129,72 +128,45 @@ function ToolStep({
           ) : item.note ? (
             <p className="step-detail-note">{item.note}</p>
           ) : null}
-          {item.output && (
-            <details className="step-output">
-              <summary>{t.sentToAgent}</summary>
-              {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll area must be reachable by keyboard */}
-              <pre className="mono" tabIndex={0}>
-                {item.output}
-              </pre>
-            </details>
-          )}
+          <Received output={item.output} t={t} />
         </div>
       )}
     </li>
   )
 }
 
-/** The agent's plan, as it published it, where it published it. */
-function PlanStep({ item, t, replaced }: { item: Tool; t: Dict; replaced: boolean }) {
-  if (item.view?.kind !== 'plan') return null
-  // A plan the agent updated later in the turn: the call stays, as one line.
-  if (replaced)
-    return (
-      <li className="step agent-plan replaced">
-        <span className="step-title">{t.runPlanTitle}</span>
-        <span className="step-note">{t.planUpdated}</span>
-      </li>
-    )
+/** Exactly what the model received for a call, folded. */
+function Received({ output, t }: { output: string | null; t: Dict }) {
+  if (!output) return null
   return (
-    <li className="step agent-plan">
-      <span className="step-title">{t.runPlanTitle}</span>
-      {item.view.note && <span className="step-note">{item.view.note}</span>}
-      <ol className="agent-plan-steps">
-        {item.view.steps.map((step, index) => (
-          <li key={`${step.title}:${index}`} className={`agent-plan-step ${step.status}`}>
-            {step.status === 'done' ? (
-              <Check size={12} aria-hidden="true" />
-            ) : step.status === 'blocked' ? (
-              <TriangleAlert size={12} aria-hidden="true" />
-            ) : step.status === 'active' ? (
-              <LoaderCircle size={12} className="pulse-icon" aria-hidden="true" />
-            ) : (
-              <Circle size={9} aria-hidden="true" />
-            )}
-            <span>{step.title}</span>
-          </li>
-        ))}
-      </ol>
-    </li>
+    <details className="step-output">
+      <summary>{t.sentToAgent}</summary>
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll area must be reachable by keyboard */}
+      <pre className="mono" tabIndex={0}>
+        {output}
+      </pre>
+    </details>
   )
 }
 
-/** The agent asked; while it waits, the options answer it. */
+/** The agent asked; while it waits, its options (if any) answer it, or the user replies. */
 function QuestionStep({
   item,
   pending,
   onAnswer,
+  t,
 }: {
   item: Tool
   pending: boolean
   onAnswer: (text: string) => void
+  t: Dict
 }) {
   if (item.view?.kind !== 'question') return null
   return (
     <div className="msg agent question">
       <p>{item.view.question}</p>
       {item.view.note && <p className="quiet">{item.view.note}</p>}
-      {pending && (
+      {pending && item.view.options.length > 0 && (
         <div className="question-options">
           {item.view.options.map((option, index) => (
             <button
@@ -208,6 +180,7 @@ function QuestionStep({
           ))}
         </div>
       )}
+      <Received output={item.output} t={t} />
     </div>
   )
 }
@@ -240,6 +213,7 @@ function AcceptStep({ item, status, t }: { item: Tool; status: string | undefine
           </button>
         </div>
       )}
+      <Received output={item.output} t={t} />
     </div>
   )
 }
@@ -502,7 +476,6 @@ export function Conversation({
 
   // Steps between two messages render as one list, so a turn reads top to bottom.
   const blocks: (ThreadItem | ThreadItem[])[] = []
-  const replaced = supersededPlans(items)
   for (const item of items) {
     // A question or a confirmation speaks to the user; a call that failed is a step like any other.
     const step =
@@ -553,8 +526,6 @@ export function Conversation({
                 {block.map((item) =>
                   item.kind === 'thought' ? (
                     <Thought key={item.id} item={item} t={t} />
-                  ) : item.kind === 'tool' && item.name === 'plan' ? (
-                    <PlanStep key={item.id} item={item} t={t} replaced={replaced.has(item.id)} />
                   ) : item.kind === 'tool' ? (
                     <ToolStep
                       key={item.id}
@@ -617,6 +588,7 @@ export function Conversation({
                   item={item}
                   pending={pending === item.id}
                   onAnswer={onAnswer}
+                  t={t}
                 />
               ) : (
                 <AcceptStep

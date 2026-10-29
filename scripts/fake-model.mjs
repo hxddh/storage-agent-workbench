@@ -31,11 +31,6 @@ function plan(body) {
     }
   }
   const called = new Set(names.values())
-  let planCalls = 0
-  for (const message of turn) {
-    if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) continue
-    for (const call of message.tool_calls) if (call?.function?.name === 'plan') planCalls += 1
-  }
   const output = new Map()
   for (const message of toolMessages) {
     const name = names.get(message.tool_call_id)
@@ -88,30 +83,15 @@ function plan(body) {
     return { text: 'I asked you to confirm accepting that risk on `demo-public`.' }
   }
 
-  if (ask.includes('access method') && !called.has('skill')) {
-    return { tool: call('call_skill_1', 'skill', { name: 'access' }) }
-  }
-
-  if (!called.has('plan')) {
-    const reasoning = ask.includes('public')
-      ? 'Read the account-wide public access block first, then inspect each bucket policy.'
-      : ask.includes('change plan')
-        ? 'Find the open finding, keep the existing lifecycle configuration intact, and prepare one user-applied text.'
-        : ask.includes('issue')
-          ? 'Read remembered posture and current open findings before choosing the five most useful risks.'
-          : null
-    return {
-      ...(reasoning ? { reasoning } : {}),
-      tool: call('call_plan_1', 'plan', {
-        note: 'Plan the read before spending a call.',
-        steps: [
-          { title: 'Recall the estate', status: 'done' },
-          { title: 'Read the account', status: 'active' },
-          { title: 'Compose the answer', status: 'pending' },
-        ],
-      }),
-    }
-  }
+  // A provider reasoning summary arrives with the first call of a turn.
+  const reasoning = ask.includes('public')
+    ? 'Read the account-wide public access block first, then inspect each bucket policy.'
+    : ask.includes('change plan')
+      ? 'Find the open finding, keep the existing lifecycle configuration intact, and prepare one user-applied text.'
+      : ask.includes('issue')
+        ? 'Read remembered posture and current open findings before choosing the five most useful risks.'
+        : null
+  const first = (result) => (reasoning ? { reasoning, ...result } : result)
 
   if (
     !called.has('survey') &&
@@ -121,32 +101,32 @@ function plan(body) {
     !called.has('change_plan')
   ) {
     if (ask.includes('applied')) {
-      return { tool: call('call_survey_1', 'survey', { buckets: ['demo-public'] }) }
+      return first({ tool: call('call_survey_1', 'survey', { buckets: ['demo-public'] }) })
     }
     if (ask.includes('who can read')) {
-      return { tool: call('call_access_1', 'config', { bucket: 'demo-public', aspect: 'access' }) }
+      return first({ tool: call('call_access_1', 'config', { bucket: 'demo-public', aspect: 'access' }) })
     }
     if (ask.includes('largest')) {
-      return {
+      return first({
         tool: call('call_query_1', 'query', {
           title: 'Largest prefixes in demo-public',
           code: "const sizes = {}; let token = null; do { const page = await tools.list({ bucket: 'demo-public', token }); for (const o of page.items) { const p = o.key.split('/')[0] + '/'; sizes[p] = (sizes[p] ?? 0) + o.size } token = page.next } while (token); return Object.entries(sizes).map(([prefix, bytes]) => ({ prefix, bytes }))",
         }),
-      }
+      })
     }
     if (ask.includes('fix') || ask.includes('change plan')) {
-      return { tool: call('call_change_1', 'change_plan', { bucket: 'demo-private', code: 'no_abort_mpu' }) }
+      return first({ tool: call('call_change_1', 'change_plan', { bucket: 'demo-private', code: 'no_abort_mpu' }) })
     }
     if (ask.includes('history') || ask.includes('changed')) {
-      return { tool: call('call_history_1', 'estate', { history: true }) }
+      return first({ tool: call('call_history_1', 'estate', { history: true }) })
     }
     if (ask.includes('what did you find') || ask.includes('last time')) {
-      return { tool: call('call_estate_1', 'estate', {}) }
+      return first({ tool: call('call_estate_1', 'estate', {}) })
     }
     if (ask.includes('issue')) {
-      return { tool: call('call_estate_1', 'estate', {}) }
+      return first({ tool: call('call_estate_1', 'estate', {}) })
     }
-    return { tool: call('call_survey_1', 'survey', {}) }
+    return first({ tool: call('call_survey_1', 'survey', {}) })
   }
 
   if (
@@ -167,18 +147,7 @@ function plan(body) {
   }
 
 
-  if (planCalls === 1) {
-    return {
-      tool: call('call_plan_2', 'plan', {
-        note: 'The reads are in; compose next.',
-        steps: [
-          { title: 'Recall the estate', status: 'done' },
-          { title: 'Read the account', status: 'done' },
-          { title: 'Compose the answer', status: 'active' },
-        ],
-      }),
-    }
-  }
+
 
   let text = 'Only `demo-public` is public. `demo-private` is private and blocks public access.'
   let source = 'survey'

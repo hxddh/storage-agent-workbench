@@ -566,15 +566,6 @@ export function ToolViewBody({
       </div>
     )
   }
-  if (view.kind === 'skill') {
-    return (
-      <div>
-        <div className="view-title">{view.title}</div>
-        <p className="quiet">{view.description}</p>
-        <pre className="code">{view.body}</pre>
-      </div>
-    )
-  }
   if (view.kind === 'change') {
     return view.plan ? (
       <ChangePlanView plan={view.plan} t={t} />

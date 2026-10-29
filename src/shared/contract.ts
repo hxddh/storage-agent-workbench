@@ -23,8 +23,6 @@ export type ToolName =
   | 'change_plan'
   | 'note'
   | 'query'
-  | 'skill'
-  | 'plan'
   | 'ask'
   | 'accept_risk'
 
@@ -173,13 +171,6 @@ export interface Chart {
   unit?: string
 }
 
-/** One step of the agent's own investigation plan. */
-export interface PlanStep {
-  title: string
-  status: 'pending' | 'active' | 'done' | 'blocked'
-  detail?: string
-}
-
 export type ToolView =
   | {
       kind: 'survey'
@@ -292,14 +283,6 @@ export type ToolView =
       /** Sources the access question could not read. */
       blind?: { source: string; status: string }[]
     }
-  | {
-      kind: 'skill'
-      name: string
-      title: string
-      description: string
-      body: string
-    }
-  | { kind: 'plan'; steps: PlanStep[]; note?: string }
   | { kind: 'question'; question: string; options: string[]; note?: string }
   /** A request for the user to accept (or reopen) a risk; only the user's click changes it. */
   | { kind: 'accept'; issue: IssueRow; accept: boolean }

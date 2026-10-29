@@ -82,7 +82,7 @@ Settings holds the model, accounts, memory, language, theme and notifications.
 │ renderer (React, sandboxed)        main                          │
 │ tasks · conversation ·      ⇄ IPC ⇄  pi-durable harness          │
 │ composer                                ├ 7 read tools           │
-│                                         ├ skill / plan / ask     │
+│                                         ├ ask                    │
 │                                         ├ estate / note /        │
 │                                         │  accept_risk           │
 │                                         ├ change_plan            │

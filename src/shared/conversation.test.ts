@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Live, UiEntry } from './contract'
-import {
-  callFor,
-  pendingQuestion,
-  supersededPlans,
-  thread,
-  transcriptMarkdown,
-} from './conversation'
+import { callFor, pendingQuestion, thread, transcriptMarkdown } from './conversation'
 import { answer, request, survey, tool } from './testing'
 
 describe('the conversation thread', () => {
@@ -91,24 +85,21 @@ describe('the conversation thread', () => {
     expect(pendingQuestion([...items, ...thread([request('A')])])).toBeNull()
   })
 
-  it('keeps every plan call, and knows which ones a later update in the turn replaced', () => {
-    const plan = (id: string, note: string) =>
-      tool('plan', { kind: 'plan', steps: [], note }, { id })
-    const items = thread([
-      request('A'),
-      plan('p1', 'first'),
-      plan('p2', 'second'),
-      request('B'),
-      plan('p3', 'third'),
-    ])
-    expect(items.filter((item) => item.kind === 'tool')).toHaveLength(3)
-    expect([...supersededPlans(items)]).toEqual(['p1'])
-  })
-
-  it('saves the conversation as Markdown', () => {
+  it('saves the conversation as Markdown, with reasoning and what each call returned', () => {
+    const call = {
+      ...(tool('survey', survey(['a']), { target: 'Demo' }) as Extract<UiEntry, { kind: 'tool' }>),
+      output: '<untrusted-data>1 bucket</untrusted-data>',
+    }
     const text = transcriptMarkdown(
-      thread([request('Q?'), tool('survey', survey(['a']), { target: 'Demo' }), answer('A.')]),
+      thread([
+        request('Q?'),
+        { id: 'r', kind: 'reasoning', at: '', text: 'Read it.' },
+        call,
+        answer('A.'),
+      ]),
     )
-    expect(text).toBe('**You:** Q?\n\n> survey · Demo · done\n\nA.')
+    expect(text).toBe(
+      '**You:** Q?\n\n> Read it.\n\n> survey · Demo · done\n\n````text\n<untrusted-data>1 bucket</untrusted-data>\n````\n\nA.',
+    )
   })
 })

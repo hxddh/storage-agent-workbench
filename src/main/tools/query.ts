@@ -46,7 +46,6 @@ export const QUERY_BUDGET = {
   timeoutMs: 120_000,
   memoryBytes: 256 * 1024 * 1024,
   rows: 500,
-  modelRows: 40,
   codeChars: 6000,
 }
 
@@ -934,7 +933,7 @@ function primitives(ctx: Context): CodemodeTool[] {
 export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
   return agentTool(deps, {
     name: 'query',
-    description: `Answer a question no other tool can by running a short read-only JavaScript script over the account: largest prefixes, data untouched for a year, objects by storage class, versions piling up, buckets by size. Use it when the answer needs many objects or many buckets; use the other tools for one bucket or one object.\n${QUERY_API}`,
+    description: `Answer a question no other tool can by running a short read-only JavaScript script over the account: largest prefixes, data untouched for a year, objects by storage class, versions piling up, buckets by size. Use it when the answer needs many objects or many buckets; use the other tools for one bucket or one object. \`list\` is one bounded page; S3 Inventory reads the latest manifest, or imports every manifest file into a local dataset with its inventory date. Attached logs and inventories import as datasets that answer whitelisted aggregates. A truncated page or import is not exhaustive.\n${QUERY_API}`,
     parameters: Type.Object({
       provider_id: providerParam,
       title: Type.String({ description: 'What the result shows, in a few words, for the page.' }),
@@ -1009,16 +1008,11 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
       const { table, chart } = toTable(result.value)
       const preview = [
         table.columns.join('\t'),
-        ...table.rows
-          .slice(0, QUERY_BUDGET.modelRows)
-          .map((row) => row.map((v) => (v === null ? '' : String(v))).join('\t')),
+        ...table.rows.map((row) => row.map((v) => (v === null ? '' : String(v))).join('\t')),
       ].join('\n')
       const lines = [
         `${args.title}: ${table.rows.length}${table.truncated ? '+' : ''} row(s) from ${usage.calls} read-only call(s) over ${usage.listed.toLocaleString('en-US')} listed item(s).`,
         table.rows.length ? preview : 'The script returned no rows.',
-        ...(table.rows.length > QUERY_BUDGET.modelRows
-          ? [`(${table.rows.length - QUERY_BUDGET.modelRows} more rows are on the page.)`]
-          : []),
         ...(output ? [`Output:\n${output}`] : []),
       ]
       return {

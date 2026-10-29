@@ -54,7 +54,7 @@ export function surveyTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'survey',
     description:
-      'Survey a storage account read-only: list its buckets; read each bucket’s exposure, encryption, public access blocks, TLS policy, ACLs, CORS, logging and lifecycle; read the account-wide public access block and, on AWS, each bucket’s size, object count, growth and monthly storage estimate; and let the rules open or resolve Issues. Buckets read longest ago come first; when it stops early, call it again to read the rest. Pass `buckets` to re-read only those (for example after the user applied a change).',
+      'Survey a storage account read-only: list its buckets; read each bucket’s exposure, encryption, public access blocks, TLS policy, ACLs, CORS, logging and lifecycle; read the account-wide public access block and, on AWS, each bucket’s size, object count, growth and monthly storage estimate; and let the rules open or resolve Issues. Buckets read longest ago come first; when it stops early, call it again to read the rest. Pass `buckets` to re-read only those (for example after the user applied a change). Capacity comes from CloudWatch daily storage metrics on AWS: size by storage class, object count, 14-day growth and a storage-only estimate at us-east-1 list price — an estimate, not a bill; requests, transfer and retrieval are outside it. S3-compatible endpoints publish none.',
     parameters: Type.Object({
       provider_id: providerParam,
       buckets: Type.Optional(

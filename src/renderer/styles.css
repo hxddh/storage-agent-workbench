@@ -2809,33 +2809,6 @@ sup.cite.missing {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.step.agent-plan {
-  padding: 4px 6px;
-  font-size: 12.75px;
-}
-.step.agent-plan .step-note {
-  margin-left: 6px;
-}
-.agent-plan-steps {
-  list-style: none;
-  margin: 4px 0 2px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  color: var(--ink-2);
-}
-.agent-plan-step {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.agent-plan-step.done {
-  color: var(--ink-3);
-}
-.agent-plan-step.blocked {
-  color: var(--warn);
-}
 
 .conversation-model {
   display: flex;
