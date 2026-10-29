@@ -33,11 +33,11 @@ export interface ToolRun {
   regional?: (region: string) => S3Client
 }
 
-/** One bounded, redacted line of the arguments the model supplied. */
+/** The arguments the model supplied, redacted. */
 function argsSummary(args: unknown): string | null {
   try {
     const text = JSON.stringify(args)
-    return text && text !== '{}' ? redact(text).slice(0, 240) : null
+    return text && text !== '{}' ? redact(text) : null
   } catch {
     return null
   }
