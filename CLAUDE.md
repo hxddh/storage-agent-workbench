@@ -73,13 +73,15 @@ The invariant:
   builds only, with a visible missing-feed state.
 - `src/preload/index.ts` — `contextBridge` surface, sandboxed, CJS.
 - `src/shared/contract.ts` — the single type contract; both sides import it.
-- `src/shared/facts.ts` — the deterministic facts projection from `UiEntry[]`:
-  risks, methods, coverage, change plans, data and tool calls.
-- `src/shared/run.ts` — the current-run boundary and agent-native projection:
-  the optional plan, clarification, final Markdown answer, evidence resolution,
-  citation validation and grounding.
-- `src/shared/activity.ts` — the current-run work projection: provider reasoning
-  summary, live and durable tool calls, argument summaries, compaction and resume.
+- `src/shared/trace.ts` — the one run model: ordered request, plan revisions,
+  tool calls, validation, question, answer, notices, steer, resume and re-check;
+  phase, coverage, evidence and citation resolution.
+- `src/shared/facts.ts` — deterministic evidence annotations from `UiEntry[]`:
+  risks, methods, coverage, change plans, data and tool calls; not a page model.
+- `src/shared/run.ts` — internal projection used by search and the trace builder;
+  the window does not render it as a page.
+- `src/shared/activity.ts` — the trace rows: provider reasoning summary, live and
+  durable tool calls, argument summaries, steer, compaction, resume and re-check.
 - `src/shared/audit.ts` — the deterministic summary for a model-free account
   check; it names only buckets and counts already present in survey views.
 - `src/shared/grounding.ts` — which names and exposure a task's results show;
@@ -139,7 +141,9 @@ a complete listing no longer shows gets `gone_at` and its Issues resolve as
 `gone`. Capacity (bytes, objects, monthly estimate, growth) is remembered in
 each bucket's posture; the account posture in `providers.account_json`. Schema
 changes are append-only migrations in `db.ts`, gated by `user_version` (head
-**13**).
+**14**). `task_meta.model_json` stores a per-task model override (`provider`,
+`modelId`, `baseUrl`, `thinking`); null means the model in Settings. The provider
+key is never stored there.
 
 `readings` records one settled account survey: trigger, coverage counts, open
 high/total and whether it was complete. It stores no request, answer, policy,
@@ -154,8 +158,8 @@ startup for tasks without rows. It stores the request, the current answer summar
 (`entry_id = 'answer'`) and one row per risk (`f:<source entry>:<key>`).
 A model-free check writes one `sa.audit` entry; its `survey` and `access`
 progress events are transient and never persisted. It has no `sa.user`
-request, so the page shows its synthesized answer and Sources index without a fake
-question. Its search rows are derived from the same durable entries as the run, after
+request, so the page shows its synthesized answer and the same trace/evidence
+strip without a fake question. Its search rows are derived from the same durable entries as the run, after
 the active watch and durable view settle.
 
 Deleting a task purges `task_meta`, `search_docs`, its pi conversation, entries,
@@ -191,7 +195,7 @@ answer tool and no forced report protocol.
 `skill` is a real on-demand method, not a check: access evidence, change
 planning, inventory/logs and capacity/cost. The model sees the four descriptions
 in the capability section and loads one only when the question needs it. Methods
-are visible in Sources and never counted as tool calls. Provider reasoning is
+are visible as trace rows and never counted as tool calls. Provider reasoning is
 shown only as the provider returned it (a summary); the app never fabricates a
 chain of thought or turns a tool label into thinking text.
 
@@ -253,58 +257,55 @@ the scope line (`All n buckets checked`, `Not fully checked: n`,
 and read time. A failed or stopped storage read keeps the line open. Copy answer
 and one overflow menu sit in the header: save Markdown, check again, re-check,
 copy link, export sources and save PDF. `Check again` opens a new check task;
-re-check writes a result in the current task and opens its Sources section.
+re-check writes a result in the current task and opens its trace row.
 Home reads its "last complete read" from the reading records.
 
 The plan is the agent's own 1–6 steps (commonly 3–6) with
 pending/active/done/blocked states; it is optional and not a transcript. It is
-part of Work while the run is live or stopped with a blocked step; a settled
-normal answer does not carry a separate plan section. Plan state is intent, not
-proof: an actual call is the only execution evidence.
+part of the trace while the run is live or stopped with a blocked step; a
+settled normal answer does not carry a separate plan section. Plan state is
+intent, not proof: an actual call is the only execution evidence.
 
-**Work** is the one current-run activity surface, below the answer. While live
-it is open and shows a provider reasoning summary when one was returned, the
-current call and all completed calls, with status, target, shaped argument
-summary, result summary and duration. Plan is a block inside Work while live or
-stopped with a blocked step; there is no separate plan section. After the answer
-settles Work collapses to one `Worked for … · n calls` row; the same rows reopen
-in their original order. It never invents a reasoning summary: an omitted or
-empty thinking block is shown as an honest `Thought` row with no summary. Live
-progress comes from shaped `ToolDetails.progress`, never from raw tool output.
-A failed call stays in place with its status and note.
+**Trace** is the one current-run record. While the run is planning or
+investigating it is the primary content; when the answer arrives the answer is
+primary and the trace folds to one `Worked for … · n calls` row. It shows plan
+revisions, a provider reasoning summary when one was returned, the current call
+and all completed calls, with status, target, shaped argument summary, result
+summary and duration. A validation row shows when the harness rejected a claim;
+a steer, resume or re-check is a row in the same trace. It never invents a
+reasoning summary: an omitted or empty thinking block is shown as an honest
+`Thought` row with no summary. Live progress comes from shaped
+`ToolDetails.progress`, never from raw tool output. A failed call stays in place
+with its status and note.
 
-The answer is normal Markdown with citations and is the first content in every
-state. A citation opens an in-place evidence peek; the full record is in the one
-on-demand Sources drawer. An answer without a citation does not invent a proof
-table. A missing citation is shown as plain text with a quiet note. There is no
-report block renderer and no legacy entry path.
+The answer is normal Markdown with citations. A citation opens an in-place
+evidence peek; the full record is the trace. An answer without a citation does
+not invent a proof table. A missing citation is shown as plain text with a
+quiet note. There is no report block renderer and no legacy entry path.
 
-**Sources** is one on-demand evidence drawer below Work: Risks, Data, Change
-plan, Tool calls, Not checked, Checked again, Changes and Methods, each row only
-when it has content. One row opens one section; nothing is expanded by default.
-Risks, data and checks are current-run evidence; a resolved fold may use the
-earlier observation that the current read proved fixed. The index does not carry
-a duplicate check count; Tool calls shows the receipt inside. Risks are grouped
-by bucket, severity ordered, memory-marked, five visible with **N more**
-expanding in place. Accepted and proved-fixed folds remain. **Not read** names
-blind, pending, truncated, failed and access gaps. Header Copy copies the answer
-only; Save page includes the evidence record. Every table can be copied as CSV
-or saved.
+**Evidence** is two compact strips, only when they have content: **Findings**
+and **Not checked**. Findings are a safety summary, grouped by bucket, severity
+ordered, memory-marked, with Accept risk on hover or keyboard focus; accepted
+and proved-fixed folds remain. **Not checked** names blind, pending, truncated,
+failed and access gaps. The agent's citations decide what the answer uses; the
+strip keeps a blind spot visible even when the answer does not mention it.
+Header Copy copies the answer only; Save page includes the answer and trace.
+Every table can be copied as CSV or saved.
 
 A model-free check renders through the same run surface with a synthesized
-answer and a `Deterministic account check` tag. A model run opens Work when it
-starts and collapses it to `Worked for … · n calls` when the answer settles;
-Sources Tool calls remains the audit receipt. A stopped run keeps its plan and
-offers Continue. A new user request starts a new run; the current run owns its
-scope, checks, data and citations, while the task owns memory and history.
-There are no next-step suggestions or follow-up prompts. A query's script opens under its check as the
-evidence; the answer can cite it.
+answer and a `Deterministic account check` tag. A model run opens the trace when
+it starts and folds it to `Worked for … · n calls` when the answer settles. A
+stopped run keeps its plan and offers Continue. A new user request starts a new
+run; the current run owns its scope, checks, data and citations, while the task
+owns memory and history. There are no next-step suggestions or follow-up
+prompts. A query's rows, chart and script open under its trace row; the answer
+can cite it.
 
 Failed model runs offer Retry; stopped runs offer Continue. The sidebar search
 (⌘K) covers titles, requests, risks and the composed answer summary. Files can
 be dropped or pasted onto the composer. A run that finishes while the window is
-in the background sends one notification. PDF export expands Risks, Tool calls
-and Data before printing; the receipt is not repeated. `storage-agent://task/<id>`
+in the background sends one notification. PDF export expands the trace and the evidence
+strip before printing; the receipt is not repeated. `storage-agent://task/<id>`
 opens a task; Copy link puts it on the clipboard. In risks, j/k move, Enter opens
 the check, a accepts. Settings offers demo storage and the models already running
 on this machine; its Test button tests the values currently in the form, and
@@ -323,6 +324,7 @@ translated word by word; model answers follow the user's language preference.
 · `npm run budget` · `npm run contrast` · `npm run audit` · `npm run sbom` · `npm run dist:dir` ·
 `xvfb-run -a node scripts/e2e.mjs` · `xvfb-run -a node scripts/e2e-audit.mjs`
 · `xvfb-run -a node scripts/eval.mjs --smoke` (or with `EVAL_*` for a real model)
+· `xvfb-run -a node scripts/bench.mjs --smoke` (or with `EVAL_*` for the real-model behavior gate)
 · `STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 npx vitest run src/main/compat.test.ts`
 (with `moto_server -p 5055` running)
 

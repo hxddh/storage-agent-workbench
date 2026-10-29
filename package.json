@@ -1,7 +1,7 @@
 {
   "name": "storage-agent",
   "productName": "Storage Agent",
-  "version": "33.0.0",
+  "version": "34.0.0",
   "description": "A local agent for object storage",
   "license": "Apache-2.0",
   "private": true,
@@ -29,7 +29,8 @@
     "audit": "npm audit --omit=dev --audit-level=high",
     "sbom": "npm sbom --sbom-format=cyclonedx > sbom.json",
     "visual": "node scripts/visual.mjs",
-    "perf": "node scripts/perf.mjs"
+    "perf": "node scripts/perf.mjs",
+    "bench": "node scripts/bench.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-accessanalyzer": "3.1156.0",

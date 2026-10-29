@@ -11,7 +11,9 @@ const api: AgentApi = {
   send: (taskId, text, attachments, context) =>
     ipcRenderer.invoke('agent:send', taskId, text, attachments, context),
   estateRefs: (query) => ipcRenderer.invoke('agent:estateRefs', query),
-  steer: (taskId, text) => ipcRenderer.invoke('agent:steer', taskId, text),
+  setTaskModel: (taskId, model) => ipcRenderer.invoke('agent:setTaskModel', taskId, model),
+  steer: (taskId, text, attachments, context) =>
+    ipcRenderer.invoke('agent:steer', taskId, text, attachments, context),
   stop: (taskId) => ipcRenderer.invoke('agent:stop', taskId),
   renameTask: (taskId, title) => ipcRenderer.invoke('agent:renameTask', taskId, title),
   pinTask: (taskId, pinned) => ipcRenderer.invoke('agent:pinTask', taskId, pinned),

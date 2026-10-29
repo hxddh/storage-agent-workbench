@@ -539,6 +539,15 @@ export function ToolViewBody({
             limit={limit}
           />
         )}
+        {view.history && (
+          <TableView
+            table={view.history}
+            name={`${taskTitle || 'estate'}-history`}
+            empty={t.noRows}
+            t={t}
+            limit={limit}
+          />
+        )}
         {view.issues.length > 0 && <Issues issues={view.issues} t={t} />}
         {view.notes.length > 0 && (
           <div className="notes">
@@ -553,8 +562,21 @@ export function ToolViewBody({
       </div>
     )
   }
+  if (view.kind === 'skill') {
+    return (
+      <div>
+        <div className="view-title">{view.title}</div>
+        <p className="quiet">{view.description}</p>
+        <pre className="code">{view.body}</pre>
+      </div>
+    )
+  }
   if (view.kind === 'change') {
-    return <ChangeTextView formats={view.formats} impact={view.impact} t={t} />
+    return view.plan ? (
+      <ChangePlanView plan={view.plan} t={t} />
+    ) : (
+      <ChangeTextView formats={view.formats} impact={view.impact} t={t} />
+    )
   }
   if (view.kind === 'query') {
     return (

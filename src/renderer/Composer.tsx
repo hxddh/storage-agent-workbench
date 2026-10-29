@@ -19,7 +19,7 @@ export function Composer({
   modelLabel: string | null
   live: Live | null
   onSend: (text: string, tokens: string[], context: ContextRef[]) => Promise<void>
-  onSteer: (text: string) => Promise<void>
+  onSteer: (text: string, tokens: string[], context: ContextRef[]) => Promise<void>
   onStop: () => void
   onOpenSettings: () => void
   draftKey: string
@@ -149,13 +149,19 @@ export function Composer({
     const value = text.trim()
     if (!hasModel || busy) return
     if (live) {
-      // A steer is text; files and @refs belong to the next user turn and must
-      // not be silently discarded.
-      if (!value) return
+      // A steer joins the running turn: its files and @refs go with it, not
+      // into a later question.
+      if (!value && files.length === 0) return
       setBusy(true)
       try {
-        await onSteer(value)
+        await onSteer(
+          value,
+          files.map((file) => file.token),
+          context,
+        )
         setText('')
+        setFiles([])
+        setContext([])
       } finally {
         setBusy(false)
       }

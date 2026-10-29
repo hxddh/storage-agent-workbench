@@ -70,11 +70,25 @@ jobs:
       - name: Keep smoke report
         if: steps.mode.outputs.mode != 'real'
         run: cp .amp/in/artifacts/eval-report.md eval-primary.md
+      - name: Bench the primary model
+        if: steps.mode.outputs.mode == 'real'
+        run: xvfb-run -a node scripts/bench.mjs
+        env:
+          EVAL_PROVIDER: ${{ vars.EVAL_PROVIDER || 'anthropic' }}
+          EVAL_MODEL: ${{ vars.EVAL_MODEL_PRIMARY }}
+          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+      - name: Bench smoke when no model credentials exist
+        if: steps.mode.outputs.mode != 'real'
+        run: xvfb-run -a node scripts/bench.mjs --smoke
+      - name: Keep bench report
+        run: cp .amp/in/artifacts/bench-report.md bench-report.md
       - uses: actions/upload-artifact@v4
         with:
           name: eval-reports
           path: |
             eval-primary.md
+            bench-report.md
             .amp/in/artifacts/eval-report.md
 
   signing:
@@ -178,6 +192,15 @@ jobs:
               echo "No model credentials were available; this report proves the harness runs, not answer quality."
             fi
             cat eval-reports/eval-primary.md
+            echo
+            if [ "$EVAL_MODE" = "real" ]; then
+              echo "## Agent behavior bench"
+              cat eval-reports/bench-report.md
+            else
+              echo "## Agent behavior bench: smoke only"
+              echo "This bench ran with the fake model; it proves the trace and UI plumbing, not answer quality."
+              cat eval-reports/bench-report.md
+            fi
             echo
             if [ "$EVAL_MODE" = "real" ]; then cat eval-reports/eval-report.md; fi
             echo

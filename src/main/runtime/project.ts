@@ -22,6 +22,7 @@ import type {
   Usage,
 } from '@shared/contract'
 import { redact } from '../security/redact'
+import { TOOL_NAMES as MANIFEST_TOOL_NAMES } from '../tools/registry'
 
 interface Part {
   type: string
@@ -44,21 +45,7 @@ interface ModelMessage {
   details?: unknown
 }
 
-const TOOL_NAMES = new Set<ToolName>([
-  'survey',
-  'buckets',
-  'objects',
-  'object',
-  'config',
-  'probe',
-  'estate',
-  'change_plan',
-  'note',
-  'query',
-  'skill',
-  'plan',
-  'ask',
-])
+const TOOL_NAMES = new Set<ToolName>(MANIFEST_TOOL_NAMES)
 
 function iso(timestamp: number | undefined): string {
   return timestamp ? new Date(timestamp).toISOString() : ''
@@ -69,6 +56,7 @@ function parts(message: ModelMessage | undefined): Part[] {
 }
 
 export function textOf(message: ModelMessage | undefined): string {
+  if (typeof message?.content === 'string') return message.content.trim()
   return parts(message)
     .map((part) => (part.type === 'text' ? (part.text ?? '') : ''))
     .join('')
@@ -100,7 +88,12 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
     const message = entry.model?.[0] as ModelMessage | undefined
     if (entry.kind === 'sa.user') {
       const data = entry.data as
-        | { text?: string; attachments?: AttachmentRef[]; context?: ContextRef[] }
+        | {
+            text?: string
+            attachments?: AttachmentRef[]
+            context?: ContextRef[]
+            steer?: boolean
+          }
         | undefined
       out.push({
         id,
@@ -109,7 +102,22 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
         text: data?.text ?? '',
         attachments: data?.attachments ?? [],
         ...(data?.context?.length ? { context: data.context } : {}),
+        ...(data?.steer ? { steer: true } : {}),
       })
+      continue
+    }
+    // The harness's correction to the model is part of the run: the window
+    // shows that a claim was rejected and the model was asked to rewrite it.
+    if (entry.kind === 'pi.user') {
+      const text = textOf(message)
+      if (text)
+        out.push({
+          id,
+          kind: 'validation',
+          at: iso(message?.timestamp),
+          text: redact(text).slice(0, 1200),
+          tone: 'warn',
+        })
       continue
     }
     if (entry.kind === 'sa.audit') {

@@ -5,6 +5,7 @@ import type {
   AppSettings,
   ContextRef,
   ModelInput,
+  TaskModel,
   ThinkingLevel,
 } from '@shared/contract'
 import { BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
@@ -67,9 +68,16 @@ export function registerIpc(app: App): void {
   ipcMain.handle('agent:estateRefs', (_event, query: string) =>
     app.harness.estateRefs(String(query ?? '').slice(0, 120)),
   )
+  ipcMain.handle('agent:setTaskModel', (_event, taskId: string, model: TaskModel | null) =>
+    app.harness.setTaskModel(taskId, model),
+  )
 
-  ipcMain.handle('agent:steer', (_event, taskId: string, text: string) =>
-    app.harness.steer(taskId, text),
+  ipcMain.handle(
+    'agent:steer',
+    async (_event, taskId: string, text: string, tokens: string[] = [], context?: ContextRef[]) => {
+      const files = await app.staging.consume(tokens, taskId, app.uploadsFor(taskId))
+      await app.harness.steer(taskId, text, files, context)
+    },
   )
   ipcMain.handle('agent:stop', (_event, taskId: string) => app.harness.stop(taskId))
   ipcMain.handle('agent:renameTask', (_event, id: string, title: string) =>

@@ -130,6 +130,9 @@ function plan(body) {
     if (ask.includes('history') || ask.includes('changed')) {
       return { tool: call('call_history_1', 'estate', { history: true }) }
     }
+    if (ask.includes('what did you find') || ask.includes('last time')) {
+      return { tool: call('call_estate_1', 'estate', {}) }
+    }
     if (ask.includes('issue')) {
       return { tool: call('call_estate_1', 'estate', {}) }
     }
@@ -181,6 +184,9 @@ function plan(body) {
   } else if (ask.includes('fix') || ask.includes('change plan')) {
     text = 'Add an abort rule for incomplete uploads on `demo-private`.'
     source = 'change_plan'
+  } else if (ask.includes('what did you find') || ask.includes('last time')) {
+    text = 'Last time, `demo-public` was public and `demo-private` had an open multipart-upload risk.'
+    source = 'estate'
   } else if (ask.includes('history') || ask.includes('changed')) {
     text = 'The history records open risks on `demo-public` and `demo-private`.'
     source = 'estate'
@@ -192,6 +198,14 @@ function plan(body) {
     source = 'survey'
   } else if (publicBucket && publicBucket !== 'demo-public') {
     text = `\`${publicBucket}\` is publicly accessible.`
+    source = 'survey'
+  }
+  if (
+    ask.includes('public') &&
+    !ask.includes('who can read') &&
+    (/denied|unknown/i.test(surveyText) || surveyText.includes('finance-exports'))
+  ) {
+    text = '`demo-public` is public, but one bucket ACL could not be read, so the account is not fully checked.'
     source = 'survey'
   }
   const id = evidence(source)

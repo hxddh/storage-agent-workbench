@@ -434,10 +434,14 @@ export type UiEntry =
       text: string
       attachments: AttachmentRef[]
       context?: ContextRef[]
+      /** A steer joins the running turn; it is not a new question. */
+      steer?: boolean
     }
   | { id: string; kind: 'answer'; at: string; text: string; streaming?: boolean }
   /** A provider-supplied reasoning summary. It is not a tool result. */
   | { id: string; kind: 'reasoning'; at: string; text: string }
+  /** The harness asked the model to correct a claim; the correction is visible. */
+  | { id: string; kind: 'validation'; at: string; text: string; tone: 'info' | 'warn' }
   | {
       id: string
       kind: 'tool'
@@ -502,6 +506,8 @@ export interface TaskView {
   hasOlder: boolean
   cursor: string | null
   usage: Usage | null
+  /** A per-task model override; null means the model in Settings. */
+  model?: TaskModel | null
   /** Current estate status of every Issue the task's results mention; the user may have accepted one since. */
   issueStatus: Record<string, IssueRow['status']>
 }
@@ -558,6 +564,14 @@ export interface ModelSettings {
   contextWindow: number | null
   thinking: ThinkingLevel
   hasKey: boolean
+}
+
+/** A model choice for one task. The provider key stays in the saved model. */
+export interface TaskModel {
+  provider: ModelProvider
+  modelId: string
+  baseUrl: string | null
+  thinking: ThinkingLevel
 }
 
 export interface ModelInput {
@@ -668,8 +682,10 @@ export interface AgentApi {
   /** Run a deterministic survey + access check without a model. */
   audit(): Promise<TaskView>
   send(taskId: string, text: string, attachments: string[], context?: ContextRef[]): Promise<void>
+  /** Use a different model for this task's next run; null restores Settings. */
+  setTaskModel(taskId: string, model: TaskModel | null): Promise<void>
   estateRefs(query: string): Promise<EstateRef[]>
-  steer(taskId: string, text: string): Promise<void>
+  steer(taskId: string, text: string, attachments: string[], context?: ContextRef[]): Promise<void>
   stop(taskId: string): Promise<void>
   renameTask(taskId: string, title: string): Promise<void>
   pinTask(taskId: string, pinned: boolean): Promise<void>

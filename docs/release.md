@@ -12,7 +12,8 @@ The normal CI workflow runs on `main` and pull requests:
   production dependency audit and SBOM;
 - the real-window E2E with fake S3 and a fake OpenAI-compatible model;
 - the no-model first-run E2E;
-- the smoke eval, cold-start performance, screenshots and visual comparison;
+- the smoke eval, the behavior bench, cold-start performance, screenshots and
+  visual comparison;
 - the moto compatibility suite.
 
 The Release workflow itself does not run typecheck, lint or unit tests. Tag a
@@ -21,10 +22,12 @@ commit from a green `main`; do not use the tag workflow as a substitute for CI.
 ## Release jobs
 
 1. **Evaluation** — if the `EVAL_API_KEY` secret exists, the job runs
-   `scripts/eval.mjs --runs 2` for the primary and secondary model variables and
-   retains both reports. If it does not exist, it runs
-   `scripts/eval.mjs --smoke` and retains the smoke report. A smoke report
-   proves the harness runs; it is not a model-quality score.
+   `scripts/eval.mjs --runs 2` for the primary and secondary model variables,
+   then `scripts/bench.mjs` against the primary model. If it does not exist, it
+   runs `scripts/eval.mjs --smoke` and `scripts/bench.mjs --smoke`. A smoke
+   report proves the harness and trace plumbing run; it is not a model-quality
+   score. The bench scores the trace and answer (calls, coverage, citations,
+   steer, resume, re-check, model choice), not the app's facts projection.
 2. **Signing detection** — checks all seven signing secrets. Only when every one
    is present is the build marked signed.
 3. **Build** — macOS x64 and arm64 (`.dmg`, `.zip`), Windows NSIS `.exe`, Linux
@@ -55,8 +58,10 @@ application itself still has the read-only, scope and secret boundaries in
 
 Real-model evaluation is valuable but not guaranteed by the repository alone:
 it needs a provider key and model variables. The release records a smoke result
-when they are absent. A full run covers 29 scenarios and fails on a must-pass
-regression; the report is attached and named after the model, never the key.
+when they are absent. The eval covers 29 storage scenarios; the bench covers 11
+agent-behavior scenarios and scores the trace and answer. Both fail on a
+must-pass regression; reports are attached and named after the model, never the
+key. A smoke report is labeled as plumbing only.
 
 For an open-model baseline, point the same eval at Ollama. The local server
 ignores the API key; set `OLLAMA_API_KEY` to any non-empty value for the client:
@@ -96,7 +101,7 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest published release is **33.0.0** (2026-10-29). Earlier release notes
+The latest published release is **34.0.0** (2026-10-29). Earlier release notes
 may describe retired behavior; they are history. Keep `README.md`,
 `CHANGELOG.md` and this paragraph in step with the next tag, and refresh
 `docs/screenshot.png` if the surface changed. 33.0 makes the run answer-first:

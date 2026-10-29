@@ -38,6 +38,7 @@ import type {
   ReverifyChange,
   ReverifyReport,
   SearchHit,
+  TaskModel,
   TaskSummary,
   TaskView,
   ToolDetails,
@@ -104,6 +105,33 @@ interface ActiveWatch {
   watch: WatchHandle<ConversationView>
   seen: Set<string>
   entries: UiEntry[]
+}
+
+function parseTaskModel(raw: string | null | undefined): TaskModel | null {
+  if (!raw) return null
+  try {
+    const value = JSON.parse(raw) as Partial<TaskModel>
+    if (
+      typeof value.modelId !== 'string' ||
+      !value.modelId.trim() ||
+      (value.provider !== 'anthropic' &&
+        value.provider !== 'openai' &&
+        value.provider !== 'compatible') ||
+      (value.thinking !== 'off' &&
+        value.thinking !== 'low' &&
+        value.thinking !== 'medium' &&
+        value.thinking !== 'high')
+    )
+      return null
+    return {
+      provider: value.provider,
+      modelId: value.modelId.slice(0, 160),
+      baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl.slice(0, 300) : null,
+      thinking: value.thinking,
+    }
+  } catch {
+    return null
+  }
 }
 
 export class AgentHarness {
@@ -315,14 +343,28 @@ export class AgentHarness {
     return refs.slice(0, 24)
   }
 
-  async steer(taskId: string, text: string): Promise<void> {
+  async steer(
+    taskId: string,
+    text: string,
+    attachments: AttachmentRef[] = [],
+    context: ContextRef[] = [],
+  ): Promise<void> {
     const conversation = await this.require(taskId)
+    const focus = await this.sanitizeContext(context)
     const submission = await conversation.submit(
       {
         type: 'input',
-        content: text,
+        content: withAttachments(text, attachments, focus),
         whenBusy: 'steer',
-        entry: { kind: 'sa.user', data: { text, attachments: [] } },
+        entry: {
+          kind: 'sa.user',
+          data: {
+            text,
+            attachments,
+            ...(focus.length ? { context: focus } : {}),
+            steer: true,
+          },
+        } as never,
       },
       CONTEXT,
     )
@@ -937,6 +979,19 @@ export class AgentHarness {
     await this.refreshTaskList()
   }
 
+  async setTaskModel(taskId: string, model: TaskModel | null): Promise<void> {
+    const meta = await this.deps.db.getTaskMeta(taskId)
+    if (!meta) throw new Error('Task not found.')
+    if (!model) {
+      await this.deps.db.setTaskModel(taskId, null)
+    } else {
+      const clean = parseTaskModel(JSON.stringify(model))
+      if (!clean) throw new Error('Invalid model choice.')
+      await this.deps.db.setTaskModel(taskId, JSON.stringify(clean))
+    }
+    await this.refreshTaskList()
+  }
+
   async deleteTask(taskId: string): Promise<void> {
     if (this.active?.id === taskId) {
       await this.active.watch.stop()
@@ -997,6 +1052,7 @@ export class AgentHarness {
         hasOlder: start > 0,
         cursor: slice[0]?.id ?? null,
         usage: usageOf(state.value),
+        model: parseTaskModel(meta.model_json),
         issueStatus: await this.issueStatus(entries),
       }
     } finally {
@@ -1030,11 +1086,30 @@ export class AgentHarness {
     input: { content: string; entry: { kind: string; data?: unknown } },
   ): Promise<void> {
     const taskId = String(conversation.id)
-    if (!this.modelRef) this.applyModel()
+    const stored = this.deps.settings.get().model
+    if (!stored) throw new Error('Choose a model in Settings first.')
+    this.applyModel()
     if (!this.modelRef) throw new Error('Choose a model in Settings first.')
-    const model = this.modelRef
-    const thinking = this.deps.settings.get().model?.thinking ?? 'off'
-    // The conversation follows the model in Settings, whichever was current when it began.
+    let model = this.modelRef
+    let thinking = stored.thinking ?? 'off'
+    const meta = await this.deps.db.getTaskMeta(taskId)
+    const taskModel = parseTaskModel(meta?.model_json)
+    if (taskModel) {
+      if (taskModel.provider !== stored.provider && !taskModel.baseUrl)
+        throw new Error('This task model needs a base URL.')
+      const base = {
+        ...stored,
+        provider: taskModel.provider,
+        modelId: taskModel.modelId,
+        baseUrl: taskModel.baseUrl ?? stored.baseUrl,
+        thinking: taskModel.thinking,
+        ...(taskModel.provider !== stored.provider ? { keyRef: '' } : {}),
+      }
+      model = installModel(this.deps.models, base, this.deps.vault)
+      thinking = taskModel.thinking
+      this.modelRef = model
+    }
+    // The conversation follows the task's model, or Settings when it has none.
     await this.harness.commit(
       (tx) => configure(tx, conversation.id, { model, thinkingLevel: thinking }),
       CONTEXT,

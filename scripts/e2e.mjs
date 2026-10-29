@@ -1,11 +1,12 @@
 /**
  * End-to-end run against the fake model and fake S3. Drives the real window:
- * configure a model and an account, ask a question, wait for the answer.
+ * configure a model and an account, ask a question, wait for the answer, then
+ * inspect the agent trace and its evidence.
  *
  *   node scripts/e2e.mjs
  */
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron } from 'playwright-core'
@@ -57,11 +58,32 @@ const fail = async (message) => {
   process.exit(1)
 }
 
-const openSources = async () => {
-  const toggle = page.locator('.run-evidence-toggle')
-  if ((await toggle.count()) && (await toggle.getAttribute('aria-expanded')) === 'false')
-    await toggle.click()
-  await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 5_000 })
+const openTrace = async () => {
+  await page.waitForSelector('.run-work-head', { timeout: 60_000 })
+  const head = page.locator('.run-work-head')
+  if ((await head.getAttribute('aria-expanded')) === 'false') await head.click()
+  await page.waitForSelector('.run-work .activity-list', { timeout: 5_000 })
+}
+
+const openFindings = async () => {
+  const button = page.locator('.run-evidence-button', { hasText: 'Findings' })
+  if (!(await button.count())) await fail('the findings strip is missing')
+  await button.click()
+  await page.waitForSelector('.run-finding-line', { timeout: 5_000 })
+}
+
+const openTool = async (label) => {
+  await openTrace()
+  const row = page.locator('.activity-item.tool', { hasText: label }).first()
+  if (!(await row.count())) await fail(`trace row missing: ${label}`)
+  await row.locator('.activity-line').click()
+  return row
+}
+
+/** A model run is settled when the composer is no longer in its stop state. */
+const waitSettled = async () => {
+  await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
+  await page.waitForSelector('.run-work-head', { timeout: 60_000 })
 }
 
 const checkA11y = async (label) => {
@@ -121,7 +143,7 @@ try {
   console.log('HOME OVERVIEW OK')
   await checkA11y('home')
 
-  // Model-free account check: the same readers produce a brief without a model.
+  // Model-free account check: the same readers produce a run without a model.
   await page.getByRole('button', { name: 'Check account' }).click()
   await page.waitForSelector('.brief .verdict', { timeout: 120_000 })
   const auditText = await page.locator('.brief').innerText()
@@ -137,22 +159,21 @@ try {
   await page.waitForTimeout(600)
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-running.png') })
 
-  await page.waitForSelector('.run-evidence-toggle', { timeout: 60_000 })
+  await waitSettled()
   if (await page.locator('.run-plan').count()) await fail('a finished plan is still visible')
   await page.locator('.run-answer .run-cite').first().click()
   await page.waitForSelector('.run-peek', { timeout: 5_000 })
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-peek.png') })
   await page.getByRole('button', { name: 'Close', exact: true }).click()
-  await openSources(page)
-  await page.locator('[data-source="risks"]').click()
-  await page.waitForSelector('.finding-main', { timeout: 5_000 })
+  await openTrace()
+  await openFindings()
   const body = await page.locator('body').innerText()
   console.log('ANSWER OK')
   console.log(body.slice(0, 1200))
   if ((await page.locator('.verdict code.ungrounded').count()) !== 0)
     await fail('a grounded verdict was marked')
-  await page.locator('.finding-main').first().click()
-  await page.waitForSelector('.check-row.flash', { timeout: 5_000 })
+  await page.locator('.run-finding-main').first().click()
+  await page.waitForSelector('.run-work-head[aria-expanded="true"]', { timeout: 5_000 })
   console.log('EVIDENCE OK')
   await page.waitForTimeout(200)
   await checkA11y('answer')
@@ -177,23 +198,25 @@ try {
   if (!clarify.includes('Which account should I read?')) await fail('clarify question missing')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-clarify.png') })
   await page.getByRole('button', { name: 'Demo', exact: true }).click()
-  await page.waitForSelector('.verdict', { timeout: 60_000 })
+  await waitSettled()
   console.log('CLARIFY OK')
   await page.locator('.composer textarea').fill('')
 
   // Re-verify is model-free: it re-reads the buckets this task touched.
   await page.getByRole('button', { name: 'More actions' }).click()
   await page.getByRole('menuitem', { name: 'Re-check' }).click()
-  await page.waitForSelector('.reverify-section', { timeout: 30_000 })
-  const reverify = await page.locator('.reverify-section').innerText()
+  await openTrace()
+  await page.waitForSelector('.activity-item.reverify', { timeout: 30_000 })
+  await page.locator('.activity-item.reverify .activity-line').click()
+  await page.waitForSelector('.activity-reverify', { timeout: 5_000 })
+  const reverify = await page.locator('.activity-reverify').innerText()
   console.log('REVERIFY:', reverify.replace(/\s+/g, ' ').slice(0, 160))
 
   // Access paths: policy, ACL, identity, key and analyzer grants in one chain.
   await page.locator('.composer textarea').fill('Who can read demo-public?')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.run-evidence-toggle', { timeout: 60_000 })
-  await openSources(page)
-  await page.locator('[data-source="data"]').click()
+  await waitSettled()
+  await openTool('Reviewed configuration')
   await page.waitForSelector('.access-chain .access-row', { timeout: 10_000 })
   const access = await page.locator('.access-chain').innerText()
   console.log('ACCESS OK:', access.replace(/\s+/g, ' ').slice(0, 180))
@@ -201,41 +224,34 @@ try {
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-access.png') })
 
   // Accepting a risk is the user's call; it folds the finding and survives a reload.
-  // This is a fresh run because the previous run only read access evidence.
   await page.getByRole('button', { name: 'New task' }).click()
   await page.waitForSelector('.home', { timeout: 5_000 })
   await page.locator('.composer textarea').fill('Which buckets are public?')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.run-evidence-toggle', { timeout: 60_000 })
-  await openSources()
-  await page.locator('[data-source="risks"]').click()
-  const encryption = page.locator('.finding-row', { hasText: 'No default encryption' }).first()
+  await waitSettled()
+  await openFindings()
+  const encryption = page.locator('.run-finding-line', { hasText: 'No default encryption' }).first()
   await encryption.hover()
   await encryption.getByRole('button', { name: 'Accept risk' }).click()
-  await page.waitForSelector('.fold-head:has-text("1 accepted")', { timeout: 5_000 })
+  await page.waitForSelector('text=1 accepted', { timeout: 5_000 })
   console.log('ACCEPT OK')
 
   // The user applies the fix outside the app; the agent re-reads that bucket only.
   await fetch(`http://127.0.0.1:${s3Port}/__fake/fix?bucket=demo-public`, { method: 'POST' })
   await page.locator('.composer textarea').fill('I applied the fix to demo-public')
   await page.keyboard.press('Enter')
+  await waitSettled()
   await page.waitForSelector('text=no longer public', { timeout: 60_000 })
-  await page.waitForSelector('.run-evidence-toggle', { timeout: 10_000 })
-  await openSources(page)
+  await openFindings()
+  await page.waitForSelector('.run-panel-label.ok', { timeout: 10_000 })
+  const fixed = await page.locator('.run-panel-label.ok').innerText()
+  console.log('VERIFY OK:', fixed)
   await page.locator('.run-history-head').click()
   await page.waitForSelector('.run-turn-head', { timeout: 5_000 })
   await page.locator('.run-turn-head').first().click()
   await page.waitForSelector('.run-turn-body', { timeout: 5_000 })
   console.log('HISTORY OK')
-  await page.locator('[data-source="risks"]').click()
-  await page.waitForSelector('.fold.ok .fold-head', { timeout: 10_000 })
-  const fixed = await page.locator('.fold.ok .fold-head').innerText()
-  console.log('VERIFY OK:', fixed)
-  await page.locator('[data-source="changes"]').click()
-  await page.waitForSelector('.changes-section .change-row', { timeout: 5_000 })
-  const change = await page.locator('.changes-section').innerText()
-  console.log('CHANGES OK:', change.replace(/\s+/g, ' ').slice(0, 160))
-  if (await page.locator('.finding-row', { hasText: 'publicly accessible' }).count())
+  if (await page.locator('.run-finding-line', { hasText: 'publicly accessible' }).count())
     await fail('a fixed finding is still on the page')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-verified.png') })
 
@@ -243,6 +259,7 @@ try {
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('Is ghost-bucket exposed?')
   await page.keyboard.press('Enter')
+  await waitSettled()
   await page.waitForSelector('.verdict:has-text("readings do not show")', { timeout: 60_000 })
   if (!seen.has('correction')) await fail('the harness did not ask for a grounded answer')
   console.log('GROUNDING OK')
@@ -250,9 +267,8 @@ try {
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('Show the change plan for demo-private')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.run-evidence-toggle', { timeout: 60_000 })
-  await openSources(page)
-  await page.locator('[data-source="change"]').click()
+  await waitSettled()
+  await openTool('Prepared a change plan')
   await page.waitForSelector('.plan', { timeout: 10_000 })
   await page.waitForSelector('text=AWS CLI', { timeout: 60_000 })
   const changeBody = await page.locator('body').innerText()
@@ -264,8 +280,11 @@ try {
   // Re-verify compares the account with the plan; it does not assume the user applied it.
   await page.getByRole('button', { name: 'More actions' }).click()
   await page.getByRole('menuitem', { name: 'Re-check' }).click()
-  await page.waitForSelector('.reverify-plan', { timeout: 30_000 })
-  const planReverify = await page.locator('.reverify-plan').innerText()
+  await openTrace()
+  await page.waitForSelector('.activity-item.reverify', { timeout: 30_000 })
+  await page.locator('.activity-item.reverify .activity-line').click()
+  await page.waitForSelector('.activity-reverify', { timeout: 5_000 })
+  const planReverify = await page.locator('.activity-reverify').innerText()
   console.log('PLAN REVERIFY:', planReverify.replace(/\s+/g, ' ').slice(0, 200))
   if (!planReverify.includes('not applied')) await fail('an unapplied plan step was not reported')
 
@@ -277,10 +296,9 @@ try {
   await page.waitForSelector('text=Stopped.', { timeout: 10_000 })
   console.log('STOP OK')
   await page.getByRole('button', { name: 'Continue' }).click()
-  await page.waitForSelector('.run-evidence-toggle', { timeout: 60_000 })
-  await openSources(page)
-  await page.locator('[data-source="risks"]').click()
-  await page.waitForSelector('.finding-main', { timeout: 5_000 })
+  await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
+  await page.waitForSelector('.run-answer .verdict', { timeout: 60_000 })
+  await openFindings()
   console.log('CONTINUE OK')
 
   // Create one task in this session and find it by a distinctive title. This
@@ -288,10 +306,8 @@ try {
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('Searchable demo question')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.run-evidence-toggle', { timeout: 60_000 })
-  await openSources(page)
-  await page.locator('[data-source="risks"]').click()
-  await page.waitForSelector('.finding-main', { timeout: 5_000 })
+  await waitSettled()
+  await openFindings()
   await page.waitForTimeout(400)
 
   await page.locator('.sidebar-search input').click()
@@ -309,40 +325,34 @@ try {
   await page.locator('.sidebar-search input').fill('multipart')
   await page.waitForSelector('.search-hit:has-text("multipart")', { timeout: 10_000 })
   await page.locator('.search-hit', { hasText: 'multipart' }).first().click()
-  await page.waitForSelector('.finding-row.flash', { timeout: 10_000 })
+  await page.waitForSelector('.run-finding-line', { timeout: 10_000 })
   console.log('SEARCH FINDING OK')
 
-  // Read-only code mode: the rows are the data section, the script is the evidence.
+  // Read-only code mode: the rows and the script are both in the trace.
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('What are the largest prefixes in demo-public?')
   await page.keyboard.press('Enter')
   await page.waitForSelector('text=holds everything', { timeout: 60_000 })
   await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
-  await openSources(page)
-  await page.locator('[data-source="data"]').click()
+  await openTool('Ran a read-only query')
   await page.waitForSelector('.table-block table', { timeout: 10_000 })
   const firstCell = await page.locator('.table-block table tbody td').first().innerText()
   if (firstCell !== 'reports/') await fail(`query rows: ${firstCell}`)
-  await page.locator('[data-source="checks"]').click()
-  await page.locator('.check-line', { hasText: 'Ran a read-only query' }).click()
-  await page.waitForSelector('.check-body pre.code:has-text("tools.list")', { timeout: 5_000 })
+  await page.waitForSelector('.activity-detail pre.code:has-text("tools.list")', { timeout: 5_000 })
   if (await page.locator('.verdict code.ungrounded').count()) await fail('a grounded query verdict was marked')
   console.log('QUERY OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-query.png') })
 
-  // Keyboard: j moves between findings. A report findings block stays visible
-  // without opening the evidence fold.
+  // Keyboard: j moves between findings.
   await page.getByRole('button', { name: 'New task' }).click()
   await page.locator('.composer textarea').fill('Which issues are open?')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.run-evidence-toggle', { timeout: 60_000 })
-  await openSources(page)
-  await page.locator('[data-source="risks"]').click()
-  await page.waitForSelector('.finding-main', { timeout: 10_000 })
-  await page.locator('.finding-main').first().focus()
+  await waitSettled()
+  await openFindings()
+  await page.locator('.run-finding-main').first().focus()
   await page.keyboard.press('j')
   const moved = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('.finding-main')]
+    const rows = [...document.querySelectorAll('.run-finding-main')]
     return rows.indexOf(document.activeElement) === 1
   })
   if (!moved) await fail('j did not move to the next finding')

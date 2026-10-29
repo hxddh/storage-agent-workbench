@@ -4,7 +4,7 @@ import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 import { detectProviderKind } from './s3/capabilities'
 
-export const HOST_SCHEMA_VERSION = 13
+export const HOST_SCHEMA_VERSION = 14
 
 export interface ProviderRow {
   id: string
@@ -352,6 +352,12 @@ export class AppDb {
           row.text,
           row.at,
         )
+    }
+    if (version < 14) {
+      // 34.0: one task may run with a model other than the Settings default.
+      const columns = await raw.all<{ name: string }>('PRAGMA table_info(task_meta)')
+      if (!columns.some((column) => column.name === 'model_json'))
+        await raw.exec('ALTER TABLE task_meta ADD COLUMN model_json TEXT')
     }
     if (version < HOST_SCHEMA_VERSION) {
       await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
@@ -1045,11 +1051,21 @@ export class AppDb {
         created_at: string
         updated_at: string
         pinned: number
+        model_json: string | null
       }
     | undefined
   > {
     return this.raw.get(
-      'SELECT conversation_id, title, created_at, updated_at, pinned FROM task_meta WHERE conversation_id = ?',
+      'SELECT conversation_id, title, created_at, updated_at, pinned, model_json FROM task_meta WHERE conversation_id = ?',
+      conversationId,
+    )
+  }
+
+  async setTaskModel(conversationId: string, modelJson: string | null): Promise<void> {
+    await this.raw.run(
+      'UPDATE task_meta SET model_json = ?, updated_at = ? WHERE conversation_id = ?',
+      modelJson,
+      new Date().toISOString(),
       conversationId,
     )
   }

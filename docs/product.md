@@ -88,8 +88,9 @@ risk. It stores no request, answer text, policy or secret.
   is checked against the task's tool results. A missing one produces a quiet
   warning rather than a broken link. There is no answer tool and no report
   block language.
-- **Enter** while running steers the current run. **Stop** (or ⌘.) keeps what was
-  read and offers **Continue** without adding a new question.
+- **Enter** while running steers the current run; the steer carries its files
+  and @ focus with it. **Stop** (or ⌘.) keeps what was read and offers
+  **Continue** without adding a new question.
 - A failed model run becomes one notice with **Retry**; it asks the last request
   again with its files. A stopped run offers **Continue**. A failed model-free
   check surfaces its error on the page; starting the check again creates a new
@@ -98,9 +99,10 @@ risk. It stores no request, answer text, policy or secret.
 - A run that finishes while the window is in the background sends one system
   notification (Settings can turn it off). The dock badge or taskbar progress
   shows work in flight.
-- Every model run uses the model in Settings, including old tasks; reasoning
-  level and context window are inferred from that model. A model-free check uses
-  neither.
+- A model run uses the task's model override when one is set, otherwise the
+  model in Settings; reasoning level and context window are inferred from that
+  model. The provider key always comes from the saved model. A model-free check
+  uses neither.
 
 There is no chat transcript. Earlier requests remain in the durable task and
 appear under **Earlier in this task**: one compact row per turn, expandable to
@@ -124,41 +126,40 @@ Top to bottom:
    re-read never turns an account-wide gap into a complete reading. Severity
    counts live with the risk list, not in the header.
 2. **Notices** — stopped, failed, no-answer, model-missing and budget notices,
-   with Retry or Continue where they apply. They sit outside the sources fold.
+   with Retry or Continue where they apply.
 3. **Clarification** — when a request is genuinely ambiguous, the agent may
    end the run with one `ask` question and 2–4 concrete options. The composer
    remains the answer surface; the next user reply starts the next run.
-4. **Answer** — the agent's final response, normal Markdown, is the first
-   content. Inline citations use `[1](#ev-<evidence id>)`. Clicking one opens an
-   in-place evidence peek; the full record is in Sources. The window validates
-   every citation, leaves a broken one as plain text and adds a quiet warning.
-   There is no answer tool and no report block language. A response with no
-   citation is still complete and does not invent a proof table.
-5. **Work** — the current run's one activity ledger, below the answer. While
-   live it is open: provider reasoning summary, running and completed tool
-   calls, status, target, shaped argument summary, note and duration. Plan is a
-   block inside Work while live or stopped with a blocked step; it is not a
-   separate page section. Opening a call shows its typed result. After the
-   answer settles Work collapses to one `Worked for … · n calls` row and reopens
-   in the same order; failed, stopped and timed-out calls stay in place.
-6. **Sources** — one on-demand evidence drawer below Work, not a second page.
-   Its rows are **Risks**, **Data**, **Change plan**, **Tool calls**, **Not
-   checked**, **Checked again**, **Changes** and **Methods** when they exist.
-   Only one section opens at a time. Risks, data and checks are current-run
-   evidence; a resolved fold may use the earlier observation that the current
-   read proved fixed. A deterministic check uses the same component. The
-   tool-call section is an audit receipt; Work is the process narrative.
+4. **Answer** — the agent's final response, normal Markdown. Inline citations
+   use `[1](#ev-<evidence id>)`. Clicking one opens an in-place evidence peek;
+   the full record is the trace. The window validates every citation, leaves a
+   broken one as plain text and adds a quiet warning. There is no answer tool
+   and no report block language. A response with no citation is still complete
+   and does not invent a proof table.
+5. **Trace** — the current run's one ordered record: plan revisions, provider
+   reasoning summary, running and completed tool calls, validation events,
+   steer, resume and re-check. While the run is planning or investigating the
+   trace is the primary content; when the answer arrives it becomes the primary
+   content and the trace folds to one `Worked for … · n calls` row. Opening a
+   call shows its typed result. Failed, stopped and timed-out calls stay in
+   place.
+6. **Evidence strip** — one compact row for **Findings** and one for **Not
+   checked** when they have content. Findings are a safety summary, not a
+   second report: the agent's citations decide what the answer uses, while the
+   strip keeps a blind spot visible even when the answer does not mention it.
+   The footer names the model and the run's calls and tokens.
 
 Copy answer and a single overflow menu are always visible in the run header. The
 overflow contains save Markdown, check again, re-verify, copy task link, export
-evidence and save PDF. Sources and PDF include the current risks, accepted and
-fixed folds, read timestamps and redacted views; there is no secret or
-unredacted provider document in them. Printing or saving a PDF expands every
-Sources section first.
+evidence and save PDF. Save and PDF include the answer, the trace, the current
+findings, accepted and fixed folds, read timestamps and redacted views; there is
+no secret or unredacted provider document in them. Printing expands the trace
+and the evidence strip first.
 
 A deterministic check has no model question; its page starts with the scope
-line and a synthesized answer, and uses the same Sources index. It carries the
-`Deterministic account check` tag.
+line and a synthesized answer, and uses the same trace and evidence strip. It
+carries the `Deterministic account check` tag. The footer model is the model in
+Settings unless the task has a per-task override.
 
 ### Findings and risks
 

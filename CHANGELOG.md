@@ -1,3 +1,27 @@
+## 34.0.0 — 2026-10-29
+
+- The run is the agent's trace, not a report: `shared/trace.ts` is the one run
+  model (request, plan revisions, tool calls, validation, question, answer,
+  notices, steer, resume, re-check). The old `RunFacts` page composition and the
+  fixed Sources drawer are gone.
+- The page follows the agent's phase: the trace is primary while planning and
+  investigating; the answer is primary when it arrives; a stopped or failed run
+  leads with its notice. The trace folds to one `Worked for … · n calls` row.
+- Evidence is the agent's citations plus two safety strips: **Findings** and
+  **Not checked**. Findings are a compact severity/bucket list, not a second
+  report; a blind spot stays visible even when the answer does not mention it.
+- One capability registry generates the tool names, groups, cost/coverage and
+  prompt capabilities. The 13-tool set is unchanged; `survey`/`config` are
+  breadth/depth, `query` is the composition primitive. No MCP or subagents.
+- Failed storage reads may retry once; a validation event shows when the harness
+  rejected a claim and the model rewrote it. A steer now carries files and
+  @ focus. A task can use a model other than the Settings default.
+- New behavior bench (`scripts/bench.mjs`) scores the trace and answer. This
+  release ran it with the fake model only; the real-model behavioral gate was
+  not run in the build environment because no model key was available. The
+  release notes say so explicitly.
+- Schema head 14: `task_meta.model_json` for the per-task model override.
+
 ## 33.0.0 — 2026-10-29
 
 The run is answer-first. The current request owns its evidence; the answer is the

@@ -106,62 +106,57 @@ The composer is inert until a model exists; the account can still be checked.
 
 Top to bottom: a 12.5px scope line (`Demo · All 2 buckets checked · 2m ago`),
 the question at 24px, Copy answer and the overflow menu, a collapsed **Earlier
-in this task** history, notices, an optional clarification, the final answer in
-Markdown, the open **Work** ledger, and one on-demand **Sources** drawer. The
-answer is first in every state; settling never moves it. A citation opens an
-in-place evidence peek, not a permanent proof table. The run header is sticky.
-Save, Check again, Re-verify, Copy link, Export evidence and Save PDF live in
-the overflow.
+in this task** history, notices, an optional clarification, the answer, the
+**Trace**, one compact evidence strip, and a footer naming the model, calls and
+tokens. The page follows the agent's phase: planning and investigating put the
+trace first; answering puts the answer first; clarifying puts the question
+first; stopped and failed put the notice and its Retry/Continue first. The
+answer never moves once it settles. A citation opens an in-place evidence peek,
+not a permanent proof table. The run header is sticky. Save, Check again,
+Re-verify, Copy link, Export evidence and Save PDF live in the overflow.
 
-**Work** is one activity ledger, not a chat transcript or a card stack. A
-provider reasoning summary is a collapsed `Thought` row with its text visible on
-the row and full text on open; when the provider omits it, the row says so and
-no replacement narrative is invented. Each tool row keeps one identity from
-running to done, with a state mark, `verb target`, shaped argument summary, note,
-duration and one chevron. The current row is open while live; completed rows
-collapse. A failed, stopped or timed-out row stays in place with its status and
-note. A tool result opens in a bounded scroll area using the same typed view as
-Sources. Plan is a block inside Work while live or stopped with a blocked step;
-there is no separate plan section. At settle, the answer leads and Work is a
-single line; opening it restores the same order.
+**Trace** is one ordered record, not a chat transcript or a card stack. A
+provider reasoning summary is a `Thought` row; when the provider omits it, the
+row says so and no replacement narrative is invented. Each tool row keeps one
+identity from running to done, with a state mark, `verb target`, shaped argument
+summary, note, duration and one chevron. The current row is open while live;
+completed rows collapse. A failed, stopped or timed-out row stays in place with
+its status and note. A validation row says the harness rejected a claim and the
+model was asked to rewrite it. A steer, resume or re-check is a row in the same
+trace. A tool result opens in a bounded scroll area using the same typed views
+as the answer's evidence peek. Plan revisions are a block at the top of the
+trace; there is no separate plan section. At settle, the answer leads and the
+trace is a single `Worked for … · n calls` line; opening it restores the same
+order.
 
 The scope line is the one place that makes coverage visible before the user
 reads the answer. It says `Not fully checked: n` (plus `m blocked` when some
 reads were denied) for a failed, stopped, blind, pending or truncated read. When
 every bucket was surveyed but access questions remain, it says
 `All n buckets checked · x open questions · y blocked` instead of pairing
-`Not fully checked` with a complete bucket count. Those details stay in
-**Not read**. It says
-`From memory · …`, `Live read · …`, `Based on a reading · …` or `Not read yet`
-when there is no account-wide check to report. It never says
-`Reads complete` or counts severity. A narrowed re-read never turns an
-account-wide gap into `All n buckets checked`. There is no next-step row and no
-chat transcript. When a task has more than the initial 200 entries, **Load
-earlier entries** fetches the next slice on demand.
+`Not fully checked` with a complete bucket count. Those details stay in the
+**Not checked** strip. It says `From memory · …`, `Live read · …`,
+`Based on a reading · …` or `Not read yet` when there is no account-wide check
+to report. It never says `Reads complete` or counts severity. A narrowed re-read
+never turns an account-wide gap into `All n buckets checked`. There is no
+next-step row and no chat transcript. When a task has more than the initial 200
+entries, **Load earlier entries** fetches the next slice on demand.
 
-Estate history stays inside the existing Data section: the remembered bucket
-table, then a quiet `HISTORY` label and a four-column evidence table. It is not
-a second panel or a timeline.
+Estate history stays inside the `estate` tool's typed result: the remembered
+bucket table, then the history table. It is not a second panel or a timeline.
 
-Risks group by bucket, with a hairline between groups. A group heading is 12px
-mono; each risk is a 14px title with a 12px meta line, a severity dot and no
-pill. **Accept risk** appears on hover or keyboard focus at the row's end as
-quiet text. A memory risk carries a hairline `remembered · 3d ago` tag, or the
-group meta line says it once when every risk is memory. **N more risks** is a
-bordered disclosure that expands in place, not a link to another page. Accepted
-risks and proved-fixed risks are one-line folds; the fixed fold and success
-status text use `--ok`.
+The evidence strip is two compact buttons, only when they have content:
+**Findings** and **Not checked**. Findings are a safety summary, not a second
+answer: severity, bucket, title and an on-hover **Accept risk**, grouped by
+bucket with a hairline. A memory finding carries `remembered`. Accepted and
+proved-fixed findings are one-line folds; the fixed label uses `--ok`. The strip
+keeps a blind spot visible even when the answer does not mention it, but the
+agent's citations decide what the answer itself uses.
 
 A name the checks never showed gets a dashed `--warn` underline and one quiet
 line under the answer. Names in the answer are prose, not boxed code chips. A
 citation the task cannot resolve is left as plain text with one quiet warning;
 no empty evidence frame is rendered.
-
-**Sources** is a compact index, not a second answer. It lists only the rows that
-exist: Risks, Data, Change plan, Tool calls, Not checked, Checked again, Changes
-and Methods. Each row carries a count; a hairline separates rows; one chevron
-marks the open row. Opening one section closes the previous one. The whole index
-folds behind one `Sources` toggle. There is no primary risk list and no permanent proof table; Sources is on demand.
 
 A change plan is one hairline list, not a stack of cards. Its summary names the
 baseline, steps, buckets, manual merges and residual risks; the baseline is one
@@ -169,26 +164,25 @@ quiet line; a step row carries a severity dot, bucket, title and ready/manual
 status. Only the selected step opens the exact tabs, code and impact. A manual
 step shows its blocker above the code. Re-verification uses the same hairline
 rows with a short status before the step: confirmed uses `--ok`, not applied
-uses `--danger`, still unknown uses `--warn`.
-The `Markdown` chunk is lazy; while it loads, backticks are stripped rather than
-flashing raw syntax.
+uses `--danger`, still unknown uses `--warn`. The `Markdown` chunk is lazy;
+while it loads, backticks are stripped rather than flashing raw syntax.
 
-A code-mode result shows its rows and chart in the data section; the script and
-output open under the query's check as the evidence. Byte columns render as
-human sizes; CSV keeps raw numbers.
+A code-mode result shows its rows, chart, script and output under the query's
+trace row. Byte columns render as human sizes; CSV keeps raw numbers.
 
-The Sources **Tool calls** section is the audit receipt: every settled call,
-its status, target, note and duration, with all typed views expandable. Blocked
-calls are not listed. Printing expands Work and every Sources section.
+The trace is the audit receipt: every settled call, its status, target, note and
+duration, with all typed views expandable. Blocked calls are not listed.
+Printing expands the trace and the evidence strip.
 
 ### Running
 
-While a run is live, Work is open and the status strip above the composer shows
-a pulsing accent dot, the current phase and target and elapsed time. The current
-call is open in place; every earlier call stays above it. When work settles,
-Work folds to `Worked for … · n calls` and the answer becomes primary. A stopped
-run keeps Work and its plan; Continue resumes in the same task. A citation's
-in-place peek is the only evidence surface that opens inside the answer.
+While a run is live, the trace is open and the status strip above the composer
+shows a pulsing accent dot, the current phase and target and elapsed time. The
+current call is open in place; every earlier call stays above it. When the
+answer starts streaming it becomes primary; at settle the trace folds to
+`Worked for … · n calls`. A stopped run keeps the trace and its plan; Continue
+resumes in the same task. A citation's in-place peek is the only evidence
+surface that opens inside the answer.
 
 ### Keyboard and pointer
 

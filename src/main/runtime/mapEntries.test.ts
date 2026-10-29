@@ -218,7 +218,7 @@ describe('entry projection', () => {
     })
   })
 
-  it('hides the harness messages to the model and shows a resume as a boundary', () => {
+  it('shows a harness correction as a validation event and a resume as a boundary', () => {
     const out = entries([
       { id: 'e10', kind: 'pi.user', model: [{ role: 'user', content: 'Rewrite the verdict' }] },
       {
@@ -227,7 +227,8 @@ describe('entry projection', () => {
         model: [{ role: 'user', content: 'Continue', timestamp: 3 }],
       },
     ])
-    expect(out).toEqual([{ id: 'e11', kind: 'resume', at: new Date(3).toISOString() }])
+    expect(out[0]).toMatchObject({ kind: 'validation', text: 'Rewrite the verdict' })
+    expect(out[1]).toEqual({ id: 'e11', kind: 'resume', at: new Date(3).toISOString() })
   })
 
   it('drops a tool result for a tool this app does not have', () => {

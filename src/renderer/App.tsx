@@ -4,6 +4,7 @@ import type {
   Bootstrap,
   ContextRef,
   LocalModel,
+  TaskModel,
   TaskSummary,
   TaskView,
 } from '@shared/contract'
@@ -32,6 +33,7 @@ function upsert(list: TaskSummary[], task: TaskSummary): TaskSummary[] {
 export function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null)
   const [tasks, setTasks] = useState<TaskSummary[]>([])
+  const [localModels, setLocalModels] = useState<LocalModel[]>([])
   const [view, setView] = useState<TaskView | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsPane, setSettingsPane] = useState<SettingsPane>('model')
@@ -63,6 +65,14 @@ export function App() {
     }
     void refresh().catch(() => setFatal(true))
   }, [refresh])
+
+  useEffect(() => {
+    if (!('agent' in window)) return
+    void window.agent
+      .localModels()
+      .then(setLocalModels)
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     if (!('agent' in window)) return
@@ -252,9 +262,15 @@ export function App() {
     }
   }
 
-  const steer = async (text: string) => {
+  const steer = async (text: string, tokens: string[], context: ContextRef[]) => {
     if (!view) return
-    await window.agent.steer(view.task.id, text)
+    await window.agent.steer(view.task.id, text, tokens, context)
+  }
+
+  const setModel = async (model: TaskModel | null) => {
+    if (!view) return
+    await window.agent.setTaskModel(view.task.id, model)
+    setView(await window.agent.openTask(view.task.id))
   }
 
   const stop = () => {
@@ -326,7 +342,9 @@ export function App() {
               onAudit={() => void audit()}
               auditing={auditing}
               auditProgress={auditProgress?.taskId === view.task.id ? auditProgress.progress : null}
-              staleDays={boot?.settings.staleDays ?? 7}
+              modelLabel={boot?.model?.modelId ?? null}
+              models={localModels}
+              onModel={(model) => void setModel(model)}
             />
           </Suspense>
         ) : boot ? (

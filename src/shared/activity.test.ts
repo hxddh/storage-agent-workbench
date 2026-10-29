@@ -78,7 +78,7 @@ describe('activity projection', () => {
     expect(activity.durationMs).toBe(2400)
   })
 
-  it('keeps reasoning and skips plan and skill entries', () => {
+  it('keeps reasoning, skips the plan, and shows a method without counting it as a call', () => {
     const activity = buildActivity([
       user('u1', 0),
       { id: 'r1', kind: 'reasoning', at: at(1), text: 'Check the policy first.' },
@@ -111,8 +111,9 @@ describe('activity projection', () => {
         },
       },
     ])
-    expect(activity.items).toHaveLength(1)
+    expect(activity.items).toHaveLength(2)
     expect(activity.items[0]).toMatchObject({ kind: 'reasoning', text: 'Check the policy first.' })
+    expect(activity.items[1]).toMatchObject({ kind: 'tool', name: 'skill' })
     expect(activity.calls).toBe(0)
   })
 

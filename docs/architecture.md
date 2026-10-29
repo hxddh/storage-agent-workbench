@@ -31,10 +31,10 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
 2. `harness.newTask()` creates one pi conversation per task and writes
    `task_meta`. A request-derived title is stored; a check gets an
    account-and-minute title.
-3. Before a model run, `configure()` points the conversation at the stored model
-   and its inferred thinking level. The run state (rounds, calls and names the
-   task has read) is seeded from the task's entries, so old tasks use the model
-   currently in Settings.
+3. Before a model run, `configure()` points the conversation at the task's
+   `model_json` override when present, otherwise the model in Settings; the
+   provider key always comes from the saved model. The run state (rounds, calls
+   and names the task has read) is seeded from the task's entries.
 4. `submit` writes a `sa.user` entry and starts pi's generation task. A running
    call is projected from `pi.live.tools` (name, target, progress, start time).
    When it settles, the tool result becomes a `pi.tool-result` entry carrying
@@ -42,13 +42,15 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
    and the call's bounded, redacted argument summary are shaped fields, never raw
    tool output. `agentTool()` writes the status (`done`, `failed`, `refused`,
    `timeout`, `stopped`); the projection never parses result text for it.
-5. Hooks guard the run. `beforeTool` blocks a repeated storage read and any
-   call after the model tier's round budget (14 small, 24 mid, 32 large).
-   `afterTool` records the names, exposure and evidence id a result shows.
-   `onYield` asks once for a corrected answer when the answer text or final
-   prose names something no result showed or contradicts what the readings
-   proved (`shared/grounding.ts`). `skill` and `plan` are control tools, not
-   storage reads. The final assistant message is the answer.
+5. Hooks guard the run. `beforeTool` blocks a repeated successful storage read,
+   allows one retry after a failed read, and stops a call after the model tier's
+   round budget (14 small, 24 mid, 32 large). `afterTool` records the names,
+   exposure and evidence id a result shows. `onYield` asks once for a corrected
+   answer when the answer text or final prose names something no result showed
+   or contradicts what the readings proved (`shared/grounding.ts`). The
+   correction is a durable `pi.user` entry; the window shows it as a validation
+   event in the trace, not as a silent rewrite. `skill` and `plan` are control
+   tools, not storage reads. The final assistant message is the answer.
 6. The open task is streamed with `conversation.watch()`. Each frame appends
    new entries and pushes live state and `pi.usage` to the window through
    `agent:event`.
@@ -71,8 +73,9 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
     returns it immediately, and starts `audit()` in the background. `audit()`
     surveys every account, reads access evidence for up to 24 buckets per
     account, emits transient `audit` progress, and writes one `sa.audit` entry.
-    The window expands that entry into ordinary checks and a synthesized run
-    answer (`shared/run.ts`) whose summary comes from `shared/audit.ts`. It
+    `shared/trace.ts` expands that entry into the same tool and answer events a
+    model run uses; the answer is marked `synthesized` and its summary comes
+    from `shared/audit.ts`. There is no second page model. It
     never asks the model and uses the same run surface as a model task.
 12. `harness.reverify()` replays the read operations for buckets the task
     touched and the buckets and account block in its latest change plan, up to
@@ -153,10 +156,12 @@ and truncation stay in the view.
 | `main/runtime/project.ts` | entries → `UiEntry`, live state, sanitized reasoning, usage |
 | `main/runtime/search.ts` | sidebar search and index rows |
 | `shared/audit.ts` | deterministic account-check summary from survey views |
-| `shared/facts.ts` | entries → deterministic facts (risks, methods, coverage, change plans, data, tool calls) |
-| `shared/activity.ts` | current-turn work: reasoning summary, live/durable calls, compaction, resume |
-| `shared/run.ts` | current-run boundary, optional plan, clarification, final Markdown answer and citation/evidence resolution |
+| `shared/facts.ts` | deterministic evidence annotations (risks, coverage, change plans, data, tool calls); not a page model |
+| `shared/activity.ts` | current-turn trace rows: reasoning summary, live/durable calls, steer, compaction, resume, re-check |
+| `shared/trace.ts` | the one run model: ordered request/plan/tool/validation/question/answer/notice events, phase, coverage, evidence, citations |
+| `shared/run.ts` | internal projection used by search and the trace builder; the window does not render it as a page |
 | `shared/grounding.ts` | names and exposure a task's results show; correction input |
+| `main/tools/registry.ts` | the one capability manifest: names, groups, cost, coverage, generated prompt |
 | `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details, evidence id |
 | `main/tools/control.ts` | `plan`, `skill` and `ask` control tools |
 | `main/s3/facts.ts` | one reading per bucket, exposure, rememberable posture |
@@ -178,9 +183,9 @@ and truncation stay in the view.
 | `main/window-state.ts` | window bounds in `window.json`, clamped to a display |
 | `renderer/Sidebar.tsx` | task list, search, rename, pin, delete |
 | `renderer/Home.tsx` | account summary, demo/local-model entry |
-| `renderer/Run.tsx` | run header, answer-first canvas, live/settled Work, in-place evidence peek, Sources, copy/save/export |
-| `renderer/Activity.tsx` | Work ledger: reasoning row, call rows, argument summaries, statuses, expandable shaped results, live plan |
-| `renderer/Sources.tsx` | current-run evidence drawer: risks, data, change plan, tool calls, not read, re-check, changes, methods; resolved task memory |
+| `renderer/Run.tsx` | run header, phase-driven answer/trace, coverage/findings strip, in-place evidence peek, footer model/usage, copy/save/export |
+| `renderer/Activity.tsx` | Trace ledger: plan, reasoning, call rows, argument summaries, statuses, validation, steer/resume/re-check, expandable shaped results |
+| `renderer/notice.ts` | app notice codes → user-facing text |
 | `main/skills.ts` | four on-demand methods; documentation, not checks |
 | `renderer/Composer.tsx` | request, steer, stop, @ focus, files |
 | `renderer/Settings.tsx` | model, accounts, memory, appearance, version |

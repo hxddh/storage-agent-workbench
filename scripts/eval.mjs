@@ -329,44 +329,43 @@ async function ask(page, text) {
 }
 
 async function readBrief(page) {
-  const openSources = async () => {
-    const toggle = page.locator('.run-evidence-toggle')
-    if ((await toggle.count()) && (await toggle.getAttribute('aria-expanded')) === 'false')
-      await toggle.click()
-    await page.waitForSelector('.run-evidence-wrap:not(.is-collapsed)', { timeout: 5_000 })
+  const openTrace = async () => {
+    const head = page.locator('.run-work-head')
+    if (!(await head.count())) return
+    if ((await head.getAttribute('aria-expanded')) === 'false') await head.click()
+    await page.waitForTimeout(80)
   }
-  const openSection = async (name) => {
-    const row = page.locator(`[data-source="${name}"]`)
-    if (!(await row.count())) return false
-    if ((await row.getAttribute('aria-expanded')) === 'false') await row.click()
+  const openEvidence = async (label) => {
+    const button = page.locator('.run-evidence-button', { hasText: label })
+    if (!(await button.count())) return false
+    if ((await button.getAttribute('aria-expanded')) === 'false') await button.click()
     await page.waitForTimeout(80)
     return true
   }
 
-  const work = page.locator('.run-work-head')
-  if ((await work.count()) && (await work.getAttribute('aria-expanded')) === 'false') await work.click()
-  const planShown = (await page.locator('.run-work-plan').count()) > 0
-  await openSources()
+  await openTrace()
   const base = await page.evaluate(() => {
     const text = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
     return {
-      verdict: text(document.querySelector('.verdict')),
-      ungrounded: [...document.querySelectorAll('.verdict code.ungrounded')].map(text),
-      fixShown: Boolean(document.querySelector('.run-work-plan')) || Boolean(document.querySelector('.brief-section .tabs')),
+      verdict: text(document.querySelector('.run-answer .verdict')),
+      ungrounded: [...document.querySelectorAll('.run-answer .verdict code.ungrounded')].map(
+        text,
+      ),
+      receipt: text(document.querySelector('.run-work-detail')),
     }
   })
 
   const findings = []
   let resolvedFold = false
-  if (await openSection('risks')) {
+  if (await openEvidence('Findings')) {
     const risks = await page.evaluate(() => {
       const text = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
       return {
-        findings: [...document.querySelectorAll('.findings-list .finding-row')].map((row) => ({
-          title: text(row.querySelector('.finding-title')),
-          bucket: text(row.querySelector('.finding-meta .mono')),
+        findings: [...document.querySelectorAll('.run-finding-line')].map((row) => ({
+          title: text(row.querySelector('.run-finding-title')),
+          bucket: text(row.querySelector('.run-finding-bucket')),
         })),
-        resolvedFold: Boolean(document.querySelector('.fold.ok')),
+        resolvedFold: Boolean(document.querySelector('.run-panel-label.ok')),
       }
     })
     findings.push(...risks.findings)
@@ -374,20 +373,21 @@ async function readBrief(page) {
   }
 
   let blindShown = false
-  if (await openSection('notChecked'))
-    blindShown = (await page.locator('.blind-section').count()) > 0
-
-  let receipt = ''
-  if (await openSection('checks'))
-    receipt = await page.locator('.source-receipt').innerText().catch(() => '')
+  if (await openEvidence('Not checked'))
+    blindShown = (await page.locator('.run-coverage-panel .blind').count()) > 0
 
   let methods = []
-  if (await openSection('methods'))
-    methods = await page.locator('.method-title').allInnerTexts()
+  const method = page.locator('.activity-item.tool', { hasText: 'Read a method' }).first()
+  if (await method.count()) {
+    await method.locator('.activity-line').click()
+    methods = await page.locator('.activity-detail .view-title').allInnerTexts()
+  }
 
-  let fixShown = base.fixShown || planShown
-  if (await openSection('change')) {
-    fixShown = fixShown || (await page.locator('.plan, .brief-section .tabs').count()) > 0
+  let fixShown = false
+  const change = page.locator('.activity-item.tool', { hasText: 'Prepared a change plan' }).first()
+  if (await change.count()) {
+    await change.locator('.activity-line').click()
+    fixShown = (await page.locator('.activity-detail .plan, .activity-detail .tabs').count()) > 0
   }
 
   return {
@@ -397,24 +397,26 @@ async function readBrief(page) {
     resolvedFold,
     blindShown,
     fixShown,
-    receipt,
+    receipt: base.receipt,
     methods,
   }
 }
 
 async function checks(page) {
-  const toggle = page.locator('.run-evidence-toggle')
-  if ((await toggle.count()) && (await toggle.getAttribute('aria-expanded')) === 'false')
-    await toggle.click()
-  const row = page.locator('[data-source="checks"]')
-  if ((await row.count()) && (await row.getAttribute('aria-expanded')) === 'false')
-    await row.click()
-  await page.waitForTimeout(100)
-  return page.$$eval('.check-row', (rows) =>
-    rows.map((row) => ({
-      verb: row.querySelector('.verb')?.textContent ?? '',
-      status: [...row.classList].find((name) => name !== 'check-row') ?? '',
-    })),
+  const head = page.locator('.run-work-head')
+  if ((await head.count()) && (await head.getAttribute('aria-expanded')) === 'false')
+    await head.click()
+  await page.waitForTimeout(80)
+  return page.$$eval('.activity-item.tool', (rows) =>
+    rows
+      .map((row) => ({
+        verb: row.querySelector('.activity-title')?.textContent ?? '',
+        status:
+          ['done', 'failed', 'stopped', 'timeout', 'refused', 'running'].find((name) =>
+            row.classList.contains(name),
+          ) ?? '',
+      }))
+      .filter((row) => row.verb !== 'Read a method'),
   )
 }
 

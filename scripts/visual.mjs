@@ -39,7 +39,7 @@ const names = [
   '15-plan-reverified.png',
   '16-settings-schedule.png',
   '17-finding-focus.png',
-  '18-sources-index.png',
+  '18-evidence-panel.png',
   '19-risks-multi-bucket.png',
   '20-home-zh.png',
   '21-settings-error-zh.png',

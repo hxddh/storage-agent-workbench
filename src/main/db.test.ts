@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import { describe, expect, it } from 'vitest'
-import { AppDb } from './db'
+import { AppDb, HOST_SCHEMA_VERSION } from './db'
 
 async function open(): Promise<AppDb> {
   const dir = mkdtempSync(join(tmpdir(), 'sa-db-'))
@@ -75,7 +75,7 @@ describe('schema', () => {
     `)
     const db = await AppDb.open(raw)
     const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(13)
+    expect(version?.user_version).toBe(HOST_SCHEMA_VERSION)
     expect((await db.getProvider('p'))?.auth).toBe('keys')
     expect((await db.getIssue('i'))?.detail).toBeNull()
   })

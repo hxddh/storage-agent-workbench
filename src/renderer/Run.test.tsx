@@ -117,7 +117,7 @@ afterEach(() => {
 })
 
 describe('the run', () => {
-  it('renders the answer first, with no automatic proof and no settled plan block', () => {
+  it('renders the answer first and keeps the trace folded until opened', () => {
     render(
       <Run
         view={view([user(), plan, survey, fallback('Only `demo` is public.')])}
@@ -140,13 +140,11 @@ describe('the run', () => {
       answer && work && answer.compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Work/ }))
-    expect(screen.queryByText('Read the account')).toBeNull()
-    expect(document.querySelector('.run-evidence-wrap')?.className).toContain('is-collapsed')
-    fireEvent.click(screen.getByRole('button', { name: /Sources/ }))
-    expect(document.querySelector('.run-evidence-wrap')?.className).not.toContain('is-collapsed')
+    expect(screen.getByText('Read the account')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Sources/ })).toBeNull()
   })
 
-  it('shows live work immediately, with completed calls still present', () => {
+  it('puts the live trace first, with completed calls still present', () => {
     const now = new Date(Date.now() - 1000).toISOString()
     const live: Live = {
       phase: 'tool',
@@ -186,7 +184,7 @@ describe('the run', () => {
     const answer = document.querySelector('.run-answer')
     const work = document.querySelector('.run-work')
     expect(
-      answer && work && answer.compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING,
+      work && answer && work.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(screen.getByText('Read account')).toBeTruthy()
     expect(screen.getByText('3 of 4')).toBeTruthy()
@@ -194,7 +192,7 @@ describe('the run', () => {
     expect(screen.getByText('4 findings')).toBeTruthy()
   })
 
-  it('shows provider reasoning summary when Work is expanded', () => {
+  it('shows provider reasoning summary when the trace is expanded', () => {
     const reasoning: UiEntry = {
       id: 'reason-1',
       kind: 'reasoning',
@@ -214,6 +212,29 @@ describe('the run', () => {
     fireEvent.click(screen.getByRole('button', { name: /Work/ }))
     fireEvent.click(screen.getByRole('button', { name: /Thought/ }))
     expect(screen.getAllByText('Check the public access block before concluding.')).toHaveLength(2)
+  })
+
+  it('shows a visible validation event in the trace', () => {
+    const validation: UiEntry = {
+      id: 'v1',
+      kind: 'validation',
+      at: '2026-01-01T00:00:02Z',
+      text: 'Your answer names `ghost`, which no tool result shows.',
+      tone: 'warn',
+    }
+    render(
+      <Run
+        view={view([user(), validation, fallback('Only `demo` is public.')])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Work/ }))
+    expect(screen.getByText('Claim checked')).toBeTruthy()
+    expect(screen.getByText(/no tool result shows/)).toBeTruthy()
   })
 
   it('renders a clarifying question and sends its chosen option', () => {
@@ -261,8 +282,8 @@ describe('the run', () => {
       />,
     )
     expect(document.querySelector('.run-proof')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /Sources/ }))
-    expect(screen.getByText('Data')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Findings/ }))
+    expect(screen.getByText('Bucket is publicly accessible')).toBeTruthy()
   })
 
   it('scopes the run to the latest request instead of reusing old evidence', () => {
@@ -283,7 +304,7 @@ describe('the run', () => {
     )
     expect(document.querySelector('.run-scope')?.textContent).toContain('Not read yet')
     expect(document.querySelector('.run-proof')).toBeNull()
-    expect(screen.queryByRole('button', { name: /Sources/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Findings/ })).toBeNull()
     expect(screen.queryByText('Bucket is publicly accessible')).toBeNull()
   })
 
@@ -299,8 +320,7 @@ describe('the run', () => {
       />,
     )
     expect(document.querySelector('.run-summary')?.textContent).toContain('Only demo is public.')
-    fireEvent.click(screen.getByRole('button', { name: /Sources/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Risks/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Findings/ }))
     expect(screen.getByText('Bucket is publicly accessible')).toBeTruthy()
   })
 
@@ -319,8 +339,8 @@ describe('the run', () => {
     fireEvent.click(document.querySelector('.run-cite')!)
     expect(document.querySelector('.run-peek')).toBeTruthy()
     expect(document.querySelector('.run-peek table')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /Open in sources/ }))
-    expect(document.querySelector('.run-evidence-wrap')?.className).not.toContain('is-collapsed')
+    fireEvent.click(screen.getByRole('button', { name: /Open in trace/ }))
+    expect(screen.getByRole('button', { name: /Work/ }).getAttribute('aria-expanded')).toBe('true')
   })
 
   it('warns when a prose citation does not resolve', () => {
@@ -375,7 +395,7 @@ describe('the run', () => {
     expect(document.querySelector('.run-question')?.textContent).toBe('What changed?')
   })
 
-  it('expands more risks in place inside Sources', () => {
+  it('shows every finding in the evidence panel, without a five-item cap', () => {
     const many: UiEntry = {
       ...survey,
       id: 'many',
@@ -399,11 +419,8 @@ describe('the run', () => {
         onReverify={async () => undefined}
       />,
     )
-    fireEvent.click(screen.getByRole('button', { name: /Sources/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Risks/ }))
-    expect(document.querySelectorAll('.run-sources .finding-row').length).toBe(5)
-    fireEvent.click(screen.getByRole('button', { name: /1 more risk/ }))
-    expect(document.querySelectorAll('.run-sources .finding-row').length).toBe(6)
-    expect(document.querySelector('.run-evidence-wrap')?.className).not.toContain('is-collapsed')
+    fireEvent.click(screen.getByRole('button', { name: /Findings/ }))
+    expect(document.querySelectorAll('.run-finding-line').length).toBe(6)
+    expect(screen.queryByText(/more risks/)).toBeNull()
   })
 })

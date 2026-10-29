@@ -2,7 +2,7 @@
 
 ## Application tables (`storage-agent.db`)
 
-`user_version` is the schema version (head **13**). Migrations are append-only
+`user_version` is the schema version (head **14**). Migrations are append-only
 in `main/db.ts`; the schema is created with `CREATE TABLE IF NOT EXISTS`, then
 old databases are brought forward by version checks. There is no separate
 migration tool.
@@ -15,7 +15,7 @@ migration tool.
 | `issue_events` | `id`, `issue_id`, `conversation_id`, `kind`, `at`, `detail_json` |
 | `notes` | `id`, `scope` (`estate`/`provider`/`bucket`), `ref`, `text`, `author`, `created_at` |
 | `audit` | `id`, `conversation_id`, `tool`, `target`, `outcome`, `at` |
-| `task_meta` | `conversation_id`, `title`, `created_at`, `updated_at`, `pinned` |
+| `task_meta` | `conversation_id`, `title`, `created_at`, `updated_at`, `pinned`, `model_json` |
 | `posture_changes` | `id`, `provider_id`, `bucket`, `at`, `changes_json` |
 | `readings` | `id`, `conversation_id`, `provider_id`, `at`, `trigger` (`check`/`task`/`reverify`), `complete`, `visible`, `processed`, `pending`, `denied`, `unknown`, `truncated`, `open_high`, `open_total` |
 | `datasets` | `id`, `conversation_id`, `kind`, `path`, `rows`, `bytes`, `created_at` |
@@ -47,6 +47,11 @@ answer, policy document, account id or secret. `complete = 1` only for an
 unscoped, closed survey; re-verification is always partial. Home selects each
 account's latest complete row and the newest complete row overall; `estate`
 history includes up to 30 reading rows in an unfiltered view.
+
+`task_meta.model_json` is a per-task model override (`provider`, `modelId`,
+`baseUrl`, `thinking`); null means the model in Settings. The provider key is
+never stored here. A harness correction is a `pi.user` entry in the durable log;
+the window projects it as a `validation` trace event, not a host table.
 
 `search_docs` is rebuilt per conversation when the task settles and backfilled
 at startup; its FTS5 trigram mirror is rebuilt with it. It stores the request,

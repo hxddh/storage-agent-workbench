@@ -1,4 +1,4 @@
-import type { Live, ToolName, ToolStatus, ToolView, UiEntry } from './contract'
+import type { Live, ReverifyReport, ToolName, ToolStatus, ToolView, UiEntry } from './contract'
 
 /**
  * One ordered account of the current turn's work.
@@ -22,6 +22,8 @@ export type ActivityItem =
   | {
       kind: 'tool'
       id: string
+      /** The durable UiEntry id, used to reveal the row from a citation. */
+      entryId?: string
       at: string
       startedAt: string
       status: ToolStatus
@@ -35,8 +37,10 @@ export type ActivityItem =
       view: ToolView | null
       live: boolean
     }
+  | { kind: 'steer'; id: string; at: string; text: string }
   | { kind: 'compaction'; id: string; at: string; text: string }
   | { kind: 'resume'; id: string; at: string }
+  | { kind: 'reverify'; id: string; at: string; report: ReverifyReport }
 
 export interface Activity {
   items: ActivityItem[]
@@ -51,6 +55,7 @@ function toolOf(entry: Extract<UiEntry, { kind: 'tool' }>): ActivityItem {
   return {
     kind: 'tool',
     id: entry.callId ?? entry.id,
+    entryId: entry.id,
     at: entry.at,
     startedAt: entry.at,
     status: entry.status,
@@ -69,7 +74,7 @@ function toolOf(entry: Extract<UiEntry, { kind: 'tool' }>): ActivityItem {
 export function buildActivity(entries: readonly UiEntry[], live?: Live | null): Activity {
   let boundary = -1
   entries.forEach((entry, index) => {
-    if (entry.kind === 'user' || entry.kind === 'resume') boundary = index
+    if ((entry.kind === 'user' && !entry.steer) || entry.kind === 'resume') boundary = index
   })
   const current = entries.slice(boundary + 1)
   const items: ActivityItem[] = []
@@ -93,18 +98,20 @@ export function buildActivity(entries: readonly UiEntry[], live?: Live | null): 
       })
       continue
     }
-    if (
-      entry.kind === 'tool' &&
-      entry.name !== 'plan' &&
-      entry.name !== 'skill' &&
-      entry.name !== 'ask'
-    ) {
+    if (entry.kind === 'user' && entry.steer) {
+      items.push({ kind: 'steer', id: entry.id, at: entry.at, text: entry.text })
+      continue
+    }
+    if (entry.kind === 'tool' && entry.name !== 'plan' && entry.name !== 'ask') {
       if (entry.callId) seenCalls.add(entry.callId)
       items.push(toolOf(entry))
       continue
     }
     if (entry.kind === 'compaction') {
       items.push({ kind: 'compaction', id: entry.id, at: entry.at, text: entry.text })
+    }
+    if (entry.kind === 'reverify') {
+      items.push({ kind: 'reverify', id: entry.id, at: entry.at, report: entry.report })
     }
   }
 
@@ -155,7 +162,8 @@ export function buildActivity(entries: readonly UiEntry[], live?: Live | null): 
     }
   }
 
-  const calls = items.filter((item) => item.kind === 'tool').length
+  // A method card is documentation, not a storage call.
+  const calls = items.filter((item) => item.kind === 'tool' && item.name !== 'skill').length
   const durations = items.flatMap((item) =>
     item.kind === 'tool' && item.durationMs !== null ? [item.durationMs] : [],
   )

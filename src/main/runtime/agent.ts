@@ -12,6 +12,7 @@ import { BY_CODE, ruleTitle } from '../estate/rules'
 import { SKILL_NAMES } from '../skills'
 import { createTools } from '../tools'
 import type { ToolDeps } from '../tools/policy'
+import { manifestPrompt } from '../tools/registry'
 
 /** Hard stop. The policy asks for fewer; this only ends a loop that is circling. */
 export const MAX_TOOL_ROUNDS = 24
@@ -56,24 +57,13 @@ How to work:
 
 Read-only is absolute: never claim a write, a change plan was applied, or an Issue was opened, resolved or accepted by the model. The application owns those transitions.`
 
-const CAPABILITIES = `Your capabilities:
-- Memory: \`estate\`, \`note\`
-- Reads: \`survey\`, \`buckets\`, \`objects\`, \`object\`, \`config\`, \`probe\`
-- Bulk reads: \`query\` (read-only code over the account)
-- Change planning: \`change_plan\` (text only; the app never applies it)
-- Methods: \`skill\` — ${SKILL_NAMES.join(', ')}
-- Clarify: \`ask\` (one question; ends the run)
-- Answer: your final response (normal Markdown + citations); \`plan\` is optional
-
-The tool output carries an \`evidence\` id in its \`<untrusted-data>\` opening tag. Use only ids you received.`
-
 const COMPOSE = `Composing the answer:
 - Your final response is the answer. Write normal Markdown.
 - Put every bucket, object key and account name in backticks, spelled exactly as a tool returned it. You may use headings and lists.
 - Cite a tool result by the evidence id in its \`<untrusted-data>\` tag: \`[1](#ev-<id>)\`. Never invent or reuse an id you did not receive. A citation opens that tool result.
 - Do not write a table of facts yourself; the tool result is the table. Say what is true and what it means.
-- Do not append findings, changes, checks or a full survey just because the task has them. The window keeps those facts in Sources.
-- The plan is process. The window shows it while you work and hides it once the answer settles.
+- The window shows your trace: the plan, the calls and the evidence you cite. It does not add report sections you did not use. Coverage and blind spots are shown separately because they are not optional.
+- The plan is process. The window shows it while you work and folds it once the answer settles.
 - If a read was blind, a survey stopped early, or coverage is open, say what remains open and do not call the account clean.
 - Never add next steps, suggestions or an offer to help further.`
 
@@ -85,7 +75,8 @@ export interface ReadGap {
 
 export interface RunState {
   rounds: number
-  calls: Set<string>
+  /** Exact storage calls and the status of their last attempt. A failed read may retry once. */
+  calls: Map<string, { attempts: number; last: 'running' | 'done' | 'failed' }>
   known: Set<string>
   /** What the task's readings proved about each bucket's exposure. */
   exposure: Map<string, boolean>
@@ -110,7 +101,7 @@ export function freshRun(
 ): RunState {
   return {
     rounds: 0,
-    calls: new Set(),
+    calls: new Map(),
     known: new Set(known),
     exposure: new Map(exposure),
     readGaps: new Map(),
@@ -158,11 +149,18 @@ export function blockReason(
   // Storage reads repeat exactly; memory changes as the task reads.
   if (MEMORY_TOOLS.has(name)) return undefined
   const key = signature(name, args)
-  if (current.calls.has(key)) {
-    return 'This exact call already ran in this task. Use its result; nothing has changed in read-only storage since.'
+  const previous = current.calls.get(key)
+  if (!previous) {
+    current.calls.set(key, { attempts: 1, last: 'running' })
+    return undefined
   }
-  current.calls.add(key)
-  return undefined
+  // A failed read is not evidence. Let the agent try it once more; a successful
+  // call is final because read-only storage has not changed.
+  if (previous.last === 'failed' && previous.attempts < 2) {
+    current.calls.set(key, { attempts: previous.attempts + 1, last: 'running' })
+    return undefined
+  }
+  return 'This exact call already ran in this task. Use its result; nothing has changed in read-only storage since.'
 }
 
 function setReadGap(state: RunState, key: string, open: number, blocked: number): void {
@@ -308,7 +306,7 @@ export function createAgent(deps: ToolDeps, state: AgentState, tools?: ToolRegis
             ? `${POLICY}\nThis model can hold a larger trace: up to 32 rounds. Still stop when the question is answered; more calls are not more certainty.`
             : POLICY,
       ),
-      section('capabilities', () => CAPABILITIES),
+      section('capabilities', () => `${manifestPrompt()}\nMethods: ${SKILL_NAMES.join(', ')}`),
       section('compose', () => COMPOSE),
       section('estate', () => state.digest),
       section(
@@ -345,6 +343,13 @@ export function createAgent(deps: ToolDeps, state: AgentState, tools?: ToolRegis
           const details = (result as { details?: ToolDetails }).details
           if (details) {
             const current = run(state, String(api.conversationId))
+            const key = signature(_call.name, _call.arguments)
+            const previous = current.calls.get(key)
+            if (previous)
+              current.calls.set(key, {
+                ...previous,
+                last: details.status === 'done' ? 'done' : 'failed',
+              })
             if (details.status === 'done') {
               if (!CONTROL_TOOLS.has(_call.name))
                 namesInView(details.view, details.target, current.known, _call.name)
