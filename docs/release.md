@@ -112,19 +112,20 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest release is **36.0.0** (2026-10-29). Earlier release notes
-may describe retired behavior; they are history. Keep `README.md`,
-`CHANGELOG.md` and this paragraph in step with the next tag, and refresh
-`docs/screenshot.png` if the surface changed. 36.0 makes the window a
-conversation and the agent the only reader: each task is one thread of the
-user's messages and the agent's steps and text, projected by
-`shared/conversation.ts`, and every read goes through the agent. The tools are
-nine (`buckets`, `objects`, `object`, `config`, `account`, `probe`, `query`,
-`note`, `ask`) and return each API's answer as it came, scrubbed of account
-ids (`s3/raw.ts`). The rule engine and Issues, the `survey`, `estate`,
-`change_plan` and `accept_risk` tools, generated change plans, reading records
-and posture history, scheduled checks, **Check account**, demo storage, the
-scripted check and re-check, app-level answer validation, the scope line and
-the evidence strips were removed. The runaway ceiling still derives from
-durable entries. Schema head 16 drops the rule engine's tables and the
-providers' schedule and account columns; 35.x tasks open as conversations.
+The latest release is **37.0.0** (2026-10-29). Earlier release notes may describe retired
+behavior; they are history. Keep `README.md`, `CHANGELOG.md` and this paragraph
+in step with the next tag, and refresh `docs/screenshot.png` if the surface
+changed. 37.0 gives the agent the APIs themselves instead of a fixed set of
+reads. The tools are six: `call` (any read-only operation of the bundled AWS
+SDK clients, returning the service's response or its error code, HTTP status
+and message; `s3/api.ts`), `query` (a read-only script with `call()`,
+`dataset()`, `inventory()` and `sql()`), `probe` (one unsigned request to the
+account's endpoint, with no ok/fail verdict), `more` (the rest of a result over
+24,000 characters), `note` (remember or forget) and `ask`. The `buckets`,
+`objects`, `object`, `config` and `account` tools and `s3/raw.ts` were removed.
+The harness no longer limits the agent: no 100-round ceiling, no fixed
+timeouts, no query budgets, no fixed output cap (the model's maximum is learned
+from its provider), every note in the prompt and `@` context uncapped. The only
+defaults, which the agent can change, protect the machine: sandbox memory
+(1024 MB) and body bytes per read (1 MiB). There is no schema change; the head
+stays 16, and 36.x tasks open with their calls to the removed tools.

@@ -32,18 +32,21 @@ The package also exposes direct aliases: `npm run e2e`, `npm run e2e:audit`,
 
 ## Tests
 
-`npm test` is the fast suite. It covers the raw readers (each section with its
-status, denied and unsupported reads, account ids scrubbed), the tools over a
-fake S3 (scope refused before any request, paging, previews, notes without
-secrets, a stopped call as stopped), the tool floor and `ask`, code mode
-(sandbox, budgets, timeout, import), log normalization and IP masking,
-CSV/Parquet import and the aggregate whitelist, schema migrations through 16
-and provider deletion, the search index, entry → UI projection (including
-35.x entries and calls to tools of earlier versions), the live projection, the
-conversation thread (order, steers, the live slot, citations, what each call
-returned, Markdown), the runaway ceiling rebuilt from durable entries,
-redaction, provider capabilities, AWS profiles, the model catalog and the
-localized dictionaries. `Conversation.test.tsx` and `Composer.test.tsx` run in
+`npm test` is the fast suite. It covers `call` over a fake S3 (any read runs
+and returns what the service answered, policy documents parsed, the error
+code and HTTP status of a failed call, a body read up to the bytes asked for,
+anything not a read and any bucket outside scope refused before a request,
+account ids scrubbed, a stopped call as stopped), a long result cut to its
+first piece and read on with `more`, notes without secrets and forgetting only
+the agent's own, `ask`, code mode (sandbox, paging every object, scope inside
+a script, running until stopped, SQL over an attached log), log normalization
+and IP masking, CSV/Parquet import, schema migrations through 16 and provider
+deletion, the search index, entry → UI projection (including 35.x entries and
+calls to tools of earlier versions), the live projection, the conversation
+thread (order, steers, the live slot, citations, what each call returned,
+Markdown), the prompt (hard rules, no ceiling, no hook, every note in the
+digest), the output limit a provider's refusal names, redaction, provider
+capabilities, AWS profiles, the model catalog and the localized dictionaries. `Conversation.test.tsx` and `Composer.test.tsx` run in
 jsdom; the rest use Node.
 
 ### Domain and compatibility
@@ -52,9 +55,10 @@ jsdom; the rest use Node.
   against `scripts/fake-s3.mjs`, whose responder is `scripts/fake-s3-core.mjs`:
   bucket profiles that answer as real providers do, including their 403s and
   501s. It uses a real SQLite database.
-- `src/main/compat.test.ts` runs against moto, an independent AWS emulator, for
-  what AWS says about exposure, the account-wide block, a KMS key policy and
-  CloudTrail events (with the account id never sent on). It runs only with
+- `src/main/compat.test.ts` runs `call` against moto, an independent AWS
+  emulator, as a custom-endpoint account: what AWS says about exposure, the
+  account-wide block, account-level IAM, a KMS key policy and CloudTrail events
+  (with the account id never sent on). It runs only with
   `STORAGE_AGENT_AWS_ENDPOINT`:
 
   ```bash
@@ -68,18 +72,21 @@ jsdom; the rest use Node.
 
 - `scripts/e2e.mjs` builds the app and drives the real Electron window against
   `scripts/fake-s3.mjs` (delayed so running work is observable) and
-  `scripts/fake-model.mjs`, a fake OpenAI-compatible endpoint that lists the
-  buckets, reads each configuration it needs and answers from what it read. It
+  `scripts/fake-model.mjs`, a fake OpenAI-compatible endpoint that reads with
+  `call` (`ListBuckets`, `GetBucketPolicyStatus`, `GetBucketAcl`,
+  `GetBucketPolicy`, `GetBucketLifecycleConfiguration`) and with `query` via
+  `tools.call`, and answers from what came back. It
   covers model setup from the fetched list, adding an account, axe on
   Settings, Home and the conversation (serious/critical violations fail), Home
-  without **Check account** or demo storage, an answer built from `buckets` and
-  `config` calls with the 35.x scaffolding (`Earlier in this task`, `Not
-  checked`, `Worked for`, `Findings`) absent, a citation opening a `config`
-  step section by section with exactly what the agent received, a follow-up in
+  without **Check account** or demo storage, an answer built from `Read` steps
+  with the 35.x scaffolding (`Earlier in this task`, `Not checked`, `Worked
+  for`, `Findings`) absent, a citation opening a `call` step as the response's
+  JSON with exactly what the agent received, a follow-up in
   the same thread, `@` focus, a clarifying question answered by an option, a
   fix applied outside the app and the agent's re-read, a change written as the
   agent's own text, stop/continue (the reply lands after the divider), search
-  opening an agent text, and code-mode rows and script.
+  opening an agent text, and code-mode rows and a script that uses
+  `tools.call`.
 - `scripts/e2e-audit.mjs` starts with no model and no account and checks that
   the composer is disabled, that **Set up a model** and **Add an account** are
   offered, that **Check account** and **Try with demo storage** are not, and
@@ -94,7 +101,8 @@ jsdom; the rest use Node.
   (`01-home-light` … `24-citation-open`, including `13-memory-light` and
   `14-change-light`). It rejects a global pixel change above 5% and any 64px
   tile with a large local change, so a missing control is not hidden by a
-  large unchanged window.
+  large unchanged window. The baselines were regenerated for 37.0, where the
+  steps read `Read` and open as JSON.
 - `scripts/perf.mjs` launches three times and fails when the median time to a
   visible composer exceeds 1,000 ms.
 - `scripts/budget.mjs` excludes the lazily loaded `Settings`, `Conversation`
@@ -109,7 +117,9 @@ last answer: the right buckets called public, no bucket called public that is
 not, what it could not read said out loud and no claim of a clean account, the
 expected conditions or prefixes named (the largest prefix is computed from the
 fake storage's own objects), a fix given as text, and no claimed write. Calls
-are reported, not judged; how much to read is the agent's. Scenarios include
+are reported, not judged: a failed call is not counted against the agent, since
+a 404 such as `NoSuchBucketPolicy` is a normal answer, and how much to read is
+the agent's. Scenarios include
 an S3-compatible store, a denied ACL, a condition-narrowed policy, a fix
 applied mid-task, memory in a new task, large and stale prefixes, and a
 prompt-injection-shaped object key.
@@ -117,8 +127,8 @@ prompt-injection-shaped object key.
 `scripts/bench.mjs` has 13 agent-behavior scenarios scored on the conversation:
 `public-account`, `blind-acl`, `memory`, `clarify`, `fix`, `query`,
 `unknown-bucket`, `citation-validity`, `stop-continue`, `steer`,
-`model-switch`, `retry-after-steer` and `follow-up`. `--smoke` runs them with
-the fake model.
+`model-switch`, `retry-after-steer` and `follow-up`. A scenario that expects
+reads expects the `Read` label. `--smoke` runs them with the fake model.
 
 ```bash
 xvfb-run -a node scripts/eval.mjs --smoke
@@ -171,8 +181,8 @@ tagged release builds all three platforms or publishes nothing.
 - Search indexes titles, user messages and the agent's text only; it does not
   index tool results, attachments or every object name. FTS5 trigram ranks longer
   queries; short CJK queries use LIKE. It returns at most 20 hits.
-- The sidebar shows the 500 most recently updated tasks; Settings lists the 100
-  most recent notes. Older rows remain in SQLite but are not shown.
+- The sidebar shows the 500 most recently updated tasks; older rows remain in
+  SQLite but are not shown. Settings and the prompt hold every note.
 - Removing an account deletes its account and bucket notes. See
   [data-model.md](data-model.md).
 - The tools return what the APIs answer; no test proves the agent's judgement
