@@ -48,6 +48,7 @@ jobs:
       - run: xvfb-run -a node scripts/e2e.mjs
       - run: xvfb-run -a node scripts/e2e-audit.mjs
       - run: xvfb-run -a node scripts/eval.mjs --smoke
+      - run: xvfb-run -a node scripts/bench.mjs --smoke
       - run: xvfb-run -a node scripts/perf.mjs
       - run: xvfb-run -a node scripts/shots.mjs
       - run: node scripts/visual.mjs
@@ -57,6 +58,42 @@ jobs:
         with:
           name: visual-captures
           path: .amp/in/artifacts/*.png
+          if-no-files-found: ignore
+
+  bench-real:
+    # The real-model behaviour gate on main: a small-tier and a large-tier
+    # model, three runs per scenario. Skipped (and said so) without a key.
+    name: Real-model bench
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [small, large]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Bench
+        env:
+          EVAL_PROVIDER: ${{ vars.EVAL_PROVIDER || 'anthropic' }}
+          EVAL_MODEL: ${{ matrix.tier == 'small' && vars.EVAL_MODEL_SECONDARY || vars.EVAL_MODEL_PRIMARY }}
+          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+        run: |
+          if [ -z "$EVAL_API_KEY" ] || [ -z "$EVAL_MODEL" ]; then
+            echo "::notice::No EVAL_API_KEY or model variable: the real-model bench did not run."
+            exit 0
+          fi
+          xvfb-run -a node scripts/bench.mjs --runs 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-${{ matrix.tier }}
+          path: .amp/in/artifacts/bench-report.*
           if-no-files-found: ignore
 
   compat:

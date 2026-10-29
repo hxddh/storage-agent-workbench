@@ -53,16 +53,16 @@ history includes up to 30 reading rows in an unfiltered view.
 never stored here. A harness correction is a `pi.user` entry in the durable log;
 the window projects it as a `validation` trace event, not a host table.
 
-`search_docs` is rebuilt per conversation when the task settles and backfilled
-at startup; its FTS5 trigram mirror is rebuilt with it. It stores the request,
-the current answer summary (`entry_id = 'verdict'`) and one row per risk
+`search_docs` is rebuilt per conversation when a run settles and backfilled
+at startup; its FTS5 trigram mirror is rebuilt with it. It stores every request,
+every run's answer (`entry_id = 'answer:<answer entry>'`, so a hit on an earlier
+run opens that run) and one row per risk seen by any run of the task
 (`entry_id = 'f:<source entry>:<finding key>'`). The source entry id lets a
 search hit load the evidence even when it is outside the window's initial page.
 Title search reads `task_meta` directly.
 
 `audit` records executed tool calls: tool, redacted target, outcome and
-conversation. A model-free check writes one durable `sa.audit` entry; its
-`survey` and `access` progress events are transient and not rows.
+conversation, for model and scripted runs alike.
 
 ## pi tables
 
@@ -75,18 +75,36 @@ Entry kinds the window understands:
 
 | Kind | Meaning |
 |---|---|
-| `sa.user` | a request; data `{ text, attachments, context? }` (context is focus only) |
-| `sa.continue` | the user resumed a stopped run; a boundary, not a question |
-| `pi.user` | the harness's own message to the model (a grounding correction); not shown |
-| `pi.assistant` | model output; the text is projected, `model` is not sent to the window |
-| `pi.tool-result` | a tool result; `details` is `{ target, note, view, ms, status }` |
-| `pi.compaction` | compaction divider |
+| `sa.run` | starts a run; data `{ trigger: 'user', text, attachments, context? }` for a request (an input the model answers), `{ trigger: 'check' \| 'recheck', at }` for a scripted run (a write) |
+| `sa.steer` | an input that joins a running run; data like a request |
+| `sa.resume` | the user continued a stopped run; a row in the run, not a request |
+| `sa.call` | one scripted call; data `{ name, at, details }`, details exactly as `agentTool()` returns them |
+| `sa.answer` | a scripted run's answer; data `{ text, at }`; its `model` carries the run's enveloped results so a later model run in the task can read and cite them |
+| `sa.reverify` | a re-check's comparison; data `ReverifyReport`, including plan-step status when the task has a change plan |
 | `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window |
-| `sa.reverify` | a model-free re-read report; data `ReverifyReport`, including plan-step status when the task has a change plan |
-| `sa.audit` | a deterministic account check without a model; data `AuditReport` (summary + checks) |
+| `pi.user` | the harness's one correction to the model; shown as a validation row |
+| `pi.assistant` | model output; the text is projected, `model` is not sent to the window |
+| `pi.tool-result` | a model's tool result; `details` is `{ target, note, progress, args, view, ms, status, evidenceId, key, assessed? }` |
+| `pi.compaction` | compaction divider |
 
-pi's `pi.usage` document supplies the task's token/cost receipt. A model-free
-check has no model usage; its receipt still shows the checks and time.
+`details.key` is a hash of the call's exact arguments; the run ledger blocks a
+repeated read by it. `details.assessed` is what the rules did with the reading
+(Issues opened, resolved, recurred), written by `estate/assess.ts`.
+
+The run's state (rounds, calls, names, evidence, coverage) is never stored
+separately: `shared/ledger.ts` derives it from these entries, so a restarted
+process rebuilds the same guards.
+
+pi's `pi.usage` document supplies the task's token/cost receipt. A scripted
+run has no model usage; its receipt still shows the calls and time.
+
+## Migration 15
+
+Schema head **15**. Tasks written before 35.0 use entry kinds 35 does not read,
+so migration 15 starts the task history over: it drops the `pi_*` tables and
+clears `task_meta`, `search_docs`, `datasets` and `audit`, and the shell clears
+`tasks/` on disk. Accounts, remembered posture, Issues and their events, notes
+and reading records stay; their links to old tasks become null.
 
 ## Datasets
 

@@ -10,11 +10,12 @@
 import type { ConversationView, EntryRecord } from '@earendil-works/pi-durable'
 import type {
   AttachmentRef,
-  AuditReport,
   ContextRef,
   Live,
   LiveTool,
   NoticeCode,
+  ReverifyReport,
+  RunTrigger,
   ToolDetails,
   ToolName,
   ToolStatus,
@@ -80,167 +81,203 @@ function isDetails(value: unknown): value is Partial<ToolDetails> & { target: st
   return Boolean(value) && typeof value === 'object' && 'target' in (value as object)
 }
 
+/** What a run-starting entry carries. */
+export interface RunData {
+  trigger: RunTrigger
+  text?: string
+  attachments?: AttachmentRef[]
+  context?: ContextRef[]
+}
+
+/** A scripted call: the same shaped details `agentTool()` returns to a model run. */
+export interface CallData {
+  name: ToolName
+  at: string
+  details: ToolDetails
+}
+
+function toolEntry(
+  id: string,
+  at: string,
+  name: ToolName,
+  details: (Partial<ToolDetails> & { target: string }) | null,
+  fallback: { isError: boolean; text: string; ms?: number; callId?: string },
+): UiEntry {
+  const status: ToolStatus = details?.status ?? (fallback.isError ? 'failed' : 'done')
+  return {
+    id,
+    kind: 'tool',
+    at,
+    name,
+    target: details?.target ?? '',
+    status: status === 'running' ? 'failed' : status,
+    note: details ? (details.note ?? null) : fallback.isError ? blockedNote(fallback.text) : null,
+    args: details?.args ?? null,
+    ms: details?.ms ?? fallback.ms ?? null,
+    view: details?.view ?? null,
+    ...(fallback.callId ? { callId: fallback.callId } : {}),
+    ...(details?.evidenceId ? { evidenceId: details.evidenceId } : {}),
+    ...(details?.key ? { key: details.key } : {}),
+    ...(details?.assessed ? { assessed: details.assessed } : {}),
+  }
+}
+
 export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
   const out: UiEntry[] = []
   const toolNames = new Map<string, string>()
   for (const entry of entries) {
     const id = String(entry.id)
     const message = entry.model?.[0] as ModelMessage | undefined
-    if (entry.kind === 'sa.user') {
-      const data = entry.data as
-        | {
-            text?: string
-            attachments?: AttachmentRef[]
-            context?: ContextRef[]
-            steer?: boolean
-          }
-        | undefined
-      out.push({
-        id,
-        kind: 'user',
-        at: iso(message?.timestamp),
-        text: data?.text ?? '',
-        attachments: data?.attachments ?? [],
-        ...(data?.context?.length ? { context: data.context } : {}),
-        ...(data?.steer ? { steer: true } : {}),
-      })
-      continue
-    }
-    // The harness's correction to the model is part of the run: the window
-    // shows that a claim was rejected and the model was asked to rewrite it.
-    if (entry.kind === 'pi.user') {
-      const text = textOf(message)
-      if (text)
+    const at = iso(message?.timestamp)
+    switch (entry.kind) {
+      case 'sa.run': {
+        const data = (entry.data ?? {}) as Partial<RunData> & { at?: string }
+        if (data.trigger === 'check' || data.trigger === 'recheck') {
+          out.push({ id, kind: 'check', at: data.at ?? at, mode: data.trigger })
+          break
+        }
         out.push({
           id,
-          kind: 'validation',
-          at: iso(message?.timestamp),
-          text: redact(text).slice(0, 1200),
-          tone: 'warn',
+          kind: 'user',
+          at,
+          text: data.text ?? '',
+          attachments: data.attachments ?? [],
+          ...(data.context?.length ? { context: data.context } : {}),
         })
-      continue
-    }
-    if (entry.kind === 'sa.audit') {
-      const report = entry.data as AuditReport | undefined
-      if (report) {
-        for (const [index, check] of report.checks.entries())
-          out.push({
-            id: `${id}:${index}`,
-            kind: 'tool',
-            at: check.at,
-            name: check.name,
-            target: check.target,
-            status: check.status,
-            note: check.note,
-            args: check.args ?? null,
-            ms: check.ms,
-            view: check.view,
-            evidenceId: `${id}:${index}`,
-          })
-        out.push({ id: `${id}:answer`, kind: 'answer', at: report.at, text: report.verdict })
+        break
       }
-      continue
-    }
-    // `pi.user` entries are the harness's own messages to the model (a grounding
-    // correction); they are not the user's questions.
-    if (entry.kind === 'sa.continue') {
-      out.push({ id, kind: 'resume', at: iso(message?.timestamp) })
-      continue
-    }
-    if (entry.kind === 'pi.assistant') {
-      if (!message) continue
-      for (const part of parts(message)) {
-        if (part.type === 'toolCall' && part.id && part.name) toolNames.set(part.id, part.name)
-      }
-      const thinking = thinkingOf(message)
-      const hasThinking = parts(message).some((part) => part.type === 'thinking')
-      if (hasThinking) {
+      case 'sa.steer': {
+        const data = (entry.data ?? {}) as Partial<RunData>
         out.push({
-          id: `${id}:thinking`,
-          kind: 'reasoning',
-          at: iso(message.timestamp),
-          text: redact(thinking).slice(0, 4000),
+          id,
+          kind: 'steer',
+          at,
+          text: data.text ?? '',
+          attachments: data.attachments ?? [],
+          ...(data.context?.length ? { context: data.context } : {}),
         })
+        break
       }
-      const text = textOf(message)
-      if (text) {
-        out.push({ id, kind: 'answer', at: iso(message.timestamp), text })
-      } else if (message.stopReason === 'error' && message.errorMessage) {
+      case 'sa.resume':
+        out.push({ id, kind: 'resume', at })
+        break
+      case 'sa.call': {
+        const data = entry.data as CallData | undefined
+        const name = toolName(data?.name)
+        if (data && name)
+          out.push(
+            toolEntry(id, data.at, name, data.details, {
+              isError: data.details.status !== 'done',
+              text: '',
+            }),
+          )
+        break
+      }
+      case 'sa.answer': {
+        const data = entry.data as { text?: string; at?: string } | undefined
+        if (data?.text)
+          out.push({ id, kind: 'answer', at: data.at ?? at, text: data.text, source: 'check' })
+        break
+      }
+      case 'sa.reverify': {
+        const data = entry.data as ReverifyReport | undefined
+        if (data) out.push({ id, kind: 'reverify', at: data.at, report: data })
+        break
+      }
+      case 'sa.notice': {
+        const data = entry.data as
+          | {
+              code?: NoticeCode
+              text?: string
+              tone?: 'info' | 'warn' | 'error'
+              action?: 'retry' | 'continue'
+            }
+          | undefined
         out.push({
           id,
           kind: 'notice',
-          at: iso(message.timestamp),
-          text: message.errorMessage.slice(0, 300),
-          tone: 'error',
-          action: 'retry',
+          at: '',
+          ...(data?.code ? { code: data.code } : {}),
+          text: data?.text ?? '',
+          tone: data?.tone ?? 'info',
+          ...(data?.action ? { action: data.action } : {}),
         })
+        break
       }
-      continue
-    }
-    if (entry.kind === 'pi.tool-result') {
-      if (!message) continue
-      const name = toolName(message.toolName ?? toolNames.get(message.toolCallId ?? ''))
-      if (!name) continue
-      const details = isDetails(message.details) ? message.details : null
-      // A call the harness blocked never read anything; it is not a check.
-      if (!details && message.isError && BLOCKED.test(textOf(message))) continue
-      // A result without our details came from pi itself: the call never reached
-      // `agentTool()` (blocked by a hook, aborted before start, or faulted).
-      const status: ToolStatus = details?.status ?? (message.isError ? 'failed' : 'done')
-      out.push({
-        id,
-        kind: 'tool',
-        at: iso(message.timestamp),
-        name,
-        target: details?.target ?? '',
-        status: status === 'running' ? 'failed' : status,
-        note: details
-          ? (details.note ?? null)
-          : message.isError
-            ? blockedNote(textOf(message))
-            : null,
-        args: details?.args ?? null,
-        ms: details?.ms ?? message.durationMs ?? null,
-        view: details?.view ?? null,
-        callId: message.toolCallId,
-        ...(details?.evidenceId ? { evidenceId: details.evidenceId } : {}),
-      })
-      continue
-    }
-    if (entry.kind === 'pi.compaction') {
-      out.push({ id, kind: 'compaction', at: '', text: 'Earlier steps were compacted.' })
-      continue
-    }
-    if (entry.kind === 'sa.reverify') {
-      const data = entry.data as import('@shared/contract').ReverifyReport | undefined
-      if (data)
-        out.push({ id, kind: 'reverify', at: iso(message?.timestamp) || data.at, report: data })
-      continue
-    }
-    if (entry.kind === 'sa.notice') {
-      const data = entry.data as
-        | {
-            code?: NoticeCode
-            text?: string
-            tone?: 'info' | 'warn' | 'error'
-            action?: 'retry' | 'continue'
-          }
-        | undefined
-      out.push({
-        id,
-        kind: 'notice',
-        at: '',
-        ...(data?.code ? { code: data.code } : {}),
-        text: data?.text ?? '',
-        tone: data?.tone ?? 'info',
-        ...(data?.action ? { action: data.action } : {}),
-      })
+      // `pi.user` entries are the harness's own messages to the model: a
+      // correction is part of the run, and the window shows it.
+      case 'pi.user': {
+        const text = textOf(message)
+        if (text)
+          out.push({ id, kind: 'validation', at, text: redact(text).slice(0, 1200), tone: 'warn' })
+        break
+      }
+      case 'pi.assistant': {
+        if (!message) break
+        for (const part of parts(message))
+          if (part.type === 'toolCall' && part.id && part.name) toolNames.set(part.id, part.name)
+        if (parts(message).some((part) => part.type === 'thinking'))
+          out.push({
+            id: `${id}:thinking`,
+            kind: 'reasoning',
+            at,
+            text: redact(thinkingOf(message)).slice(0, 4000),
+          })
+        const text = textOf(message)
+        if (text) out.push({ id, kind: 'answer', at, text, source: 'model' })
+        else if (message.stopReason === 'error' && message.errorMessage)
+          out.push({
+            id,
+            kind: 'notice',
+            at,
+            text: message.errorMessage.slice(0, 300),
+            tone: 'error',
+            action: 'retry',
+          })
+        break
+      }
+      case 'pi.tool-result': {
+        if (!message) break
+        const name = toolName(message.toolName ?? toolNames.get(message.toolCallId ?? ''))
+        if (!name) break
+        const details = isDetails(message.details) ? message.details : null
+        // A call the harness blocked never read anything; it is not a check.
+        if (!details && message.isError && BLOCKED.test(textOf(message))) break
+        // A result without our details came from pi itself: the call never
+        // reached `agentTool()` (aborted before start, or faulted).
+        out.push(
+          toolEntry(id, at, name, details, {
+            isError: Boolean(message.isError),
+            text: textOf(message),
+            ...(message.durationMs !== undefined ? { ms: message.durationMs } : {}),
+            ...(message.toolCallId ? { callId: message.toolCallId } : {}),
+          }),
+        )
+        break
+      }
+      case 'pi.compaction':
+        out.push({ id, kind: 'compaction', at: '', text: 'Earlier steps were compacted.' })
+        break
+      default:
+        break
     }
   }
   return out
 }
 
-const BLOCKED = /step budget reached|already ran in this task/i
+/** Model rounds of the current run: assistant messages that called a tool, blocked ones too. */
+export function roundsOf(entries: readonly EntryRecord[]): number {
+  let rounds = 0
+  for (const entry of entries) {
+    if (entry.kind === 'sa.run' || entry.kind === 'sa.resume') rounds = 0
+    if (entry.kind !== 'pi.assistant') continue
+    const message = entry.model?.[0] as ModelMessage | undefined
+    if (parts(message).some((part) => part.type === 'toolCall')) rounds += 1
+  }
+  return rounds
+}
+
+const BLOCKED = /step budget reached|already ran in this (?:task|run)/i
 
 /** A result pi wrote without running the tool; its text is not shown. */
 function blockedNote(text: string): string | null {

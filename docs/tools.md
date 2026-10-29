@@ -102,7 +102,9 @@ answer does not carry a separate plan section; Work is the one process surface.
 
 - A bucket outside `provider.scope.buckets` is refused before any request.
 - `survey` and `config` read through `s3/facts.ts` and decide rules from facts;
-  a blind read decides nothing. `survey` remembers each bucket as soon as it is
+  a blind read decides nothing. They never write an Issue: they hand the
+  decisions to the call's `Assessor` (`estate/assess.ts`), and the transitions
+  travel with the call as `assessed`. `survey` remembers each bucket as soon as it is
   read, reads the longest-unread first, uses at most 12 concurrent readers, stops
   starting buckets 20 seconds before its 300-second timeout, and reports the
   rest as pending; calling it again continues.

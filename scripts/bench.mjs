@@ -6,6 +6,11 @@
  *   EVAL_PROVIDER=anthropic EVAL_MODEL=... EVAL_API_KEY=... \
  *     xvfb-run -a node scripts/bench.mjs
  *   xvfb-run -a node scripts/bench.mjs --smoke   # fake model, plumbing only
+ *   ... --runs 3                                 # repeat every scenario
+ *
+ * Gate: every must-pass check passes in every run, and at least 90% of the
+ * soft checks pass across all runs. A smoke run uses the same gate; the fake
+ * model is deterministic, so a failure there is a plumbing regression.
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
@@ -18,6 +23,7 @@ const root = new URL('..', import.meta.url).pathname
 const args = process.argv.slice(2)
 const smoke = args.includes('--smoke')
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null
+const runs = Math.max(1, Number(args.includes('--runs') ? args[args.indexOf('--runs') + 1] : 1) || 1)
 const model = smoke
   ? {
       provider: 'compatible',
@@ -106,6 +112,34 @@ const scenarios = [
     turns: ['Survey my account.'],
     expect: { model: 'fake-model' },
   },
+  {
+    // Retry asks the run's request again; a steer is not a request.
+    name: 'retry-after-steer',
+    flow: 'retry-after-steer',
+    turns: ['Survey my account.'],
+    expect: { request: 'Survey my account.', steer: 0 },
+  },
+  {
+    // A scripted check leaves real calls and a cited answer, like a model run.
+    name: 'check-parity',
+    flow: 'check',
+    turns: [],
+    expect: { tools: ['Read account'], citations: 1, unresolved: 0, tag: 'Deterministic account check' },
+  },
+  {
+    // A model run after a check in the same task answers from fresh, cited reads.
+    name: 'check-then-ask',
+    flow: 'check',
+    turns: ['Which buckets are public?'],
+    expect: { citations: 1, unresolved: 0, answer: 'demo-public', request: 'Which buckets are public?' },
+  },
+  {
+    // A re-check is its own run in the same task: its trace shows the comparison.
+    name: 'recheck-run',
+    flow: 'recheck',
+    turns: ['Survey my account.'],
+    expect: { reverify: 1, tag: 'Re-check', earlier: 1 },
+  },
 ]
 
 const s3 = await startFakeS3({ buckets })
@@ -157,7 +191,14 @@ async function newTask() {
 async function ask(text) {
   await page.locator('.composer textarea').fill(text)
   await page.keyboard.press('Enter')
+  // This request's own run must land before "not running" means anything.
+  await page.waitForFunction(
+    (request) => document.querySelector('.run-question')?.textContent === request,
+    text,
+    { timeout: 60_000 },
+  )
   await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 180_000 })
+  await page.waitForSelector('.run-answer .verdict, .run-clarify', { timeout: 180_000 })
   await page.waitForTimeout(250)
 }
 
@@ -187,6 +228,10 @@ async function readTrace() {
       validation: document.querySelectorAll('.activity-item.validation').length,
       clarify: document.querySelectorAll('.run-clarify').length,
       model: text(document.querySelector('.run-model')),
+      request: text(document.querySelector('.run-question')),
+      tag: text(document.querySelector('.run-tag')),
+      reverify: document.querySelectorAll('.activity-item.reverify').length,
+      earlier: Number(text(document.querySelector('.run-history-count')) || 0),
     }
   })
   const findings = page.locator('.run-evidence-button', { hasText: 'Findings' })
@@ -232,6 +277,11 @@ function score(scenario, trace) {
     check('no unresolved citations', trace.unresolved <= e.unresolved)
   if (e.plan) check('shows a change plan', (trace.change ?? 0) > 0)
   if (e.steer) check('shows the steer in the trace', trace.steer > 0)
+  if (e.steer === 0) check('the steer is not in the retried run', trace.steer === 0)
+  if (e.request) check(`the run's request is "${e.request}"`, trace.request === e.request)
+  if (e.tag) check(`tagged ${e.tag}`, trace.tag === e.tag)
+  if (e.reverify) check('shows the re-check comparison', trace.reverify >= e.reverify)
+  if (e.earlier) check('keeps the earlier run', trace.earlier >= e.earlier)
   if (e.resume) check('shows the resume in the trace', trace.resume > 0)
   if (e.clarify) check('asks one clarifying question', trace.clarify > 0)
   if (e.calls !== undefined)
@@ -265,6 +315,32 @@ async function runScenario(scenario) {
     await page.keyboard.press('Enter')
     await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 180_000 })
     trace = await readTrace()
+  } else if (scenario.flow === 'retry-after-steer') {
+    await page.locator('.composer textarea').fill(scenario.turns[0])
+    await page.keyboard.press('Enter')
+    await page.waitForSelector('.run-strip .run-dot', { timeout: 10_000 })
+    await page.locator('.composer textarea').fill('Focus on demo-public')
+    await page.keyboard.press('Enter')
+    await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 180_000 })
+    const id = await page.locator('.run[data-task-id]').getAttribute('data-task-id')
+    await page.evaluate((taskId) => window.agent.retryTask(taskId), id)
+    await page.waitForSelector('.run-history-count', { timeout: 30_000 })
+    await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 180_000 })
+    await page.waitForSelector('.run-answer .verdict', { timeout: 180_000 })
+    trace = await readTrace()
+  } else if (scenario.flow === 'check') {
+    await page.getByRole('button', { name: 'Check account' }).first().click()
+    await page.waitForSelector('.run-answer .verdict', { timeout: 180_000 })
+    await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 180_000 })
+    for (const turn of scenario.turns) await ask(turn)
+    trace = await readTrace()
+  } else if (scenario.flow === 'recheck') {
+    for (const turn of scenario.turns) await ask(turn)
+    await page.getByRole('button', { name: 'More actions' }).click()
+    await page.getByRole('menuitem', { name: 'Re-check' }).click()
+    await page.waitForSelector('.run-tag', { timeout: 30_000 })
+    await page.waitForSelector('.activity-item.reverify', { timeout: 120_000 })
+    trace = await readTrace()
   } else if (scenario.flow === 'model-switch') {
     await ask(scenario.turns[0])
     const id = await page.locator('.run[data-task-id]').getAttribute('data-task-id')
@@ -297,26 +373,28 @@ async function runScenario(scenario) {
 try {
   await configure()
   const report = []
-  for (const scenario of scenarios) {
-    if (only && scenario.name !== only) continue
-    try {
-      const result = await runScenario(scenario)
-      report.push(result)
-      const passed = result.results.filter((item) => item.pass).length
-      console.log(`${scenario.name}: ${passed}/${result.results.length}`)
-    } catch (error) {
-      console.error(`${scenario.name}: ${error.message}`)
-      report.push({
-        scenario: scenario.name,
-        trace: null,
-        results: [{ name: 'run completed', pass: false, must: true }],
-      })
+  for (let attempt = 1; attempt <= runs; attempt += 1)
+    for (const scenario of scenarios) {
+      if (only && scenario.name !== only) continue
+      const name = runs > 1 ? `${scenario.name} #${attempt}` : scenario.name
+      try {
+        const result = await runScenario(scenario)
+        report.push({ ...result, scenario: name })
+        const passed = result.results.filter((item) => item.pass).length
+        console.log(`${name}: ${passed}/${result.results.length}`)
+      } catch (error) {
+        console.error(`${name}: ${error.message}`)
+        report.push({
+          scenario: name,
+          trace: null,
+          results: [{ name: 'run completed', pass: false, must: true }],
+        })
+      }
     }
-  }
   const lines = [
     `# Storage Agent bench — ${model.provider}/${model.id}${smoke ? ' (smoke, fake model)' : ''}`,
     '',
-    `${new Date().toISOString()} · ${report.length} scenario(s)`,
+    `${new Date().toISOString()} · ${report.length} scenario run(s) · ${runs} run(s) each`,
     '',
   ]
   for (const result of report) {
@@ -326,14 +404,20 @@ try {
       lines.push(`- ${item.pass ? '✓' : '✗'} ${item.name}${item.must ? '' : ' (soft)'}`)
     lines.push('')
   }
-  writeFileSync(join(root, '.amp/in/artifacts/bench-report.md'), lines.join('\n'))
   writeFileSync(
     join(root, '.amp/in/artifacts/bench-report.json'),
     JSON.stringify({ model: { ...model, key: undefined }, smoke, report }, null, 2),
   )
-  const must = report.flatMap((item) => item.results).filter((item) => item.must)
-  console.log(`Bench report: ${join(root, '.amp/in/artifacts/bench-report.md')}`)
-  if (!smoke && must.some((item) => !item.pass)) process.exit(1)
+  const all = report.flatMap((item) => item.results)
+  const must = all.filter((item) => item.must)
+  const soft = all.filter((item) => !item.must)
+  const softRate = soft.length ? soft.filter((item) => item.pass).length / soft.length : 1
+  const gate = `must-pass ${must.filter((item) => item.pass).length}/${must.length} · soft ${Math.round(softRate * 100)}%`
+  lines.splice(3, 0, gate, '')
+  writeFileSync(join(root, '.amp/in/artifacts/bench-report.md'), lines.join('\n'))
+  console.log(`Bench ${gate}. Report: ${join(root, '.amp/in/artifacts/bench-report.md')}`)
+  // Set the code and let `finally` close the window and the servers.
+  if (must.some((item) => !item.pass) || softRate < 0.9) process.exitCode = 1
 } finally {
   await app.close().catch(() => undefined)
   s3.server.close()

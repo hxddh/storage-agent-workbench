@@ -1,7 +1,5 @@
-import type { ActivityItem, Activity as ActivityModel } from '@shared/activity'
 import type { Lang, Live, ToolStatus } from '@shared/contract'
-import type { RunPlan } from '@shared/run'
-import type { TraceEvent } from '@shared/trace'
+import type { RunPlan, RunTrace, TraceItem } from '@shared/trace'
 import { Check, ChevronRight, Circle, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { type Dict, fill, toolLabel } from './i18n'
@@ -22,7 +20,7 @@ function statusLabel(status: ToolStatus, t: Dict): string {
             : t.runWorkRefused
 }
 
-function ActivityMark({ status }: { status: ToolStatus }) {
+function Mark({ status }: { status: ToolStatus }) {
   if (status === 'running')
     return <LoaderCircle className="activity-mark pulse-icon" size={13} aria-hidden="true" />
   if (status === 'done') return <Check className="activity-mark ok" size={13} aria-hidden="true" />
@@ -61,11 +59,11 @@ function PlanBlock({ plan, t }: { plan: RunPlan; t: Dict }) {
   )
 }
 
-function ReverifyDetail({
+function Recheck({
   report,
   t,
 }: {
-  report: Extract<ActivityItem, { kind: 'reverify' }>['report']
+  report: Extract<TraceItem, { kind: 'reverify' }>['report']
   t: Dict
 }) {
   return (
@@ -96,7 +94,7 @@ function ReverifyDetail({
       ) : (
         report.changes.slice(0, 12).map((change) => (
           <p className="reverify-plan-row" key={`${change.bucket}:${change.code}`}>
-            <span className="mono">{change.bucket}</span> · {change.title}
+            <span className="mono">{change.bucket || t.accountWide}</span> · {change.title}
           </p>
         ))
       )}
@@ -104,24 +102,30 @@ function ReverifyDetail({
   )
 }
 
-function ValidationRow({
-  event,
-  t,
-}: {
-  event: Extract<TraceEvent, { kind: 'validation' }>
-  t: Dict
-}) {
-  return (
-    <li className="activity-item validation">
-      <div className="activity-line">
-        <TriangleAlert className="activity-mark warn" size={13} aria-hidden="true" />
-        <span className="activity-copy">
-          <span className="activity-title">{t.runValidation}</span>
-          <span className="activity-note">{event.text}</span>
-        </span>
-      </div>
-    </li>
-  )
+/** What the rules did with a reading, in one clause. The model never does this. */
+function assessedText(item: Extract<TraceItem, { kind: 'tool' }>, t: Dict): string | null {
+  const assessed = item.assessed
+  if (!assessed) return null
+  return fill(t.runAssessed, { opened: assessed.opened, resolved: assessed.resolved })
+}
+
+function titleOf(item: TraceItem, t: Dict, lang: Lang): string {
+  switch (item.kind) {
+    case 'reasoning':
+      return item.status === 'running' ? t.thinking : t.runThought
+    case 'tool':
+      return toolLabel(item.name, lang)
+    case 'steer':
+      return t.runSteer
+    case 'validation':
+      return t.runValidation
+    case 'compaction':
+      return t.runWorkCompacted
+    case 'reverify':
+      return t.reverifyTitle
+    default:
+      return t.runWorkResumed
+  }
 }
 
 function Row({
@@ -131,7 +135,7 @@ function Row({
   taskTitle,
   now,
 }: {
-  item: ActivityItem
+  item: TraceItem
   t: Dict
   lang: Lang
   taskTitle: string
@@ -142,65 +146,46 @@ function Row({
   const running = status === 'running'
   const expandable =
     item.kind === 'tool'
-      ? Boolean(
-          item.view ||
-            running ||
-            item.status === 'failed' ||
-            item.status === 'stopped' ||
-            item.status === 'timeout' ||
-            item.status === 'refused',
-        )
+      ? Boolean(item.view || running || item.status !== 'done')
       : item.kind === 'reasoning' || item.kind === 'reverify'
   const open = manual ?? (running || (item.kind === 'tool' && item.status === 'failed'))
-
-  const title =
-    item.kind === 'reasoning'
-      ? status === 'running'
-        ? t.thinking
-        : t.runThought
-      : item.kind === 'tool'
-        ? toolLabel(item.name, lang)
-        : item.kind === 'steer'
-          ? t.runSteer
-          : item.kind === 'compaction'
-            ? t.runWorkCompacted
-            : item.kind === 'reverify'
-              ? t.reverifyTitle
-              : t.runWorkResumed
   const target = item.kind === 'tool' ? item.target : ''
   const note =
     item.kind === 'tool'
-      ? item.note
-      : item.kind === 'reasoning' || item.kind === 'steer'
+      ? [item.note, assessedText(item, t)].filter(Boolean).join(' · ') || null
+      : item.kind === 'reasoning' || item.kind === 'steer' || item.kind === 'validation'
         ? item.text
         : item.kind === 'reverify'
-          ? fill(t.reverifyChecked, {
-              n: item.report.checked,
-              changed: item.report.changes.length,
-            })
+          ? fill(t.reverifyChecked, { n: item.report.checked, changed: item.report.changes.length })
           : null
   const elapsed =
     item.kind === 'tool'
       ? item.durationMs !== null
         ? duration(item.durationMs)
         : running
-          ? duration(now - (Date.parse(item.startedAt) || now))
+          ? duration(now - (Date.parse(item.at) || now))
           : null
       : item.kind === 'reasoning' && running
-        ? duration(now - (Date.parse(item.startedAt) || now))
+        ? duration(now - (Date.parse(item.at) || now))
         : null
 
   const line = (
     <>
-      {status ? <ActivityMark status={status} /> : <Circle className="activity-mark" size={8} />}
+      {status ? (
+        <Mark status={status} />
+      ) : item.kind === 'validation' ? (
+        <TriangleAlert className="activity-mark warn" size={13} aria-hidden="true" />
+      ) : (
+        <Circle className="activity-mark" size={8} />
+      )}
       <span className="activity-copy">
-        <span className="activity-title">{title}</span>
+        <span className="activity-title">{titleOf(item, t, lang)}</span>
         {target && <span className="activity-target mono">{target}</span>}
         {note && <span className="activity-note">{note}</span>}
       </span>
       {status && (
         <span className={`activity-status ${status}`}>
-          {running ? statusLabel(status, t) : status !== 'done' ? statusLabel(status, t) : null}
+          {status !== 'done' ? statusLabel(status, t) : null}
           <span className="visually-hidden">{status === 'done' ? statusLabel(status, t) : ''}</span>
         </span>
       )}
@@ -234,35 +219,31 @@ function Row({
               {item.text ? item.text : running ? t.runWorkReasoningWaiting : t.runWorkNoReasoning}
             </p>
           ) : item.kind === 'reverify' ? (
-            <ReverifyDetail report={item.report} t={t} />
-          ) : (
+            <Recheck report={item.report} t={t} />
+          ) : item.kind === 'tool' ? (
             <>
-              {item.kind === 'tool' && item.args && (
-                <p className="activity-args mono">{item.args}</p>
+              {item.args && <p className="activity-args mono">{item.args}</p>}
+              {item.view?.kind === 'query' && (
+                <>
+                  {item.view.chart && <ChartView chart={item.view.chart} />}
+                  <TableView
+                    table={item.view.rows}
+                    name={item.view.title}
+                    empty={t.noRows}
+                    t={t}
+                    limit={8}
+                  />
+                </>
               )}
-              {item.kind === 'tool' && item.view ? (
-                item.view.kind === 'query' ? (
-                  <>
-                    {item.view.chart && <ChartView chart={item.view.chart} />}
-                    <TableView
-                      table={item.view.rows}
-                      name={item.view.title}
-                      empty={t.noRows}
-                      t={t}
-                      limit={8}
-                    />
-                    <ToolViewBody view={item.view} t={t} taskTitle={taskTitle} limit={8} />
-                  </>
-                ) : (
-                  <ToolViewBody view={item.view} t={t} taskTitle={taskTitle} limit={8} />
-                )
-              ) : item.kind === 'tool' && running ? (
+              {item.view ? (
+                <ToolViewBody view={item.view} t={t} taskTitle={taskTitle} limit={8} />
+              ) : running ? (
                 <p className="quiet">{t.runWorkWaiting}</p>
-              ) : item.kind === 'tool' && note ? (
+              ) : note ? (
                 <p className="activity-detail-note">{note}</p>
               ) : null}
             </>
-          )}
+          ) : null}
         </div>
       )}
     </li>
@@ -270,26 +251,23 @@ function Row({
 }
 
 /**
- * The current turn's work. It is open while the run is live and becomes one
- * quiet disclosure after the answer settles. It is deliberately not a chat
- * transcript: plan and methods stay separate, and every row is evidence or
- * provider-supplied reasoning.
+ * The run's one record: plan revisions, provider reasoning, every call with its
+ * status and shaped result, validations, steers and re-checks, in order. It is
+ * primary while the run works and folds to one row once the answer settles.
  */
-export function Work({
-  activity,
+export function Trace({
+  trace,
   live,
-  plan,
-  validation = [],
+  showPlan,
   open,
   onToggle,
   t,
   lang,
   taskTitle,
 }: {
-  activity: ActivityModel
+  trace: RunTrace
   live: Live | null
-  plan: RunPlan | null
-  validation?: Extract<TraceEvent, { kind: 'validation' }>[]
+  showPlan: boolean
   open: boolean
   onToggle: () => void
   t: Dict
@@ -304,33 +282,27 @@ export function Work({
     return () => clearInterval(timer)
   }, [live])
 
-  if (!live && activity.items.length === 0 && !plan && validation.length === 0) return null
+  const plan = showPlan || open ? trace.plan : null
+  if (!live && trace.items.length === 0 && !plan) return null
 
-  const active = [...activity.items]
-    .reverse()
-    .find(
-      (item): item is Extract<ActivityItem, { kind: 'tool' }> =>
-        item.kind === 'tool' && item.status === 'running',
-    )
-  const lastTool = [...activity.items]
-    .reverse()
-    .find((item): item is Extract<ActivityItem, { kind: 'tool' }> => item.kind === 'tool')
-  const failed = lastTool?.status === 'failed' ? lastTool : undefined
+  const tools = trace.items.filter(
+    (item): item is Extract<TraceItem, { kind: 'tool' }> => item.kind === 'tool',
+  )
+  const active = tools.findLast((item) => item.status === 'running')
+  const failed = tools.at(-1)?.status === 'failed' ? tools.at(-1) : undefined
   const liveElapsed = live ? duration(now - (Date.parse(live.startedAt) || now)) : null
-  const calls =
-    activity.calls === 1 ? t.runWorkCallOne : fill(t.runWorkCalls, { n: activity.calls })
-  const settledTime = duration(activity.durationMs)
+  const settledTime = duration(trace.durationMs)
   const settled = [
     settledTime ? fill(t.runWorkedFor, { time: settledTime }) : null,
-    activity.calls > 0
-      ? calls
-      : activity.items.some((item) => item.kind === 'reasoning')
+    trace.calls > 0
+      ? trace.calls === 1
+        ? t.runWorkCallOne
+        : fill(t.runWorkCalls, { n: trace.calls })
+      : trace.items.some((item) => item.kind === 'reasoning')
         ? t.runWorkReasoning
-        : activity.items.some((item) => item.kind === 'reverify')
-          ? t.reverifyTitle
-          : plan
-            ? t.runPlanTitle
-            : null,
+        : trace.plan
+          ? t.runPlanTitle
+          : null,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -359,11 +331,8 @@ export function Work({
         <>
           {plan && <PlanBlock plan={plan} t={t} />}
           <ol className="activity-list">
-            {activity.items.map((item) => (
+            {trace.items.map((item) => (
               <Row key={item.id} item={item} t={t} lang={lang} taskTitle={taskTitle} now={now} />
-            ))}
-            {validation.map((event) => (
-              <ValidationRow key={event.id} event={event} t={t} />
             ))}
           </ol>
         </>

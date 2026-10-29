@@ -1,251 +1,66 @@
-import { buildActivity } from '@shared/activity'
 import {
-  type AuditProgress,
   type Lang,
   type LocalModel,
   TASK_LINK_PREFIX,
   type TaskModel,
   type TaskView,
-  type ToolView,
 } from '@shared/contract'
-import type { RiskFact } from '@shared/facts'
 import {
   buildTrace,
-  currentRunEntries,
-  type RunEvidence,
+  earlierRuns,
   type RunTrace,
-  type RunTurn,
   resolveEvidence,
-  type TraceEvent,
   traceMarkdown,
-  turnsOf,
 } from '@shared/trace'
-import {
-  AlertTriangle,
-  ArrowDownToLine,
-  ChevronRight,
-  Copy,
-  Link2,
-  MoreHorizontal,
-  Radar,
-  X,
-} from 'lucide-react'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Work } from './Activity'
-import { type Dict, dict, fill, toolLabel } from './i18n'
+import { ArrowDownToLine, Copy, Link2, MoreHorizontal, Radar } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Answer, EvidencePeek } from './Answer'
+import { EarlierRuns } from './EarlierRuns'
+import { Evidence } from './Evidence'
+import { type Dict, dict, fill } from './i18n'
 import { copyText, safeFileName } from './lib/export'
 import { noticeText } from './notice'
 import { scopeText } from './scope'
-import { ago } from './time'
-import { AccessChain, ChangePlanView, ChartView, TableView, ToolViewBody } from './Views'
+import { Trace } from './Trace'
 
-const Markdown = lazy(() => import('./Markdown'))
-
-function plain(text: string): string {
-  return text.replace(/`([^`]*)`/g, '$1')
-}
-
-function TableBlock({
-  view,
-  limit,
+function Notices({
+  trace,
   t,
-  taskTitle,
+  onRetry,
+  onContinue,
 }: {
-  view: ToolView
-  limit?: number
+  trace: RunTrace
   t: Dict
-  taskTitle: string
+  onRetry: () => void
+  onContinue: () => void
 }) {
-  if (view.kind === 'survey')
-    return (
-      <TableView
-        table={view.buckets}
-        name={`${view.provider}-buckets`}
-        empty={t.noBuckets}
-        t={t}
-        limit={limit ?? 10}
-      />
-    )
-  if (view.kind === 'buckets' || view.kind === 'objects')
-    return (
-      <TableView
-        table={view.rows}
-        name={taskTitle || view.kind}
-        empty={view.kind === 'buckets' ? t.noBuckets : t.noObjects}
-        t={t}
-        limit={limit ?? 10}
-      />
-    )
-  if (view.kind === 'estate' && view.buckets)
-    return (
-      <TableView
-        table={view.buckets}
-        name={`${taskTitle || 'estate'}-buckets`}
-        empty={t.emptyEstate}
-        t={t}
-        limit={limit ?? 8}
-      />
-    )
-  if (view.kind === 'query')
-    return (
-      <>
-        {view.chart && <ChartView chart={view.chart} />}
-        <TableView table={view.rows} name={view.title} empty={t.noRows} t={t} limit={limit ?? 10} />
-      </>
-    )
-  if (view.kind === 'config' && view.access)
-    return (
-      <AccessChain
-        paths={view.access}
-        blind={view.accessBlind}
-        coverage={view.accessCoverage}
-        t={t}
-      />
-    )
-  return <ToolViewBody view={view} t={t} taskTitle={taskTitle} />
-}
-
-function TimelineBlock({ view, limit, t }: { view: ToolView; limit?: number; t: Dict }) {
-  const table =
-    view.kind === 'estate' && view.history ? view.history : view.kind === 'query' ? view.rows : null
-  if (!table) return <p className="view-empty">{t.noRows}</p>
-  const rows = table.rows.slice(0, limit ?? 10)
+  if (!trace.notices.length) return null
   return (
-    <ol className="run-timeline">
-      {rows.map((row, index) => (
-        <li key={index}>
-          <span className="run-timeline-when mono">{String(row[0] ?? '')}</span>
-          <span className="run-timeline-what">
-            {row
-              .slice(1)
-              .filter((cell) => cell !== null && cell !== '' && cell !== '—' && cell !== '-')
-              .map((cell) => String(cell))
-              .join(' · ')}
-          </span>
-        </li>
+    <div className="run-notices">
+      {trace.notices.map((notice) => (
+        <div
+          className={`notice ${notice.tone}`}
+          key={notice.id}
+          role={notice.tone === 'error' ? 'alert' : undefined}
+        >
+          <span className="dot" aria-hidden="true" />
+          <span className="text">{noticeText(notice, t)}</span>
+          {notice.action && (
+            <button
+              className="text-action"
+              type="button"
+              onClick={notice.action === 'retry' ? onRetry : onContinue}
+            >
+              {notice.action === 'retry' ? t.retry : t.continue}
+            </button>
+          )}
+        </div>
       ))}
-    </ol>
+    </div>
   )
 }
 
-function EvidencePeek({
-  item,
-  t,
-  lang,
-  taskTitle,
-  onClose,
-  onOpen,
-}: {
-  item: RunEvidence
-  t: Dict
-  lang: Lang
-  taskTitle: string
-  onClose: () => void
-  onOpen: () => void
-}) {
-  if (!item.view) return null
-  const view = item.view
-  return (
-    <section className="run-peek" aria-label={`${toolLabel(item.name, lang)} ${item.target}`}>
-      <div className="run-peek-head">
-        <span className="run-section-title">
-          {toolLabel(item.name, lang)} · {item.target}
-        </span>
-        <span className={`run-peek-status ${item.status}`}>{item.status}</span>
-        <button className="text-action" type="button" onClick={onOpen}>
-          {t.runOpenEvidence}
-        </button>
-        <button className="icon-btn" type="button" aria-label={t.close} onClick={onClose}>
-          <X size={13} />
-        </button>
-      </div>
-      <div className="run-peek-body">
-        {view.kind === 'change' && view.plan ? (
-          <ChangePlanView plan={view.plan} t={t} />
-        ) : view.kind === 'estate' && view.history ? (
-          <TimelineBlock view={view} limit={8} t={t} />
-        ) : (
-          <TableBlock view={view} limit={8} t={t} taskTitle={taskTitle} />
-        )}
-      </div>
-    </section>
-  )
-}
-
-function TurnHistory({
-  turns,
-  t,
-  open,
-  onToggle,
-  selected,
-  onSelect,
-}: {
-  turns: RunTurn[]
-  t: Dict
-  open: boolean
-  onToggle: () => void
-  selected: string | null
-  onSelect: (id: string | null) => void
-}) {
-  if (!turns.length) return null
-  return (
-    <section className="run-history" aria-label={t.runEarlier}>
-      <button className="run-history-head" type="button" aria-expanded={open} onClick={onToggle}>
-        <span className="run-section-title">{t.runEarlier}</span>
-        <span className="run-history-count">{turns.length}</span>
-        <ChevronRight size={13} className={`chev ${open ? 'open' : ''}`} />
-      </button>
-      {open && (
-        <ol className="run-turn-list">
-          {turns.map((turn) => {
-            const expanded = selected === turn.id
-            const summary = turn.answer?.text
-              ? plain(
-                  turn.answer.text
-                    .replace(/^#{1,6}\s+/gm, '')
-                    .replace(/^[-*]\s+/gm, '')
-                    .replace(/\s+/g, ' ')
-                    .trim(),
-                )
-              : null
-            return (
-              <li key={turn.id} className="run-turn">
-                <button
-                  className="run-turn-head"
-                  type="button"
-                  aria-expanded={expanded}
-                  onClick={() => onSelect(expanded ? null : turn.id)}
-                >
-                  <span className="run-turn-question">
-                    {turn.question?.text ?? t.runDeterministicCheck}
-                  </span>
-                  <span className="run-turn-meta">
-                    {ago(turn.at, t) ?? ''} ·{' '}
-                    {turn.checks === 1
-                      ? t.checkOne
-                      : `${turn.checks} ${t.checksTitle.toLowerCase()}`}
-                  </span>
-                  <ChevronRight size={13} className={`chev ${expanded ? 'open' : ''}`} />
-                </button>
-                {expanded && (
-                  <div className="run-turn-body">
-                    {summary ? (
-                      <p className="run-turn-summary">{summary.slice(0, 700)}</p>
-                    ) : (
-                      <p className="quiet">{t.runNoAnswer}</p>
-                    )}
-                  </div>
-                )}
-              </li>
-            )
-          })}
-        </ol>
-      )}
-    </section>
-  )
-}
-
-function ClarifyCard({
+function Clarify({
   clarify,
   t,
   onClarify,
@@ -277,297 +92,26 @@ function ClarifyCard({
   )
 }
 
-function RunNotices({
-  notices,
-  t,
-  onRetry,
-  onContinue,
-}: {
-  notices: RunTrace['facts']['notices']
-  t: Dict
-  onRetry: () => void
-  onContinue: () => void
-}) {
-  if (!notices.length) return null
-  return (
-    <div className="run-notices">
-      {notices.map((notice) => (
-        <div
-          className={`notice ${notice.tone}`}
-          key={notice.id}
-          role={notice.tone === 'error' ? 'alert' : undefined}
-        >
-          <span className="dot" aria-hidden="true" />
-          <span className="text">{noticeText(notice, t)}</span>
-          {notice.action && (
-            <button
-              className="text-action"
-              type="button"
-              onClick={notice.action === 'retry' ? onRetry : onContinue}
-            >
-              {notice.action === 'retry' ? t.retry : t.continue}
-            </button>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function severityLabel(finding: RiskFact, t: Dict): string {
-  return finding.severity === 'high'
-    ? t.severityHigh
-    : finding.severity === 'medium'
-      ? t.severityMedium
-      : t.severityLow
-}
-
-function FindingLine({ finding, t, onOpen }: { finding: RiskFact; t: Dict; onOpen: () => void }) {
-  return (
-    <div className="run-finding-line">
-      <button className="run-finding-main" type="button" onClick={onOpen}>
-        <span className={`run-finding-severity ${finding.severity}`}>
-          {severityLabel(finding, t)}
-        </span>
-        <span className="run-finding-bucket mono">{finding.bucket || t.accountWide}</span>
-        <span className="run-finding-title">{finding.title}</span>
-        {finding.source === 'memory' && <span className="run-finding-tag">{t.remembered}</span>}
-      </button>
-      {finding.issueId && (
-        <button
-          className="text-action"
-          type="button"
-          onClick={() =>
-            void window.agent.acceptIssue(finding.issueId!, finding.status !== 'accepted')
-          }
-        >
-          {finding.status === 'accepted' ? t.reopen : t.acceptRisk}
-        </button>
-      )}
-    </div>
-  )
-}
-
-function FindingsPanel({
-  trace,
-  resolved,
-  t,
-  onOpen,
-}: {
-  trace: RunTrace
-  resolved: RiskFact[]
-  t: Dict
-  onOpen: (id: string) => void
-}) {
-  const open = trace.findings
-  const accepted = trace.accepted
-  if (!open.length && !accepted.length && !resolved.length)
-    return <p className="quiet run-panel-empty">{t.noIssues}</p>
-  const navigate = (event: React.KeyboardEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement
-    if (!target.classList.contains('run-finding-main')) return
-    const rows = [...event.currentTarget.querySelectorAll<HTMLElement>('.run-finding-main')]
-    const index = rows.indexOf(target)
-    if (event.key === 'j' || event.key === 'ArrowDown') {
-      event.preventDefault()
-      rows[Math.min(rows.length - 1, index + 1)]?.focus()
-    } else if (event.key === 'k' || event.key === 'ArrowUp') {
-      event.preventDefault()
-      rows[Math.max(0, index - 1)]?.focus()
-    } else if (event.key === 'a') {
-      event.preventDefault()
-      target.closest('.run-finding-line')?.querySelector<HTMLButtonElement>('.text-action')?.click()
-    }
-  }
-  return (
-    <section className="run-panel" aria-label={t.runFindings} onKeyDown={navigate}>
-      {open.map((finding) => (
-        <FindingLine
-          key={finding.key}
-          finding={finding}
-          t={t}
-          onOpen={() => onOpen(finding.sourceId)}
-        />
-      ))}
-      {accepted.length > 0 && (
-        <p className="run-panel-label">
-          {accepted.length === 1 ? t.acceptedOne : fill(t.acceptedCount, { n: accepted.length })}
-        </p>
-      )}
-      {accepted.map((finding) => (
-        <FindingLine
-          key={finding.key}
-          finding={finding}
-          t={t}
-          onOpen={() => onOpen(finding.sourceId)}
-        />
-      ))}
-      {resolved.length > 0 && (
-        <p className="run-panel-label ok">
-          {resolved.length === 1 ? t.fixedOne : fill(t.fixedCount, { n: resolved.length })}
-        </p>
-      )}
-      {resolved.map((finding) => (
-        <p className="run-resolved-line" key={finding.key}>
-          <span className="mono">{finding.bucket}</span> · {finding.title}
-        </p>
-      ))}
-    </section>
-  )
-}
-
-function CoveragePanel({ trace, t }: { trace: RunTrace; t: Dict }) {
-  const read = trace.coverage
-  const gone = trace.facts.coverage.flatMap((item) => item.gone)
-  const empty =
-    read.open === 0 &&
-    gone.length === 0 &&
-    trace.facts.undecided.length === 0 &&
-    trace.facts.blind.length === 0 &&
-    read.permissions.length === 0
-  return (
-    <section className="run-panel run-coverage-panel" aria-label={t.runCoverage}>
-      {empty && (
-        <p className="quiet run-panel-empty">
-          {t.scopeComplete.replace('{n}', String(read.visible))}
-        </p>
-      )}
-      {read.unread > 0 && (
-        <p className="blind">
-          <AlertTriangle size={13} strokeWidth={1.7} aria-hidden="true" />
-          {fill(t.blind, { n: read.unread })}
-        </p>
-      )}
-      {read.pending > 0 && (
-        <p className="blind">
-          <AlertTriangle size={13} strokeWidth={1.7} aria-hidden="true" />
-          {fill(t.pendingBuckets, { n: read.pending })}
-        </p>
-      )}
-      {read.truncated > 0 && (
-        <p className="blind">
-          <AlertTriangle size={13} strokeWidth={1.7} aria-hidden="true" />
-          {fill(t.scopeTruncated, { n: read.truncated })}
-        </p>
-      )}
-      {read.failed > 0 && (
-        <p className="blind">
-          <AlertTriangle size={13} strokeWidth={1.7} aria-hidden="true" />
-          {fill(t.failedReads, { n: read.failed })}
-        </p>
-      )}
-      {read.access > 0 && (
-        <p className="blind">
-          <AlertTriangle size={13} strokeWidth={1.7} aria-hidden="true" />
-          {fill(t.accessOpen, { n: read.access })}
-        </p>
-      )}
-      {trace.facts.undecided.map((item) => (
-        <p className="blind" key={item.code}>
-          <AlertTriangle size={13} strokeWidth={1.7} aria-hidden="true" />
-          {fill(t.undecidedRule, {
-            n: item.count,
-            title: item.title,
-            buckets: item.buckets.slice(0, 6).join(', '),
-          })}
-        </p>
-      ))}
-      {trace.facts.blind.map((item) => (
-        <p className="blind" key={item.key}>
-          <AlertTriangle size={13} strokeWidth={1.7} aria-hidden="true" />
-          <span className="mono">{item.bucket}</span> · {item.title}
-        </p>
-      ))}
-      {read.permissions.slice(0, 12).map((gap) => (
-        <p className="blind permission-gap" key={`${gap.bucket}:${gap.action}`}>
-          <AlertTriangle size={13} strokeWidth={1.7} aria-hidden="true" />
-          <span className="mono">{gap.bucket}</span> · {gap.item} · <code>{gap.action}</code>
-        </p>
-      ))}
-      {gone.length > 0 && (
-        <p className="quiet">{fill(t.goneBuckets, { names: gone.join(', ') })}</p>
-      )}
-    </section>
-  )
-}
-
-export function Run({
+/** Header actions: copy the answer, and one overflow menu. */
+function Actions({
   view,
-  lang,
-  focusId,
-  onRetry,
-  onContinue,
-  onReverify,
-  onClarify,
-  onOlder = async () => undefined,
-  onAudit = () => undefined,
-  auditing = false,
-  auditProgress = null,
-  modelLabel = null,
-  models = [],
-  onModel,
+  trace,
+  t,
+  checking,
+  onCheck,
+  onRecheck,
+  onPrint,
 }: {
   view: TaskView
-  lang: Lang
-  focusId: string | null
-  modelLabel?: string | null
-  models?: LocalModel[]
-  onModel?: (model: TaskModel | null) => void
-  onRetry: () => void
-  onContinue: () => void
-  onReverify: () => Promise<void>
-  onClarify?: (text: string) => void
-  onOlder?: () => Promise<void>
-  onAudit?: () => void
-  auditing?: boolean
-  auditProgress?: AuditProgress | null
+  trace: RunTrace
+  t: Dict
+  checking: boolean
+  onCheck: () => void
+  onRecheck: () => void
+  onPrint: () => void
 }) {
-  const t = dict(lang)
-  const currentEntries = useMemo(() => currentRunEntries(view.entries), [view.entries])
-  const trace = useMemo(
-    () => buildTrace(currentEntries, view.live, view.issueStatus, view.usage),
-    [currentEntries, view.live, view.issueStatus, view.usage],
-  )
-  // The resolved fold is task memory: it needs the earlier observation that
-  // the current read proved fixed.
-  const taskTrace = useMemo(
-    () => buildTrace(view.entries, null, view.issueStatus, view.usage),
-    [view.entries, view.issueStatus, view.usage],
-  )
-  const [peekId, setPeekId] = useState<string | null>(null)
-  const [workOpen, setWorkOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [linked, setLinked] = useState(false)
   const [more, setMore] = useState(false)
-  const [printing, setPrinting] = useState(false)
-  const [loadingOlder, setLoadingOlder] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
-  const [selectedTurn, setSelectedTurn] = useState<string | null>(null)
-  const [findingsOpen, setFindingsOpen] = useState(false)
-  const [coverageOpen, setCoverageOpen] = useState(false)
-  const turns = useMemo(
-    () => turnsOf(view.entries, view.issueStatus),
-    [view.entries, view.issueStatus],
-  )
-  const earlierTurns = useMemo(() => turns.slice(0, -1), [turns])
-  const activity = useMemo(
-    () => buildActivity(currentEntries, view.live),
-    [currentEntries, view.live],
-  )
-  const peek = useMemo(
-    () => (peekId ? resolveEvidence(trace.evidence, peekId) : undefined),
-    [peekId, trace.evidence],
-  )
-  const validation = useMemo(
-    () =>
-      trace.events.filter(
-        (event): event is Extract<TraceEvent, { kind: 'validation' }> =>
-          event.kind === 'validation',
-      ),
-    [trace.events],
-  )
-  const root = useRef<HTMLDivElement>(null)
-
+  const [copied, setCopied] = useState<'answer' | 'link' | null>(null)
   useEffect(() => {
     if (!more) return
     const close = () => setMore(false)
@@ -588,40 +132,167 @@ export function Run({
       window.removeEventListener('keydown', key)
     }
   }, [more])
+  const flash = (what: 'answer' | 'link') => {
+    setCopied(what)
+    setTimeout(() => setCopied(null), 1500)
+  }
+  const item = (label: React.ReactNode, act: () => void, disabled = false) => (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={() => {
+        setMore(false)
+        act()
+      }}
+    >
+      {label}
+    </button>
+  )
+  return (
+    <span className="run-actions">
+      {trace.answer?.text && (
+        <button
+          className="text-action"
+          type="button"
+          onClick={async () => {
+            if (await copyText(trace.answer?.text ?? '')) flash('answer')
+          }}
+        >
+          <Copy size={12} aria-hidden="true" />
+          {copied === 'answer' ? t.copied : t.copyAnswer}
+        </button>
+      )}
+      <div className="brief-more">
+        <button
+          className="text-action"
+          type="button"
+          aria-label={t.moreActions}
+          aria-expanded={more}
+          onClick={() => setMore((value) => !value)}
+        >
+          <MoreHorizontal size={13} aria-hidden="true" />
+        </button>
+        {more && (
+          <div className="mini-menu" role="menu">
+            {item(
+              <>
+                <ArrowDownToLine size={13} aria-hidden="true" />
+                {t.savePage}
+              </>,
+              () =>
+                void window.agent.saveText({
+                  name: safeFileName(view.task.title, 'md'),
+                  content: traceMarkdown(trace),
+                  kind: 'markdown',
+                }),
+            )}
+            {item(
+              <>
+                <Radar size={13} aria-hidden="true" />
+                {checking ? t.checkingAccount : t.checkAgain}
+              </>,
+              onCheck,
+              checking,
+            )}
+            {item(t.reverify, onRecheck, Boolean(view.live))}
+            {item(
+              <>
+                <Link2 size={13} aria-hidden="true" />
+                {copied === 'link' ? t.copied : t.copyLink}
+              </>,
+              async () => {
+                if (await copyText(`${TASK_LINK_PREFIX}${view.task.id}`)) flash('link')
+              },
+            )}
+            {item(
+              t.exportEvidence,
+              () =>
+                void window.agent.saveText({
+                  name: safeFileName(`${view.task.title}-evidence`, 'json'),
+                  content: JSON.stringify(
+                    {
+                      task: view.task,
+                      request: trace.request,
+                      answer: trace.answer,
+                      plan: trace.plan,
+                      trace: trace.items,
+                      findings: trace.findings,
+                      accepted: trace.accepted,
+                      resolved: trace.resolved,
+                      coverage: trace.read,
+                      usage: trace.usage,
+                    },
+                    null,
+                    2,
+                  ),
+                  kind: 'json',
+                }),
+            )}
+            {item(t.savePdf, onPrint)}
+          </div>
+        )}
+      </div>
+    </span>
+  )
+}
 
-  const question = trace.audit ? null : (trace.question?.text ?? null)
-  const answer = trace.answer
-  const stale = Boolean(answer?.stale)
-  const answerText = answer?.text ?? ''
-  const ungrounded = new Set(stale ? [] : (answer?.ungrounded ?? []))
-  const contradicted = new Set(stale ? [] : (answer?.contradicted ?? []))
-  const stopped = trace.facts.notices.some((notice) => notice.code === 'stopped')
-  const planVisible =
-    Boolean(view.live) ||
-    stopped ||
-    Boolean(trace.plan?.steps.some((step) => step.status === 'blocked'))
-  const turnKey = trace.question?.id ?? view.task.id
-  const gone = trace.facts.coverage.flatMap((item) => item.gone)
-  const notChecked = trace.coverage.open + gone.length
-  const findingsCount = trace.findings.length + trace.accepted.length
-  const traceFirst = !answerText && (trace.phase === 'planning' || trace.phase === 'investigating')
-  const noticesFirst = trace.phase === 'stopped' || trace.phase === 'failed'
-  const clarifyFirst = trace.phase === 'clarifying'
+export function Run({
+  view,
+  lang,
+  focusId,
+  onRetry,
+  onContinue,
+  onRecheck,
+  onClarify,
+  onOlder = async () => undefined,
+  onCheck = () => undefined,
+  checking = false,
+  modelLabel = null,
+  models = [],
+  onModel,
+}: {
+  view: TaskView
+  lang: Lang
+  focusId: string | null
+  modelLabel?: string | null
+  models?: LocalModel[]
+  onModel?: (model: TaskModel | null) => void
+  onRetry: () => void
+  onContinue: () => void
+  onRecheck: () => void
+  onClarify?: (text: string) => void
+  onOlder?: () => Promise<void>
+  onCheck?: () => void
+  checking?: boolean
+}) {
+  const t = dict(lang)
+  const trace = useMemo(
+    () => buildTrace(view.entries, view.live, view.issueStatus, view.usage),
+    [view.entries, view.live, view.issueStatus, view.usage],
+  )
+  const runs = useMemo(() => earlierRuns(view.entries), [view.entries])
+  const [peekId, setPeekId] = useState<string | null>(null)
+  const [traceOpen, setTraceOpen] = useState(false)
+  const [printing, setPrinting] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [panel, setPanel] = useState<'findings' | 'coverage' | null>(null)
+  const root = useRef<HTMLDivElement>(null)
+  const peek = peekId ? resolveEvidence(trace, peekId) : undefined
+  const runKey = trace.request?.id ?? trace.ledger.start
+  // A re-check's result is its trace (what was re-read, what changed), so it opens there.
+  const recheck = trace.scripted === 'recheck'
 
   useEffect(() => {
-    if (!turnKey) return
+    void runKey
     setPeekId(null)
-    setWorkOpen(false)
-    setMore(false)
-    setHistoryOpen(false)
-    setSelectedTurn(null)
-    setFindingsOpen(false)
-    setCoverageOpen(false)
-  }, [turnKey])
+    setTraceOpen(recheck)
+    setPanel(null)
+  }, [runKey, recheck])
 
-  const openTrace = useCallback((entryId?: string) => {
+  const revealCall = useCallback((entryId?: string) => {
     setPeekId(null)
-    setWorkOpen(true)
+    setTraceOpen(true)
     setTimeout(() => {
       const element = entryId
         ? root.current?.querySelector<HTMLElement>(`[data-trace-id="${CSS.escape(entryId)}"]`)
@@ -632,76 +303,51 @@ export function Run({
 
   useEffect(() => {
     if (!focusId) return
-    if (focusId === 'answer') {
-      setWorkOpen(false)
+    if (focusId === 'answer' || focusId === `answer:${trace.answer?.id}`) {
+      setTraceOpen(false)
       root.current
         ?.querySelector<HTMLElement>('.run-answer')
         ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
       return
     }
+    // An earlier run's answer opens under Earlier in this task.
+    if (focusId.startsWith('answer:')) return
     if (focusId.startsWith('f:')) {
       const rest = focusId.slice(2)
       const key = rest.slice(rest.indexOf(':') + 1)
       const finding = [...trace.findings, ...trace.accepted].find((item) => item.key === key)
-      setFindingsOpen(true)
-      setCoverageOpen(false)
+      setPanel('findings')
       if (finding) setPeekId(finding.sourceId)
       return
     }
-    openTrace(focusId === 'reverify' ? undefined : focusId)
-  }, [focusId, openTrace, trace.findings, trace.accepted])
+    revealCall(focusId === 'reverify' ? undefined : focusId)
+  }, [focusId, revealCall, trace.findings, trace.accepted, trace.answer?.id])
 
-  const copy = async () => {
-    if (await copyText(answerText)) {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    }
-  }
-  const save = () =>
-    void window.agent.saveText({
-      name: safeFileName(view.task.title, 'md'),
-      content: traceMarkdown(trace),
-      kind: 'markdown',
-    })
-  const exportEvidence = () =>
-    void window.agent.saveText({
-      name: safeFileName(`${view.task.title}-evidence`, 'json'),
-      content: JSON.stringify(
-        {
-          task: view.task,
-          answer: trace.answer,
-          plan: trace.plan,
-          events: trace.events,
-          findings: trace.findings,
-          accepted: trace.accepted,
-          resolved: taskTrace.resolved,
-          coverage: trace.coverage,
-          usage: trace.usage,
-        },
-        null,
-        2,
-      ),
-      kind: 'json',
-    })
-  const savePdf = () => {
-    setPrinting(true)
-    window.dispatchEvent(new Event('sa:prepare-print'))
-    setTimeout(() => void window.agent.exportPdf(), 80)
-  }
-  const loadOlder = async () => {
-    setLoadingOlder(true)
-    try {
-      await onOlder()
-    } finally {
-      setLoadingOlder(false)
-    }
-  }
+  const live = Boolean(view.live)
+  const stopped = trace.phase === 'stopped'
+  const traceFirst =
+    !trace.answer && (trace.phase === 'planning' || trace.phase === 'investigating')
+  const noticesFirst = stopped || trace.phase === 'failed'
+  const showPlan =
+    live || stopped || Boolean(trace.plan?.steps.some((step) => step.status === 'blocked'))
+
+  const traceSection = (
+    <Trace
+      trace={trace}
+      live={view.live}
+      showPlan={showPlan}
+      open={traceOpen || live || printing}
+      onToggle={() => setTraceOpen((value) => !value)}
+      t={t}
+      lang={lang}
+      taskTitle={view.task.title}
+    />
+  )
+  const answerSection = <Answer trace={trace} live={live} t={t} onCite={setPeekId} />
+  const notices = <Notices trace={trace} t={t} onRetry={onRetry} onContinue={onContinue} />
   const chooseModel = (value: string) => {
     if (!onModel) return
-    if (!value) {
-      onModel(null)
-      return
-    }
+    if (!value) return onModel(null)
     const local = models.find((model) => model.modelId === value)
     if (local)
       onModel({
@@ -712,188 +358,33 @@ export function Run({
       })
   }
 
-  const markdownComponents = {
-    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
-      const raw = href?.match(/^#ev-(.+)$/)?.[1]
-      const item = raw ? resolveEvidence(trace.evidence, decodeURIComponent(raw)) : undefined
-      if (item)
-        return (
-          <button
-            className="run-cite"
-            type="button"
-            title={`${t.runEvidenceTitle} ${item.target}`}
-            onClick={() => setPeekId(item.entryId)}
-          >
-            {children}
-          </button>
-        )
-      return href && /^https?:\/\//i.test(href) ? (
-        <a href={href} target="_blank" rel="noreferrer">
-          {children}
-        </a>
-      ) : (
-        children
-      )
-    },
-  }
-
-  const work = (
-    <Work
-      activity={activity}
-      live={view.live}
-      plan={planVisible || workOpen ? trace.plan : null}
-      validation={validation}
-      open={workOpen || Boolean(view.live) || printing}
-      onToggle={() => setWorkOpen((value) => !value)}
-      t={t}
-      lang={lang}
-      taskTitle={view.task.title}
-    />
-  )
-
-  const answerSection = (
-    <section
-      className="run-answer"
-      aria-label={t.runAnswerTitle}
-      aria-live="polite"
-      aria-atomic="false"
-    >
-      {answerText ? (
-        <div className="verdict prose run-summary" data-verdict>
-          <Suspense fallback={<p>{plain(answerText)}</p>}>
-            <Markdown text={answerText} components={markdownComponents} />
-          </Suspense>
-        </div>
-      ) : view.live ? null : (
-        <p className="quiet">{t.runNoAnswer}</p>
-      )}
-      {!stale && (answer?.unresolvedCitations ?? 0) > 0 && (
-        <p className="quiet run-unresolved">
-          <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
-          {(answer?.unresolvedCitations ?? 0) === 1
-            ? t.runUnresolvedCitationsOne
-            : fill(t.runUnresolvedCitations, { n: answer?.unresolvedCitations ?? 0 })}
-        </p>
-      )}
-      {!stale && ungrounded.size > 0 && (
-        <p className="grounding">
-          <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
-          {t.ungroundedNote}
-        </p>
-      )}
-      {!stale && contradicted.size > 0 && (
-        <p className="grounding">
-          <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
-          {t.contradictedNote}
-        </p>
-      )}
-    </section>
-  )
-
   return (
     <div className="scroll" ref={root}>
       <article className="brief run" data-task-id={view.task.id}>
         <h1 className="visually-hidden">{view.task.title}</h1>
-
         <header className="run-header">
           <div className="run-headline">
-            <p className="run-scope">{scopeText(trace.facts, t)}</p>
-            <span className="run-actions">
-              {answerText && (
-                <button className="text-action" type="button" onClick={() => void copy()}>
-                  <Copy size={12} aria-hidden="true" />
-                  {copied ? t.copied : t.copyAnswer}
-                </button>
-              )}
-              <div className="brief-more">
-                <button
-                  className="text-action"
-                  type="button"
-                  aria-label={t.moreActions}
-                  aria-expanded={more}
-                  onClick={() => setMore((value) => !value)}
-                >
-                  <MoreHorizontal size={13} aria-hidden="true" />
-                </button>
-                {more && (
-                  <div className="mini-menu" role="menu">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMore(false)
-                        save()
-                      }}
-                    >
-                      <ArrowDownToLine size={13} aria-hidden="true" />
-                      {t.savePage}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={auditing}
-                      onClick={() => {
-                        setMore(false)
-                        onAudit()
-                      }}
-                    >
-                      <Radar size={13} aria-hidden="true" />
-                      {auditing || auditProgress ? t.checkingAccount : t.checkAgain}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMore(false)
-                        void onReverify()
-                      }}
-                    >
-                      {t.reverify}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={async () => {
-                        setMore(false)
-                        if (await copyText(`${TASK_LINK_PREFIX}${view.task.id}`)) {
-                          setLinked(true)
-                          setTimeout(() => setLinked(false), 1500)
-                        }
-                      }}
-                    >
-                      <Link2 size={13} aria-hidden="true" />
-                      {linked ? t.copied : t.copyLink}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMore(false)
-                        exportEvidence()
-                      }}
-                    >
-                      {t.exportEvidence}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMore(false)
-                        savePdf()
-                      }}
-                    >
-                      {t.savePdf}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </span>
+            <p className="run-scope">{scopeText(trace, t)}</p>
+            <Actions
+              view={view}
+              trace={trace}
+              t={t}
+              checking={checking}
+              onCheck={onCheck}
+              onRecheck={onRecheck}
+              onPrint={() => {
+                setPrinting(true)
+                window.dispatchEvent(new Event('sa:prepare-print'))
+                setTimeout(() => void window.agent.exportPdf(), 80)
+              }}
+            />
           </div>
-          {question && <h2 className="run-question">{question}</h2>}
-          {(answer?.synthesized || answer?.stale) && (
+          {trace.request && <h2 className="run-question">{trace.request.text}</h2>}
+          {trace.scripted && (
             <div className="run-facts">
-              {answer?.synthesized && <span className="run-tag">{t.runSynthesized}</span>}
-              {answer?.stale && <span className="run-tag warn">{t.runStale}</span>}
+              <span className="run-tag">
+                {trace.scripted === 'recheck' ? t.runRecheck : t.runSynthesized}
+              </span>
             </div>
           )}
         </header>
@@ -903,102 +394,35 @@ export function Run({
             className="run-older"
             type="button"
             disabled={loadingOlder}
-            onClick={() => void loadOlder()}
+            onClick={async () => {
+              setLoadingOlder(true)
+              try {
+                await onOlder()
+              } finally {
+                setLoadingOlder(false)
+              }
+            }}
           >
             {loadingOlder ? t.runLoadingEarlier : t.runLoadEarlier}
           </button>
         )}
 
-        <TurnHistory
-          turns={earlierTurns}
+        <EarlierRuns
+          runs={runs}
+          focus={focusId?.startsWith('answer:') ? focusId.slice('answer:'.length) : null}
           t={t}
-          open={historyOpen}
-          onToggle={() => setHistoryOpen((value) => !value)}
-          selected={selectedTurn}
-          onSelect={setSelectedTurn}
         />
-
-        {noticesFirst && (
-          <RunNotices
-            notices={trace.facts.notices}
-            t={t}
-            onRetry={onRetry}
-            onContinue={onContinue}
-          />
+        {noticesFirst && notices}
+        {trace.phase === 'clarifying' && trace.clarify && (
+          <Clarify clarify={trace.clarify} t={t} onClarify={(text) => onClarify?.(text)} />
         )}
+        {!noticesFirst && notices}
+        {traceFirst ? traceSection : answerSection}
+        {traceFirst ? answerSection : traceSection}
 
-        {clarifyFirst && trace.clarify && (
-          <ClarifyCard clarify={trace.clarify} t={t} onClarify={(text) => onClarify?.(text)} />
+        {!live && (
+          <Evidence trace={trace} open={panel} onOpen={setPanel} onReveal={revealCall} t={t} />
         )}
-
-        {!noticesFirst && (
-          <RunNotices
-            notices={trace.facts.notices}
-            t={t}
-            onRetry={onRetry}
-            onContinue={onContinue}
-          />
-        )}
-
-        {traceFirst ? (
-          <>
-            {work}
-            {answerSection}
-          </>
-        ) : (
-          <>
-            {answerSection}
-            {work}
-          </>
-        )}
-
-        {!view.live && !auditProgress && (findingsCount > 0 || notChecked > 0) && (
-          <div className="run-evidence-strip">
-            {findingsCount > 0 && (
-              <button
-                className={`run-evidence-button ${findingsOpen ? 'open' : ''}`}
-                type="button"
-                aria-expanded={findingsOpen}
-                onClick={() => {
-                  setFindingsOpen((value) => !value)
-                  setCoverageOpen(false)
-                }}
-              >
-                <span className="run-section-title">{t.runFindings}</span>
-                <span className="run-evidence-count">
-                  {trace.findings.length > 0
-                    ? trace.findings.length === 1
-                      ? t.findingsCountOne
-                      : fill(t.findingsCount, { n: trace.findings.length })
-                    : trace.accepted.length === 1
-                      ? t.acceptedOne
-                      : fill(t.acceptedCount, { n: trace.accepted.length })}
-                </span>
-                <ChevronRight size={13} className={`chev ${findingsOpen ? 'open' : ''}`} />
-              </button>
-            )}
-            {notChecked > 0 && (
-              <button
-                className={`run-evidence-button ${coverageOpen ? 'open' : ''}`}
-                type="button"
-                aria-expanded={coverageOpen}
-                onClick={() => {
-                  setCoverageOpen((value) => !value)
-                  setFindingsOpen(false)
-                }}
-              >
-                <span className="run-section-title">{t.runNotChecked}</span>
-                <span className="run-evidence-count">{notChecked}</span>
-                <ChevronRight size={13} className={`chev ${coverageOpen ? 'open' : ''}`} />
-              </button>
-            )}
-          </div>
-        )}
-
-        {!view.live && findingsOpen && (
-          <FindingsPanel trace={trace} resolved={taskTrace.resolved} t={t} onOpen={openTrace} />
-        )}
-        {!view.live && coverageOpen && <CoveragePanel trace={trace} t={t} />}
 
         {peek?.view && (
           <EvidencePeek
@@ -1007,7 +431,7 @@ export function Run({
             lang={lang}
             taskTitle={view.task.title}
             onClose={() => setPeekId(null)}
-            onOpen={() => openTrace(peek.entryId)}
+            onOpen={() => revealCall(peek.entryId)}
           />
         )}
 
@@ -1035,7 +459,7 @@ export function Run({
             )}
           </div>
           <span>
-            {activity.calls === 1 ? t.runWorkCallOne : fill(t.runWorkCalls, { n: activity.calls })}
+            {trace.calls === 1 ? t.runWorkCallOne : fill(t.runWorkCalls, { n: trace.calls })}
           </span>
           {trace.usage && trace.usage.input + trace.usage.output > 0 && (
             <span>{fill(t.tokens, { n: trace.usage.input + trace.usage.output })}</span>
@@ -1045,9 +469,4 @@ export function Run({
       </article>
     </div>
   )
-}
-
-/** The plain-text answer used by copy. */
-export function runMarkdown(trace: RunTrace): string {
-  return trace.answer?.text ?? ''
 }

@@ -1,0 +1,221 @@
+/**
+ * The durable base the engine and the task list share.
+ *
+ * pi owns the durable loop: storage, resume, steering, abort, compaction and
+ * tool tasks. This opens it once, installs the one extension, and answers the
+ * questions both sides ask: which conversation, which entries, which model
+ * tier. Nothing that decides a run's behaviour is kept here in memory; the
+ * extension rebuilds what it needs from the entries.
+ */
+import { join } from 'node:path'
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context'
+import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
+import type { createModels } from '@earendil-works/pi-ai'
+import {
+  type Conversation,
+  createRegistry,
+  type EntryRecord,
+  Harness,
+  type ToolRegistration,
+} from '@earendil-works/pi-durable'
+import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
+import type { AppEvent, Live, TaskModel, TaskSummary, UiEntry } from '@shared/contract'
+import type { AppDb } from '../db'
+import type { Estate } from '../estate/estate'
+import { contextFor } from '../model-catalog'
+import type { Providers } from '../providers'
+import type { Vault } from '../security/vault'
+import type { Settings } from '../settings'
+import { createTools } from '../tools'
+import type { ToolDeps } from '../tools/policy'
+import { buildDigest, createAgent, type ModelTier, tierFor } from './agent'
+import { mapEntries } from './project'
+
+export const CONTEXT = BACKGROUND_CONTEXT
+
+export interface RuntimeDirs {
+  task: (conversationId: string) => string
+  datasets: (conversationId: string) => string
+  uploads: (conversationId: string) => string
+}
+
+export type RunOutcome = 'answered' | 'failed' | 'stopped'
+
+export interface RuntimeDeps {
+  db: AppDb
+  providers: Providers
+  estate: Estate
+  settings: Settings
+  vault: Vault
+  models: ReturnType<typeof createModels>
+  dirs: RuntimeDirs
+  emit: (event: AppEvent) => void
+  /** A run settled; the shell decides whether to notify. */
+  settled?: (task: TaskSummary, outcome: RunOutcome) => void
+  /** How many tasks are running, for the dock and taskbar. */
+  working?: (count: number) => void
+}
+
+export function runtimeDirs(dataDir: string): RuntimeDirs {
+  return {
+    task: (conversationId) => join(dataDir, 'tasks', conversationId),
+    datasets: (conversationId) => join(dataDir, 'tasks', conversationId, 'datasets'),
+    uploads: (conversationId) => join(dataDir, 'tasks', conversationId, 'uploads'),
+  }
+}
+
+export function parseTaskModel(raw: string | null | undefined): TaskModel | null {
+  if (!raw) return null
+  try {
+    const value = JSON.parse(raw) as Partial<TaskModel>
+    if (
+      typeof value.modelId !== 'string' ||
+      !value.modelId.trim() ||
+      !['anthropic', 'openai', 'compatible'].includes(String(value.provider)) ||
+      !['off', 'low', 'medium', 'high'].includes(String(value.thinking))
+    )
+      return null
+    return {
+      provider: value.provider as TaskModel['provider'],
+      modelId: value.modelId.slice(0, 160),
+      baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl.slice(0, 300) : null,
+      thinking: value.thinking as TaskModel['thinking'],
+    }
+  } catch {
+    return null
+  }
+}
+
+export class Runtime {
+  /** Tasks whose last run failed; the sidebar marks them. */
+  readonly failed = new Set<string>()
+  /** The live slot of a scripted run, which has no pi generation to show. */
+  readonly scripted = new Map<string, Live>()
+  /** Stop for a scripted run; a model run stops through pi's abort. */
+  readonly stops = new Map<string, AbortController>()
+  private digest = ''
+
+  private constructor(
+    readonly deps: RuntimeDeps,
+    readonly pi: Harness,
+    readonly tools: ToolDeps,
+    /** The registered tools; a scripted run calls the same ones the model does. */
+    readonly registry: ToolRegistration[],
+  ) {}
+
+  static async open(database: NodeSqliteDatabase, deps: RuntimeDeps): Promise<Runtime> {
+    const storage = await SqliteStorage.open(database, { prefix: 'pi_' })
+    const tools: ToolDeps = {
+      db: deps.db,
+      providers: deps.providers,
+      estate: deps.estate,
+      datasetsDir: deps.dirs.datasets,
+      uploadsDir: deps.dirs.uploads,
+      lang: () => deps.settings.get().language,
+      accessSessions: new Map(),
+    }
+    const list = createTools(tools)
+    let runtime: Runtime | null = null
+    const registry = createRegistry()
+    registry.install(
+      createAgent(
+        tools,
+        {
+          records: (id) => runtime?.records(id) ?? Promise.resolve(null),
+          tier: (id) => runtime?.tier(id) ?? Promise.resolve('mid'),
+          digest: () => runtime?.digest ?? '',
+          language: () => deps.settings.get().language,
+        },
+        list,
+      ),
+    )
+    const pi = await Harness.open(
+      storage,
+      {
+        models: () => deps.models,
+        registry,
+        // Cache the stable prompt prefix where the provider supports it.
+        settings: { stream: { cacheRetention: 'short' } },
+      },
+      CONTEXT,
+    )
+    runtime = new Runtime(deps, pi, tools, list)
+    // The vault stays closed at launch: on macOS it can prompt for Keychain
+    // access, which belongs to the first model run. The digest is one query.
+    await runtime.refreshDigest()
+    return runtime
+  }
+
+  async refreshDigest(): Promise<void> {
+    this.digest = await buildDigest(this.tools)
+  }
+
+  async conversation(id: string): Promise<Conversation | null> {
+    try {
+      return (await this.pi.conversation(id as never, CONTEXT)) ?? null
+    } catch {
+      return null
+    }
+  }
+
+  async require(id: string): Promise<Conversation> {
+    const conversation = await this.conversation(id)
+    if (!conversation) throw new Error('Task not found.')
+    return conversation
+  }
+
+  /** The conversation's durable entries; the source of every run's ledger. */
+  async records(id: string): Promise<readonly EntryRecord[] | null> {
+    const conversation = await this.conversation(id)
+    if (!conversation) return null
+    const state = await conversation.viewState(CONTEXT)
+    try {
+      return state.value.entries
+    } finally {
+      state.dispose()
+    }
+  }
+
+  async entries(id: string): Promise<UiEntry[]> {
+    return mapEntries((await this.records(id)) ?? [])
+  }
+
+  /** The model this task runs with: its own choice, or the one in Settings. */
+  async taskModel(id: string): Promise<TaskModel | null> {
+    return parseTaskModel((await this.deps.db.getTaskMeta(id))?.model_json)
+  }
+
+  /** The tier of the model this conversation runs with, never a global setting. */
+  async tier(id: string): Promise<ModelTier> {
+    const stored = this.deps.settings.get().model
+    const chosen = await this.taskModel(id)
+    if (
+      chosen &&
+      !(stored && chosen.provider === stored.provider && chosen.modelId === stored.modelId)
+    )
+      return tierFor(contextFor(chosen.modelId))
+    // An unset window (0) is unknown, as in `installModel`: infer it from the id.
+    if (!stored) return tierFor(null)
+    return tierFor(stored.contextWindow > 0 ? stored.contextWindow : contextFor(stored.modelId))
+  }
+
+  /** Append an entry the model does not answer: a notice, a scripted call, a check's result. */
+  async write(
+    conversation: Conversation,
+    kind: string,
+    data: unknown,
+    model?: { role: 'user'; content: string; timestamp: number }[],
+  ): Promise<void> {
+    await conversation.submit(
+      {
+        type: 'write',
+        entry: { kind, data: data as never, ...(model ? { model: model as never } : {}) },
+      },
+      CONTEXT,
+    )
+  }
+
+  async close(): Promise<void> {
+    await this.pi.close(CONTEXT)
+  }
+}

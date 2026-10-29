@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createModels, createProvider, type Model } from '@earendil-works/pi-ai'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
@@ -9,12 +10,25 @@ import type { StoredModel } from '../settings'
 
 const PROVIDER_ID = 'storage-agent'
 
+/**
+ * Each model configuration is its own provider in the shared collection, so a
+ * task that runs with another model never replaces the one a concurrent run
+ * uses. The id names no secret: the key reference is hashed with the rest.
+ */
+export function providerIdFor(stored: StoredModel): string {
+  const digest = createHash('sha256')
+    .update([stored.provider, stored.baseUrl, stored.modelId, stored.keyRef].join('\n'))
+    .digest('hex')
+    .slice(0, 12)
+  return `${PROVIDER_ID}-${digest}`
+}
+
 export interface ModelRef {
   provider: string
   modelId: string
 }
 
-/** One Models collection for the whole process; the provider is replaced in place. */
+/** One Models collection for the whole process; one provider per model configuration. */
 export function createModelSet() {
   return createModels()
 }
@@ -44,6 +58,7 @@ export function installModel(
   stored: StoredModel,
   vault: Vault | null,
   directKey?: string,
+  providerId = providerIdFor(stored),
 ): ModelRef {
   const apiKey = directKey ?? vault?.open(stored.keyRef) ?? ''
   const baseUrl = baseUrlOf(stored)
@@ -59,7 +74,7 @@ export function installModel(
   const model = {
     id: stored.modelId,
     name: stored.modelId,
-    provider: PROVIDER_ID,
+    provider: providerId,
     baseUrl,
     api,
     reasoning,
@@ -71,7 +86,7 @@ export function installModel(
 
   models.setProvider(
     createProvider({
-      id: PROVIDER_ID,
+      id: providerId,
       name: 'Storage Agent',
       baseUrl,
       auth: { apiKey: { name: 'API key', resolve: async () => ({ auth: { apiKey } }) } },
@@ -79,7 +94,7 @@ export function installModel(
       api: streams,
     } as never),
   )
-  return { provider: PROVIDER_ID, modelId: stored.modelId }
+  return { provider: providerId, modelId: stored.modelId }
 }
 
 /** pi's thinking level for a stored setting; `off` when the model does not reason. */
@@ -93,7 +108,8 @@ async function testModelWithKey(
   apiKey: string,
 ): Promise<{ ok: boolean; detail: string }> {
   try {
-    const ref = installModel(models, stored, null, apiKey)
+    // A test has its own provider id: it never replaces a model a run is using.
+    const ref = installModel(models, stored, null, apiKey, `${PROVIDER_ID}-test`)
     const model = models.getModel(ref.provider, ref.modelId)
     if (!model) return { ok: false, detail: 'The model is not available.' }
     const started = Date.now()

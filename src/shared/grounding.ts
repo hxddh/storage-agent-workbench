@@ -1,12 +1,11 @@
 /**
- * Verdict grounding.
+ * Name grounding.
  *
- * The verdict is the one thing on the page the model writes. It names buckets,
- * objects and accounts in backticks; every such name must appear in a tool
- * result of the same task. The main process asks the model to correct an
- * ungrounded verdict once, and the window marks whatever still is not grounded.
+ * The answer names buckets, objects and accounts in backticks; every such name
+ * must appear in a tool result of the same task. This is structure, not
+ * language: no sentence is parsed for what it claims.
  */
-import type { ToolView, UiEntry } from './contract'
+import type { ToolView } from './contract'
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._\-/:]{0,254}$/
 
@@ -78,20 +77,6 @@ export function namesInView(
   }
 }
 
-const CONTROL = new Set(['skill', 'plan'])
-
-export function knownNames(entries: readonly UiEntry[]): Set<string> {
-  const names = new Set<string>()
-  for (const entry of entries) {
-    if (entry.kind === 'tool' && entry.status === 'done' && !CONTROL.has(entry.name))
-      namesInView(entry.view, entry.target, names, entry.name)
-    if (entry.kind === 'user') {
-      for (const file of entry.attachments) names.add(file.name)
-    }
-  }
-  return names
-}
-
 /** Backticked names in the answer that no tool result in the task shows. */
 export function ungrounded(verdict: string, known: ReadonlySet<string>): string[] {
   const out = new Set<string>()
@@ -103,69 +88,6 @@ export function ungrounded(verdict: string, known: ReadonlySet<string>): string[
     const head = name.split('/')[0]!
     if (name.includes('/') && known.has(head)) continue
     out.add(name)
-  }
-  return [...out]
-}
-
-/**
- * What the task's readings say about each bucket's public exposure: true when
- * proved public, false when proved not. Later readings replace earlier ones.
- */
-export function exposureInView(view: ToolView | null, exposure: Map<string, boolean>): void {
-  if (!view) return
-  const fromTable = (table: { columns: string[]; rows: (string | number | null)[][] } | null) => {
-    if (!table) return
-    const column = table.columns.indexOf('Public')
-    if (column < 0) return
-    for (const row of table.rows) {
-      const bucket = row[0]
-      if (typeof bucket !== 'string') continue
-      if (row[column] === 'public') exposure.set(bucket, true)
-      else if (row[column] === 'no') exposure.set(bucket, false)
-    }
-  }
-  if (view.kind === 'survey') fromTable(view.buckets)
-  else if (view.kind === 'estate') fromTable(view.buckets)
-  else if (view.kind === 'config' && (view.aspect ?? 'security') === 'security') {
-    if (view.exposure === 'public') exposure.set(view.bucket, true)
-    else if (view.exposure === 'not public') exposure.set(view.bucket, false)
-    else if (view.findings.some((finding) => finding.code === 'public_exposure'))
-      exposure.set(view.bucket, true)
-  }
-}
-
-export function knownExposure(entries: readonly UiEntry[]): Map<string, boolean> {
-  const exposure = new Map<string, boolean>()
-  for (const entry of entries)
-    if (entry.kind === 'tool' && entry.status === 'done') exposureInView(entry.view, exposure)
-  return exposure
-}
-
-const PUBLIC =
-  /\bpublic(ly)?\b|\banonymous(ly)?\b|\bopen to (anyone|everyone|the internet)\b|公开|匿名/i
-const NEGATION =
-  /\bnot\b|n['’]t\b|\bno longer\b|\bnever\b|\bneither\b|\bnor\b|\bnone\b|\bprivate\b|不|没有|未|非|无/i
-
-/**
- * Sentences that name exactly one bucket and say it is, or is not, public
- * against what the readings proved. Only exposure is checked: it is the claim
- * that matters most and the one a sentence states plainly.
- */
-export function contradicted(verdict: string, exposure: ReadonlyMap<string, boolean>): string[] {
-  const out = new Set<string>()
-  for (const sentence of verdict.split(/(?<=[.!?。！？；;])\s*/)) {
-    const names = [...sentence.matchAll(/`([^`\n]{1,256})`/g)].map((m) => m[1]!.trim())
-    const known = names.filter((name) => exposure.has(name))
-    if (names.length !== 1 || known.length !== 1) continue
-    // Look for the claim in the prose, not inside the backticked name: a bucket
-    // called `demo-public` must not make "is no longer public" a public claim.
-    const prose = sentence.replace(/`[^`\n]*`/g, 'name')
-    const match = PUBLIC.exec(prose)
-    if (!match) continue
-    // Negation counts only just before the claim: "has no encryption but is public" is a public claim.
-    const claimsPublic = !NEGATION.test(prose.slice(Math.max(0, match.index - 32), match.index))
-    const name = known[0]!
-    if (claimsPublic !== exposure.get(name)) out.add(name)
   }
   return [...out]
 }

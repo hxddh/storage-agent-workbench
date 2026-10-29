@@ -1,6 +1,6 @@
 import type { UiEntry } from '@shared/contract'
+import { searchRows } from '@shared/trace'
 import { describe, expect, it } from 'vitest'
-import { searchDocsFor } from './search'
 
 const survey: UiEntry = {
   id: 'audit:0',
@@ -50,18 +50,34 @@ const survey: UiEntry = {
 }
 
 describe('search docs', () => {
-  it('indexes a model-free audit without a user request', () => {
-    const docs = searchDocsFor([
+  it('indexes a scripted check without a user request', () => {
+    const docs = searchRows([
+      { id: 'run', kind: 'check', at: '2026-01-01T00:00:00Z', mode: 'check' },
       survey,
       {
         id: 'audit:answer',
         kind: 'answer',
         at: '2026-01-01T00:00:02Z',
         text: 'One issue is open.',
+        source: 'check',
       },
     ])
     expect(docs.some((doc) => doc.text.includes('publicly accessible'))).toBe(true)
     expect(docs.some((doc) => doc.text === 'One issue is open.')).toBe(true)
     expect(new Set(docs.map((doc) => doc.entryId)).size).toBe(docs.length)
+  })
+
+  it('indexes findings of every run, not only the latest', () => {
+    const docs = searchRows([
+      { id: 'u1', kind: 'user', at: '2026-01-01T00:00:00Z', text: 'First', attachments: [] },
+      survey,
+      { id: 'u2', kind: 'user', at: '2026-01-01T00:01:00Z', text: 'Second', attachments: [] },
+      { id: 'a2', kind: 'answer', at: '2026-01-01T00:01:01Z', text: 'Nothing new.' },
+    ])
+    expect(docs.some((doc) => doc.kind === 'finding')).toBe(true)
+    expect(docs.filter((doc) => doc.kind === 'user').map((doc) => doc.text)).toEqual([
+      'First',
+      'Second',
+    ])
   })
 })

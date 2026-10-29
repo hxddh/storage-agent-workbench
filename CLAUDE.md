@@ -1,19 +1,16 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 33.0.0**. Read
-> `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
-> `docs/data-model.md` before changing product structure. The code and its tests
-> are authoritative; release notes and the changelog are history.
+> Implementation contract for **Storage Agent 35.0.0**. Read
+> `docs/architecture.md`, `docs/product.md`, `docs/security.md`,
+> `docs/data-model.md` and, for anything in the window, `docs/design.md` before
+> changing product structure. The code and its tests are authoritative; release
+> notes and the changelog are history.
 
 ## The product
 
 A local, read-only agent for object storage. One window, one current run, one
-composer. A **Task** is durable history of one or more runs — a user request or a
-deterministic account check; the agent remembers what it read in an **estate**,
-and the task's page shows the latest **run**: the answer first, the work behind
-it, and the sources behind that.
-
-The invariant:
+composer. A **task** is durable history of runs; a **run** is one request or one
+scripted check. The agent remembers what it read in an **estate**.
 
 > The task is the window's object; the estate is the agent's memory; every
 > claim on the page is grounded in a tool call. The agent owns the plan and the
@@ -22,309 +19,132 @@ The invariant:
 ## Non-negotiables
 
 1. Every storage operation is read-only. No put/delete/mutate call exists.
-   Generated change-plan text may contain a mutating CLI command, but the app
-   never runs it.
+   Change-plan text may contain a mutating CLI command; the app never runs it.
 2. Secrets never reach SQLite in the clear, a model prompt, a log or the window.
    `security/vault.ts` is the only place that opens one. A profile account
    stores a profile name, never a key.
-3. A provider's `scope.buckets` is enforced by `assertInScope` in the main
-   process before any bucket call. `@` focus is not authorization.
-4. Tool output reaches the model inside `<untrusted-data>` and is bounded by
-   `bound()` and `redact()`; `details` reaching the window are already shaped.
-   Tool status comes from `details.status`, never from result text.
-5. Nothing is invented: an unreadable or unsupported read leaves the question
-   open, never a clean bill of health. The run shows the blind spot. A
-   backticked name in the answer that no tool returned is marked. An answer cites
-   evidence ids; the window validates every citation and view and says when one
-   does not resolve. The scope line says `All n buckets checked` only when
-   account coverage, pending reads, access gaps and failed reads are closed;
-   when every bucket was surveyed but access questions remain it says
-   `All n buckets checked · x open questions · y blocked`; otherwise it says
-   `From memory`, `Live read` or `Not fully checked`. A narrowed re-read never
-   counts as account coverage. A clean account claim is corrected once while
-   reads remain open.
+3. A provider's `scope.buckets` is enforced by `assertInScope` before any bucket
+   call. `@` focus is not authorization.
+4. Tool output reaches the model inside `<untrusted-data>`, bounded by `bound()`
+   and `redact()`; `details` reaching the window are already shaped. Status comes
+   from `details.status`, never from result text.
+5. Nothing is invented. An unreadable or unsupported read leaves the question
+   open and the run shows the blind spot. A backticked name no tool returned is
+   marked. Citations are validated; one that does not resolve is said to. The
+   scope line comes from the ledger, never from the prose: `All n buckets
+   checked` only when coverage, pending reads, access gaps and failed reads are
+   closed; `All n buckets checked · x open questions · y blocked` when every
+   bucket was surveyed but questions remain; otherwise `From memory`, `Live
+   read` or `Not fully checked`. A narrowed re-read never counts as coverage.
 6. A change plan is one deterministic plan the user applies. There is no Apply
-   button. Only re-verification may call a step confirmed; an unapplied step is
-   `not applied`, and an unread or undecided one stays `unknown`.
-7. The model never opens, resolves, re-grades or accepts an Issue. Rules open
-   and resolve them from readings; accepting a risk is the user's act.
+   button. Only a re-check may call a step confirmed; an unapplied step is
+   `not applied`, an unread or undecided one stays `unknown`.
+7. Issues change only in `estate/assess.ts`, from rule decisions on readings.
+   No tool body, no model and no prose opens, resolves or re-grades one.
+   Accepting a risk is the user's act (`AppDb.setAccepted`).
 8. Code mode runs in the QuickJS sandbox with no network, filesystem, process,
-   timers or modules. Its only capabilities are the scoped read-only primitives
-   in `tools/query.ts`, each under the call, listing, time and memory budgets.
-   Scripts never reach the model access (`models` stays off).
-9. The account id read for the account-wide block is used for the account-wide
-   read and SCP lookup, and never stored, shown, sent to the model or put in a
-   change plan.
-10. Access output is evidence with coverage, not a complete authorization
-    decision. Policy/ACL grants are not merged with every identity and condition
-    into one verdict. Unread sources, undecided conditions and truncation must
-    stay visible.
-11. Demo storage is an explicit user choice. `Check account` never adds it
-    silently.
+   timers or modules; its only capabilities are the scoped read-only primitives
+   in `tools/query.ts`, under call, listing, time and memory budgets. `models`
+   stays off.
+9. The account id read for the account-wide block is used for that read and the
+   SCP lookup only; never stored, shown, sent to the model or put in a plan.
+10. Access output is evidence with coverage, not one authorization verdict.
+    Unread sources, undecided conditions and truncation stay visible.
+11. Demo storage is an explicit user choice. `Check account` never adds it.
+12. Run state is derived from durable entries. Nothing that decides a run's
+    behaviour (budget, repeated reads, grounding, coverage) lives only in
+    memory; a restarted process rebuilds the same guards.
 
-## Runtime
+## Architecture
 
-- `src/main/index.ts` — window, menu, single instance, notifications, dock,
-  task protocol.
-- `src/main/app.ts` — service wiring, bootstrap, model installation, home
-  overview and the opt-in read-only check scheduler.
-- `src/main/ipc.ts` — the only IPC surface; every handler returns plain data.
-- `src/main/updater.ts` — background updates from GitHub releases, packaged
-  builds only, with a visible missing-feed state.
-- `src/preload/index.ts` — `contextBridge` surface, sandboxed, CJS.
-- `src/shared/contract.ts` — the single type contract; both sides import it.
-- `src/shared/trace.ts` — the one run model: ordered request, plan revisions,
-  tool calls, validation, question, answer, notices, steer, resume and re-check;
-  phase, coverage, evidence and citation resolution.
-- `src/shared/facts.ts` — deterministic evidence annotations from `UiEntry[]`:
-  risks, methods, coverage, change plans, data and tool calls; not a page model.
-- `src/shared/run.ts` — internal projection used by search and the trace builder;
-  the window does not render it as a page.
-- `src/shared/activity.ts` — the trace rows: provider reasoning summary, live and
-  durable tool calls, argument summaries, steer, compaction, resume and re-check.
-- `src/shared/audit.ts` — the deterministic summary for a model-free account
-  check; it names only buckets and counts already present in survey views.
-- `src/shared/grounding.ts` — which names and exposure a task's results show;
-  used by the run and by the agent's `onYield` correction.
-- `src/main/runtime/harness.ts` — pi-durable lifecycle, task CRUD, model per
-  run, conversation watch, task-graph watch, model-free `audit()`, re-verify,
-  purge on delete.
-- `src/main/runtime/project.ts` — entry → UI mapping, live state, sanitized
-  provider reasoning, usage.
-- `src/main/runtime/model.ts` — pi-ai provider installation and saved/draft
-  model test.
-- `src/main/runtime/reverify-plan.ts` — compares a change plan with a model-free
-  replay; confirmed, not applied or unknown per step.
-- `src/main/runtime/search.ts` — sidebar search and the FTS5-trigram index rows.
-- `src/main/runtime/schedule.ts` — daily/weekly due calculation; no OS daemon.
-- `src/main/runtime/agent.ts` — the one extension: prompt sections, tools,
-  hooks, per-run read coverage and the one clean-claim correction.
-- `src/main/tools/*` — read-only storage tools through `agentTool()`, which
-  owns scope, bounds, timeout, audit, redaction, status, evidence ids, shaped
-  argument summaries and the untrusted envelope; plus the control tools `plan`,
-  `skill` and `ask` in `tools/control.ts`. `estate` returns current memory and, with `history`,
-  Issue events and posture changes filtered by account, bucket, code or
-  `since`. `change_plan` returns deterministic change text.
-- `src/main/s3/facts.ts` — the one reading of a bucket; `s3/policy.ts`
-  evaluates a policy document locally; `s3/account.ts` reads the account-wide
-  block; `s3/metrics.ts` reads CloudWatch capacity and prices it;
-  `s3/access.ts` reads policy/ACL/IAM/KMS/Access Analyzer/SCP grants with
-  coverage, intersects identity grants with bucket-policy Denies and, where
-  present, SCPs and boundaries, pairs action and resource forms, matches ARNs
-  case-sensitively and shares an `AccessSession` when a caller supplies one;
-  `s3/changes.ts` diffs posture and queries CloudTrail's 90-day window;
-  `s3/capabilities.ts` is the provider matrix; `s3/permissions.ts` maps a denied
-  read to an IAM action.
-- `src/main/estate/*` — eleven bucket rules and one account rule over facts,
-  Issue lifecycle and change-plan generation (twelve rules total).
-- `src/main/tools/query.ts` — read-only code mode.
-- `src/main/skills.ts` — four on-demand methods: access, change, inventory and
-  capacity. A skill is documentation, not evidence or a check.
-- `src/main/demo/*` — the fake S3 responder; demo storage answers it in process
-  (no port), the E2E server puts HTTP around it.
-- `src/main/analysis/*` — CSV/TSV/JSONL/Parquet import and whitelisted
-  aggregates, reached through the `query` dataset primitives.
+One engine, one log, one reducer (`docs/architecture.md`).
+
+- **Engine** (`runtime/engine.ts`): a model run is pi's durable loop; a scripted
+  run (`check`, `recheck`) calls the same registered tools through the same
+  `agentTool()`, writes each call as `sa.call` with the same details, and writes
+  a template answer (`runtime/check.ts`) that cites its calls and carries their
+  enveloped output as model context. Both settle in one place.
+- **Session** (`runtime/session.ts`): opens pi once with the one extension and
+  the tool registry; durable reads; per-conversation model tier; digest.
+- **Tasks** (`runtime/tasks.ts`): task list, the one watched task, task graph,
+  search index, the user's acts on memory.
+- **Agent** (`runtime/agent.ts`): prompt sections and hooks. Hooks rebuild the
+  run view from entries (`runView`): repeated reads by argument key, one retry
+  after a failure, the round budget (**14 small, 24 mid, 32 large**, counted
+  from the run's assistant entries), and one structural answer correction.
+- **Ledger** (`shared/ledger.ts`): the run boundary, calls, names, evidence,
+  coverage, blind spots; `readState()` is the one read status.
+- **Validation** (`shared/validate.ts`): ungrounded names, unresolved
+  citations, a paragraph naming a read bucket without citing it. Never wording,
+  never "is the account clean".
+- **Trace** (`shared/trace.ts`): the one reducer the window, search and export
+  use: current run, earlier runs, findings, Markdown, search rows.
+- **Models** (`runtime/model.ts`): one pi-ai provider per model configuration;
+  a task's own model never replaces another task's.
 
 pi-durable owns the durable loop. Do not reimplement it: no event store, no
 second queue, no SSE, no HTTP server. `viewState()`/`watch()` are the stream.
+
+## Agent
+
+One extension, thirteen tools in seven groups (`tools/registry.ts` generates the
+capability section). Seven reads (`survey`, `buckets`, `objects`, `object`,
+`config`, `probe`, `query`), memory (`estate`, `note`), `change_plan`, and the
+control tools `plan`, `skill`, `ask`. The final assistant message is the answer;
+there is no answer tool and no report protocol. `query` exists because questions
+over many objects or buckets cannot go through a fixed tool without flooding
+context; adding a storage tool requires saying why `query` cannot do the job.
+
+Prompt sections: identity, time, policy (with the run's tier), capabilities,
+compose, estate digest, language. The digest lists the first 12 of N open Issues
+and notes and says so. The model cites evidence as `[1](#ev-<id>)`; it never
+authors a table of facts or an Issue transition. `skill` loads one of four
+methods (access, change, inventory, capacity); a method is documentation, not
+evidence, and not a call. Provider reasoning is shown only as returned.
+
+`change_plan` returns one plan: lifecycle rules merge per bucket, a policy merge
+only when the current policy was read and holds no account id, anything else a
+manual step with a blocker; it names its baseline, residual risks and unreadable
+dependencies.
+
+`Engine.check()` surveys every account and examines access for up to 24 buckets
+per account, saying examined/total. `Engine.recheck()` replays every bucket the
+task read (up to 50 per account) plus its change plan, as a new run in the same
+task, and compares every conclusion and plan step. Neither calls a model.
 
 ## Data
 
 Host tables in `storage-agent.db`: `providers`, `buckets`, `issues`,
 `issue_events`, `notes`, `audit`, `task_meta`, `posture_changes`, `readings`,
-`datasets`, `search_docs`. pi's tables are prefixed `pi_` in the same file.
-Datasets live under `<userData>/tasks/<conversation>/datasets/<id>.sqlite`.
-
-Issues are `open`, `resolved` or `accepted`, and carry the reading's evidence
-`detail`. The account rule's Issue has the empty string as its bucket. A bucket
-a complete listing no longer shows gets `gone_at` and its Issues resolve as
-`gone`. Capacity (bytes, objects, monthly estimate, growth) is remembered in
-each bucket's posture; the account posture in `providers.account_json`. Schema
-changes are append-only migrations in `db.ts`, gated by `user_version` (head
-**14**). `task_meta.model_json` stores a per-task model override (`provider`,
-`modelId`, `baseUrl`, `thinking`); null means the model in Settings. The provider
-key is never stored there.
-
-`readings` records one settled account survey: trigger, coverage counts, open
-high/total and whether it was complete. It stores no request, answer, policy,
-account id or secret. `complete` is false for any narrowed or re-verified read;
-Home's "last complete read" comes from this table. `estate(history: true)`
-includes reading rows only in an unfiltered history.
-
-`search_docs` is a derived index backed by FTS5 trigram (short queries fall back
-to LIKE; title search reads `task_meta` directly). It
-is rebuilt for a conversation when that conversation settles, and backfilled at
-startup for tasks without rows. It stores the request, the current answer summary
-(`entry_id = 'answer'`) and one row per risk (`f:<source entry>:<key>`).
-A model-free check writes one `sa.audit` entry; its `survey` and `access`
-progress events are transient and never persisted. It has no `sa.user`
-request, so the page shows its synthesized answer and the same trace/evidence
-strip without a fake question. Its search rows are derived from the same durable entries as the run, after
-the active watch and durable view settle.
-
-Deleting a task purges `task_meta`, `search_docs`, its pi conversation, entries,
-tasks, submissions, documents and revisions, datasets, audit rows and
-`tasks/<conversation>/` on disk. Issue events and reading rows keep history with
-a null conversation id. There is no automatic background watch; an account can
-opt into daily or weekly read-only checks while the app is open.
-
-## Agent
-
-One extension, thirteen tools, seven capability groups. Seven reads (`survey`,
-`buckets`, `objects`, `object`, `config`, `probe`, `query`) cover storage;
-`estate` and `note` cover memory; `change_plan` returns deterministic change
-text; `plan` publishes an optional investigation plan; `skill` loads one of four
-methods; `ask` ends the run with one clarification question. The final
-assistant message is the answer; there is no answer tool.
-`query` exists because questions over many objects or buckets (largest prefixes,
-data untouched for a year, buckets by size) cannot be carried to the model by a
-fixed tool without flooding its context or adding one tool per question. It also
-imports attached logs and inventories through `dataset` / `aggregate`; there is
-no separate analyze tool. Adding another storage tool requires saying why
-`query` cannot do the job; control tools are not storage reads.
-
-Prompt sections: identity, today, policy, capabilities, compose, estate digest,
-language. The model owns the investigation and writes normal Markdown. It does
-not have to call `plan`; the plan is optional and appears only when useful. Its
-final message is the answer. It cites a tool result by actual evidence id as
-`[1](#ev-<id>)`; the window resolves the tool view, validates every citation,
-drops a missing view with a quiet note, and marks names the task never showed.
-The model never authors a table of facts or an Issue transition. There is no
-answer tool and no forced report protocol.
-
-`skill` is a real on-demand method, not a check: access evidence, change
-planning, inventory/logs and capacity/cost. The model sees the four descriptions
-in the capability section and loads one only when the question needs it. Methods
-are visible as trace rows and never counted as tool calls. Provider reasoning is
-shown only as the provider returned it (a summary); the app never fabricates a
-chain of thought or turns a tool label into thinking text.
-
-`change_plan` returns one change plan: lifecycle rules merge per bucket, a
-policy change is merged only when the current policy was read and contains no
-account id, and an unread or unsafe merge becomes a manual step with a blocker.
-The plan names its baseline, residual risks and unreadable dependencies. It
-remains text for the user.
-
-The agent decides when to read memory (`estate`), survey an account, review one
-bucket (`config`), run `query`, or ask for history. The policy says read before
-concluding; a survey reads up to 5,000 buckets, longest-unread first, and may be
-called again. Temporal questions use `estate(history: true)` with optional
-`since`, `bucket` or `code`; it returns Issue events and posture changes, never
-raw request text. Hooks: a repeated storage read is blocked and left off the
-page; a storage tool stops at the model-tier round budget (**14 small, 24 mid,
-32 large**); an answer that names something no tool returned, or calls a bucket
-public (or not) against the readings, gets one correction; a clean account claim
-while the run has open reads gets one correction. The correction sees the
-answer text as well as the final prose. Read coverage is per run: a narrowed
-survey updates its buckets but never replaces an account-wide survey's pending,
-blind or truncated coverage. Every model run uses the configured model and its
-inferred reasoning level. Compaction is pi's, configured by model context
-window. The no-model `audit()` path runs the same survey and access readers
-without a model, emits transient progress, and writes a deterministic answer
-that the same run surface renders.
-
-The estate digest lists the first 12 of N open Issues and notes, and says so; it
-never presents a truncated memory list as complete.
-
-`harness.audit()` surveys every configured account and examines access evidence
-for up to 24 buckets per account, reporting examined/total when the run covers
-fewer buckets than the account has.
-`harness.reverify()` replays reads for up to 50 buckets per account, includes
-the buckets and account block in a change plan, and reports skipped or
-truncated coverage. It compares every plan step: all codes clear is confirmed,
-an open or accepted Issue is not applied, and an unread or undecided code stays
-unknown. Neither path calls a model. A settled unscoped survey writes one
-`readings` row per account; re-verification is always partial.
+`datasets`, `search_docs` (+ FTS5 trigram). pi's tables are prefixed `pi_`.
+Schema changes are append-only migrations in `db.ts` gated by `user_version`
+(head **15**; 15 started the task history over and kept accounts, memory,
+Issues and readings). Entry kinds and payloads are in `docs/data-model.md`
+(`sa.run`, `sa.steer`, `sa.resume`, `sa.call`, `sa.answer`, `sa.reverify`,
+`sa.notice`). `readings` holds counts per settled account survey, never a
+request, answer, policy, account id or secret; a re-check row is partial.
+Deleting a task purges its pi rows, host task rows, datasets, audit rows and
+`tasks/<conversation>/`; Issue events and readings keep history with a null
+conversation id.
 
 ## Window
 
-`Sidebar · run · Composer`, plus a full-screen Settings sheet. No side pane,
-no command palette, no second window, no chat transcript. Settings uses a
-top-left close control; it is a sheet, not a page with a top-right Done button.
-
-The task list groups pinned, today and earlier, with a state dot only for
-working, attention or failed and a relative time. Titles may take two lines;
-task rows support rename, pin and delete. The task title appears once: in the
-sidebar on desktop and in the run header/compact top area on narrow screens,
-never twice at the top.
-
-Every task is an agent run page. Earlier runs appear as compact expandable rows
-under **Earlier in this task**; the latest question is the run header and owns
-the current scope and evidence. A
-deterministic check has no fake question. The run header names the account(s),
-the scope line (`All n buckets checked`, `Not fully checked: n`,
-`From memory · …`, `Live read · …`, or `Not read yet`), checked/total buckets
-and read time. A failed or stopped storage read keeps the line open. Copy answer
-and one overflow menu sit in the header: save Markdown, check again, re-check,
-copy link, export sources and save PDF. `Check again` opens a new check task;
-re-check writes a result in the current task and opens its trace row.
-Home reads its "last complete read" from the reading records.
-
-The plan is the agent's own 1–6 steps (commonly 3–6) with
-pending/active/done/blocked states; it is optional and not a transcript. It is
-part of the trace while the run is live or stopped with a blocked step; a
-settled normal answer does not carry a separate plan section. Plan state is
-intent, not proof: an actual call is the only execution evidence.
-
-**Trace** is the one current-run record. While the run is planning or
-investigating it is the primary content; when the answer arrives the answer is
-primary and the trace folds to one `Worked for … · n calls` row. It shows plan
-revisions, a provider reasoning summary when one was returned, the current call
-and all completed calls, with status, target, shaped argument summary, result
-summary and duration. A validation row shows when the harness rejected a claim;
-a steer, resume or re-check is a row in the same trace. It never invents a
-reasoning summary: an omitted or empty thinking block is shown as an honest
-`Thought` row with no summary. Live progress comes from shaped
-`ToolDetails.progress`, never from raw tool output. A failed call stays in place
-with its status and note.
-
-The answer is normal Markdown with citations. A citation opens an in-place
-evidence peek; the full record is the trace. An answer without a citation does
-not invent a proof table. A missing citation is shown as plain text with a
-quiet note. There is no report block renderer and no legacy entry path.
-
-**Evidence** is two compact strips, only when they have content: **Findings**
-and **Not checked**. Findings are a safety summary, grouped by bucket, severity
-ordered, memory-marked, with Accept risk on hover or keyboard focus; accepted
-and proved-fixed folds remain. **Not checked** names blind, pending, truncated,
-failed and access gaps. The agent's citations decide what the answer uses; the
-strip keeps a blind spot visible even when the answer does not mention it.
-Header Copy copies the answer only; Save page includes the answer and trace.
-Every table can be copied as CSV or saved.
-
-A model-free check renders through the same run surface with a synthesized
-answer and a `Deterministic account check` tag. A model run opens the trace when
-it starts and folds it to `Worked for … · n calls` when the answer settles. A
-stopped run keeps its plan and offers Continue. A new user request starts a new
-run; the current run owns its scope, checks, data and citations, while the task
-owns memory and history. There are no next-step suggestions or follow-up
-prompts. A query's rows, chart and script open under its trace row; the answer
-can cite it.
-
-Failed model runs offer Retry; stopped runs offer Continue. The sidebar search
-(⌘K) covers titles, requests, risks and the composed answer summary. Files can
-be dropped or pasted onto the composer. A run that finishes while the window is
-in the background sends one notification. PDF export expands the trace and the evidence
-strip before printing; the receipt is not repeated. `storage-agent://task/<id>`
-opens a task; Copy link puts it on the clipboard. In risks, j/k move, Enter opens
-the check, a accepts. Settings offers demo storage and the models already running
-on this machine; its Test button tests the values currently in the form, and
-typing a key fetches the provider's model list automatically.
-
+`Sidebar · run · Composer`, plus a full-screen Settings sheet. The run page,
+the trace, the two evidence strips (**Findings**, **Not checked**), notices,
+clarify, earlier runs and the keyboard map are specified in `docs/design.md`.
 Design tokens live in `src/renderer/styles.css`; never use a raw colour in a
-component. Secondary text that is used as normal text must clear WCAG AA on the
-surface where it appears; `npm run contrast` guards the token pairs.
-
-The interface is English by default. Chinese copy is written separately, not
-translated word by word; model answers follow the user's language preference.
+component. `npm run contrast` guards secondary text. English by default; Chinese
+copy is written, not translated word by word.
 
 ## Commands
 
 `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run build`
-· `npm run budget` · `npm run contrast` · `npm run audit` · `npm run sbom` · `npm run dist:dir` ·
-`xvfb-run -a node scripts/e2e.mjs` · `xvfb-run -a node scripts/e2e-audit.mjs`
-· `xvfb-run -a node scripts/eval.mjs --smoke` (or with `EVAL_*` for a real model)
-· `xvfb-run -a node scripts/bench.mjs --smoke` (or with `EVAL_*` for the real-model behavior gate)
+· `npm run budget` · `npm run contrast` · `npm run audit` · `npm run sbom` ·
+`npm run dist:dir` · `xvfb-run -a node scripts/e2e.mjs` ·
+`xvfb-run -a node scripts/e2e-audit.mjs` ·
+`xvfb-run -a node scripts/eval.mjs --smoke` (or with `EVAL_*`) ·
+`xvfb-run -a node scripts/bench.mjs --smoke` (or with `EVAL_*` and `--runs 3`:
+the real-model gate) · `xvfb-run -a node scripts/shots.mjs && node scripts/visual.mjs`
 · `STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 npx vitest run src/main/compat.test.ts`
 (with `moto_server -p 5055` running)
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { UiEntry } from './contract'
-import { contradicted, knownExposure, knownNames, ungrounded } from './grounding'
+import { ungrounded } from './grounding'
+import { foldLedger } from './ledger'
+
+const knownNames = (list: UiEntry[]) => foldLedger(list).known
 
 const entries: UiEntry[] = [
   { id: 'u', kind: 'user', at: '', text: 'q', attachments: [{ name: 'access.log', bytes: 1 }] },
@@ -127,87 +130,5 @@ describe('grounding', () => {
     expect(ungrounded('`logs-bucket/2026/x.gz` and `aws s3api put-x --bucket y`', known)).toEqual(
       [],
     )
-  })
-})
-
-describe('exposure claims', () => {
-  const exposure = new Map([
-    ['open-bucket', true],
-    ['closed-bucket', false],
-  ])
-
-  it('flags a bucket called public that a reading proved private, and the reverse', () => {
-    expect(contradicted('`closed-bucket` is publicly accessible.', exposure)).toEqual([
-      'closed-bucket',
-    ])
-    expect(contradicted('`open-bucket` is not public.', exposure)).toEqual(['open-bucket'])
-    expect(contradicted('`closed-bucket` 是公开的。', exposure)).toEqual(['closed-bucket'])
-  })
-
-  it('does not read the word public inside a bucket name as the claim', () => {
-    const named = new Map([
-      ['demo-public', false],
-      ['public-assets', false],
-    ])
-    expect(contradicted('`demo-public` is no longer public; the fix took.', named)).toEqual([])
-    expect(contradicted('`demo-public` is not public.', named)).toEqual([])
-    expect(contradicted('`public-assets` 不是公开的。', named)).toEqual([])
-    expect(contradicted('`demo-public` is public.', named)).toEqual(['demo-public'])
-  })
-
-  it('accepts true claims, including negation elsewhere in the sentence', () => {
-    expect(
-      contradicted(
-        '`open-bucket` has no default encryption and is publicly accessible. `closed-bucket` is not public.',
-        exposure,
-      ),
-    ).toEqual([])
-    expect(contradicted('`closed-bucket` 不是公开的。', exposure)).toEqual([])
-  })
-
-  it('lets a security review that proves the bucket clean update the reading', () => {
-    const entries: UiEntry[] = [
-      {
-        id: 's',
-        kind: 'tool',
-        at: '',
-        name: 'survey',
-        target: 'acme',
-        status: 'done',
-        note: null,
-        ms: 1,
-        view: {
-          kind: 'survey',
-          provider: 'acme',
-          buckets: { columns: ['Bucket', 'Public'], rows: [['demo-public', 'public']] },
-          issues: [],
-          coverage: { visible: 1, processed: 1, truncated: false, denied: [], unknown: [] },
-          changed: { opened: 0, resolved: 0, recurred: 0 },
-        },
-      },
-      {
-        id: 'c',
-        kind: 'tool',
-        at: '',
-        name: 'config',
-        target: 'demo-public',
-        status: 'done',
-        note: null,
-        ms: 1,
-        view: {
-          kind: 'config',
-          bucket: 'demo-public',
-          aspect: 'security',
-          exposure: 'not public',
-          findings: [],
-        },
-      },
-    ]
-    expect(knownExposure(entries).get('demo-public')).toBe(false)
-  })
-
-  it('leaves sentences naming several buckets or unknown ones alone', () => {
-    expect(contradicted('`open-bucket` and `closed-bucket` are public.', exposure)).toEqual([])
-    expect(contradicted('`elsewhere` is public.', exposure)).toEqual([])
   })
 })

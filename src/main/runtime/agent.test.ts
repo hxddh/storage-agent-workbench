@@ -1,174 +1,220 @@
-import type { ToolView } from '@shared/contract'
+import type { EntryRecord } from '@earendil-works/pi-durable'
+import type { ToolDetails, ToolView } from '@shared/contract'
 import { describe, expect, it } from 'vitest'
-import {
-  type AgentState,
-  blockReason,
-  coverageCorrection,
-  freshRun,
-  groundingCorrection,
-  MAX_TOOL_ROUNDS,
-  maxRounds,
-  readGapTotals,
-  recordReadGaps,
-  tierFor,
-} from './agent'
+import { callKey } from '../tools/policy'
+import { answerCorrection, blockReason, maxRounds, runView, tierFor } from './agent'
 
-function state(known: string[] = []): AgentState {
-  return { digest: '', language: 'en', tier: 'mid', runs: new Map([['c', freshRun(known)]]) }
+let seq = 0
+const at = () => 1_700_000_000_000 + seq++
+
+function request(text = 'Which buckets are public?'): EntryRecord {
+  return {
+    id: `r${seq}`,
+    kind: 'sa.run',
+    data: { trigger: 'user', text, attachments: [] },
+    model: [{ role: 'user', content: text, timestamp: at() }],
+  } as unknown as EntryRecord
+}
+
+function call(id: string, name: string, args: Record<string, unknown>): EntryRecord {
+  return {
+    id: `a${id}`,
+    kind: 'pi.assistant',
+    model: [
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', id, name, arguments: args }],
+        timestamp: at(),
+      },
+    ],
+  } as unknown as EntryRecord
+}
+
+function result(
+  id: string,
+  name: string,
+  args: Record<string, unknown>,
+  view: ToolView | null,
+  status: ToolDetails['status'] = 'done',
+): EntryRecord {
+  const details: ToolDetails = {
+    target: String(args.bucket ?? 'Demo'),
+    note: null,
+    view,
+    ms: 5,
+    status,
+    evidenceId: id,
+    key: callKey(name, args),
+  }
+  return {
+    id: `t${id}`,
+    kind: 'pi.tool-result',
+    model: [
+      {
+        role: 'toolResult',
+        toolCallId: id,
+        toolName: name,
+        content: [{ type: 'text', text: 'ok' }],
+        isError: status !== 'done',
+        details,
+        timestamp: at(),
+      },
+    ],
+  } as unknown as EntryRecord
+}
+
+const config = (bucket: string): ToolView => ({
+  kind: 'config',
+  bucket,
+  providerId: 'p',
+  aspect: 'security',
+  exposure: 'public',
+  findings: [],
+})
+
+const survey: ToolView = {
+  kind: 'survey',
+  provider: 'Demo',
+  providerId: 'p',
+  buckets: {
+    columns: ['Bucket', 'Public'],
+    rows: [
+      ['demo', 'public'],
+      ['other', 'no'],
+    ],
+  },
+  issues: [],
+  coverage: { visible: 2, processed: 2, truncated: false, pending: 0, denied: [], unknown: [] },
+  changed: { opened: 0, resolved: 0, recurred: 0 },
 }
 
 describe('model tiers', () => {
-  it('gives a small context model fewer rounds', () => {
+  it('gives a small context model fewer rounds and a large one more', () => {
     expect(tierFor(32_000)).toBe('small')
     expect(tierFor(128_000)).toBe('mid')
     expect(tierFor(400_000)).toBe('large')
-    expect(maxRounds('small')).toBeLessThan(MAX_TOOL_ROUNDS)
-    expect(maxRounds('large')).toBeGreaterThan(MAX_TOOL_ROUNDS)
+    expect(maxRounds('small')).toBe(14)
+    expect(maxRounds('mid')).toBe(24)
+    expect(maxRounds('large')).toBe(32)
   })
 })
 
-describe('run guardrails', () => {
-  it('blocks a repeated storage read, whatever the key order', () => {
-    const s = state()
-    expect(blockReason(s, 'c', 'config', { bucket: 'a', aspect: 'security' })).toBeUndefined()
-    expect(blockReason(s, 'c', 'config', { aspect: 'security', bucket: 'a' })).toMatch(
-      /already ran/,
-    )
-    expect(blockReason(s, 'c', 'config', { bucket: 'a', aspect: 'lifecycle' })).toBeUndefined()
+describe('run guards from durable entries', () => {
+  it('blocks a finished read, whatever the key order, and admits another aspect', () => {
+    const args = { bucket: 'demo', aspect: 'security' }
+    const view = runView([
+      request(),
+      call('c1', 'config', args),
+      result('c1', 'config', args, config('demo')),
+    ])
+    const inflight = new Set<string>()
+    expect(
+      blockReason(view, 'mid', 'config', { aspect: 'security', bucket: 'demo' }, inflight),
+    ).toMatch(/already ran/)
+    expect(
+      blockReason(view, 'mid', 'config', { bucket: 'demo', aspect: 'lifecycle' }, inflight),
+    ).toBeUndefined()
+  })
+
+  it('lets a failed read run once more, then blocks it', () => {
+    const args = { bucket: 'demo' }
+    const once = runView([
+      request(),
+      call('c1', 'config', args),
+      result('c1', 'config', args, null, 'failed'),
+    ])
+    expect(blockReason(once, 'mid', 'config', args, new Set())).toBeUndefined()
+    const twice = runView([
+      request(),
+      call('c1', 'config', args),
+      result('c1', 'config', args, null, 'failed'),
+      call('c2', 'config', args),
+      result('c2', 'config', args, null, 'failed'),
+    ])
+    expect(blockReason(twice, 'mid', 'config', args, new Set())).toMatch(/already ran/)
+  })
+
+  it('treats two identical calls in one round as one read', () => {
+    const view = runView([request()])
+    const inflight = new Set<string>()
+    expect(blockReason(view, 'mid', 'objects', { bucket: 'demo' }, inflight)).toBeUndefined()
+    expect(blockReason(view, 'mid', 'objects', { bucket: 'demo' }, inflight)).toMatch(/already ran/)
+  })
+
+  it('starts every run with a fresh budget and fresh calls', () => {
+    const args = { bucket: 'demo' }
+    const view = runView([
+      request(),
+      call('c1', 'config', args),
+      result('c1', 'config', args, config('demo')),
+      request('Again'),
+    ])
+    expect(view.rounds).toBe(0)
+    expect(blockReason(view, 'mid', 'config', args, new Set())).toBeUndefined()
+  })
+
+  it('stops every tool past the round budget, counted from the entries', () => {
+    const records: EntryRecord[] = [request()]
+    for (let index = 0; index < 15; index += 1) {
+      const args = { bucket: `b${index}` }
+      records.push(call(`c${index}`, 'objects', args), result(`c${index}`, 'objects', args, null))
+    }
+    // The same entries give the same budget after a restart: nothing is in memory.
+    expect(blockReason(runView(records), 'small', 'estate', {}, new Set())).toMatch(/Step budget/)
+    expect(blockReason(runView(records), 'mid', 'estate', {}, new Set())).toBeUndefined()
   })
 
   it('lets memory be read again as it changes', () => {
-    const s = state()
-    expect(blockReason(s, 'c', 'estate', {})).toBeUndefined()
-    expect(blockReason(s, 'c', 'estate', {})).toBeUndefined()
-  })
-
-  it('stops every tool at the round cap', () => {
-    const s = state()
-    s.runs.get('c')!.rounds = MAX_TOOL_ROUNDS
-    expect(blockReason(s, 'c', 'estate', {})).toMatch(/Step budget/)
-  })
-
-  it('asks once for a grounded verdict, then lets the window mark it', () => {
-    const s = state(['demo'])
-    expect(groundingCorrection(s, 'c', '`demo` is public.')).toBeUndefined()
-    expect(groundingCorrection(s, 'c', '`demo` and `ghost` are public.')).toMatch(/`ghost`/)
-    expect(groundingCorrection(s, 'c', '`ghost` again.')).toBeUndefined()
-  })
-
-  it('does not judge a verdict when the task has read nothing it remembers', () => {
-    expect(groundingCorrection(state(), 'c', '`anything`')).toBeUndefined()
+    const view = runView([request(), call('c1', 'estate', {}), result('c1', 'estate', {}, null)])
+    expect(blockReason(view, 'mid', 'estate', {}, new Set())).toBeUndefined()
   })
 })
 
-describe('read closure', () => {
-  const surveyView = (overrides: Record<string, unknown> = {}) =>
-    ({
-      kind: 'survey',
-      provider: 'Demo',
-      providerId: 'p',
-      buckets: { columns: [], rows: [] },
-      issues: [],
-      coverage: {
-        visible: 10,
-        processed: 6,
-        truncated: true,
-        pending: 2,
-        denied: ['secret'],
-        unknown: [],
-      },
-      changed: { opened: 0, resolved: 0, recurred: 0 },
-      ...overrides,
-    }) as ToolView
+describe('the one answer correction', () => {
+  const read = () =>
+    runView([request(), call('s1', 'survey', {}), result('s1', 'survey', {}, survey)])
 
-  it('keeps the latest per-account survey gap, including pending and outside-run buckets', () => {
-    const s = state()
-    const current = s.runs.get('c')!
-    recordReadGaps(current, surveyView())
-    expect(readGapTotals(current)).toEqual({ open: 5, blocked: 1 })
-    recordReadGaps(
-      current,
-      surveyView({
-        coverage: {
-          visible: 10,
-          processed: 10,
-          truncated: false,
-          pending: 0,
-          denied: [],
-          unknown: [],
-        },
-      }),
+  it('accepts a cited, grounded answer', () => {
+    expect(answerCorrection(read(), '`demo` is public. [1](#ev-s1)')).toBeUndefined()
+  })
+
+  it('asks for a name no tool showed, with the wording the harness always uses', () => {
+    expect(answerCorrection(read(), '`demo` and `ghost` are public. [1](#ev-s1)')).toMatch(
+      /`ghost`, which no tool result in this task shows/,
     )
-    expect(readGapTotals(current)).toEqual({ open: 0, blocked: 0 })
-    recordReadGaps(current, surveyView({ scoped: true }))
-    expect(readGapTotals(current)).toEqual({ open: 0, blocked: 0 })
   })
 
-  it('never treats a one-bucket survey as account coverage', () => {
-    const s = state()
-    const current = s.runs.get('c')!
-    const scoped = surveyView({
-      scoped: true,
-      coverage: {
-        visible: 1,
-        processed: 1,
-        truncated: false,
-        pending: 0,
-        denied: [],
-        unknown: [],
-      },
-    })
-    recordReadGaps(current, scoped)
-    expect(readGapTotals(current)).toEqual({ open: 1, blocked: 0 })
-    recordReadGaps(current, surveyView())
-    expect(readGapTotals(current)).toEqual({ open: 5, blocked: 1 })
-    recordReadGaps(current, scoped)
-    expect(readGapTotals(current)).toEqual({ open: 5, blocked: 1 })
+  it('asks for a citation when a paragraph names a read bucket without one', () => {
+    expect(answerCorrection(read(), '`demo` is public.')).toMatch(/without citing/)
   })
 
-  it('replaces one bucket review without keeping an old blind spot', () => {
-    const s = state()
-    const current = s.runs.get('c')!
-    const config = {
-      kind: 'config',
-      bucket: 'demo',
-      providerId: 'p',
-      aspect: 'access',
-      findings: [{ severity: 'blind', title: 'Access denied', detail: '', code: 'blind:iam' }],
-      permissions: [{ bucket: 'demo', item: 'IAM', action: 's3:GetBucketPolicy' }],
-      accessCoverage: {
-        principals: 10,
-        evaluated: 8,
-        undecided: 2,
-        truncated: false,
-        sources: ['iam'],
-      },
-    } as ToolView
-    recordReadGaps(current, config)
-    expect(readGapTotals(current)).toEqual({ open: 6, blocked: 2 })
-    recordReadGaps(current, {
-      ...config,
-      findings: [],
-      permissions: [],
-      accessCoverage: {
-        principals: 10,
-        evaluated: 10,
-        undecided: 0,
-        truncated: false,
-        sources: ['iam'],
-      },
-    } as ToolView)
-    expect(readGapTotals(current)).toEqual({ open: 0, blocked: 0 })
+  it('asks once: a run that already has a correction is left to the window', () => {
+    const corrected = runView([
+      request(),
+      call('s1', 'survey', {}),
+      result('s1', 'survey', {}, survey),
+      {
+        id: 'v1',
+        kind: 'pi.user',
+        model: [{ role: 'user', content: 'Your answer names `ghost`…', timestamp: at() }],
+      } as unknown as EntryRecord,
+    ])
+    expect(answerCorrection(corrected, '`ghost` again.')).toBeUndefined()
   })
 
-  it('corrects a clean claim once, but not a specific answer', () => {
-    const s = state()
-    recordReadGaps(s.runs.get('c')!, surveyView())
-    expect(coverageCorrection(s, 'c', 'No public buckets.')).toMatch(/not complete/)
-    expect(coverageCorrection(s, 'c', 'No public buckets.')).toBeUndefined()
+  it('does not judge prose when the task has read nothing', () => {
+    expect(answerCorrection(runView([request()]), '`anything`')).toBeUndefined()
+  })
 
-    const specific = state()
-    recordReadGaps(specific.runs.get('c')!, surveyView())
-    expect(coverageCorrection(specific, 'c', '`demo` is not public.')).toBeUndefined()
+  it('never judges whether the prose calls the account clean', () => {
+    const partial = runView([
+      request(),
+      call('s1', 'survey', {}),
+      result('s1', 'survey', {}, {
+        ...survey,
+        coverage: { ...(survey as { coverage: object }).coverage, denied: ['other'] },
+      } as ToolView),
+    ])
+    expect(answerCorrection(partial, 'No bucket is public. [1](#ev-s1)')).toBeUndefined()
   })
 })

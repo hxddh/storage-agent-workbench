@@ -349,6 +349,17 @@ export interface ToolDetails {
   status: ToolStatus
   /** Stable id the model cites from its answer. */
   evidenceId?: string
+  /** Hash of the exact arguments: the run ledger blocks a repeated read by it. */
+  key?: string
+  /** What the rules did with this reading, applied by `estate/assess.ts`. */
+  assessed?: Assessed
+}
+
+/** The Issue transitions one reading caused. The model never causes one. */
+export interface Assessed {
+  opened: number
+  resolved: number
+  recurred: number
 }
 
 /** App notices are codes; the window words them in the user's language. */
@@ -398,35 +409,11 @@ export interface StagedFile extends AttachmentRef {
   token: string
 }
 
-export interface AuditCheck {
-  name: ToolName
-  target: string
-  status: ToolStatus
-  note: string | null
-  args?: string | null
-  ms: number | null
-  at: string
-  view: ToolView | null
-}
-
-/** A deterministic, model-free account check, stored as one durable entry. */
-export interface AuditReport {
-  at: string
-  verdict: string
-  checks: AuditCheck[]
-  /** Access paths were sampled for large accounts; this makes that explicit. */
-  accessBuckets?: { examined: number; total: number }
-}
-
-/** Live progress for a deterministic account check; never persisted. */
-export interface AuditProgress {
-  account: string
-  phase: 'survey' | 'access'
-  done: number
-  total: number
-}
+/** What starts a run. A check and a re-check are scripted runs; they call the same tools. */
+export type RunTrigger = 'user' | 'check' | 'recheck'
 
 export type UiEntry =
+  /** A user request: it starts a run. */
   | {
       id: string
       kind: 'user'
@@ -434,10 +421,27 @@ export type UiEntry =
       text: string
       attachments: AttachmentRef[]
       context?: ContextRef[]
-      /** A steer joins the running turn; it is not a new question. */
-      steer?: boolean
     }
-  | { id: string; kind: 'answer'; at: string; text: string; streaming?: boolean }
+  /** A scripted run: an account check or a re-check of the task's reads. No model. */
+  | { id: string; kind: 'check'; at: string; mode: 'check' | 'recheck' }
+  /** A steer joins the running run; it is not a new request. */
+  | {
+      id: string
+      kind: 'steer'
+      at: string
+      text: string
+      attachments: AttachmentRef[]
+      context?: ContextRef[]
+    }
+  /** `check`: written by the scripted run from its own calls, not by a model. */
+  | {
+      id: string
+      kind: 'answer'
+      at: string
+      text: string
+      streaming?: boolean
+      source?: 'model' | 'check'
+    }
   /** A provider-supplied reasoning summary. It is not a tool result. */
   | { id: string; kind: 'reasoning'; at: string; text: string }
   /** The harness asked the model to correct a claim; the correction is visible. */
@@ -455,6 +459,8 @@ export type UiEntry =
       view: ToolView | null
       callId?: string
       evidenceId?: string
+      key?: string
+      assessed?: Assessed
     }
   | {
       id: string
@@ -467,9 +473,9 @@ export type UiEntry =
       action?: 'retry' | 'continue'
     }
   | { id: string; kind: 'compaction'; at: string; text: string }
-  /** The user asked a stopped run to continue: a boundary, not a question. */
+  /** The user asked a stopped run to continue: a boundary inside the run, not a request. */
   | { id: string; kind: 'resume'; at: string }
-  /** A model-free replay of the task's reads, with the differences it found. */
+  /** A re-check's comparison of the task's earlier conclusions with its fresh calls. */
   | { id: string; kind: 'reverify'; at: string; report: ReverifyReport }
 
 export interface TaskSummary {
@@ -650,7 +656,6 @@ export type AppEvent =
   | { type: 'entry'; taskId: string; entry: UiEntry }
   | { type: 'patch'; taskId: string; entryId: string; patch: Partial<UiEntry> }
   | { type: 'live'; taskId: string; live: Live | null }
-  | { type: 'audit'; taskId: string; progress: AuditProgress | null }
   | { type: 'usage'; taskId: string; usage: Usage | null }
   | { type: 'issues'; statuses: Record<string, IssueRow['status']> }
   | { type: 'update'; update: UpdateState }
@@ -679,8 +684,8 @@ export interface AgentApi {
     before: string,
   ): Promise<{ entries: UiEntry[]; hasOlder: boolean; cursor: string | null }>
   createTask(text: string, attachments: string[], context?: ContextRef[]): Promise<TaskView>
-  /** Run a deterministic survey + access check without a model. */
-  audit(): Promise<TaskView>
+  /** Start a scripted account check (no model) in a new task. */
+  check(): Promise<TaskView>
   send(taskId: string, text: string, attachments: string[], context?: ContextRef[]): Promise<void>
   /** Use a different model for this task's next run; null restores Settings. */
   setTaskModel(taskId: string, model: TaskModel | null): Promise<void>
@@ -692,7 +697,8 @@ export interface AgentApi {
   deleteTask(taskId: string): Promise<void>
   retryTask(taskId: string): Promise<void>
   continueTask(taskId: string): Promise<void>
-  reverifyTask(taskId: string): Promise<ReverifyReport>
+  /** Re-read what the task read, as a scripted run in the same task. */
+  recheckTask(taskId: string): Promise<void>
   search(query: string): Promise<SearchHit[]>
   notes(): Promise<NoteRow[]>
   deleteNote(id: string): Promise<void>

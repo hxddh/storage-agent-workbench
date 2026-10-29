@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type {
@@ -13,9 +13,11 @@ import { app } from 'electron'
 import { AppDb } from './db'
 import { Estate } from './estate/estate'
 import { Providers } from './providers'
-import { AgentHarness, harnessDirs, type RunOutcome } from './runtime/harness'
+import { Engine } from './runtime/engine'
 import { createModelSet, testModel, testModelDraft } from './runtime/model'
 import { isScheduleDue } from './runtime/schedule'
+import { type RunOutcome, Runtime, runtimeDirs } from './runtime/session'
+import { Tasks } from './runtime/tasks'
 import { Vault } from './security/vault'
 import { Settings } from './settings'
 import { Staging } from './staging'
@@ -34,7 +36,9 @@ export class App {
   estate!: Estate
   settings!: Settings
   vault!: Vault
-  harness!: AgentHarness
+  runtime!: Runtime
+  tasks!: Tasks
+  engine!: Engine
   staging!: Staging
   update: UpdateState = { state: 'idle' }
   /** Set by the shell once an update is downloaded. */
@@ -58,24 +62,32 @@ export class App {
     this.database = await openNodeSqliteDatabase(join(dataDir, 'storage-agent.db'))
     this.db = await AppDb.open(this.database)
     this.settings = new Settings(dataDir)
+    if (this.db.resetTasks) {
+      await rm(join(dataDir, 'tasks'), { recursive: true, force: true })
+      await mkdir(join(dataDir, 'tasks'), { recursive: true })
+      this.settings.setLastTask(null)
+    }
     this.vault = new Vault(dataDir)
     this.providers = new Providers(this.db, this.vault)
     this.estate = new Estate(this.db)
     this.staging = new Staging(join(dataDir, 'staging'))
     await this.staging.clear()
 
-    this.harness = await AgentHarness.open(this.database, {
+    this.runtime = await Runtime.open(this.database, {
       db: this.db,
       providers: this.providers,
       estate: this.estate,
       settings: this.settings,
       vault: this.vault,
       models: this.models,
-      dirs: harnessDirs(dataDir),
+      dirs: runtimeDirs(dataDir),
       emit: (event) => this.hooks.emit(event),
       settled: (task, outcome) => this.hooks.settled(task, outcome),
       working: (count) => this.hooks.working(count),
     })
+    this.tasks = new Tasks(this.runtime)
+    this.engine = new Engine(this.runtime, this.tasks)
+    this.tasks.start()
   }
 
   setHooks(hooks: ShellHooks): void {
@@ -103,10 +115,9 @@ export class App {
         this.scheduleAttempts.set(account.id, new Date().toISOString())
         const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
         const title = `${this.settings.get().language === 'zh' ? '定期检查' : 'Scheduled check'} · ${account.name} · ${stamp}`
-        const taskId = await this.harness.newTask(title)
-        await this.harness.audit(taskId, [account.id])
-        const task = (await this.harness.listTasks()).find((item) => item.id === taskId)
-        if (task) this.hooks.settled(task, 'answered')
+        const taskId = await this.tasks.newTask(title)
+        // The engine's settlement notifies like any other run.
+        await this.engine.check(taskId, [account.id])
       }
     } catch {
       // A scheduled read must never take down the window. Its task page keeps
@@ -124,7 +135,7 @@ export class App {
   async bootstrap(): Promise<Bootstrap> {
     const model = this.settings.get().model
     const lastTaskId = this.settings.get().lastTaskId
-    const tasks = await this.harness.listTasks()
+    const tasks = await this.tasks.list()
     return {
       version: app.getVersion(),
       platform: process.platform,
@@ -180,13 +191,7 @@ export class App {
       : stored
         ? await testModel(this.models, stored, this.vault)
         : { ok: false, detail: 'No model is configured.' }
-    // A draft test replaces the in-memory provider; restore the saved one.
-    this.harness.applyModel()
     return result
-  }
-
-  applyModel(): void {
-    this.harness.applyModel()
   }
 
   uploadsFor(conversationId: string): string {
@@ -196,7 +201,8 @@ export class App {
   async dispose(): Promise<void> {
     if (this.scheduleTimer) clearInterval(this.scheduleTimer)
     this.scheduleTimer = null
-    await this.harness?.close().catch(() => undefined)
+    await this.tasks?.close().catch(() => undefined)
+    await this.runtime?.close().catch(() => undefined)
     await this.database?.close().catch(() => undefined)
   }
 }

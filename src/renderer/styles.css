@@ -3001,10 +3001,6 @@ pre.code {
   color: var(--danger);
   text-decoration: underline wavy color-mix(in srgb, var(--danger) 60%, transparent);
 }
-.verdict code.contradicted {
-  color: var(--warn);
-  text-decoration: underline wavy color-mix(in srgb, var(--warn) 60%, transparent);
-}
 .task-row-wrap {
   display: flex;
   align-items: center;

@@ -4,7 +4,7 @@ import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 import { detectProviderKind } from './s3/capabilities'
 
-export const HOST_SCHEMA_VERSION = 14
+export const HOST_SCHEMA_VERSION = 15
 
 export interface ProviderRow {
   id: string
@@ -249,6 +249,9 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_docs_fts USING fts5(
 `
 
 export class AppDb {
+  /** Migration 15 cleared the task history; the shell clears `tasks/` on disk too. */
+  resetTasks = false
+
   constructor(readonly raw: NodeSqliteDatabase) {}
 
   static async open(raw: NodeSqliteDatabase): Promise<AppDb> {
@@ -359,10 +362,34 @@ export class AppDb {
       if (!columns.some((column) => column.name === 'model_json'))
         await raw.exec('ALTER TABLE task_meta ADD COLUMN model_json TEXT')
     }
+    let resetTasks = false
+    if (version >= 1 && version < 15) {
+      // 35.0: one engine and one entry model. Tasks written by earlier
+      // versions use entry kinds 35 does not read, so the task history starts
+      // over. Accounts, remembered posture, Issues and their history, notes and
+      // reading records stay; their links to old tasks become null.
+      const pi = await raw.all<{ name: string; type: string }>(
+        "SELECT name, type FROM sqlite_master WHERE name LIKE 'pi\\_%' ESCAPE '\\' AND type IN ('table', 'view')",
+      )
+      await raw.exec('PRAGMA foreign_keys = OFF')
+      for (const item of pi)
+        await raw.exec(`DROP ${item.type.toUpperCase()} IF EXISTS "${item.name}"`)
+      await raw.exec('PRAGMA foreign_keys = ON')
+      await raw.exec('DELETE FROM task_meta')
+      await raw.exec('DELETE FROM search_docs')
+      await raw.exec('DELETE FROM search_docs_fts')
+      await raw.exec('DELETE FROM datasets')
+      await raw.exec('DELETE FROM audit')
+      await raw.exec('UPDATE issue_events SET conversation_id = NULL')
+      await raw.exec('UPDATE readings SET conversation_id = NULL')
+      resetTasks = true
+    }
     if (version < HOST_SCHEMA_VERSION) {
       await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
     }
-    return new AppDb(raw)
+    const db = new AppDb(raw)
+    db.resetTasks = resetTasks
+    return db
   }
 
   // -- providers ------------------------------------------------------------

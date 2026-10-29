@@ -80,6 +80,43 @@ describe('schema', () => {
     expect((await db.getIssue('i'))?.detail).toBeNull()
   })
 
+  it('starts the task history over at 35 but keeps accounts, Issues and readings', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sa-mig35-'))
+    const raw = await openNodeSqliteDatabase(join(dir, 'v34.sqlite'))
+    const first = await AppDb.open(raw)
+    await raw.exec(`
+      CREATE TABLE pi_conversations (id INTEGER PRIMARY KEY);
+      CREATE TABLE pi_entries (id INTEGER PRIMARY KEY, conversation_id INTEGER REFERENCES pi_conversations(id));
+      INSERT INTO pi_conversations VALUES (1);
+      INSERT INTO pi_entries VALUES (1, 1);
+      PRAGMA user_version = 14;
+    `)
+    await first.upsertTaskMeta({ conversationId: '1', title: 'Old task' })
+    await first.replaceSearchDocs('1', [{ entryId: 'e', kind: 'answer', text: 'old', at: '' }])
+    const issue = await first.upsertIssue({
+      providerId: 'p',
+      bucket: 'b',
+      code: 'public_exposure',
+      severity: 'high',
+      observed: true,
+      conversationId: '1',
+    })
+    expect(issue.event).toBe('opened')
+    const db = await AppDb.open(raw)
+    expect(db.resetTasks).toBe(true)
+    expect(await db.listTaskMeta()).toEqual([])
+    expect(await db.searchDocs('old')).toEqual([])
+    const tables = await raw.all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE name LIKE 'pi\\_%' ESCAPE '\\'",
+    )
+    expect(tables).toEqual([])
+    expect((await db.listIssues({ status: 'open' })).map((row) => row.bucket)).toEqual(['b'])
+    const events = await db.listIssueEvents({ limit: 5 })
+    expect(events.every((event) => event.conversation_id === null)).toBe(true)
+    // Opening the head again changes nothing.
+    expect((await AppDb.open(raw)).resetTasks).toBe(false)
+  })
+
   it('infers the kind of a provider added before the kind column existed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sa-mig-kind-'))
     const raw = await openNodeSqliteDatabase(join(dir, 'old.sqlite'))

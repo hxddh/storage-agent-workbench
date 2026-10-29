@@ -22,10 +22,10 @@ export function registerIpc(app: App): void {
   ipcMain.handle('agent:bootstrap', () => app.bootstrap())
 
   ipcMain.handle('agent:openTask', (_event, id: string, focus?: string) =>
-    app.harness.openTask(id, focus),
+    app.tasks.open(id, focus),
   )
 
-  ipcMain.handle('agent:audit', async () => {
+  ipcMain.handle('agent:check', async () => {
     const accounts = await app.providers.list()
     if (accounts.length === 0) throw new Error('Choose a storage account first.')
     const lang = app.settings.get().language
@@ -37,23 +37,21 @@ export function registerIpc(app: App): void {
     // remain distinguishable in the task list.
     const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
     const title = `${lang === 'zh' ? '检查' : 'Check'} · ${names} · ${stamp}`
-    const id = await app.harness.newTask(title)
-    // Return the task immediately; progress and the durable result arrive
+    const id = await app.tasks.newTask(title)
+    // Return the task immediately; the scripted run's calls and answer arrive
     // through the task watch instead of making the window wait for the sweep.
-    void app.harness.audit(id).catch(() => undefined)
-    return app.harness.openTask(id)
+    void app.engine.check(id).catch(() => undefined)
+    return app.tasks.open(id)
   })
-  ipcMain.handle('agent:older', (_event, id: string, before: string) =>
-    app.harness.older(id, before),
-  )
+  ipcMain.handle('agent:older', (_event, id: string, before: string) => app.tasks.older(id, before))
 
   ipcMain.handle(
     'agent:createTask',
     async (_event, text: string, tokens: string[], context?: ContextRef[]) => {
-      const id = await app.harness.newTask(text)
+      const id = await app.tasks.newTask(text)
       const files = await app.staging.consume(tokens, id, app.uploadsFor(id))
-      await app.harness.submit(id, text, files, context)
-      return app.harness.openTask(id)
+      await app.engine.submit(id, text, files, context)
+      return app.tasks.open(id)
     },
   )
 
@@ -61,36 +59,36 @@ export function registerIpc(app: App): void {
     'agent:send',
     async (_event, taskId: string, text: string, tokens: string[], context?: ContextRef[]) => {
       const files = await app.staging.consume(tokens, taskId, app.uploadsFor(taskId))
-      await app.harness.submit(taskId, text, files, context)
+      await app.engine.submit(taskId, text, files, context)
     },
   )
 
   ipcMain.handle('agent:estateRefs', (_event, query: string) =>
-    app.harness.estateRefs(String(query ?? '').slice(0, 120)),
+    app.tasks.estateRefs(String(query ?? '').slice(0, 120)),
   )
   ipcMain.handle('agent:setTaskModel', (_event, taskId: string, model: TaskModel | null) =>
-    app.harness.setTaskModel(taskId, model),
+    app.tasks.setTaskModel(taskId, model),
   )
 
   ipcMain.handle(
     'agent:steer',
     async (_event, taskId: string, text: string, tokens: string[] = [], context?: ContextRef[]) => {
       const files = await app.staging.consume(tokens, taskId, app.uploadsFor(taskId))
-      await app.harness.steer(taskId, text, files, context)
+      await app.engine.steer(taskId, text, files, context)
     },
   )
-  ipcMain.handle('agent:stop', (_event, taskId: string) => app.harness.stop(taskId))
+  ipcMain.handle('agent:stop', (_event, taskId: string) => app.engine.stop(taskId))
   ipcMain.handle('agent:renameTask', (_event, id: string, title: string) =>
-    app.harness.rename(id, title),
+    app.tasks.rename(id, title),
   )
   ipcMain.handle('agent:pinTask', (_event, id: string, pinned: boolean) =>
-    app.harness.pin(String(id), Boolean(pinned)),
+    app.tasks.pin(String(id), Boolean(pinned)),
   )
-  ipcMain.handle('agent:deleteTask', (_event, id: string) => app.harness.deleteTask(id))
-  ipcMain.handle('agent:retryTask', (_event, id: string) => app.harness.retry(id))
-  ipcMain.handle('agent:continueTask', (_event, id: string) => app.harness.continueTask(id))
-  ipcMain.handle('agent:reverifyTask', (_event, id: string) => app.harness.reverify(id))
-  ipcMain.handle('agent:search', (_event, query: string) => app.harness.search(query))
+  ipcMain.handle('agent:deleteTask', (_event, id: string) => app.tasks.deleteTask(id))
+  ipcMain.handle('agent:retryTask', (_event, id: string) => app.engine.retry(id))
+  ipcMain.handle('agent:continueTask', (_event, id: string) => app.engine.continueTask(id))
+  ipcMain.handle('agent:recheckTask', (_event, id: string) => app.engine.recheck(id))
+  ipcMain.handle('agent:search', (_event, query: string) => app.tasks.search(query))
 
   ipcMain.handle(
     'agent:saveText',
@@ -164,27 +162,27 @@ export function registerIpc(app: App): void {
 
   ipcMain.handle('agent:addDemoAccount', async () => {
     const account = await app.providers.addDemo()
-    await app.harness.refreshEstateDigest()
+    await app.runtime.refreshDigest()
     return account
   })
 
   ipcMain.handle('agent:localModels', () => detectLocalModels())
 
   ipcMain.handle('agent:acceptIssue', (_event, id: string, accepted: boolean) =>
-    app.harness.acceptIssue(String(id), Boolean(accepted)),
+    app.tasks.acceptIssue(String(id), Boolean(accepted)),
   )
 
   ipcMain.handle('agent:installUpdate', () => app.installUpdate?.())
 
   ipcMain.handle('agent:saveAccount', async (_event, input: AccountInput) => {
     const account = await app.providers.save(input)
-    await app.harness.refreshEstateDigest()
+    await app.runtime.refreshDigest()
     return account
   })
 
   ipcMain.handle('agent:deleteAccount', async (_event, id: string) => {
     await app.providers.remove(id)
-    await app.harness.refreshEstateDigest()
+    await app.runtime.refreshDigest()
   })
 
   ipcMain.handle('agent:testAccount', (_event, id: string) => app.providers.test(id))
@@ -213,12 +211,11 @@ export function registerIpc(app: App): void {
           : thinkingFor(modelId, input.provider),
       keyRef,
     })
-    app.applyModel()
+    // Every run installs its model when it starts; nothing global to replace here.
   })
 
   ipcMain.handle('agent:clearModel', async () => {
     app.settings.setModel(null)
-    app.applyModel()
   })
 
   ipcMain.handle('agent:testModel', (_event, input?: ModelInput) => {
@@ -245,13 +242,12 @@ export function registerIpc(app: App): void {
 
   ipcMain.handle('agent:saveSettings', async (_event, patch: Partial<AppSettings>) => {
     app.settings.patch(patch)
-    if (patch.language) app.harness.setLanguage(patch.language)
     if (patch.theme) nativeTheme.themeSource = patch.theme
   })
 
-  ipcMain.handle('agent:notes', () => app.harness.notes())
+  ipcMain.handle('agent:notes', () => app.tasks.notes())
 
-  ipcMain.handle('agent:deleteNote', (_event, id: string) => app.harness.deleteNote(id))
+  ipcMain.handle('agent:deleteNote', (_event, id: string) => app.tasks.deleteNote(id))
 
   ipcMain.handle('agent:openExternal', (_event, url: string) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url)

@@ -113,7 +113,7 @@ trace first; answering puts the answer first; clarifying puts the question
 first; stopped and failed put the notice and its Retry/Continue first. The
 answer never moves once it settles. A citation opens an in-place evidence peek,
 not a permanent proof table. The run header is sticky. Save, Check again,
-Re-verify, Copy link, Export evidence and Save PDF live in the overflow.
+Re-check, Copy link, Export evidence and Save PDF live in the overflow.
 
 **Trace** is one ordered record, not a chat transcript or a card stack. A
 provider reasoning summary is a `Thought` row; when the provider omits it, the
@@ -167,6 +167,17 @@ rows with a short status before the step: confirmed uses `--ok`, not applied
 uses `--danger`, still unknown uses `--warn`. The `Markdown` chunk is lazy;
 while it loads, backticks are stripped rather than flashing raw syntax.
 
+A scripted run (an account check or a re-check) uses the same page. It has no
+question; a quiet tag says `Deterministic account check` or `Re-check`, and its
+calls are ordinary trace rows. A re-check is its own run in the task: the earlier
+answer moves under **Earlier in this task**, and the re-check opens with its
+trace expanded, because the comparison row is its result. A tool row whose
+reading changed Issues says so in its note (`rules: 1 opened · 0 resolved`); the
+model never does this.
+
+A paragraph that names a bucket the run read without citing the result that
+shows it gets one quiet line under the answer, like an unresolved citation.
+
 A code-mode result shows its rows, chart, script and output under the query's
 trace row. Byte columns render as human sizes; CSV keeps raw numbers.
 
@@ -193,7 +204,7 @@ surface that opens inside the answer.
 - `⌘N` starts a new task.
 - `⌘,` opens Settings.
 - `⌘.` stops the active run.
-- `⌘⇧R` re-verifies the open task.
+- `⌘⇧R` re-checks the open task.
 
 Dropping a file anywhere shows a dashed accent border and one centred line on
 the composer; nothing else moves. `@` opens one quiet picker above the composer;

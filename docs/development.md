@@ -38,11 +38,11 @@ Issue lifecycle (opened, resolved, gone, accepted, recurred), schema migrations,
 scope and the tool floor, code mode (sandbox, budgets, timeout, import), demo
 storage, generated change plans and impact, log normalization and IP masking,
 CSV/Parquet import and the aggregate whitelist, the search index, entry → UI
-projection, the run and Sources index, answer grounding and citation
-resolution, the run guardrails, redaction, provider capabilities, posture
+projection, the run ledger and trace reducer, structural answer validation and
+citation resolution, run guards rebuilt from durable entries, the scripted check
+answers, migration 15, redaction, provider capabilities, posture
 diffs, permission diagnosis, model windows, access evaluation, reading records
-and plan-aware re-verification. `Run.test.tsx` and `Sources.test.tsx` run in
-jsdom; the rest use Node.
+and plan-aware re-checks. `Run.test.tsx` runs in jsdom; the rest use Node.
 
 ### Domain and compatibility
 
@@ -65,12 +65,12 @@ jsdom; the rest use Node.
 
 - `scripts/e2e.mjs` builds the app and drives the real Electron window against
   `scripts/fake-s3.mjs` (delayed so a running check is observable) and
-  `scripts/fake-model.mjs`. It covers model setup and test, an account check,
-  a model answer and `Sources` index, a primary risk list, `N more risks`
-  disclosure, citation resolution, axe (serious/critical violations fail), `@`
-  focus, re-verify, access rows, accepting a risk, applying a change outside the
+  `scripts/fake-model.mjs`. It covers model setup and test, a scripted account
+  check, a model answer, findings, citation resolution, axe (serious/critical
+  violations fail), `@` focus, a re-check run, access rows, accepting a risk, applying a change outside the
   app and proving it, grounding correction, a generated change plan,
-  plan-aware re-verification, stop/continue, search, code-mode rows and the demo
+  a plan-aware re-check, stop/continue, search (including an earlier run's
+  answer), code-mode rows and the demo
   account. The audit E2E exercises the same run surface without a model.
 - `scripts/e2e-audit.mjs` starts with no model and no account, chooses demo
   storage explicitly, waits for the deterministic run, checks that the

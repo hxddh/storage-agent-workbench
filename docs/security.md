@@ -36,8 +36,9 @@
 7. **Audit.** Every executed tool call writes
    `audit(tool, target, outcome, conversation)`. A refused scope call is
    `refused`, a user-stopped call is `stopped`, and other failures are `error`.
-   Re-verification replays the read operations directly; it never asks the model
-   and never writes storage.
+   A scripted check or re-check calls the same tools through the same
+   `agentTool()`, so it is audited the same way; it never asks the model and
+   never writes storage.
 8. **Status is structured.** A call's status is written by `agentTool()` into
    `details`; nothing parses result text, which a bucket name or an error body
    could forge.
@@ -59,7 +60,7 @@
     inventory destination bucket is read.
 11. **Evidence.** The JSON pack contains redacted views, finding controls,
     coverage and read timestamps; it is written only through the user's save
-    dialog. PDF uses the same redacted page. Re-verify never calls a write API.
+    dialog. PDF uses the same redacted page. Re-check never calls a write API.
 12. **Account id.** The account-wide block needs the account id (STS); it is
     passed to S3 Control and SCP lookup and dropped. It is never stored, shown,
     sent to the model or put in a change plan. Change plans use
@@ -116,9 +117,11 @@ unread", not "this is the complete set of principals who can reach the bucket".
 - **The model is untrusted**: it can propose a change plan, never apply one; it
   cannot open, resolve or accept Issues, and its prose is never parsed as
   product state. A name in the answer that no tool returned is marked on the
-  page. A clean account claim while a run still has open reads is corrected
-  once; the page's scope line (`Not fully checked` or `open questions`) remains
-  authoritative. Tool output is wrapped as untrusted data before the model sees
+  page, and the answer gets one structural correction per run (an ungrounded
+  name, an unresolved citation, or a paragraph naming a read bucket without
+  citing it). Whether the account was fully checked is never read from the
+  prose: the scope line (`Not fully checked` or `open questions`), computed
+  from the readings, is authoritative. Tool output is wrapped as untrusted data before the model sees
   it. Links in model prose open in the system browser; the trusted window never
   navigates to one.
 - **The vault fallback is local**: without an OS keyring, the AES key file and

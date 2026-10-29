@@ -314,6 +314,30 @@ describe('tools over the estate', () => {
     expect(details.view.access?.some((item) => item.public)).toBe(true)
   })
 
+  it('shares one access session per run, and records what the rules did on the call', async () => {
+    const sessions = new Map()
+    const withSessions = { ...deps, accessSessions: sessions }
+    await run(configTool(withSessions), { bucket: 'compat-public', aspect: 'access' })
+    expect(sessions.has('c1')).toBe(true)
+    const db = await AppDb.open(
+      await openNodeSqliteDatabase(join(mkdtempSync(join(tmpdir(), 'sa-assess-')), 'db.sqlite')),
+    )
+    const fresh = { ...deps, db, providers: new Providers(db, vault), estate: new Estate(db) }
+    await fresh.providers.save({
+      name: 'Fresh',
+      endpoint: fake.endpoint,
+      region: 'us-east-1',
+      forcePathStyle: true,
+      auth: 'keys',
+      accessKeyId: 'AKIAFAKEFAKEFAKEFAKE',
+      secretAccessKey: 'secret',
+      scope: { buckets: [] },
+    })
+    const { details } = await run(surveyTool(fresh), {})
+    expect(details.assessed?.opened).toBeGreaterThan(0)
+    expect(details.key).toMatch(/^[0-9a-f]{24}$/)
+  })
+
   it('generates a batch when no bucket or code narrows it', async () => {
     await run(surveyTool(deps), {})
     const [, change] = estateTools(deps)

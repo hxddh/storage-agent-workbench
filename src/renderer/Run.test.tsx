@@ -97,7 +97,7 @@ const user = (id = 'u', text = 'Which buckets are public?'): UiEntry => ({
   attachments: [],
 })
 
-const fallback = (text: string): UiEntry => ({
+const fallback = (text: string): Extract<UiEntry, { kind: 'answer' }> => ({
   id: 'a',
   kind: 'answer',
   at: '2026-01-01T00:00:02Z',
@@ -125,7 +125,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     expect(document.querySelector('.run-question')?.textContent).toBe('Which buckets are public?')
@@ -177,7 +177,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     expect(document.querySelector('.run-work')).toBeTruthy()
@@ -206,7 +206,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: /Work/ }))
@@ -229,7 +229,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: /Work/ }))
@@ -261,7 +261,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
         onClarify={onClarify}
       />,
     )
@@ -278,7 +278,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     expect(document.querySelector('.run-proof')).toBeNull()
@@ -299,7 +299,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     expect(document.querySelector('.run-scope')?.textContent).toContain('Not read yet')
@@ -316,7 +316,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     expect(document.querySelector('.run-summary')?.textContent).toContain('Only demo is public.')
@@ -332,7 +332,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     await waitFor(() => expect(document.querySelector('.run-cite')).toBeTruthy())
@@ -351,7 +351,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     expect(screen.getByText(/One citation did not resolve/)).toBeTruthy()
@@ -361,16 +361,22 @@ describe('the run', () => {
   it('renders a deterministic check without a fake question', () => {
     render(
       <Run
-        view={view([survey, fallback('`demo` is public.')])}
+        view={view([
+          { id: 'c', kind: 'check', at: '2026-01-01T00:00:00Z', mode: 'check' },
+          survey,
+          { ...fallback('`demo` is public. [1](#ev-ev-survey)'), source: 'check' },
+        ])}
         lang="en"
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     expect(document.querySelector('.run-question')).toBeNull()
     expect(screen.getByText('Deterministic account check')).toBeTruthy()
+    // The scripted answer cites its own call, like a model's answer.
+    expect(document.querySelector('.run-cite')).toBeTruthy()
     expect(screen.getAllByText(/demo/).length).toBeGreaterThan(0)
   })
 
@@ -378,6 +384,7 @@ describe('the run', () => {
     render(
       <Run
         view={view([
+          { id: 'c', kind: 'check', at: '2026-01-01T00:00:00Z', mode: 'check' },
           survey,
           fallback('`demo` is public.'),
           user('u2', 'What changed?'),
@@ -387,7 +394,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: /Earlier in this task/ }))
@@ -416,7 +423,7 @@ describe('the run', () => {
         focusId={null}
         onRetry={() => undefined}
         onContinue={() => undefined}
-        onReverify={async () => undefined}
+        onRecheck={() => undefined}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: /Findings/ }))
