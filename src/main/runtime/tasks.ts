@@ -142,7 +142,6 @@ export class Tasks {
       .map((note) => ({
         id: note.id,
         text: note.text,
-        author: note.author,
         createdAt: note.created_at,
       }))
   }

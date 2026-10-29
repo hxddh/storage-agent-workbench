@@ -1,6 +1,6 @@
 # Read-only IAM
 
-Storage Agent never executes a write action. There is no fixed list of reads:
+Storage Agent never runs a write action. There is no fixed list of reads:
 `call` (`s3/api.ts`) can run any operation of a bundled service (S3, S3
 Control, STS, IAM, Organizations, KMS, Access Analyzer, CloudWatch,
 CloudTrail) whose name starts with Get, List, Head, Describe, Lookup, Search,
@@ -76,9 +76,9 @@ and `s3:GetObjectVersion` to keep it off object bodies; S3 Inventory import
 destination only. Narrowing `Resource` to the configured buckets and objects is
 compatible with the app's scope; it is the user's choice.
 
-`sts:GetCallerIdentity` is called when an input says `<account>` and for every
-S3 Control call, to fill in the account id. It needs no IAM permission, and the
-id is used for that call only, never returned.
+`sts:GetCallerIdentity` is called when an input says `<account>` and for an S3
+Control call that leaves out `AccountId`, to fill in the account id. It needs
+no IAM permission. The id is used for that call only and never returned.
 
 ## Where each read goes
 
@@ -89,11 +89,11 @@ and never to AWS, so its credentials do not reach AWS.
 
 ## Boundaries
 
-- Scope (`provider.scope.buckets`) is checked before any S3 or S3 Control call
-  that names a bucket, and `ListBuckets` is filtered to it. IAM is not an
-  authorization shortcut: a broad IAM policy does not make the app read
-  buckets outside the configured list. Reads of other services are not
-  filtered by bucket.
+- Scope (`scope.buckets`) is checked before any S3 or S3 Control call that
+  names a bucket, and `ListBuckets` is filtered to it. On a scoped account an
+  access point or outpost ARN is refused. A broad IAM policy does not make the
+  app read buckets outside the configured list. Reads of other services are
+  not filtered by bucket.
 - `@` context in the composer is focus only. It cannot grant access.
 - The app never stores or shows an account id. Every response is scrubbed to
   `<account>`, and ARNs in any text are redacted before they leave the main

@@ -24,7 +24,6 @@ export interface ProviderRow {
 export interface NoteRecord {
   id: string
   text: string
-  author: 'agent' | 'user'
   created_at: string
 }
 
@@ -57,7 +56,6 @@ CREATE TABLE IF NOT EXISTS providers (
 CREATE TABLE IF NOT EXISTS notes (
   id TEXT PRIMARY KEY,
   text TEXT NOT NULL,
-  author TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 
@@ -197,10 +195,9 @@ export class AppDb {
       created_at: new Date().toISOString(),
     }
     await this.raw.run(
-      'INSERT INTO notes (id, text, author, created_at) VALUES (?, ?, ?, ?)',
+      'INSERT INTO notes (id, text, created_at) VALUES (?, ?, ?)',
       record.id,
       record.text,
-      record.author,
       record.created_at,
     )
     return record

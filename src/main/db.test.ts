@@ -107,9 +107,9 @@ describe('schema', () => {
 describe('notes', () => {
   it('are plain text, newest first, and outlive the account they mention', async () => {
     const db = await open()
-    await db.insertNote({ text: 'first', author: 'agent' })
+    await db.insertNote({ text: 'first' })
     await new Promise((resolve) => setTimeout(resolve, 5))
-    await db.insertNote({ text: 'second', author: 'user' })
+    await db.insertNote({ text: 'second' })
     await db.deleteProvider('p')
     expect((await db.listNotes()).map((note) => note.text)).toEqual(['second', 'first'])
   })

@@ -24,7 +24,6 @@ export interface Table {
 export interface NoteRow {
   id: string
   text: string
-  author: 'agent' | 'user'
   createdAt: string
 }
 

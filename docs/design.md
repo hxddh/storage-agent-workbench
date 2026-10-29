@@ -92,7 +92,8 @@ fields, not a sequence of panels.
 ## Home
 
 A 30–36px heading (`What should I check?`), then the accounts the agent can
-read — one hairline row each, name and provider kind, nothing more. Home shows
+read: one hairline row each, its name and where it answers (the endpoint's
+host, or `AWS`), nothing more. Home shows
 no risk counts, coverage or "clear": what an account holds is for the agent to
 read and say in a conversation. With no account, one lede line takes the
 list's place (`No account yet. Add one, then ask.`, or, before a model exists,
@@ -113,8 +114,7 @@ Nothing on Home sends a message. The composer is inert until a model exists.
 
 A task is one thread, top to bottom in the order things happened. The app
 adds nothing of its own between the messages: no scope line, no evidence
-strips, no earlier-runs fold, no `Worked for` summary. Those 35.x surfaces were
-removed in 36.0.
+strips, no summary of the work.
 
 - **Overflow menu** — one `More actions` button, sticky at the top right of the
   column on its own row so it never covers the first message. It holds
@@ -133,7 +133,7 @@ removed in 36.0.
   (`Read`, `Ran a read-only query`, `Probed endpoint`, `Read more of a result`,
   `Updated memory`), the target in mono (`s3 GetBucketPolicy · logs`), the
   note, a status word when it did not finish (`Running`, `Failed`, `Stopped`,
-  `Outside scope`), the duration
+  `Refused`), the duration
   and a chevron. A running step is open and counts its elapsed time; a settled
   step folds to its line and opens on click. Open, it shows the argument summary
   and the typed result in a scroll area at most 420px high, then a folded
@@ -179,11 +179,9 @@ Markdown, with no tabs, Apply button or applied state. The `Markdown` chunk is
 lazy; while it loads, link targets, bold marks and backticks are stripped
 rather than flashing raw syntax.
 
-Calls to tools of earlier versions (`buckets`, `objects`, `object`, `config`,
-`account`, `survey`, `estate`, `change_plan`, `accept_risk`) keep their labels
-in older tasks; opened, they show their note and what the agent received, not
-their old typed view. So does a 36.x call the round ceiling blocked (`Did not
-run`), and its notice still reads as it did.
+A call to a tool name the registry does not hold shows under that name as a
+failed step; a call pi ended before the tool ran shows `Did not run`. Opened,
+either shows what the agent received.
 
 A code-mode result shows its chart, rows (eight at first, then `N more`; the
 window keeps up to 10,000, the agent gets all), script and output under the
@@ -216,8 +214,6 @@ steer button, and **Stop** sits beside it. A stopped turn keeps its steps;
 - `⌘.` stops the running turn.
 - `Escape` closes Settings and the compact sidebar.
 
-There is no `⌘⇧R` re-check and no risk navigation with `j` / `k` / `a`.
-
 Dropping a file anywhere shows a dashed accent border and one centred line on
 the composer (`Drop to attach`); nothing else moves. `@` opens one quiet picker
 above the composer; selected names become chips and are focus, not
@@ -229,7 +225,8 @@ Four panes: Model, Storage accounts, Memory and Appearance. The active pane is
 the top-bar title and the selected rail row. Model configuration is one form:
 provider, model, base URL, key, Save and Test. Local models are one-click
 chips. Accounts list read-only credentials and open one inline form for add or
-edit; the key fields are never pre-filled. There is no schedule setting.
+edit (name, endpoint, region, path-style, access keys or AWS profile, bucket
+scope); the key fields are never pre-filled.
 
 Memory holds the note-age setting and lists every note, each with **Forget**.
 Appearance holds language, theme and the background-notification switch.

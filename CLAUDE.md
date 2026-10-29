@@ -121,7 +121,7 @@ plan and writes any change in its own words. A new storage tool must say why
 
 Prompt sections: identity, time, policy (the hard rules),
 compose, memory digest, language. The digest names the accounts (their ids are
-tool arguments) and every note with its id and author. The model may link a call as
+tool arguments) and every note with its id. The model may link a call as
 `[1](#ev-<id>)`; a link opens that call in place. Provider reasoning is shown
 in full, as returned.
 
@@ -131,8 +131,8 @@ Host tables in `storage-agent.db`: `providers`, `notes`, `audit`, `task_meta`,
 `datasets`, `search_docs` (+ FTS5 trigram). pi's tables are prefixed `pi_`.
 `db.ts` holds one schema at `user_version` **17**. A database at any other
 version is cleared and created again, pi's tables and `tasks/` with it: the app
-carries nothing from an earlier layout, and no code reads one. A note is text,
-its author and its time. Entry kinds and payloads are in `docs/data-model.md`
+carries nothing from an earlier layout, and no code reads one. A note is text
+and its time. Entry kinds and payloads are in `docs/data-model.md`
 (`sa.run`, `sa.steer`, `sa.resume`, `sa.notice`). Deleting a task purges its pi
 rows, host task rows, datasets, audit rows and `tasks/<conversation>/` (with the
 results kept for `more`).

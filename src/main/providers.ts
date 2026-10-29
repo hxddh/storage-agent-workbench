@@ -248,7 +248,6 @@ export class Providers {
       followRegionRedirects: true,
       credentials,
       maxAttempts: 2,
-      requestHandler: { requestTimeout: 20_000, connectionTimeout: 5_000 },
     })
     this.clients.set(key, client)
     return client

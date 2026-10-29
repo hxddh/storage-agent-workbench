@@ -256,21 +256,18 @@ describe('a result longer than one piece', () => {
 })
 
 describe('memory', () => {
-  it('remembers a note without its secrets, and forgets only its own', async () => {
+  it('remembers a note without its secrets, and forgets one by id', async () => {
     const { details } = await run(noteTool(deps), {
       text: 'Logs land in cors-open. key AKIAABCDEFGHIJKLMNOP',
     })
     if (details.view?.kind !== 'note') throw new Error('expected a note view')
     expect(details.view.text).not.toContain('AKIAABCDEFGHIJKLMNOP')
     const mine = (await deps.db.listNotes()).find((note) => note.text.startsWith('Logs land'))
-    const users = await deps.db.insertNote({
-      text: 'mine',
-      author: 'user',
-    })
-    const refused = await run(noteTool(deps), { forget: users.id })
-    expect(refused.details.status).toBe('failed')
+    await deps.db.insertNote({ text: 'kept' })
+    const missing = await run(noteTool(deps), { forget: 'no-such-note' })
+    expect(missing.details.status).toBe('failed')
     const forgot = await run(noteTool(deps), { forget: mine?.id })
     expect(forgot.details.status).toBe('done')
-    expect((await deps.db.listNotes()).map((note) => note.text)).toEqual(['mine'])
+    expect((await deps.db.listNotes()).map((note) => note.text)).toEqual(['kept'])
   })
 })

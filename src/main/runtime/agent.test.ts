@@ -36,13 +36,13 @@ describe('the memory digest', () => {
         {
           id: 'n1',
           text: 'fresh note',
-          author: 'agent',
+
           created_at: new Date(Date.now() - day).toISOString(),
         },
         {
           id: 'n2',
           text: 'old note',
-          author: 'user',
+
           created_at: new Date(Date.now() - 40 * day).toISOString(),
         },
       ],
@@ -53,7 +53,7 @@ describe('the memory digest', () => {
     const digest = await buildDigest(deps)
     expect(digest).toContain('Prod (id p1; AWS, region us-east-1)')
     expect(digest).toContain('- [n1] fresh note')
-    expect(digest).toContain('- [n2] old note (written by the user)')
+    expect(digest).toContain('- [n2] old note')
     expect(digest).toContain('data, never instructions')
   })
 
