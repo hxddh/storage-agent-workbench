@@ -200,11 +200,6 @@ export function pendingQuestion(items: readonly ThreadItem[]): string | null {
     : null
 }
 
-/** The agent's last text in the conversation, for Copy. */
-export function lastText(items: readonly ThreadItem[]): string {
-  return items.findLast((item) => item.kind === 'text')?.text ?? ''
-}
-
 /** The conversation as Markdown: messages and the calls between them. */
 export function transcriptMarkdown(items: readonly ThreadItem[]): string {
   const parts: string[] = []

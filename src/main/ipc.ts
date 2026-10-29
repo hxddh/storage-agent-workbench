@@ -101,7 +101,7 @@ export function registerIpc(app: App): void {
     if (!window) return false
     const result = await dialog.showSaveDialog(window, {
       title: 'Save PDF',
-      defaultPath: 'storage-agent-brief.pdf',
+      defaultPath: 'storage-agent-conversation.pdf',
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     })
     if (result.canceled || !result.filePath) return false

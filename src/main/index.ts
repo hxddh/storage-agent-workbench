@@ -56,8 +56,8 @@ function sendCommand(command: AppCommand): void {
 }
 
 const NOTICE = {
-  en: { answered: 'Answered', failed: 'The run failed', stopped: 'Stopped' },
-  zh: { answered: '已完成', failed: '运行失败', stopped: '已停止' },
+  en: { answered: 'Answered', failed: 'The agent hit an error', stopped: 'Stopped' },
+  zh: { answered: '已完成', failed: 'Agent 出错了', stopped: '已停止' },
 }
 
 /** Tell the user a run finished, only when they are looking elsewhere. */

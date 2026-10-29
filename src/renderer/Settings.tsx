@@ -11,7 +11,7 @@ import type {
 } from '@shared/contract'
 import { Brain, Cloud, Cpu, Palette, Plus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { type Dict, dict, fill } from './i18n'
+import { type Dict, dict, fill, kindName } from './i18n'
 import { useFocusTrap } from './lib/focus'
 
 type Provider = ModelProvider
@@ -78,18 +78,7 @@ export function Settings({
       : schedule === 'weekly'
         ? t.schedule_weekly
         : t.schedule_off
-  const kindLabel = (kind: Account['kind']) =>
-    kind === 'aws'
-      ? t.kind_aws
-      : kind === 'r2'
-        ? t.kind_r2
-        : kind === 'minio'
-          ? t.kind_minio
-          : kind === 'aliyun'
-            ? t.kind_aliyun
-            : kind === 'gcs'
-              ? t.kind_gcs
-              : t.kind_other
+  const kindLabel = (kind: Account['kind']) => kindName(t, kind)
   const [provider, setProvider] = useState<Provider>(
     (boot.model?.provider as Provider) ?? 'compatible',
   )

@@ -541,11 +541,3 @@ export type RuleAspect = 'security' | 'lifecycle' | 'observability'
 export function aspectsOf(aspect: RuleAspect): string[] {
   return ASPECT_RULES[aspect]
 }
-
-/** Which storage reading decides a rule; null for the account-scoped rule. */
-export function aspectOfCode(code: string): RuleAspect | null {
-  for (const aspect of Object.keys(ASPECT_RULES) as RuleAspect[]) {
-    if (ASPECT_RULES[aspect].includes(code)) return aspect
-  }
-  return null
-}

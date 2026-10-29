@@ -38,7 +38,7 @@ try {
     await fail('the composer accepted free-form input without a model')
 
   await demo.click()
-  await page.waitForSelector('.home-ledger-row', { timeout: 30_000 })
+  await page.waitForSelector('.home-account', { timeout: 30_000 })
   await page.waitForTimeout(800)
   if (await page.locator('.conversation').count())
     await fail('adding the demo without a model started a conversation')

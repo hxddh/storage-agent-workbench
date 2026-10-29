@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { Severity } from '@shared/contract'
 import { detectProviderKind } from './s3/capabilities'
@@ -176,7 +175,6 @@ CREATE TABLE IF NOT EXISTS audit (
   outcome TEXT NOT NULL,
   at TEXT NOT NULL
 );
-
 
 CREATE TABLE IF NOT EXISTS task_meta (
   conversation_id TEXT PRIMARY KEY,
@@ -714,14 +712,6 @@ export class AppDb {
         )
   }
 
-  async countOpenedSinceAll(since: string): Promise<number> {
-    const row = await this.raw.get<{ n: number }>(
-      "SELECT count(*) AS n FROM issues WHERE status = 'open' AND opened_at > ?",
-      since,
-    )
-    return row?.n ?? 0
-  }
-
   async listBuckets(providerId: string): Promise<BucketRow[]> {
     return this.raw.all<BucketRow>(
       'SELECT * FROM buckets WHERE provider_id = ? AND gone_at IS NULL ORDER BY name',
@@ -1250,8 +1240,4 @@ export class AppDb {
   async deleteDataset(id: string): Promise<void> {
     await this.raw.run('DELETE FROM datasets WHERE id = ?', id)
   }
-}
-
-export function databasePath(userData: string): string {
-  return join(userData, 'storage-agent.db')
 }

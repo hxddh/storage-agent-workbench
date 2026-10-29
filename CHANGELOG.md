@@ -23,7 +23,11 @@ into report sections. 35.x tasks open as conversations.
   confirmation, and only your click accepts or reopens it. The estate lists each
   Issue's rule code so the agent can name it.
 - **Survey steps say what a read resolved** (`· n resolved`).
-- **Home copy** no longer says a model is optional.
+- **Home lists the accounts and nothing about them.** The risk ledger (open
+  high/total, last complete reading, new risks since, "clear") was the app's own
+  verdict on an account; it is gone. Readings stay as the agent's memory.
+- **Home copy** no longer says a model is optional; "Recent runs" is "Recent
+  tasks", and notices say the agent stopped or hit an error.
 
 ### Removed
 

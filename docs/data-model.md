@@ -49,9 +49,9 @@ or secret. `complete = 1` only when the turn left nothing open for that account:
 no pending, truncated, denied or unknown bucket, no permission gap, blind spot,
 failed read, access gap or undecided rule (`readState()` in `shared/ledger.ts`).
 Every row 36 writes has `trigger = 'task'`; `estate` history shows older `check`
-and `reverify` rows as `checked` and `rechecked`. Home selects each
-account's latest complete row and the newest complete row overall; `estate`
-history includes up to 30 reading rows in an unfiltered view.
+and `reverify` rows as `checked` and `rechecked`. Only the agent reads them:
+`estate` uses each account's latest complete row, and its history includes up
+to 30 reading rows in an unfiltered view. The window does not show readings.
 
 `task_meta.model_json` is a per-task model override (`provider`, `modelId`,
 `baseUrl`, `thinking`); null means the model in Settings. The provider key is

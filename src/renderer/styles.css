@@ -592,9 +592,6 @@ button {
 .plan-status.unknown {
   color: var(--warn);
 }
-.plan-status.confirmed {
-  color: var(--ok);
-}
 .plan-row .chev {
   color: var(--ink-3);
   transition: transform var(--fast) var(--ease);
@@ -646,9 +643,6 @@ button {
   margin: 0;
   font-size: 12.5px;
   color: var(--danger);
-}
-.verdict.stale {
-  opacity: 0.55;
 }
 .check-field {
   display: flex;
@@ -2046,16 +2040,31 @@ pre.code {
   font-weight: 570;
   color: var(--ink);
 }
-.home-estate {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+.home-accounts {
+  list-style: none;
   margin: 2px 0 26px;
+  padding: 0;
+  border-top: 1px solid var(--line-strong);
 }
-.home-change {
-  margin: 5px 0 0;
-  color: var(--warn);
-  font-size: 12px;
+.home-account {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.home-account-name {
+  color: var(--ink);
+  font-weight: 530;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.home-account-kind {
+  color: var(--ink-3);
+  white-space: nowrap;
 }
 .home-lede {
   margin: 0 0 28px;
@@ -2553,75 +2562,11 @@ pre.code {
   }
 }
 
-.home-ledger-head,
-.home-ledger-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) 92px minmax(0, 1.2fr) minmax(0, 1.1fr);
-  gap: 16px;
-  align-items: baseline;
-}
-
-.home-ledger-head {
-  padding: 0 0 7px;
-  border-bottom: 1px solid var(--line-strong);
-  color: var(--ink-3);
-  font-size: 10.75px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.home-ledger-row {
-  padding: 9px 0;
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.home-ledger-name {
-  color: var(--ink);
-  font-weight: 530;
-  letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
-}
-
-.home-ledger-number {
-  color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
-}
-
-.home-ledger-meta,
-.home-ledger-risk {
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-
-.home-ledger-risk {
-  color: var(--ink-2);
-}
-
-@media (max-width: 860px) {
-  .home-ledger-head {
-    display: none;
-  }
-  .home-ledger-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 2px 12px;
-  }
-  .home-ledger-number {
-    text-align: right;
-  }
-  .home-ledger-meta,
-  .home-ledger-risk {
-    grid-column: 1 / -1;
-  }
-}
-
 @media (min-width: 861px) {
   .sidebar-close {
     display: none;
   }
-  /* The sidebar already lists these tasks; Home stays a ledger on desktop. */
+  /* The sidebar already lists these tasks; Home does not repeat them on desktop. */
   .home-recent {
     display: none;
   }

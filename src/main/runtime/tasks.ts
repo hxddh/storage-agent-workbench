@@ -272,11 +272,8 @@ export class Tasks {
       if (this.active) this.active.entries = entries
       let start = Math.max(0, entries.length - INITIAL_ENTRIES)
       if (focus) {
-        const source = focus.startsWith('f:')
-          ? focus.slice(2).split(':')[0]
-          : focus.startsWith('answer:')
-            ? focus.slice('answer:'.length)
-            : focus
+        // 35.x search rows named an answer `answer:<entry>`.
+        const source = focus.startsWith('answer:') ? focus.slice('answer:'.length) : focus
         const index = entries.findIndex((entry) => entry.id === source || entry.id === focus)
         if (index >= 0) start = Math.max(0, index - 20)
       }

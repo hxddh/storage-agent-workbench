@@ -1,14 +1,7 @@
 import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
-import type {
-  AppEvent,
-  Bootstrap,
-  EstateOverview,
-  ModelInput,
-  TaskSummary,
-  UpdateState,
-} from '@shared/contract'
+import type { AppEvent, Bootstrap, ModelInput, TaskSummary, UpdateState } from '@shared/contract'
 import { app } from 'electron'
 import { AppDb } from './db'
 import { Estate } from './estate/estate'
@@ -163,36 +156,9 @@ export class App {
           }
         : null,
       settings: this.settings.public(),
-      overview: await this.overview(),
       update: this.update,
       lastTaskId: lastTaskId && tasks.some((task) => task.id === lastTaskId) ? lastTaskId : null,
     }
-  }
-
-  /** A quiet account summary: no dashboard, no chart, no per-bucket table. */
-  async overview(): Promise<EstateOverview> {
-    const accounts = await this.providers.list()
-    const summary = []
-    let lastCompleteRead: string | null = null
-    for (const account of accounts) {
-      const buckets = await this.db.listBuckets(account.id)
-      const complete = await this.db.latestCompleteReading(account.id)
-      if (complete && (!lastCompleteRead || complete.at > lastCompleteRead))
-        lastCompleteRead = complete.at
-      const openTotal = await this.db.countOpenIssues(account.id)
-      const openHigh = await this.db.countOpenHigh(account.id)
-      summary.push({
-        id: account.id,
-        name: account.name,
-        kind: account.kind,
-        buckets: buckets.length,
-        lastCompleteRead: complete?.at ?? null,
-        openHigh,
-        openTotal,
-      })
-    }
-    const changesSince = lastCompleteRead ? await this.db.countOpenedSinceAll(lastCompleteRead) : 0
-    return { accounts: summary, lastCompleteRead, changesSince }
   }
 
   async testModel(input?: ModelInput): Promise<{ ok: boolean; detail: string }> {

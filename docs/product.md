@@ -26,11 +26,11 @@ question.`
 
 ## Home
 
-Home is a quiet estate ledger, not a dashboard:
+Home is a starting point, not a dashboard:
 
-- one row per account with remembered bucket count, the last complete reading
-  (or `no complete reading`) and open high/total risk;
-- a line for new risks since the latest complete reading;
+- the accounts the agent can read, one row each with its name and provider
+  kind. Home shows no risk counts, coverage or verdict; asking is how you learn
+  what an account holds;
 - **Check account**, when a model is set;
 - on narrow windows, where the task list is an overlay, recent tasks, five at
   most, as quiet one-line links; the desktop sidebar already holds them;

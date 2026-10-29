@@ -194,7 +194,7 @@ export class Runtime {
     return tierFor(stored.contextWindow > 0 ? stored.contextWindow : contextFor(stored.modelId))
   }
 
-  /** Append an entry the model does not answer: a notice, a scripted call, a check's result. */
+  /** Append an entry the model does not answer: a notice. */
   async write(
     conversation: Conversation,
     kind: string,

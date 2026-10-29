@@ -1,7 +1,7 @@
 import type { Bootstrap, LocalModel, TaskSummary } from '@shared/contract'
 import { Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { dict, fill } from './i18n'
+import { dict, fill, kindName } from './i18n'
 
 function ago(iso: string | null, lang: 'en' | 'zh'): string {
   if (!iso) return lang === 'zh' ? '尚未读取' : 'not read yet'
@@ -39,7 +39,6 @@ export function Home({
 }) {
   const lang = boot.settings.language
   const t = dict(lang)
-  const overview = boot.overview
   const hasModel = Boolean(boot.model)
   const hasAccount = boot.accounts.length > 0
   const [local, setLocal] = useState<LocalModel[]>([])
@@ -83,43 +82,15 @@ export function Home({
         <h1>{t.homeTitle}</h1>
         {hasAccount ? (
           <>
-            <div className="home-estate">
-              <div className="home-ledger-head" aria-hidden="true">
-                <span>{t.homeAccount}</span>
-                <span>{t.homeBuckets}</span>
-                <span>{t.homeLastRead}</span>
-                <span>{t.homeRisk}</span>
-              </div>
-              {overview.accounts.map((account) => {
-                const risk =
-                  account.buckets === 0
-                    ? t.homeUnsurveyed
-                    : account.openHigh > 0
-                      ? `${account.openHigh} ${t.homeHigh} · ${account.openTotal} ${t.homeOpen}`
-                      : account.openTotal > 0
-                        ? `${account.openTotal} ${t.homeOpen}`
-                        : t.homeClear
-                return (
-                  <div className="home-ledger-row" key={account.id}>
-                    <span className="home-ledger-name">{account.name}</span>
-                    <span className="home-ledger-number">
-                      {account.buckets === 0 ? '—' : `${account.buckets} ${t.bucketsShort}`}
-                    </span>
-                    <span className="home-ledger-meta">
-                      {account.lastCompleteRead
-                        ? fill(t.homeComplete, { when: ago(account.lastCompleteRead, lang) })
-                        : t.homeNoComplete}
-                    </span>
-                    <span className="home-ledger-risk">{risk}</span>
-                  </div>
-                )
-              })}
-              {overview.changesSince > 0 && (
-                <p className="home-change">
-                  {t.homeChanges.replace('{n}', String(overview.changesSince))}
-                </p>
-              )}
-            </div>
+            {/* The accounts the agent can read. What they hold is for the agent to read and say. */}
+            <ul className="home-accounts" aria-label={t.homeAccounts}>
+              {boot.accounts.map((account) => (
+                <li className="home-account" key={account.id}>
+                  <span className="home-account-name">{account.name}</span>
+                  <span className="home-account-kind">{kindName(t, account.kind)}</span>
+                </li>
+              ))}
+            </ul>
             <div className="home-actions">
               {hasModel && (
                 <button

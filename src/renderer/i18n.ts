@@ -121,13 +121,6 @@ const en = {
   homeNoEstate: 'No account yet. Try the demo or add an account, then ask.',
   homeNoModel:
     'The agent needs a model to read your storage. Set one up, and add the demo or an account.',
-  homeHigh: 'high risk',
-  homeOpen: 'open',
-  homeClear: 'clear',
-  homeUnsurveyed: 'not read yet',
-  homeNoComplete: 'no complete reading',
-  homeComplete: 'last complete read {when}',
-  homeChanges: '{n} new risks since the last complete reading.',
   scopeHint: 'Comma-separated bucket names. Empty means every bucket the credentials can see.',
   providerKind: 'Provider',
   providerKindHint:
@@ -169,7 +162,6 @@ const en = {
   stopped: 'stopped',
   fatal: 'The app could not start. Check the log and reopen it.',
   showTasks: 'Tasks',
-  bucketsShort: 'buckets',
   noIssues: 'No open risks.',
   search: 'Search',
   searchPlaceholder: 'Search tasks',
@@ -223,8 +215,8 @@ const en = {
   edit: 'Edit',
   reasoning: 'Reasoning',
   noticeStopped: 'Stopped. What was read is kept.',
-  noticeNoAnswer: 'The run ended without an answer.',
-  noticeFailed: 'The run failed.',
+  noticeNoAnswer: 'The agent stopped without replying.',
+  noticeFailed: 'The agent hit an error.',
   noticeBudget: 'The step budget ran out.',
   noticeModelMissing: 'Choose a model in Settings first.',
   remembered: 'remembered',
@@ -266,11 +258,8 @@ const en = {
   runLoadingEarlier: 'Loading earlier entries…',
   closeSettings: 'Close settings',
   runNoAnswer: 'The agent has not composed an answer yet.',
-  homeAccount: 'Account',
-  homeBuckets: 'Buckets',
-  homeLastRead: 'Last complete read',
-  homeRisk: 'Open risk',
-  homeRecent: 'Recent runs',
+  homeAccounts: 'Accounts',
+  homeRecent: 'Recent tasks',
   runWorkRunning: 'Running',
   runWorkDone: 'Done',
   runWorkFailed: 'Failed',
@@ -398,13 +387,6 @@ const zh: typeof en = {
   unpin: '取消置顶',
   homeNoEstate: '还没有账号。先用演示存储或添加账号，再提问。',
   homeNoModel: 'Agent 需要一个模型才能读取存储。先配置模型，再添加演示存储或账号。',
-  homeHigh: '项高风险',
-  homeOpen: '项待处理',
-  homeClear: '没有未解决的风险',
-  homeUnsurveyed: '尚未读取',
-  homeNoComplete: '尚无完整读取',
-  homeComplete: '完整读取于 {when}',
-  homeChanges: '自上次完整读取以来新增 {n} 项风险。',
   scopeHint: '用逗号分隔桶名。留空表示凭据能看到的全部桶。',
   providerKind: '提供方',
   providerKindHint: '自动会读取接入点。提供方决定哪些账号、IAM、KMS、CloudTrail 和清单读取可用。',
@@ -445,7 +427,6 @@ const zh: typeof en = {
   stopped: '已停止',
   fatal: '应用无法启动。请查看日志后重开。',
   showTasks: '任务',
-  bucketsShort: '个桶',
   noIssues: '没有未解决的风险。',
   search: '搜索',
   searchPlaceholder: '搜索任务',
@@ -499,8 +480,8 @@ const zh: typeof en = {
   edit: '编辑',
   reasoning: '推理中',
   noticeStopped: '已停止。已读取的内容会保留。',
-  noticeNoAnswer: '这次运行没有给出答案。',
-  noticeFailed: '这次运行失败了。',
+  noticeNoAnswer: 'Agent 停下了，没有回复。',
+  noticeFailed: 'Agent 出错了。',
   noticeBudget: '步骤预算已用完。',
   noticeModelMissing: '请先在设置里选择模型。',
   remembered: '记忆',
@@ -542,11 +523,8 @@ const zh: typeof en = {
   runLoadingEarlier: '正在加载更早记录…',
   closeSettings: '关闭设置',
   runNoAnswer: 'agent 还没有组成回答。',
-  homeAccount: '账号',
-  homeBuckets: '桶',
-  homeLastRead: '最近完整读取',
-  homeRisk: '未解决风险',
-  homeRecent: '最近运行',
+  homeAccounts: '账号',
+  homeRecent: '最近任务',
   runWorkRunning: '运行中',
   runWorkDone: '已完成',
   runWorkFailed: '失败',
@@ -565,6 +543,21 @@ export type Dict = typeof en
 
 export function dict(lang: Lang): Dict {
   return lang === 'zh' ? zh : en
+}
+
+/** The provider kind as the window names it. */
+export function kindName(t: Dict, kind: string): string {
+  return kind === 'aws'
+    ? t.kind_aws
+    : kind === 'r2'
+      ? t.kind_r2
+      : kind === 'minio'
+        ? t.kind_minio
+        : kind === 'aliyun'
+          ? t.kind_aliyun
+          : kind === 'gcs'
+            ? t.kind_gcs
+            : t.kind_other
 }
 
 export function fill(template: string, values: Record<string, string | number>): string {

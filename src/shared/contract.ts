@@ -567,25 +567,6 @@ export type UpdateState =
   /** This platform's release feed is missing; updates cannot be checked. */
   | { state: 'unavailable' }
 
-export interface AccountOverview {
-  id: string
-  name: string
-  kind: ProviderKind
-  buckets: number
-  /** The latest complete Reading for this account; null means none is proven. */
-  lastCompleteRead: string | null
-  openHigh: number
-  openTotal: number
-}
-
-export interface EstateOverview {
-  accounts: AccountOverview[]
-  /** The latest complete Reading across accounts. */
-  lastCompleteRead: string | null
-  /** Open Issues opened since the latest complete Reading. */
-  changesSince: number
-}
-
 export interface Bootstrap {
   version: string
   platform: string
@@ -593,7 +574,6 @@ export interface Bootstrap {
   accounts: Account[]
   model: ModelSettings | null
   settings: AppSettings
-  overview: EstateOverview
   update: UpdateState
   /** The task open when the window last closed. */
   lastTaskId: string | null
@@ -674,42 +654,4 @@ export interface AgentApi {
   openExternal(url: string): Promise<void>
   onEvent(listener: (event: AppEvent) => void): () => void
   onCommand(listener: (command: AppCommand) => void): () => void
-}
-
-export const TOOL_LABEL: Record<ToolName, string> = {
-  survey: 'Surveyed account',
-  buckets: 'Listed buckets',
-  objects: 'Listed objects',
-  object: 'Inspected object',
-  config: 'Reviewed configuration',
-  probe: 'Probed endpoint',
-  estate: 'Checked memory',
-  change_plan: 'Prepared a change plan',
-  note: 'Remembered',
-  query: 'Ran a read-only query',
-  skill: 'Read a method',
-  plan: 'Published a plan',
-  ask: 'Asked a question',
-  accept_risk: 'Asked to accept a risk',
-}
-
-/** Capability groups used by the prompt and documentation, not another tool. */
-export const TOOL_GROUP: Record<
-  ToolName,
-  'read' | 'query' | 'memory' | 'change_plan' | 'plan' | 'skill' | 'ask'
-> = {
-  survey: 'read',
-  buckets: 'read',
-  objects: 'read',
-  object: 'read',
-  config: 'read',
-  probe: 'read',
-  estate: 'memory',
-  change_plan: 'change_plan',
-  note: 'memory',
-  query: 'query',
-  skill: 'skill',
-  plan: 'plan',
-  ask: 'ask',
-  accept_risk: 'memory',
 }

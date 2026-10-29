@@ -60,8 +60,8 @@ and the trace reducer (`shared/trace.ts`) were removed in 36.0.
 `shared/ledger.ts` folds a task's entries into the current turn's ledger: the
 turn boundary (the latest user message; a steer joins the running turn), call
 keys and attempts, coverage, blind spots and undecided rules. `readState()`
-turns it into one read status used by Home's reading records. The ledger is
-never shown in the conversation.
+turns it into one read status stored in the reading records `estate` history
+returns to the agent. The ledger is never shown in the window.
 
 The agent's hooks rebuild that ledger from durable entries
 (`runtime/agent.ts` → `runView()`), so a restart or a resumed turn has the same
@@ -192,7 +192,7 @@ Coverage, unread sources and truncation stay in the view.
 | `shared/conversation.ts` | the one projection: thread, newest plan per turn, citation lookup, search rows, Markdown transcript |
 | `renderer/Conversation.tsx` | the thread: messages, steps, plan, question, confirmation, notices, overflow menu, task model |
 | `renderer/Composer.tsx` | message, steer, stop, files, `@` focus, the live status strip |
-| `renderer/Home.tsx` | estate ledger, Check account, demo and model setup |
+| `renderer/Home.tsx` | accounts list, Check account, demo and model setup |
 | `renderer/Views.tsx` | typed views of tool results |
 
 ## Storage layout

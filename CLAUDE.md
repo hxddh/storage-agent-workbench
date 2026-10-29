@@ -76,8 +76,8 @@ One engine, one log, one projection (`docs/architecture.md`).
   after a failure, and the round budget (**14 small, 24 mid, 32 large**,
   counted from the turn's assistant entries).
 - **Ledger** (`shared/ledger.ts`): the turn boundary, calls by argument key,
-  coverage; `readState()` feeds the guards and the readings Home shows. It is
-  never shown in the conversation.
+  coverage; `readState()` feeds the reading records `estate` history returns.
+  It is never shown in the window.
 - **Conversation** (`shared/conversation.ts`): the one projection the window,
   search and export use: an ordered thread of messages, text, thoughts, calls,
   questions, confirmations and notices, plus the live slot.

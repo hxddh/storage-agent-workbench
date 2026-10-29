@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import type { Chart, Table } from '@shared/contract'
+import type { Table } from '@shared/contract'
 
 export type DatasetKind = 'access_log' | 'inventory'
 
@@ -236,21 +236,4 @@ export function countRows(path: string, kind: DatasetKind): number {
   } finally {
     db.close()
   }
-}
-
-export function tableFromAggregate(result: AggregateResult): Table {
-  if (result.groups) {
-    return {
-      columns: [result.groupBy ?? 'group', result.metric],
-      rows: result.groups.map((group) => [group.group, group.value]),
-      truncated: result.truncated,
-    }
-  }
-  return { columns: [result.metric], rows: [[result.value ?? null]] }
-}
-
-export function chartFromAggregate(result: AggregateResult, unit?: string): Chart | null {
-  if (!result.groups || result.groups.length < 2) return null
-  const top = result.groups.slice(0, 10)
-  return { type: 'bar', labels: top.map((g) => g.group), values: top.map((g) => g.value), unit }
 }

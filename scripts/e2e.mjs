@@ -147,7 +147,7 @@ try {
   if ((await page.locator('.account-name').count()) < 1) await fail('account was not saved')
   await checkA11y('settings')
   await page.getByRole('button', { name: 'Close settings' }).click()
-  await page.waitForSelector('.home-ledger-row', { timeout: 5_000 })
+  await page.waitForSelector('.home-account', { timeout: 5_000 })
   console.log('HOME OVERVIEW OK')
   await checkA11y('home')
 

@@ -54,8 +54,7 @@ Version in this tree: **36.0.0**.
   button.
 - **Re-read after a fix.** Tell the agent you applied a change; it re-reads the
   bucket, the rules decide again, and the survey step says how many Issues the
-  read resolved. Only a later read shows that a step was applied. A reading
-  record on Home keeps the last complete read and the new risks since it.
+  read resolved. Only a later read shows that a step was applied.
 - **Accept a risk in the conversation.** Ask the agent to accept a risk; it
   calls `accept_risk` with the bucket and rule code, and the window shows a
   confirmation card. Only your click on **Accept risk** (or **Reopen**) changes

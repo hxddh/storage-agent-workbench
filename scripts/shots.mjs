@@ -67,7 +67,7 @@ await page.locator('.settings-content').evaluate((element) => {
 await page.waitForTimeout(350)
 await page.screenshot({ path: join(out, '02-settings-light.png') })
 await page.getByRole('button', { name: 'Close settings' }).click()
-await page.waitForSelector('.home-ledger-row', { timeout: 5_000 })
+await page.waitForSelector('.home-account', { timeout: 5_000 })
 await page.waitForTimeout(350)
 await page.screenshot({ path: join(out, '01b-home-configured-light.png') })
 /** Send a message and wait for the agent to finish its turn. */

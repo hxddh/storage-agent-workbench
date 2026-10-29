@@ -91,11 +91,11 @@ fields, not a sequence of panels.
 
 ## Home
 
-A quiet estate ledger: a 30–36px heading (`What should I check?`), one row per
-account with remembered bucket count, the last complete reading and high/total
-risk, a line for new risks since the latest complete reading, and **Check
-account** when a model is set. The compact layout stacks the row's metadata; the
-bucket count carries its unit. With no account, the choices are **Try with demo
+A 30–36px heading (`What should I check?`), the accounts the agent can read —
+one hairline row each, name and provider kind, nothing more — and **Check
+account** when a model is set. Home shows no risk counts, coverage or "clear":
+what an account holds is for the agent to read and say in a conversation. With
+no account, the choices are **Try with demo
 storage** and **Add an account**; before a model exists **Set up a model** is a
 secondary text action and the lede says the agent needs a model to read
 storage. A configured account with no model offers **Add an account** and **Set
@@ -160,8 +160,8 @@ removed in 36.0.
   when a later reading proved the risk fixed it says `A later reading proved
   this fixed.` Only this click accepts.
 - **Notices** — one line with a dot (`--danger` for an error): `Stopped. What
-  was read is kept.` with **Continue**; `The run failed.` or `The run ended
-  without an answer.` with **Retry**, followed by the provider's error text when
+  was read is kept.` with **Continue**; `The agent hit an error.` or `The agent
+  stopped without replying.` with **Retry**, followed by the provider's error text when
   there is one; `The step budget ran out.`; `Choose a model in Settings first.`
 - **Dividers** — `Continued this task` where a stopped turn was resumed, and
   `Earlier steps were compacted` where pi compacted the context; quiet centred
