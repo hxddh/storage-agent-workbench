@@ -36,6 +36,14 @@ export interface RunAnswer {
   contradicted: string[]
 }
 
+export interface RunClarify {
+  id: string
+  at: string
+  question: string
+  options: string[]
+  note: string | null
+}
+
 export interface RunEvidence {
   id: string
   /** The UiEntry id, for revealing the matching check. */
@@ -51,6 +59,7 @@ export interface RunEvidence {
 export interface RunModel {
   question: { id: string; text: string; at: string } | null
   plan: RunPlan | null
+  clarify: RunClarify | null
   answer: RunAnswer | null
   facts: RunFacts
   evidence: RunEvidence[]
@@ -114,6 +123,14 @@ function answerOf(
   }
 }
 
+export function currentRunEntries(entries: readonly UiEntry[]): UiEntry[] {
+  let start = 0
+  entries.forEach((entry, index) => {
+    if (entry.kind === 'user') start = index
+  })
+  return entries.slice(start)
+}
+
 export function buildRun(
   entries: readonly UiEntry[],
   live?: Live | null,
@@ -144,13 +161,32 @@ export function buildRun(
       }
   })
 
+  let clarify: RunClarify | null = null
+  entries.forEach((entry, index) => {
+    if (
+      entry.kind !== 'tool' ||
+      entry.name !== 'ask' ||
+      entry.status !== 'done' ||
+      entry.view?.kind !== 'question' ||
+      index < lastQuestionIndex
+    )
+      return
+    clarify = {
+      id: entry.id,
+      at: entry.at,
+      question: entry.view.question,
+      options: entry.view.options,
+      note: entry.view.note ?? null,
+    }
+  })
+
   const audit = facts.questions.length === 0 && facts.checks.length > 0
   const answer = answerOf(facts, evidence, audit)
 
   const counts: Record<Severity, number> = { high: 0, medium: 0, low: 0 }
   for (const finding of facts.findings) counts[finding.severity] += 1
 
-  return { question, plan, answer, facts, evidence, counts, audit }
+  return { question, plan, clarify, answer, facts, evidence, counts, audit }
 }
 
 export interface RunTurn {

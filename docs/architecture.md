@@ -38,8 +38,9 @@ surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
 4. `submit` writes a `sa.user` entry and starts pi's generation task. A running
    call is projected from `pi.live.tools` (name, target, progress, start time).
    When it settles, the tool result becomes a `pi.tool-result` entry carrying
-   `details` (`{ target, note, progress, view, ms, status }`); live progress is a
-   redacted, bounded `progress` field, never the raw tool output. `agentTool()` writes the status (`done`, `failed`, `refused`,
+   `details` (`{ target, note, progress, args, view, ms, status }`); live progress
+   and the call's bounded, redacted argument summary are shaped fields, never raw
+   tool output. `agentTool()` writes the status (`done`, `failed`, `refused`,
    `timeout`, `stopped`); the projection never parses result text for it.
 5. Hooks guard the run. `beforeTool` blocks a repeated storage read and any
    call after the model tier's round budget (14 small, 24 mid, 32 large).
@@ -154,10 +155,10 @@ and truncation stay in the view.
 | `shared/audit.ts` | deterministic account-check summary from survey views |
 | `shared/facts.ts` | entries → deterministic facts (risks, methods, coverage, change plans, data, tool calls) |
 | `shared/activity.ts` | current-turn work: reasoning summary, live/durable calls, compaction, resume |
-| `shared/run.ts` | optional plan + final Markdown answer + citation and evidence resolution |
+| `shared/run.ts` | current-run boundary, optional plan, clarification, final Markdown answer and citation/evidence resolution |
 | `shared/grounding.ts` | names and exposure a task's results show; correction input |
 | `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details, evidence id |
-| `main/tools/control.ts` | `plan` and `skill` control tools |
+| `main/tools/control.ts` | `plan`, `skill` and `ask` control tools |
 | `main/s3/facts.ts` | one reading per bucket, exposure, rememberable posture |
 | `main/s3/policy.ts` | local policy evaluation, TLS enforcement |
 | `main/s3/account.ts` | account-wide public access block (STS, S3 Control) |
@@ -177,9 +178,9 @@ and truncation stay in the view.
 | `main/window-state.ts` | window bounds in `window.json`, clamped to a display |
 | `renderer/Sidebar.tsx` | task list, search, rename, pin, delete |
 | `renderer/Home.tsx` | account summary, demo/local-model entry |
-| `renderer/Run.tsx` | run header, optional plan, live/settled Work, final Markdown answer, cited proof, Sources, copy/save/export |
-| `renderer/Activity.tsx` | Work ledger: reasoning row, call rows, statuses, expandable shaped results |
-| `renderer/Sources.tsx` | one compact source index: risks, data, change plan, tool calls, not read, re-check, changes, methods |
+| `renderer/Run.tsx` | run header, answer-first canvas, live/settled Work, in-place evidence peek, Sources, copy/save/export |
+| `renderer/Activity.tsx` | Work ledger: reasoning row, call rows, argument summaries, statuses, expandable shaped results, live plan |
+| `renderer/Sources.tsx` | current-run evidence drawer: risks, data, change plan, tool calls, not read, re-check, changes, methods; resolved task memory |
 | `main/skills.ts` | four on-demand methods; documentation, not checks |
 | `renderer/Composer.tsx` | request, steer, stop, @ focus, files |
 | `renderer/Settings.tsx` | model, accounts, memory, appearance, version |

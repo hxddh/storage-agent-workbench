@@ -88,6 +88,7 @@ describe('entry projection', () => {
             details: {
               target: 'Demo',
               note: '2 buckets',
+              args: '{"provider_id":"p1"}',
               view: { kind: 'buckets', rows: { columns: ['Bucket'], rows: [['a']] } },
               ms: 12,
             },
@@ -102,6 +103,7 @@ describe('entry projection', () => {
       name: 'survey',
       target: 'Demo',
       status: 'done',
+      args: '{"provider_id":"p1"}',
       ms: 12,
     })
     if (out[0]?.kind !== 'tool') throw new Error('expected a tool entry')

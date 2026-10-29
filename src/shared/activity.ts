@@ -28,6 +28,7 @@ export type ActivityItem =
       name: ToolName
       target: string
       note: string | null
+      args: string | null
       durationMs: number | null
       evidenceId?: string
       callId?: string
@@ -56,6 +57,7 @@ function toolOf(entry: Extract<UiEntry, { kind: 'tool' }>): ActivityItem {
     name: entry.name,
     target: entry.target,
     note: entry.note,
+    args: entry.args ?? null,
     durationMs: entry.ms,
     ...(entry.evidenceId ? { evidenceId: entry.evidenceId } : {}),
     ...(entry.callId ? { callId: entry.callId } : {}),
@@ -91,7 +93,12 @@ export function buildActivity(entries: readonly UiEntry[], live?: Live | null): 
       })
       continue
     }
-    if (entry.kind === 'tool' && entry.name !== 'plan' && entry.name !== 'skill') {
+    if (
+      entry.kind === 'tool' &&
+      entry.name !== 'plan' &&
+      entry.name !== 'skill' &&
+      entry.name !== 'ask'
+    ) {
       if (entry.callId) seenCalls.add(entry.callId)
       items.push(toolOf(entry))
       continue
@@ -128,7 +135,7 @@ export function buildActivity(entries: readonly UiEntry[], live?: Live | null): 
       })
     }
     for (const tool of live.tools) {
-      if (tool.name === 'plan' || tool.name === 'skill') continue
+      if (tool.name === 'plan' || tool.name === 'skill' || tool.name === 'ask') continue
       if (tool.callId && seenCalls.has(tool.callId)) continue
       items.push({
         kind: 'tool',
@@ -139,6 +146,7 @@ export function buildActivity(entries: readonly UiEntry[], live?: Live | null): 
         name: tool.name,
         target: tool.target,
         note: tool.note,
+        args: tool.args ?? null,
         durationMs: null,
         ...(tool.callId ? { callId: tool.callId } : {}),
         view: null,

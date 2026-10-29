@@ -105,23 +105,25 @@ The composer is inert until a model exists; the account can still be checked.
 ## The run
 
 Top to bottom: a 12.5px scope line (`Demo · All 2 buckets checked · 2m ago`),
-the question at 24px, Copy and the overflow menu, a collapsed **Earlier in this
-task** history, an optional plan, the open **Work** ledger while live, the final
-answer in Markdown, the collapsed `Worked for …` row, one primary proof or the
-primary risk list, and one **Sources** disclosure. The first cited tool result is
-the proof; without one, the latest data read or change plan stands in. The run
-header is sticky. Save, Check again, Re-verify, Copy link, Export evidence and
-Save PDF live in the overflow.
+the question at 24px, Copy answer and the overflow menu, a collapsed **Earlier
+in this task** history, notices, an optional clarification, the final answer in
+Markdown, the open **Work** ledger, and one on-demand **Sources** drawer. The
+answer is first in every state; settling never moves it. A citation opens an
+in-place evidence peek, not a permanent proof table. The run header is sticky.
+Save, Check again, Re-verify, Copy link, Export evidence and Save PDF live in
+the overflow.
 
 **Work** is one activity ledger, not a chat transcript or a card stack. A
 provider reasoning summary is a collapsed `Thought` row with its text visible on
 the row and full text on open; when the provider omits it, the row says so and
 no replacement narrative is invented. Each tool row keeps one identity from
-running to done, with a state mark, `verb target`, shaped note, duration and one
-chevron. The current row is open while live; completed rows collapse. A failed,
-stopped or timed-out row stays in place with its status and note. A tool result
-opens in a bounded scroll area using the same typed view as Sources. At settle,
-the answer leads and Work is a single line; opening it restores the same order.
+running to done, with a state mark, `verb target`, shaped argument summary, note,
+duration and one chevron. The current row is open while live; completed rows
+collapse. A failed, stopped or timed-out row stays in place with its status and
+note. A tool result opens in a bounded scroll area using the same typed view as
+Sources. Plan is a block inside Work while live or stopped with a blocked step;
+there is no separate plan section. At settle, the answer leads and Work is a
+single line; opening it restores the same order.
 
 The scope line is the one place that makes coverage visible before the user
 reads the answer. It says `Not fully checked: n` (plus `m blocked` when some
@@ -159,8 +161,7 @@ no empty evidence frame is rendered.
 exist: Risks, Data, Change plan, Tool calls, Not checked, Checked again, Changes
 and Methods. Each row carries a count; a hairline separates rows; one chevron
 marks the open row. Opening one section closes the previous one. The whole index
-folds behind one `Sources` toggle. The primary risk list and Sources Risks are
-not both open by default.
+folds behind one `Sources` toggle. There is no primary risk list and no permanent proof table; Sources is on demand.
 
 A change plan is one hairline list, not a stack of cards. Its summary names the
 baseline, steps, buckets, manual merges and residual risks; the baseline is one
@@ -186,7 +187,8 @@ While a run is live, Work is open and the status strip above the composer shows
 a pulsing accent dot, the current phase and target and elapsed time. The current
 call is open in place; every earlier call stays above it. When work settles,
 Work folds to `Worked for … · n calls` and the answer becomes primary. A stopped
-run keeps Work and its plan; Continue resumes in the same task.
+run keeps Work and its plan; Continue resumes in the same task. A citation's
+in-place peek is the only evidence surface that opens inside the answer.
 
 ### Keyboard and pointer
 

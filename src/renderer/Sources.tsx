@@ -1,4 +1,4 @@
-import type { Lang, Table, TaskView, ToolName, ToolView, Usage } from '@shared/contract'
+import type { Lang, Table, TaskView, ToolName, ToolView, UiEntry, Usage } from '@shared/contract'
 import type {
   CallFact,
   ChangePlanFact,
@@ -18,6 +18,7 @@ import {
   FileText,
   List,
   ListChecks,
+  MessageCircleQuestion,
   Radar,
   Shield,
   StickyNote,
@@ -51,6 +52,7 @@ const ICONS: Record<ToolName, typeof Radar> = {
   query: Code2,
   skill: BookOpen,
   plan: ListChecks,
+  ask: MessageCircleQuestion,
 }
 
 const FINDINGS_SHOWN = 5
@@ -485,7 +487,7 @@ function CheckRow({
   const Icon = ICONS[check.name] ?? Activity
   // The call row is the audit surface; every settled view can open here, even
   // when the same result is the primary proof above.
-  const expandable = Boolean(check.view) && check.status !== 'running'
+  const expandable = Boolean(check.view || check.args) && check.status !== 'running'
   const shown = duration(check.ms)
   const status =
     check.status === 'failed'
@@ -518,9 +520,10 @@ function CheckRow({
         {shown && <span className="time">{shown}</span>}
         {expandable && <ChevronRight size={13} className={`chev ${open ? 'open' : ''}`} />}
       </button>
-      {open && check.view && (
+      {open && (
         <div className="check-body">
-          <ToolViewBody view={check.view as ToolView} t={t} taskTitle={taskTitle} />
+          {check.args && <p className="check-args mono">{check.args}</p>}
+          {check.view && <ToolViewBody view={check.view as ToolView} t={t} taskTitle={taskTitle} />}
         </div>
       )}
     </div>
@@ -627,6 +630,8 @@ function SourceRow({
 
 export function Sources({
   view,
+  entries,
+  historyEntries,
   lang,
   focusId,
   staleDays = 7,
@@ -634,6 +639,8 @@ export function Sources({
   hideChange = false,
 }: {
   view: TaskView
+  entries?: readonly UiEntry[]
+  historyEntries?: readonly UiEntry[]
   lang: Lang
   focusId: string | null
   staleDays?: number
@@ -642,9 +649,16 @@ export function Sources({
 }) {
   const t = dict(lang)
   const brief = useMemo(
-    () => deriveFacts(view.entries, view.live, view.issueStatus),
-    [view.entries, view.live, view.issueStatus],
+    () => deriveFacts(entries ?? view.entries, view.live, view.issueStatus),
+    [entries, view.entries, view.live, view.issueStatus],
   )
+  // The current run owns its evidence; a resolved fold is task memory: it
+  // needs the earlier observation that the current read proved fixed.
+  const history = useMemo(
+    () => deriveFacts(historyEntries ?? entries ?? view.entries, null, view.issueStatus),
+    [historyEntries, entries, view.entries, view.issueStatus],
+  )
+  const resolved = history.resolved
   const [open, setOpen] = useState<SourceSection | null>(null)
   const [openCheck, setOpenCheck] = useState<string | null>(null)
   const [allFindings, setAllFindings] = useState(false)
@@ -670,7 +684,7 @@ export function Sources({
     brief.findings.length > 0 && brief.findings.every((finding) => finding.source === 'memory')
   const shownRisks = brief.findings.length + brief.accepted.length
   const ruleTitle = (plan: ChangePlanFact) =>
-    [...brief.findings, ...brief.accepted, ...brief.resolved].find(
+    [...brief.findings, ...brief.accepted, ...resolved].find(
       (finding) => finding.bucket === plan.view.bucket && finding.code === plan.view.code,
     )?.title ?? plan.view.code.replace(/_/g, ' ')
   const accept = (finding: RiskFact) =>
@@ -892,16 +906,12 @@ export function Sources({
           ))}
         </Fold>
       )}
-      {brief.resolved.length > 0 && (
+      {resolved.length > 0 && (
         <Fold
           tone="ok"
-          label={
-            brief.resolved.length === 1
-              ? t.fixedOne
-              : fill(t.fixedCount, { n: brief.resolved.length })
-          }
+          label={resolved.length === 1 ? t.fixedOne : fill(t.fixedCount, { n: resolved.length })}
         >
-          {brief.resolved.map((finding) => (
+          {resolved.map((finding) => (
             <p className="resolved-row" key={finding.key}>
               <span className="mono">{finding.bucket}</span> · {finding.title}
             </p>

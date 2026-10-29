@@ -1,8 +1,8 @@
 # Product
 
 Storage Agent is a local, read-only agent for object storage. It answers by
-reading an account, remembers what it read, and projects the result as a run:
-the agent's plan, the answer it composed, and the evidence behind it. It is not
+reading an account, remembers what it read, and projects the latest result as a run:
+the answer it composed, the work behind it, and the evidence behind that. It is not
 a console, a dashboard, a ticket system or a chat product.
 
 ## The surfaces
@@ -11,7 +11,8 @@ a console, a dashboard, a ticket system or a chat product.
    relative time, rename, pin, delete and Settings. A new task starts empty; a
    deterministic account check also appears here. The task open at quit opens at
    launch.
-2. **Task** — one run, not a transcript. The page scrolls; the composer stays.
+2. **Task** — durable history of runs, not a transcript. The page shows the
+   latest run; the composer stays.
    The evidence index is folded inside this one page; there is no separate
    evidence page.
 3. **Settings** — a full-screen sheet closed with the **X** at its top-left, for
@@ -70,15 +71,15 @@ risk. It stores no request, answer text, policy or secret.
 ## A model task
 
 - The request is recorded immediately; the run is durable.
-- While it runs, Work appears immediately. A tool call appears when it starts
-  and shows its real progress (`3 of 12 buckets`); it settles in place. A
-  provider reasoning summary appears as `Thought`; an omitted summary stays
+- While it runs, Work appears below the answer. A tool call appears when it
+  starts and shows its real progress (`3 of 12 buckets`); it settles in place.
+  A provider reasoning summary appears as `Thought`; an omitted summary stays
   explicitly omitted. Completed, failed, stopped and timed-out calls remain in
   order. Work folds to one `Worked for …` row when the answer settles.
 - The agent may publish a short plan; it updates as the work changes. The plan
-  is visible while the run is in flight and folds away when a normal answer
-  settles. It stays for a stopped run or a blocked step. A plan is optional: a
-  direct answer does not need one.
+  lives inside Work while the run is in flight, and remains there for a stopped
+  run or a blocked step. It is not a separate page section. A plan is optional:
+  a direct answer does not need one.
 - While it works, a draft answer and the current plan are visible; the finished
   answer replaces the draft.
 - When the evidence is ready, the agent writes its final response in normal
@@ -118,43 +119,37 @@ Top to bottom:
    time when they apply. The scope line is one of `All n buckets checked`,
    `All n buckets checked · x open questions · y blocked`,
    `Not fully checked: n`, `From memory · …`, `Live read · …`,
-   `Based on a reading · …` or `Not read yet`. Copy and one overflow menu sit
-   here. A failed or stopped storage read keeps the line open. A narrowed
+   `Based on a reading · …` or `Not read yet`. Copy answer and one overflow menu
+   sit here. A failed or stopped storage read keeps the line open. A narrowed
    re-read never turns an account-wide gap into a complete reading. Severity
    counts live with the risk list, not in the header.
 2. **Notices** — stopped, failed, no-answer, model-missing and budget notices,
    with Retry or Continue where they apply. They sit outside the sources fold.
-3. **Plan** — the agent's own 1–6 steps, commonly 3–6, with pending, active,
-   done and blocked states. It is intent, not evidence: it is visible while the
-   run is live, remains for a stopped run or a blocked step, and is absent when
-   the agent did not publish one. A settled answer does not carry the finished
-   checklist.
-4. **Work** — the current turn's one activity ledger, open while the run is
-   live. A provider reasoning summary appears as a collapsed `Thought` row when
-   the provider returned one; an omitted summary is shown honestly, never
-   invented. Every running and completed tool call has a stable row with status,
-   target, shaped result note and duration. Opening a call shows its result;
-   failures, stopped calls and compaction stay in place. After the answer
-   settles, Work collapses to one `Worked for … · n calls` row before the proof.
-   It reopens in the same order.
-5. **Answer** — the agent's final response, normal Markdown. Inline citations
-   use `[1](#ev-<evidence id>)`. The window resolves every citation against the
-   task's tool evidence, leaves a broken one as plain text and adds a quiet
-   warning. There is no answer tool and no report block language. A final
-   response with no citation is still a complete answer.
-6. **Primary proof** — the first cited tool result stands beside the answer;
-   without a citation, the latest data read, otherwise the latest change plan.
-   When there is no proof and the task has risks, the current risk list is shown
-   here instead. It is not duplicated below unless the user opens Sources.
-7. **Sources** — one compact index, not a second page. Its rows are
-   **Risks**, **Data**, **Change plan**, **Tool calls**, **Not checked**,
-   **Checked again**, **Changes** and **Methods** when they exist. Only one
-   section opens at a time. The index appears with its counts, and opening a
-   section is a disclosure, not navigation. A deterministic check uses the same
-   component. The tool-call section is an audit receipt; the live and primary
-   process is Work.
+3. **Clarification** — when a request is genuinely ambiguous, the agent may
+   end the run with one `ask` question and 2–4 concrete options. The composer
+   remains the answer surface; the next user reply starts the next run.
+4. **Answer** — the agent's final response, normal Markdown, is the first
+   content. Inline citations use `[1](#ev-<evidence id>)`. Clicking one opens an
+   in-place evidence peek; the full record is in Sources. The window validates
+   every citation, leaves a broken one as plain text and adds a quiet warning.
+   There is no answer tool and no report block language. A response with no
+   citation is still complete and does not invent a proof table.
+5. **Work** — the current run's one activity ledger, below the answer. While
+   live it is open: provider reasoning summary, running and completed tool
+   calls, status, target, shaped argument summary, note and duration. Plan is a
+   block inside Work while live or stopped with a blocked step; it is not a
+   separate page section. Opening a call shows its typed result. After the
+   answer settles Work collapses to one `Worked for … · n calls` row and reopens
+   in the same order; failed, stopped and timed-out calls stay in place.
+6. **Sources** — one on-demand evidence drawer below Work, not a second page.
+   Its rows are **Risks**, **Data**, **Change plan**, **Tool calls**, **Not
+   checked**, **Checked again**, **Changes** and **Methods** when they exist.
+   Only one section opens at a time. Risks, data and checks are current-run
+   evidence; a resolved fold may use the earlier observation that the current
+   read proved fixed. A deterministic check uses the same component. The
+   tool-call section is an audit receipt; Work is the process narrative.
 
-Copy and a single overflow menu are always visible in the run header. The
+Copy answer and a single overflow menu are always visible in the run header. The
 overflow contains save Markdown, check again, re-verify, copy task link, export
 evidence and save PDF. Sources and PDF include the current risks, accepted and
 fixed folds, read timestamps and redacted views; there is no secret or

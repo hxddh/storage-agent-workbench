@@ -68,6 +68,16 @@ function plan(body) {
     return { text: 'The readings do not show that name.' }
   }
 
+  if (ask.includes('clarify') && !called.has('ask')) {
+    return {
+      tool: call('call_ask_1', 'ask', {
+        question: 'Which account should I read?',
+        options: ['Demo', 'Production'],
+        note: 'The scope changes the evidence.',
+      }),
+    }
+  }
+
   if (ask.includes('access method') && !called.has('skill')) {
     return { tool: call('call_skill_1', 'skill', { name: 'access' }) }
   }

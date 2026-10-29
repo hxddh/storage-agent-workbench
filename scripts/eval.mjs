@@ -343,13 +343,16 @@ async function readBrief(page) {
     return true
   }
 
+  const work = page.locator('.run-work-head')
+  if ((await work.count()) && (await work.getAttribute('aria-expanded')) === 'false') await work.click()
+  const planShown = (await page.locator('.run-work-plan').count()) > 0
   await openSources()
   const base = await page.evaluate(() => {
     const text = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
     return {
       verdict: text(document.querySelector('.verdict')),
       ungrounded: [...document.querySelectorAll('.verdict code.ungrounded')].map(text),
-      fixShown: Boolean(document.querySelector('.plan')) || Boolean(document.querySelector('.brief-section .tabs')),
+      fixShown: Boolean(document.querySelector('.run-work-plan')) || Boolean(document.querySelector('.brief-section .tabs')),
     }
   })
 
@@ -382,7 +385,7 @@ async function readBrief(page) {
   if (await openSection('methods'))
     methods = await page.locator('.method-title').allInnerTexts()
 
-  let fixShown = base.fixShown
+  let fixShown = base.fixShown || planShown
   if (await openSection('change')) {
     fixShown = fixShown || (await page.locator('.plan, .brief-section .tabs').count()) > 0
   }

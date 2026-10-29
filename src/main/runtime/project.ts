@@ -57,6 +57,7 @@ const TOOL_NAMES = new Set<ToolName>([
   'query',
   'skill',
   'plan',
+  'ask',
 ])
 
 function iso(timestamp: number | undefined): string {
@@ -123,6 +124,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
             target: check.target,
             status: check.status,
             note: check.note,
+            args: check.args ?? null,
             ms: check.ms,
             view: check.view,
             evidenceId: `${id}:${index}`,
@@ -189,6 +191,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
           : message.isError
             ? blockedNote(textOf(message))
             : null,
+        args: details?.args ?? null,
         ms: details?.ms ?? message.durationMs ?? null,
         view: details?.view ?? null,
         callId: message.toolCallId,
@@ -273,6 +276,7 @@ export class LiveTracker {
         name,
         target: details?.target ?? '',
         note: details?.progress ?? details?.note ?? null,
+        args: details?.args ?? null,
         status,
         startedAt: since,
       })

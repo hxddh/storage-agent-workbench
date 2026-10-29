@@ -1,3 +1,36 @@
+## 33.0.0 — 2026-10-29
+
+The run is answer-first. The current request owns its evidence; the answer is the
+first content; process and evidence stay available without becoming a report.
+
+### Changed
+
+- **Run boundary.** A task can hold several runs. The latest user request (or a
+  deterministic check) owns the current run; scope, data, coverage, checks,
+  grounding and citations come from that run. Earlier runs remain compact
+  history, not hidden evidence for the current answer.
+- **Answer-first canvas.** The permanent proof table is gone. An answer without
+  a citation no longer invents one. A citation opens its evidence in place;
+  Sources is one on-demand drawer below the answer.
+- **One process surface.** Plan lives inside Work while a run is live or stopped
+  with a blocked step; it is no longer a separate page section. Work is below
+  the answer in every state, so settling no longer moves the answer.
+- **Honest task memory.** A resolved fold may use the earlier observation that
+  the current read proved fixed; open findings, data and checks remain scoped to
+  the current run.
+- **Clarify.** The new `ask` control tool ends the run with one question and
+  2–4 options. The composer remains the answer surface; no follow-up prompt or
+  chat transcript is introduced.
+- **Inspectable calls.** Shaped tool details now carry a bounded, redacted
+  argument summary; Work and Tool calls show it on demand. Header Copy copies
+  only the answer; Save page still includes the evidence record.
+
+### Verification
+
+- Typecheck, Biome, 223 unit tests, build, contrast, bundle budget, full E2E,
+  no-model E2E, smoke eval, axe, cold-start performance and the 29-state visual
+  suite.
+
 ## 32.0.0 — 2026-10-27
 
 The run is a work surface, not a blank page with a footer status. The user can

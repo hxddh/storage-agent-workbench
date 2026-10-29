@@ -1,5 +1,6 @@
 import type { ActivityItem, Activity as ActivityModel } from '@shared/activity'
 import type { Lang, Live, ToolStatus } from '@shared/contract'
+import type { RunPlan } from '@shared/run'
 import { Check, ChevronRight, Circle, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { type Dict, fill, toolLabel } from './i18n'
@@ -27,6 +28,36 @@ function ActivityMark({ status }: { status: ToolStatus }) {
   if (status === 'failed' || status === 'timeout' || status === 'refused')
     return <TriangleAlert className="activity-mark bad" size={13} aria-hidden="true" />
   return <Circle className="activity-mark" size={8} aria-hidden="true" />
+}
+
+function PlanBlock({ plan, t }: { plan: RunPlan; t: Dict }) {
+  return (
+    <div className="run-work-plan">
+      <div className="run-work-plan-head">
+        <span className="run-section-title">{t.runPlanTitle}</span>
+        <span className="run-section-note">{plan.note ?? t.runAgentPlan}</span>
+      </div>
+      <ol className="run-plan-list">
+        {plan.steps.map((step, index) => (
+          <li key={`${step.title}:${index}`} className={`run-step ${step.status}`}>
+            <span className="run-step-mark" aria-hidden="true">
+              {step.status === 'done' ? (
+                <Check size={12} />
+              ) : step.status === 'blocked' ? (
+                <TriangleAlert size={12} />
+              ) : step.status === 'active' ? (
+                <LoaderCircle size={12} className="pulse-icon" />
+              ) : (
+                <Circle size={9} />
+              )}
+            </span>
+            <span className="run-step-title">{step.title}</span>
+            {step.detail && <span className="run-step-detail">{step.detail}</span>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
 }
 
 function Row({
@@ -120,13 +151,20 @@ function Row({
             <p className="activity-thought">
               {item.text ? item.text : running ? t.runWorkReasoningWaiting : t.runWorkNoReasoning}
             </p>
-          ) : item.kind === 'tool' && item.view ? (
-            <ToolViewBody view={item.view} t={t} taskTitle={taskTitle} limit={8} />
-          ) : item.kind === 'tool' && running ? (
-            <p className="quiet">{t.runWorkWaiting}</p>
-          ) : item.kind === 'tool' && note ? (
-            <p className="activity-detail-note">{note}</p>
-          ) : null}
+          ) : (
+            <>
+              {item.kind === 'tool' && item.args && (
+                <p className="activity-args mono">{item.args}</p>
+              )}
+              {item.kind === 'tool' && item.view ? (
+                <ToolViewBody view={item.view} t={t} taskTitle={taskTitle} limit={8} />
+              ) : item.kind === 'tool' && running ? (
+                <p className="quiet">{t.runWorkWaiting}</p>
+              ) : item.kind === 'tool' && note ? (
+                <p className="activity-detail-note">{note}</p>
+              ) : null}
+            </>
+          )}
         </div>
       )}
     </li>
@@ -142,6 +180,7 @@ function Row({
 export function Work({
   activity,
   live,
+  plan,
   open,
   onToggle,
   t,
@@ -150,6 +189,7 @@ export function Work({
 }: {
   activity: ActivityModel
   live: Live | null
+  plan: RunPlan | null
   open: boolean
   onToggle: () => void
   t: Dict
@@ -164,7 +204,7 @@ export function Work({
     return () => clearInterval(timer)
   }, [live])
 
-  if (!live && activity.items.length === 0) return null
+  if (!live && activity.items.length === 0 && !plan) return null
 
   const active = [...activity.items]
     .reverse()
@@ -186,7 +226,9 @@ export function Work({
       ? calls
       : activity.items.some((item) => item.kind === 'reasoning')
         ? t.runWorkReasoning
-        : null,
+        : plan
+          ? t.runPlanTitle
+          : null,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -212,11 +254,14 @@ export function Work({
         {!live && <ChevronRight size={13} className={`chev ${open ? 'open' : ''}`} />}
       </button>
       {open && (
-        <ol className="activity-list">
-          {activity.items.map((item) => (
-            <Row key={item.id} item={item} t={t} lang={lang} taskTitle={taskTitle} now={now} />
-          ))}
-        </ol>
+        <>
+          {plan && <PlanBlock plan={plan} t={t} />}
+          <ol className="activity-list">
+            {activity.items.map((item) => (
+              <Row key={item.id} item={item} t={t} lang={lang} taskTitle={taskTitle} now={now} />
+            ))}
+          </ol>
+        </>
       )}
     </section>
   )

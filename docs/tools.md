@@ -1,13 +1,15 @@
 # Tools
 
-Twelve tools in one pi extension (`runtime/agent.ts`), grouped by capability:
-**read**, **query**, **memory**, **change_plan**, **plan** and **skill**. Read
+Thirteen tools in one pi extension (`runtime/agent.ts`), grouped by capability:
+**read**, **query**, **memory**, **change_plan**, **plan**, **skill** and
+**clarify**. Read
 tools go through `agentTool()`, which applies account scope, a timeout, an audit
 row, redaction and the untrusted-data envelope, and attaches a typed `view`, a
 `status` (`done`, `failed`, `refused`, `timeout`, `stopped`) and an `evidenceId`.
 
-`plan` and `skill` are control tools. They shape the run and never read storage.
-`change_plan` generates text from remembered Issues; the app never applies it.
+`plan`, `skill` and `ask` are control tools. They shape the run and never read
+storage. `change_plan` generates text from remembered Issues; the app never
+applies it.
 
 | Group | Tool | Input | Model output | View |
 |---|---|---|---|---|
@@ -21,8 +23,9 @@ row, redaction and the untrusted-data envelope, and attaches a typed `view`, a
 | memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with age, Issues, notes; with `history`, Issue events, posture changes and reading events | bucket table, Issues, notes, optional history table |
 | memory | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
 | change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
-| plan | `plan` | `steps` (1–6), `note?` | optional plan recorded | pending/active/done/blocked steps |
+| plan | `plan` | `steps` (1–6), `note?` | optional plan recorded | pending/active/done/blocked steps, inside Work while live or stopped with a blocker |
 | skill | `skill` | `name?` | one method, or the four methods | not a check; shown under Methods |
+| clarify | `ask` | `question` (≤300), `options` (1–4), `note?` | one question; the run ends until the user answers | question and options; composer is the answer surface |
 
 ## Answer and sources
 
@@ -33,21 +36,22 @@ actual evidence id from the `<untrusted-data evidence="…">` tag, for example
 every citation, leaves an unresolved one as plain text and shows a quiet note.
 The model never writes a table of facts.
 
-**Work** is the current-turn activity ledger. While live it is open: a provider
-reasoning summary if one exists, the running call and every completed call with
-its status, target, shaped result note and duration. Live progress comes from
-`ToolDetails.progress`, a redacted and bounded field; raw tool output never
-reaches this surface. Opening a call shows its typed result. After the answer
-settles Work collapses to `Worked for … · n calls` and reopens in the same order;
-failed, stopped and timed-out calls stay in place.
+**Work** is the current run's activity ledger below the answer. While live it is
+open: a provider reasoning summary if one exists, the running call and every
+completed call with its status, target, shaped argument summary, result note and
+duration. Live progress comes from `ToolDetails.progress`, a redacted and
+bounded field; raw tool output never reaches this surface. Opening a call shows
+its typed result. Plan is a block inside Work while the run is live or stopped
+with a blocked step. After the answer settles Work collapses to
+`Worked for … · n calls` and reopens in the same order; failed, stopped and
+timed-out calls stay in place.
 
-The window shows one proof: the first cited tool result, otherwise the latest
-data read, otherwise the latest change plan. When there is no proof, the current
-risk list stands in its place. `Sources` is one compact index below the answer.
-Risks, Data, Change plan, Tool calls, Not checked, Checked again, Changes and
-Methods appear only when they have content; one row opens one section. The
-**Tool calls** section is the audit receipt, not the live Work narrative. There
-is no legacy report block path.
+An answer without a citation has no proof table. A citation opens an in-place
+evidence peek; `Sources` is one on-demand drawer below Work. Risks, Data, Change
+plan, Tool calls, Not checked, Checked again, Changes and Methods appear only
+when they have content; one row opens one section. The **Tool calls** section is
+the audit receipt, not the live Work narrative. There is no legacy report block
+path.
 
 ## Code mode (`query`)
 
@@ -90,9 +94,9 @@ calls row.
 ## Plan
 
 `plan` is optional. Use it when the work has several distinct steps; omit it for
-a short read. It renders 1–6 steps with pending/active/done/blocked states and
-folds away when a normal answer settles. A stopped run keeps it and offers
-Continue.
+a short read. It renders 1–6 steps with pending/active/done/blocked states inside
+Work while the run is live or stopped with a blocked step. A settled normal
+answer does not carry a separate plan section; Work is the one process surface.
 
 ## Rules the tools enforce
 

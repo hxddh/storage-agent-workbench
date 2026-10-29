@@ -31,6 +31,16 @@ export interface ToolRun {
 
 export class ScopeError extends Error {}
 
+/** One bounded, redacted line of the arguments the model supplied. */
+function argsSummary(args: unknown): string | null {
+  try {
+    const text = JSON.stringify(args)
+    return text && text !== '{}' ? redact(text).slice(0, 240) : null
+  } catch {
+    return null
+  }
+}
+
 export function assertInScope(provider: ProviderConfig, bucket: string): void {
   if (provider.scope.buckets.length === 0) return
   if (!provider.scope.buckets.includes(bucket)) {
@@ -83,6 +93,7 @@ export function agentTool<T extends TSchema>(
       const timeout = AbortSignal.timeout(def.timeoutMs)
       const signal = context.abortSignal ? AbortSignal.any([context.abortSignal, timeout]) : timeout
       const conversationId = String(api.conversationId)
+      const callArgs = argsSummary(args)
       let regional: ((region: string) => S3Client) | undefined
       let progressNote: string | null = null
       let detailsWrite = Promise.resolve()
@@ -97,6 +108,7 @@ export function agentTool<T extends TSchema>(
         target: value,
         note: null,
         progress: progressNote,
+        args: callArgs,
         view: null,
         ms: null,
         status: 'running',
@@ -138,6 +150,7 @@ export function agentTool<T extends TSchema>(
         const details: ToolDetails = {
           target: redact(result.target ?? target),
           note: result.note ? redact(result.note) : null,
+          args: callArgs,
           view: redactView(result.view) as ToolView,
           ms: Date.now() - started,
           status: 'done',
@@ -185,6 +198,7 @@ export function agentTool<T extends TSchema>(
                   ? 'Timed out'
                   : redact(message).slice(0, 160),
           view: null,
+          args: callArgs,
           ms: Date.now() - started,
           status,
           ...(evidenceId ? { evidenceId } : {}),

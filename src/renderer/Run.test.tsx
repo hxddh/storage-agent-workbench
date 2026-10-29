@@ -117,7 +117,7 @@ afterEach(() => {
 })
 
 describe('the run', () => {
-  it('renders the answer, its primary evidence and no settled plan', () => {
+  it('renders the answer first, with no automatic proof and no settled plan block', () => {
     render(
       <Run
         view={view([user(), plan, survey, fallback('Only `demo` is public.')])}
@@ -130,10 +130,17 @@ describe('the run', () => {
     )
     expect(document.querySelector('.run-question')?.textContent).toBe('Which buckets are public?')
     expect(screen.getByText(/Only/)).toBeTruthy()
-    expect(document.querySelector('.run-proof table')).toBeTruthy()
+    expect(document.querySelector('.run-proof')).toBeNull()
     expect(screen.queryByText('Read the account')).toBeNull()
     expect(screen.getByRole('button', { name: /Work/ })).toBeTruthy()
     expect(screen.getByText(/Worked for/)).toBeTruthy()
+    const answer = document.querySelector('.run-answer')
+    const work = document.querySelector('.run-work')
+    expect(
+      answer && work && answer.compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Work/ }))
+    expect(screen.queryByText('Read the account')).toBeNull()
     expect(document.querySelector('.run-evidence-wrap')?.className).toContain('is-collapsed')
     fireEvent.click(screen.getByRole('button', { name: /Sources/ }))
     expect(document.querySelector('.run-evidence-wrap')?.className).not.toContain('is-collapsed')
@@ -176,6 +183,11 @@ describe('the run', () => {
       />,
     )
     expect(document.querySelector('.run-work')).toBeTruthy()
+    const answer = document.querySelector('.run-answer')
+    const work = document.querySelector('.run-work')
+    expect(
+      answer && work && answer.compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     expect(screen.getByText('Read account')).toBeTruthy()
     expect(screen.getByText('3 of 4')).toBeTruthy()
     expect(screen.getByText('Reviewed configuration')).toBeTruthy()
@@ -204,7 +216,40 @@ describe('the run', () => {
     expect(screen.getAllByText('Check the public access block before concluding.')).toHaveLength(2)
   })
 
-  it('shows the latest reading when the answer has no citation', () => {
+  it('renders a clarifying question and sends its chosen option', () => {
+    const onClarify = vi.fn()
+    const ask: UiEntry = {
+      id: 'ask',
+      kind: 'tool',
+      at: '2026-01-01T00:00:01Z',
+      name: 'ask',
+      target: 'clarify',
+      status: 'done',
+      note: null,
+      ms: 0,
+      view: {
+        kind: 'question',
+        question: 'Which account should I read?',
+        options: ['Demo', 'Production'],
+      },
+    }
+    render(
+      <Run
+        view={view([user(), ask])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+        onClarify={onClarify}
+      />,
+    )
+    expect(screen.getByText('Which account should I read?')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Production' }))
+    expect(onClarify).toHaveBeenCalledWith('Production')
+  })
+
+  it('does not invent a proof when the answer has no citation', () => {
     render(
       <Run
         view={view([user(), survey, fallback('One bucket is public.')])}
@@ -215,7 +260,31 @@ describe('the run', () => {
         onReverify={async () => undefined}
       />,
     )
-    expect(document.querySelector('.run-proof table')).toBeTruthy()
+    expect(document.querySelector('.run-proof')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Sources/ }))
+    expect(screen.getByText('Data')).toBeTruthy()
+  })
+
+  it('scopes the run to the latest request instead of reusing old evidence', () => {
+    render(
+      <Run
+        view={view([
+          user(),
+          survey,
+          fallback('Only `demo` is public.'),
+          user('u2', 'What changed?'),
+        ])}
+        lang="en"
+        focusId={null}
+        onRetry={() => undefined}
+        onContinue={() => undefined}
+        onReverify={async () => undefined}
+      />,
+    )
+    expect(document.querySelector('.run-scope')?.textContent).toContain('Not read yet')
+    expect(document.querySelector('.run-proof')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Sources/ })).toBeNull()
+    expect(screen.queryByText('Bucket is publicly accessible')).toBeNull()
   })
 
   it('accepts normal assistant prose as the answer', () => {
@@ -235,7 +304,7 @@ describe('the run', () => {
     expect(screen.getByText('Bucket is publicly accessible')).toBeTruthy()
   })
 
-  it('renders an inline citation and opens its check', async () => {
+  it('renders an inline citation and opens its evidence peek', async () => {
     render(
       <Run
         view={view([user(), survey, fallback('Only `demo` is public [1](#ev-ev-survey).')])}
@@ -248,6 +317,9 @@ describe('the run', () => {
     )
     await waitFor(() => expect(document.querySelector('.run-cite')).toBeTruthy())
     fireEvent.click(document.querySelector('.run-cite')!)
+    expect(document.querySelector('.run-peek')).toBeTruthy()
+    expect(document.querySelector('.run-peek table')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Open in sources/ }))
     expect(document.querySelector('.run-evidence-wrap')?.className).not.toContain('is-collapsed')
   })
 

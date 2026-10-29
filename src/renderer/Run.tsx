@@ -6,9 +6,12 @@ import {
   type TaskView,
   type ToolView,
 } from '@shared/contract'
-import type { NoticeFact, RiskFact } from '@shared/facts'
+import type { NoticeFact } from '@shared/facts'
+import { deriveFacts } from '@shared/facts'
 import {
   buildRun,
+  currentRunEntries,
+  type RunClarify,
   type RunEvidence,
   type RunModel,
   type RunTurn,
@@ -18,21 +21,18 @@ import {
 import {
   AlertTriangle,
   ArrowDownToLine,
-  Check,
-  ChevronDown,
   ChevronRight,
-  Circle,
   Copy,
   Link2,
-  LoaderCircle,
   MoreHorizontal,
   Radar,
+  X,
 } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Work } from './Activity'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
-import { FindingRow, factsMarkdown, noticeText, Sources } from './Sources'
+import { factsMarkdown, noticeText, Sources } from './Sources'
 import { scopeText } from './scope'
 import { ago } from './time'
 import { AccessChain, ChangePlanView, ChartView, TableView, ToolViewBody } from './Views'
@@ -126,113 +126,47 @@ function TimelineBlock({ view, limit, t }: { view: ToolView; limit?: number; t: 
   )
 }
 
-function ProofView({
+function EvidencePeek({
   item,
   t,
   lang,
   taskTitle,
+  onClose,
+  onOpen,
 }: {
   item: RunEvidence
   t: Dict
   lang: Lang
   taskTitle: string
+  onClose: () => void
+  onOpen: () => void
 }) {
   if (!item.view) return null
   const view = item.view
   return (
-    <section className="run-proof">
-      <div className="run-proof-head">
+    <section className="run-peek" aria-label={`${toolLabel(item.name, lang)} ${item.target}`}>
+      <div className="run-peek-head">
         <span className="run-section-title">
           {toolLabel(item.name, lang)} · {item.target}
         </span>
+        <span className={`run-peek-status ${item.status}`}>{item.status}</span>
+        <button className="text-action" type="button" onClick={onOpen}>
+          {t.runOpenEvidence}
+        </button>
+        <button className="icon-btn" type="button" aria-label={t.close} onClick={onClose}>
+          <X size={13} />
+        </button>
       </div>
-      {view.kind === 'change' && view.plan ? (
-        <ChangePlanView plan={view.plan} t={t} />
-      ) : view.kind === 'estate' && view.history ? (
-        <TimelineBlock view={view} limit={8} t={t} />
-      ) : (
-        <TableBlock view={view} limit={8} t={t} taskTitle={taskTitle} />
-      )}
-    </section>
-  )
-}
-
-function RiskList({
-  run,
-  t,
-  onOpen,
-  onAccept,
-  staleDays,
-  expand = false,
-}: {
-  run: RunModel
-  t: Dict
-  onOpen: (id: string) => void
-  onAccept: (finding: RiskFact) => void
-  staleDays: number
-  expand?: boolean
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const all = run.facts.findings.filter((finding) => finding.status === 'open')
-  const rows = expand || expanded ? all : all.slice(0, 5)
-  if (!rows.length) return <p className="quiet">{t.runNoMatch}</p>
-  const allMemory = all.length > 0 && all.every((finding) => finding.source === 'memory')
-  const rememberedAt = allMemory
-    ? ([...all]
-        .map((finding) => finding.readAt)
-        .sort()
-        .at(-1) ?? null)
-    : null
-  const navigate = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement
-    if (!target.classList.contains('finding-main')) return
-    const list = [...event.currentTarget.querySelectorAll<HTMLElement>('.finding-main')]
-    const index = list.indexOf(target)
-    if (event.key === 'j' || event.key === 'ArrowDown') {
-      event.preventDefault()
-      list[Math.min(list.length - 1, index + 1)]?.focus()
-    } else if (event.key === 'k' || event.key === 'ArrowUp') {
-      event.preventDefault()
-      list[Math.max(0, index - 1)]?.focus()
-    } else if (event.key === 'a') {
-      const key = target.closest<HTMLElement>('.finding-row')?.dataset.findingKey
-      const finding = all.find((item) => item.key === key)
-      if (finding) onAccept(finding)
-    }
-  }
-  return (
-    <>
-      {rememberedAt && (
-        <p className="run-block-note">
-          {fill(t.rememberedAgo, { when: ago(rememberedAt, t) ?? '' })}
-        </p>
-      )}
-      <div className="findings-list" onKeyDown={navigate}>
-        {rows.map((finding) => (
-          <FindingRow
-            key={finding.key}
-            finding={finding}
-            t={t}
-            onOpen={() => onOpen(finding.sourceId)}
-            onAccept={() => onAccept(finding)}
-            tagMemory={!allMemory}
-            showBucket
-            staleDays={staleDays}
-          />
-        ))}
-        {!expand && all.length > rows.length && (
-          <button
-            className="more-toggle"
-            type="button"
-            aria-expanded={expanded}
-            onClick={() => setExpanded(true)}
-          >
-            {fill(t.moreFindings, { n: all.length - rows.length })}
-            <ChevronDown size={13} />
-          </button>
+      <div className="run-peek-body">
+        {view.kind === 'change' && view.plan ? (
+          <ChangePlanView plan={view.plan} t={t} />
+        ) : view.kind === 'estate' && view.history ? (
+          <TimelineBlock view={view} limit={8} t={t} />
+        ) : (
+          <TableBlock view={view} limit={8} t={t} taskTitle={taskTitle} />
         )}
       </div>
-    </>
+    </section>
   )
 }
 
@@ -309,6 +243,38 @@ function TurnHistory({
   )
 }
 
+function ClarifyCard({
+  clarify,
+  t,
+  onClarify,
+}: {
+  clarify: RunClarify
+  t: Dict
+  onClarify: (text: string) => void
+}) {
+  return (
+    <section className="run-clarify" aria-label={t.runClarifyTitle}>
+      <div className="run-section-head">
+        <span className="run-section-title">{t.runClarifyTitle}</span>
+        {clarify.note && <span className="run-section-note">{clarify.note}</span>}
+      </div>
+      <p className="run-clarify-question">{clarify.question}</p>
+      <div className="run-clarify-options">
+        {clarify.options.map((option, index) => (
+          <button
+            className="btn"
+            type="button"
+            key={`${option}:${index}`}
+            onClick={() => onClarify(option)}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function RunNotices({
   notices,
   t,
@@ -353,6 +319,7 @@ export function Run({
   onRetry,
   onContinue,
   onReverify,
+  onClarify,
   onOlder = async () => undefined,
   onAudit = () => undefined,
   auditing = false,
@@ -365,6 +332,7 @@ export function Run({
   onRetry: () => void
   onContinue: () => void
   onReverify: () => Promise<void>
+  onClarify?: (text: string) => void
   onOlder?: () => Promise<void>
   onAudit?: () => void
   auditing?: boolean
@@ -372,12 +340,18 @@ export function Run({
   auditProgress?: AuditProgress | null
 }) {
   const t = dict(lang)
+  const currentEntries = useMemo(() => currentRunEntries(view.entries), [view.entries])
   const run = useMemo(
-    () => buildRun(view.entries, view.live, view.issueStatus),
+    () => buildRun(currentEntries, view.live, view.issueStatus),
+    [currentEntries, view.live, view.issueStatus],
+  )
+  const taskFacts = useMemo(
+    () => deriveFacts(view.entries, view.live, view.issueStatus),
     [view.entries, view.live, view.issueStatus],
   )
   const [evidenceFocus, setEvidenceFocus] = useState<string | null>(null)
   const [evidenceOpen, setEvidenceOpen] = useState(false)
+  const [peekId, setPeekId] = useState<string | null>(null)
   const [workOpen, setWorkOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [linked, setLinked] = useState(false)
@@ -391,7 +365,14 @@ export function Run({
     [view.entries, view.issueStatus],
   )
   const earlierTurns = useMemo(() => turns.slice(0, -1), [turns])
-  const activity = useMemo(() => buildActivity(view.entries, view.live), [view.entries, view.live])
+  const activity = useMemo(
+    () => buildActivity(currentEntries, view.live),
+    [currentEntries, view.live],
+  )
+  const peek = useMemo(
+    () => (peekId ? resolveEvidence(run.evidence, peekId) : undefined),
+    [peekId, run.evidence],
+  )
   const root = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -422,46 +403,17 @@ export function Run({
   const ungrounded = new Set(stale ? [] : (answer?.ungrounded ?? []))
   const contradicted = new Set(stale ? [] : (answer?.contradicted ?? []))
   const stopped = run.facts.notices.some((notice) => notice.code === 'stopped')
-  const showPlan =
+  const planVisible =
     Boolean(view.live) ||
     stopped ||
     Boolean(run.plan?.steps.some((step) => step.status === 'blocked'))
   const evidenceVisible = Boolean(auditProgress) || evidenceOpen
-  const primaryProof = useMemo(() => {
-    if (view.live || stale) return null
-    for (const match of answerText.matchAll(/#ev-([^)\s"'<>]+)/g)) {
-      const item = resolveEvidence(run.evidence, decodeURIComponent(match[1]!))
-      if (item?.view) return item
-    }
-    const data = run.facts.data
-    if (data) {
-      const item = run.evidence.find((entry) => entry.entryId === data.sourceId)
-      if (item?.view) return item
-    }
-    const change = run.facts.changePlans[0]
-    if (change) {
-      const item = run.evidence.find((entry) => entry.entryId === change.sourceId)
-      if (item?.view) return item
-    }
-    return null
-  }, [view.live, stale, answerText, run.evidence, run.facts.data, run.facts.changePlans])
-  const primaryData =
-    primaryProof?.view &&
-    (primaryProof.view.kind === 'survey' ||
-      primaryProof.view.kind === 'query' ||
-      primaryProof.view.kind === 'buckets' ||
-      primaryProof.view.kind === 'objects' ||
-      (primaryProof.view.kind === 'config' && Boolean(primaryProof.view.access)) ||
-      (primaryProof.view.kind === 'estate' && Boolean(primaryProof.view.history)))
-  const primaryChange = primaryProof?.view?.kind === 'change'
-  const primaryRisks =
-    !primaryProof && !view.live && !stale && !answer?.synthesized && run.facts.findings.length > 0
-
   const turnKey = run.question?.id ?? view.task.id
   useEffect(() => {
     if (!turnKey) return
     setEvidenceOpen(false)
     setEvidenceFocus(null)
+    setPeekId(null)
     setWorkOpen(false)
     setMore(false)
     setHistoryOpen(false)
@@ -484,11 +436,6 @@ export function Run({
     openEvidence('reverify')
   }
 
-  const accept = (finding: RiskFact) => {
-    if (!finding.issueId) return
-    void window.agent.acceptIssue(finding.issueId, finding.status !== 'accepted')
-  }
-
   useEffect(() => {
     if (!focusId) return
     if (focusId === 'answer' || focusId === run.answer?.id) {
@@ -499,9 +446,7 @@ export function Run({
   }, [focusId, run.answer?.id, openEvidence])
 
   const copy = async () => {
-    if (
-      await copyText(`${runMarkdown(run)}\n\n${factsMarkdown(view.task.title, run.facts, t, lang)}`)
-    ) {
+    if (await copyText(runMarkdown(run))) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }
@@ -556,7 +501,7 @@ export function Run({
             className="run-cite"
             type="button"
             title={`${t.runEvidenceTitle} ${item.target}`}
-            onClick={() => openEvidence(item.entryId)}
+            onClick={() => setPeekId(item.entryId)}
           >
             {children}
           </button>
@@ -571,8 +516,6 @@ export function Run({
     },
   }
 
-  const hideData = Boolean(primaryData)
-  const hideChange = primaryChange
   // Work owns the call count; Sources carries evidence categories only. Do not
   // repeat the same receipt in two rows.
   const evidenceCount =
@@ -580,12 +523,17 @@ export function Run({
       ? run.facts.findings.length === 1
         ? t.findingsCountOne
         : fill(t.findingsCount, { n: run.facts.findings.length })
-      : ''
+      : taskFacts.resolved.length > 0
+        ? taskFacts.resolved.length === 1
+          ? t.fixedOne
+          : fill(t.fixedCount, { n: taskFacts.resolved.length })
+        : ''
 
   const hasSources =
     run.facts.findings.length + run.facts.accepted.length > 0 ||
-    (!hideData && Boolean(run.facts.data)) ||
-    (!hideChange && run.facts.changePlans.length > 0) ||
+    taskFacts.resolved.length > 0 ||
+    Boolean(run.facts.data) ||
+    run.facts.changePlans.length > 0 ||
     run.facts.checks.length > 0 ||
     Boolean(run.facts.reverify) ||
     run.facts.changes.length > 0 ||
@@ -610,10 +558,12 @@ export function Run({
           <div className="run-headline">
             <p className="run-scope">{scopeText(run.facts, t)}</p>
             <span className="run-actions">
-              <button className="text-action" type="button" onClick={() => void copy()}>
-                <Copy size={12} aria-hidden="true" />
-                {copied ? t.copied : t.copyPage}
-              </button>
+              {answerText && (
+                <button className="text-action" type="button" onClick={() => void copy()}>
+                  <Copy size={12} aria-hidden="true" />
+                  {copied ? t.copied : t.copyAnswer}
+                </button>
+              )}
               <div className="brief-more">
                 <button
                   className="text-action"
@@ -729,134 +679,73 @@ export function Run({
 
         <RunNotices notices={run.facts.notices} t={t} onRetry={onRetry} onContinue={onContinue} />
 
-        {showPlan && run.plan && (
-          <section className="run-plan" aria-label={t.runPlanTitle}>
-            <div className="run-section-head">
-              <span className="run-section-title">{t.runPlanTitle}</span>
-              <span className="run-section-note">{run.plan.note ?? t.runAgentPlan}</span>
-            </div>
-            <ol className="run-plan-list">
-              {run.plan.steps.map((step, index) => (
-                <li key={`${step.title}:${index}`} className={`run-step ${step.status}`}>
-                  <span className="run-step-mark" aria-hidden="true">
-                    {step.status === 'done' ? (
-                      <Check size={12} />
-                    ) : step.status === 'blocked' ? (
-                      <AlertTriangle size={12} />
-                    ) : step.status === 'active' ? (
-                      <LoaderCircle size={12} className="pulse-icon" />
-                    ) : (
-                      <Circle size={9} />
-                    )}
-                  </span>
-                  <span className="run-step-title">{step.title}</span>
-                  {step.detail && <span className="run-step-detail">{step.detail}</span>}
-                </li>
-              ))}
-            </ol>
-          </section>
+        {run.clarify && (
+          <ClarifyCard clarify={run.clarify} t={t} onClarify={(text) => onClarify?.(text)} />
         )}
 
-        {view.live && (
-          <Work
-            activity={activity}
-            live={view.live}
-            open={workOpen || Boolean(view.live)}
-            onToggle={() => setWorkOpen((value) => !value)}
-            t={t}
-            lang={lang}
-            taskTitle={view.task.title}
-          />
-        )}
-
-        <section
-          className="run-answer"
-          aria-label={t.runAnswerTitle}
-          aria-live="polite"
-          aria-atomic="false"
-        >
-          {answerText ? (
-            <div className="verdict prose run-summary" data-verdict>
-              <Suspense fallback={<p>{plain(answerText)}</p>}>
-                <Markdown text={answerText} components={markdownComponents} />
-              </Suspense>
-            </div>
-          ) : view.live ? null : (
-            <p className="quiet">{t.runNoAnswer}</p>
-          )}
-          {!stale && (answer?.unresolvedCitations ?? 0) > 0 && (
-            <p className="quiet run-unresolved">
-              <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
-              {(answer?.unresolvedCitations ?? 0) === 1
-                ? t.runUnresolvedCitationsOne
-                : fill(t.runUnresolvedCitations, { n: answer?.unresolvedCitations ?? 0 })}
-            </p>
-          )}
-          {!stale && ungrounded.size > 0 && (
-            <p className="grounding">
-              <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
-              {t.ungroundedNote}
-            </p>
-          )}
-          {!stale && contradicted.size > 0 && (
-            <p className="grounding">
-              <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
-              {t.contradictedNote}
-            </p>
-          )}
-        </section>
-
-        {!view.live && (
-          <Work
-            activity={activity}
-            live={null}
-            open={workOpen || printing}
-            onToggle={() => setWorkOpen((value) => !value)}
-            t={t}
-            lang={lang}
-            taskTitle={view.task.title}
-          />
-        )}
-
-        {primaryProof?.view && !view.live && (
-          <ProofView item={primaryProof} t={t} lang={lang} taskTitle={view.task.title} />
-        )}
-
-        {view.live &&
-          (!answer || answer.stale) &&
-          (view.live.text || view.live.phase === 'writing') && (
-            <section className="run-draft" aria-label={t.runDraft}>
-              <div className="run-draft-head">
-                <span className="run-section-title">{t.runDraft}</span>
-                <span className="run-section-note">{t.runDraftNote}</span>
+        {(!run.clarify || answerText) && (
+          <section
+            className="run-answer"
+            aria-label={t.runAnswerTitle}
+            aria-live="polite"
+            aria-atomic="false"
+          >
+            {answerText ? (
+              <div className="verdict prose run-summary" data-verdict>
+                <Suspense fallback={<p>{plain(answerText)}</p>}>
+                  <Markdown text={answerText} components={markdownComponents} />
+                </Suspense>
               </div>
-              {view.live.text ? (
-                <div className="prose run-draft-body">
-                  <Suspense fallback={<p>{plain(view.live.text)}</p>}>
-                    <Markdown text={view.live.text} components={undefined} />
-                  </Suspense>
-                </div>
-              ) : (
-                <p className="quiet">{t.runComposing}</p>
-              )}
-            </section>
-          )}
-
-        {primaryRisks && (
-          <section className="run-proof run-primary-risks">
-            <div className="run-proof-head">
-              <span className="run-section-title">{t.findingsTitle}</span>
-            </div>
-            <RiskList
-              run={run}
-              t={t}
-              onOpen={openEvidence}
-              onAccept={accept}
-              staleDays={staleDays}
-              expand={printing}
-            />
+            ) : view.live ? null : (
+              <p className="quiet">{t.runNoAnswer}</p>
+            )}
+            {!stale && (answer?.unresolvedCitations ?? 0) > 0 && (
+              <p className="quiet run-unresolved">
+                <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
+                {(answer?.unresolvedCitations ?? 0) === 1
+                  ? t.runUnresolvedCitationsOne
+                  : fill(t.runUnresolvedCitations, { n: answer?.unresolvedCitations ?? 0 })}
+              </p>
+            )}
+            {!stale && ungrounded.size > 0 && (
+              <p className="grounding">
+                <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
+                {t.ungroundedNote}
+              </p>
+            )}
+            {!stale && contradicted.size > 0 && (
+              <p className="grounding">
+                <AlertTriangle size={12} strokeWidth={1.7} aria-hidden="true" />
+                {t.contradictedNote}
+              </p>
+            )}
           </section>
         )}
+
+        {peek?.view && (
+          <EvidencePeek
+            item={peek}
+            t={t}
+            lang={lang}
+            taskTitle={view.task.title}
+            onClose={() => setPeekId(null)}
+            onOpen={() => {
+              setPeekId(null)
+              openEvidence(peek.entryId)
+            }}
+          />
+        )}
+
+        <Work
+          activity={activity}
+          live={view.live}
+          plan={planVisible ? run.plan : null}
+          open={workOpen || Boolean(view.live) || printing}
+          onToggle={() => setWorkOpen((value) => !value)}
+          t={t}
+          lang={lang}
+          taskTitle={view.task.title}
+        />
 
         {!view.live && !auditProgress && hasSources && (
           <button
@@ -877,11 +766,11 @@ export function Run({
           <Sources
             key={turnKey}
             view={view}
+            entries={currentEntries}
+            historyEntries={view.entries}
             lang={lang}
             focusId={evidenceFocus ?? focusId}
             staleDays={staleDays}
-            hideData={hideData}
-            hideChange={hideChange}
           />
         </div>
       </article>

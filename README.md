@@ -7,7 +7,7 @@ composes a **run** from its final answer and the evidence behind it. A
 Nothing is written, deleted or changed in storage, and the app never applies a
 change plan.
 
-Version in this tree: **32.0.0**.
+Version in this tree: **33.0.0**.
 
 ![A run in Storage Agent](docs/screenshot.png)
 
@@ -56,7 +56,7 @@ Version in this tree: **32.0.0**.
   compare the result with its plan: confirmed, not applied or still unknown,
   plus skipped and truncated coverage. A reading record on Home keeps the last
   complete read and the new risks since it.
-- **Keep the agent visible.** A task is a run: the agent's optional plan, an open **Work** ledger while it reads (provider reasoning summary, live and completed calls, status, target, duration, shaped result), then the final Markdown answer, one proof view and a compact **Sources** index for risks, data, the change plan, tool calls, checked-again results, changes, methods and not-read coverage. After the answer settles, **Work** collapses to `Worked for … · n calls` and reopens in the same order. The model writes normal prose and cites a tool result by its evidence id; the window resolves the actual view. Copy, save Markdown, check again, re-check, copy a task link, export sources and save PDF live behind a visible overflow menu. Tables copy as CSV.
+- **Keep the agent visible.** The answer is first. A citation opens its evidence in place; **Sources** is one on-demand drawer below the answer. An open **Work** ledger shows the provider reasoning summary, live and completed calls, status, target, duration and shaped result while the run is live; it collapses to `Worked for … · n calls` when the answer settles. Plan is part of Work while it is live or stopped with a blocked step. A task can hold several runs, but the latest request owns its scope and evidence; earlier runs stay compact history. The model writes normal prose and cites a tool result by its evidence id; the window resolves the actual view. Copy answer, save Markdown, check again, re-check, copy a task link, export sources and save PDF live behind a visible overflow menu. Tables copy as CSV.
 - **Use the model you have.** Pick OpenAI, Anthropic or an OpenAI-compatible
   endpoint; paste a key and the provider's models are fetched. Context window
   and reasoning effort are inferred. Models already running in Ollama or LM
@@ -64,7 +64,7 @@ Version in this tree: **32.0.0**.
 
 ## Shape
 
-One window, one run, one composer. The task list is the only navigation.
+One window, one current run, one composer. The task list is the only navigation.
 There is no storage browser, dashboard, side pane, chat transcript or second
 window. Settings holds the model, accounts, memory, language, theme and
 notifications.
@@ -74,7 +74,7 @@ notifications.
 │ renderer (React, sandboxed)        main                          │
 │ tasks · run · composer      ⇄ IPC ⇄  pi-durable harness          │
 │                                         ├ 7 read tools           │
-│                                         ├ skill / plan           │
+│                                         ├ skill / plan / ask     │
 │                                         ├ estate (rules/issues)  │
 │                                         ├ s3 (readers/access)    │
 │                                         └ pi-ai → model          │

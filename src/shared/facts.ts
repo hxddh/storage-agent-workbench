@@ -78,6 +78,7 @@ export interface CallFact {
   target: string
   status: ToolStatus
   note: string | null
+  args: string | null
   ms: number | null
   at: string
   view: ToolView | null
@@ -296,6 +297,7 @@ export interface LiveInput {
     name: ToolName
     target: string
     note: string | null
+    args?: string | null
     status?: ToolStatus
     startedAt: string
   }[]
@@ -557,7 +559,7 @@ export function deriveFacts(
       if (entry.text.trim()) answers.push({ text: entry.text.trim(), at: entry.at, index })
     } else if (entry.kind === 'tool') {
       // The plan is process, and a skill is documentation. Neither is a check.
-      if (entry.name === 'plan' || entry.name === 'skill') {
+      if (entry.name === 'plan' || entry.name === 'skill' || entry.name === 'ask') {
         if (entry.status === 'done' && entry.view?.kind === 'skill')
           methods.push({
             id: entry.id,
@@ -574,6 +576,7 @@ export function deriveFacts(
         target: entry.target,
         status: entry.status,
         note: entry.note,
+        args: entry.args ?? null,
         ms: entry.ms,
         at: entry.at,
         view: entry.view,
@@ -603,6 +606,7 @@ export function deriveFacts(
       target: tool.target,
       status: tool.status ?? 'running',
       note: tool.note,
+      args: tool.args ?? null,
       ms: null,
       at: tool.startedAt,
       view: null,

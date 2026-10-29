@@ -285,6 +285,8 @@ const en = {
   planReverifySummary: '{confirmed} confirmed · {notApplied} not applied · {unknown} unknown',
   noFindingsClean: 'No problems found.',
   copyPage: 'Copy',
+  copyAnswer: 'Copy answer',
+  runOpenEvidence: 'Open in sources',
   savePage: 'Save as…',
   edit: 'Edit',
   reasoning: 'Reasoning',
@@ -371,6 +373,7 @@ const en = {
   runMethods: 'Methods',
   closeSettings: 'Close settings',
   runNoAnswer: 'The agent has not composed an answer yet.',
+  runClarifyTitle: 'Clarification',
   runTimeline: 'History',
   runCoverage: 'Coverage',
   runHigh: '{n} high',
@@ -679,6 +682,8 @@ const zh: typeof en = {
   planReverifySummary: '{confirmed} 项已确认 · {notApplied} 项未生效 · {unknown} 项仍未知',
   noFindingsClean: '没有发现问题。',
   copyPage: '复制',
+  copyAnswer: '复制答案',
+  runOpenEvidence: '在来源中打开',
   savePage: '另存为…',
   edit: '编辑',
   reasoning: '推理中',
@@ -764,6 +769,7 @@ const zh: typeof en = {
   runMethods: '方法',
   closeSettings: '关闭设置',
   runNoAnswer: 'agent 还没有组成回答。',
+  runClarifyTitle: '需要澄清',
   runTimeline: '历史',
   runCoverage: '覆盖',
   runHigh: '{n} 高',
@@ -818,6 +824,7 @@ const TOOL_EN: Record<string, string> = {
   query: 'Ran a read-only query',
   skill: 'Read a method',
   plan: 'Published a plan',
+  ask: 'Asked a question',
 }
 
 const TOOL_ZH: Record<string, string> = {
@@ -833,6 +840,7 @@ const TOOL_ZH: Record<string, string> = {
   query: '运行只读查询',
   skill: '查阅方法',
   plan: '发布计划',
+  ask: '提出问题',
 }
 
 export function toolLabel(name: string, lang: Lang): string {

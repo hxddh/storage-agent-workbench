@@ -96,11 +96,12 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest published release is **32.0.0** (2026-10-27). Earlier release notes
+The latest published release is **33.0.0** (2026-10-29). Earlier release notes
 may describe retired behavior; they are history. Keep `README.md`,
 `CHANGELOG.md` and this paragraph in step with the next tag, and refresh
-`docs/screenshot.png` if the surface changed. 32.0 makes the current turn's work
-visible: provider reasoning summaries, live and completed tool calls, failed
-states and compaction share one activity ledger; the settled answer collapses
-the ledger to a Work summary. It keeps the 31.0 final-message answer, evidence
-citations and read-only boundary.
+`docs/screenshot.png` if the surface changed. 33.0 makes the run answer-first:
+the latest request owns its scope and evidence, a citation opens an in-place
+peek, and Sources is one on-demand drawer. Work is below the answer in every
+state; plan lives inside Work while live or stopped with a blocker. The new
+`ask` control tool can end a run with one clarification question. It keeps the
+read-only boundary, final-message answer and evidence citations.

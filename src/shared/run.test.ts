@@ -1,6 +1,6 @@
 import type { UiEntry } from '@shared/contract'
 import { describe, expect, it } from 'vitest'
-import { buildRun } from './run'
+import { buildRun, currentRunEntries } from './run'
 
 const at = '2026-01-01T00:00:00Z'
 
@@ -65,5 +65,22 @@ describe('answer protocol', () => {
     const run = buildRun([answer('Old answer.'), user, survey])
     expect(run.answer?.text).toBe('Old answer.')
     expect(run.answer?.stale).toBe(true)
+  })
+
+  it('starts a new run at the latest user request', () => {
+    const first = buildRun([user, survey, answer('Only `demo` is public.')])
+    expect(first.evidence).toHaveLength(1)
+    const current = currentRunEntries([
+      user,
+      survey,
+      answer('Only `demo` is public.'),
+      { ...user, id: 'u2', text: 'What about encryption?' },
+    ])
+    expect(current.map((entry) => entry.id)).toEqual(['u2'])
+    const next = buildRun(current)
+    expect(next.question?.id).toBe('u2')
+    expect(next.evidence).toHaveLength(0)
+    expect(next.facts.data).toBeNull()
+    expect(next.facts.coverage).toHaveLength(0)
   })
 })

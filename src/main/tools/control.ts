@@ -71,6 +71,41 @@ export function planTool() {
   })
 }
 
+export function askTool() {
+  return defineTool({
+    name: 'ask',
+    description:
+      'Ask the user one clarifying question when the request is genuinely ambiguous and the answer would change the work. The run ends until the user answers. Use it once, with 2–4 concrete options.',
+    parameters: Type.Object({
+      question: Type.String({ minLength: 1, maxLength: 300 }),
+      options: Type.Array(Type.String({ maxLength: 100 }), { minItems: 1, maxItems: 4 }),
+      note: Type.Optional(Type.String({ maxLength: 200 })),
+    }),
+    execute: async (args) => {
+      const question = text(args.question, 300)
+      const options = (args.options as unknown[])
+        .map((option) => text(option, 100))
+        .filter(Boolean)
+        .slice(0, 4)
+      const note = text(args.note, 200) || undefined
+      return {
+        output: [
+          {
+            type: 'text' as const,
+            text: 'Question asked. The run ends until the user answers.',
+          },
+        ],
+        details: details(
+          { kind: 'question', question, options, ...(note ? { note } : {}) },
+          'clarify',
+          question,
+        ) as never,
+        control: { terminate: true },
+      }
+    },
+  })
+}
+
 export function skillTool() {
   return defineTool({
     name: 'skill',

@@ -321,6 +321,7 @@ export function App() {
               onRetry={() => void window.agent.retryTask(view.task.id)}
               onContinue={() => void window.agent.continueTask(view.task.id)}
               onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
+              onClarify={(text) => void submit(text, [])}
               onOlder={loadOlder}
               onAudit={() => void audit()}
               auditing={auditing}

@@ -1,16 +1,17 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 32.0.0**. Read
+> Implementation contract for **Storage Agent 33.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md` and
 > `docs/data-model.md` before changing product structure. The code and its tests
 > are authoritative; release notes and the changelog are history.
 
 ## The product
 
-A local, read-only agent for object storage. One window, one run, one
-composer. A **Task** is a question or a deterministic account check; the agent
-remembers what it read in an **estate**, and the task's page is a **run**: the
-agent's own optional plan, its answer, and the sources behind them.
+A local, read-only agent for object storage. One window, one current run, one
+composer. A **Task** is durable history of one or more runs — a user request or a
+deterministic account check; the agent remembers what it read in an **estate**,
+and the task's page shows the latest **run**: the answer first, the work behind
+it, and the sources behind that.
 
 The invariant:
 
@@ -74,11 +75,11 @@ The invariant:
 - `src/shared/contract.ts` — the single type contract; both sides import it.
 - `src/shared/facts.ts` — the deterministic facts projection from `UiEntry[]`:
   risks, methods, coverage, change plans, data and tool calls.
-- `src/shared/run.ts` — the agent-native projection: the latest optional plan,
-  the final Markdown answer, evidence resolution, citation validation and
-  grounding.
-- `src/shared/activity.ts` — the current-turn work projection: provider reasoning
-  summary, live and durable tool calls, compaction and resume.
+- `src/shared/run.ts` — the current-run boundary and agent-native projection:
+  the optional plan, clarification, final Markdown answer, evidence resolution,
+  citation validation and grounding.
+- `src/shared/activity.ts` — the current-run work projection: provider reasoning
+  summary, live and durable tool calls, argument summaries, compaction and resume.
 - `src/shared/audit.ts` — the deterministic summary for a model-free account
   check; it names only buckets and counts already present in survey views.
 - `src/shared/grounding.ts` — which names and exposure a task's results show;
@@ -97,9 +98,9 @@ The invariant:
 - `src/main/runtime/agent.ts` — the one extension: prompt sections, tools,
   hooks, per-run read coverage and the one clean-claim correction.
 - `src/main/tools/*` — read-only storage tools through `agentTool()`, which
-  owns scope, bounds, timeout, audit, redaction, status, evidence ids and the
-  untrusted envelope; plus the control tools `plan` and `skill` in
-  `tools/control.ts`. `estate` returns current memory and, with `history`,
+  owns scope, bounds, timeout, audit, redaction, status, evidence ids, shaped
+  argument summaries and the untrusted envelope; plus the control tools `plan`,
+  `skill` and `ask` in `tools/control.ts`. `estate` returns current memory and, with `history`,
   Issue events and posture changes filtered by account, bucket, code or
   `since`. `change_plan` returns deterministic change text.
 - `src/main/s3/facts.ts` — the one reading of a bucket; `s3/policy.ts`
@@ -165,11 +166,12 @@ opt into daily or weekly read-only checks while the app is open.
 
 ## Agent
 
-One extension, twelve tools, six capability groups. Seven reads (`survey`,
+One extension, thirteen tools, seven capability groups. Seven reads (`survey`,
 `buckets`, `objects`, `object`, `config`, `probe`, `query`) cover storage;
 `estate` and `note` cover memory; `change_plan` returns deterministic change
 text; `plan` publishes an optional investigation plan; `skill` loads one of four
-methods. The final assistant message is the answer; there is no answer tool.
+methods; `ask` ends the run with one clarification question. The final
+assistant message is the answer; there is no answer tool.
 `query` exists because questions over many objects or buckets (largest prefixes,
 data untouched for a year, buckets by size) cannot be carried to the model by a
 fixed tool without flooding its context or adding one tool per question. It also
@@ -242,54 +244,60 @@ task rows support rename, pin and delete. The task title appears once: in the
 sidebar on desktop and in the run header/compact top area on narrow screens,
 never twice at the top.
 
-Every task is an agent run page. Earlier turns appear as compact expandable
-rows under **Earlier in this task**; the latest question is the run header. A
+Every task is an agent run page. Earlier runs appear as compact expandable rows
+under **Earlier in this task**; the latest question is the run header and owns
+the current scope and evidence. A
 deterministic check has no fake question. The run header names the account(s),
 the scope line (`All n buckets checked`, `Not fully checked: n`,
 `From memory · …`, `Live read · …`, or `Not read yet`), checked/total buckets
-and read time. A failed or stopped storage read keeps the line open. Copy and
-one overflow menu sit in the header: save Markdown, check again, re-check,
+and read time. A failed or stopped storage read keeps the line open. Copy answer
+and one overflow menu sit in the header: save Markdown, check again, re-check,
 copy link, export sources and save PDF. `Check again` opens a new check task;
 re-check writes a result in the current task and opens its Sources section.
 Home reads its "last complete read" from the reading records.
 
-The plan section is the agent's own 1–6 steps (commonly 3–6) with
+The plan is the agent's own 1–6 steps (commonly 3–6) with
 pending/active/done/blocked states; it is optional and not a transcript. It is
-visible while the run is live and remains for a stopped run or a blocked step; a
-settled answer folds it away. Plan state is intent, not proof: an actual call is
-the only execution evidence.
+part of Work while the run is live or stopped with a blocked step; a settled
+normal answer does not carry a separate plan section. Plan state is intent, not
+proof: an actual call is the only execution evidence.
 
-**Work** is the one current-turn activity surface. While live it is open and
-shows a provider reasoning summary when one was returned, the current call and
-all completed calls, with status, target, shaped result summary and duration.
-After the answer settles it collapses to one `Worked for … · n calls` row; the
-same rows reopen in their original order. It never invents a reasoning summary:
-an omitted or empty thinking block is shown as an honest `Thought` row with no
-summary. Live progress comes from shaped `ToolDetails.progress`, never from raw
-tool output. A failed call stays in place with its status and note.
+**Work** is the one current-run activity surface, below the answer. While live
+it is open and shows a provider reasoning summary when one was returned, the
+current call and all completed calls, with status, target, shaped argument
+summary, result summary and duration. Plan is a block inside Work while live or
+stopped with a blocked step; there is no separate plan section. After the answer
+settles Work collapses to one `Worked for … · n calls` row; the same rows reopen
+in their original order. It never invents a reasoning summary: an omitted or
+empty thinking block is shown as an honest `Thought` row with no summary. Live
+progress comes from shaped `ToolDetails.progress`, never from raw tool output.
+A failed call stays in place with its status and note.
 
-The answer is normal Markdown with citations. The window shows one proof view:
-the first cited tool result, otherwise the latest data read, otherwise the
-latest change plan. When there is no proof, the current risk list stands in its
-place. A missing citation is shown as plain text with a quiet note. There is no
+The answer is normal Markdown with citations and is the first content in every
+state. A citation opens an in-place evidence peek; the full record is in the one
+on-demand Sources drawer. An answer without a citation does not invent a proof
+table. A missing citation is shown as plain text with a quiet note. There is no
 report block renderer and no legacy entry path.
 
-**Sources** is one compact index below the answer: Risks, Data, Change plan,
-Tool calls, Not checked, Checked again, Changes and Methods, each row only when
-it has content. One row opens one section; nothing is expanded by default. The
-index does not carry a duplicate check count; Tool calls shows the receipt
-inside. Risks are grouped by bucket, severity ordered, memory-marked, five
-visible with **N more** expanding in place. Accepted and proved-fixed folds
-remain. **Not read** names blind, pending, truncated, failed and access gaps.
-Every table can be copied as CSV or saved; the page can be copied or saved as
-Markdown.
+**Sources** is one on-demand evidence drawer below Work: Risks, Data, Change
+plan, Tool calls, Not checked, Checked again, Changes and Methods, each row only
+when it has content. One row opens one section; nothing is expanded by default.
+Risks, data and checks are current-run evidence; a resolved fold may use the
+earlier observation that the current read proved fixed. The index does not carry
+a duplicate check count; Tool calls shows the receipt inside. Risks are grouped
+by bucket, severity ordered, memory-marked, five visible with **N more**
+expanding in place. Accepted and proved-fixed folds remain. **Not read** names
+blind, pending, truncated, failed and access gaps. Header Copy copies the answer
+only; Save page includes the evidence record. Every table can be copied as CSV
+or saved.
 
 A model-free check renders through the same run surface with a synthesized
 answer and a `Deterministic account check` tag. A model run opens Work when it
 starts and collapses it to `Worked for … · n calls` when the answer settles;
 Sources Tool calls remains the audit receipt. A stopped run keeps its plan and
-offers Continue. There are no next-step
-suggestions or follow-up prompts. A query's script opens under its check as the
+offers Continue. A new user request starts a new run; the current run owns its
+scope, checks, data and citations, while the task owns memory and history.
+There are no next-step suggestions or follow-up prompts. A query's script opens under its check as the
 evidence; the answer can cite it.
 
 Failed model runs offer Retry; stopped runs offer Continue. The sidebar search

@@ -25,6 +25,7 @@ export type ToolName =
   | 'query'
   | 'skill'
   | 'plan'
+  | 'ask'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
 export type CheckSchedule = 'off' | 'daily' | 'weekly'
@@ -331,6 +332,7 @@ export type ToolView =
       body: string
     }
   | { kind: 'plan'; steps: PlanStep[]; note?: string }
+  | { kind: 'question'; question: string; options: string[]; note?: string }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped' | 'timeout'
 
@@ -340,6 +342,8 @@ export interface ToolDetails {
   note: string | null
   /** A bounded, redacted progress line for the live work ledger. */
   progress?: string | null
+  /** A bounded, redacted summary of the call's arguments. */
+  args?: string | null
   view: ToolView | null
   ms: number | null
   status: ToolStatus
@@ -355,6 +359,7 @@ export interface LiveTool {
   name: ToolName
   target: string
   note: string | null
+  args?: string | null
   status: ToolStatus
   startedAt: string
 }
@@ -398,6 +403,7 @@ export interface AuditCheck {
   target: string
   status: ToolStatus
   note: string | null
+  args?: string | null
   ms: number | null
   at: string
   view: ToolView | null
@@ -440,6 +446,7 @@ export type UiEntry =
       target: string
       status: ToolStatus
       note: string | null
+      args?: string | null
       ms: number | null
       view: ToolView | null
       callId?: string
@@ -715,12 +722,13 @@ export const TOOL_LABEL: Record<ToolName, string> = {
   query: 'Ran a read-only query',
   skill: 'Read a method',
   plan: 'Published a plan',
+  ask: 'Asked a question',
 }
 
 /** Capability groups used by the prompt and documentation, not another tool. */
 export const TOOL_GROUP: Record<
   ToolName,
-  'read' | 'query' | 'memory' | 'change_plan' | 'plan' | 'skill'
+  'read' | 'query' | 'memory' | 'change_plan' | 'plan' | 'skill' | 'ask'
 > = {
   survey: 'read',
   buckets: 'read',
@@ -734,4 +742,5 @@ export const TOOL_GROUP: Record<
   query: 'query',
   skill: 'skill',
   plan: 'plan',
+  ask: 'ask',
 }

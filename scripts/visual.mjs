@@ -45,6 +45,7 @@ const names = [
   '21-settings-error-zh.png',
   '22-work-expanded.png',
   '23-tool-detail.png',
+  '24-evidence-peek.png',
 ]
 let failed = 0
 for (const name of names) {

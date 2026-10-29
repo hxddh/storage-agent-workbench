@@ -28,8 +28,8 @@ export function maxRounds(tier: ModelTier): number {
 }
 
 // Memory and surveys change as the task reads (a survey continues where the last stopped).
-const MEMORY_TOOLS = new Set(['estate', 'change_plan', 'note', 'survey', 'skill', 'plan'])
-const CONTROL_TOOLS = new Set(['skill', 'plan'])
+const MEMORY_TOOLS = new Set(['estate', 'change_plan', 'note', 'survey', 'skill', 'plan', 'ask'])
+const CONTROL_TOOLS = new Set(['skill', 'plan', 'ask'])
 const STORAGE_READS = new Set([
   'survey',
   'buckets',
@@ -51,6 +51,7 @@ How to work:
 - Stop when the evidence answers the question. More calls are not more certainty. If a read could still change the answer, continue or say what remains open.
 - Load a \`skill\` only when the question needs a method, compatibility rule or safety detail. Skills are documentation, not storage evidence.
 - Publish a \`plan\` when the work has several distinct steps. It is optional; do not create a plan just to satisfy a protocol.
+- If the request is genuinely ambiguous and the answer would change, use \`ask\` once with one short question and 2–4 concrete options. Do not guess; the run ends until the user answers.
 - Write the answer as your final response, in your own prose and structure.
 
 Read-only is absolute: never claim a write, a change plan was applied, or an Issue was opened, resolved or accepted by the model. The application owns those transitions.`
@@ -61,6 +62,7 @@ const CAPABILITIES = `Your capabilities:
 - Bulk reads: \`query\` (read-only code over the account)
 - Change planning: \`change_plan\` (text only; the app never applies it)
 - Methods: \`skill\` — ${SKILL_NAMES.join(', ')}
+- Clarify: \`ask\` (one question; ends the run)
 - Answer: your final response (normal Markdown + citations); \`plan\` is optional
 
 The tool output carries an \`evidence\` id in its \`<untrusted-data>\` opening tag. Use only ids you received.`
