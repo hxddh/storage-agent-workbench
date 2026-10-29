@@ -45,7 +45,7 @@ export function diffPosture(
     if (JSON.stringify(old) === JSON.stringify(next)) continue
     changes.push({ bucket, field: field.label, before: show(old), after: show(next), at })
   }
-  return changes.slice(0, 12)
+  return changes
 }
 
 const MUTATIONS = [

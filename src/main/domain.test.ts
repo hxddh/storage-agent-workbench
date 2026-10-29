@@ -367,6 +367,19 @@ describe('tools over the estate', () => {
     expect(second.details.view.rows.rows[0]?.[0]).not.toBe(key)
   })
 
+  it('previews text whatever content type the object declares, and sends the agent the preview', async () => {
+    const [, , object] = bucketTools(deps)
+    const bucket = Object.keys(fake.buckets)[0]!
+    const { text, details } = await run(object as Executable, {
+      bucket,
+      key: 'notes.txt',
+      aspects: ['head', 'preview'],
+    })
+    if (details.view?.kind !== 'object') throw new Error(`expected an object view: ${text}`)
+    expect(details.view.preview?.text).toBe('hello from the fake bucket')
+    expect(text).toContain('hello from the fake bucket')
+  })
+
   it('plans a change the agent names for a bucket even when no Issue is open', async () => {
     const [, change] = estateTools(deps)
     const { details } = await run(change as Executable, {

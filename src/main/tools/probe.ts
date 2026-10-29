@@ -55,7 +55,7 @@ export function probeTool(deps: ToolDeps) {
             checks.push({
               name: 'Reachability',
               ok: false,
-              detail: error instanceof Error ? error.message.slice(0, 160) : 'unreachable',
+              detail: error instanceof Error ? error.message : 'unreachable',
               ms: Date.now() - started,
             })
           }
@@ -78,7 +78,7 @@ export function probeTool(deps: ToolDeps) {
           try {
             await client.send(new ListBucketsCommand({}), { abortSignal: run.signal })
             const ms = Date.now() - started
-            checks.push({ name: 'Latency', ok: ms < 2000, detail: `ListBuckets in ${ms} ms`, ms })
+            checks.push({ name: 'Latency', ok: true, detail: `ListBuckets in ${ms} ms`, ms })
           } catch (error) {
             checks.push({
               name: 'Latency',

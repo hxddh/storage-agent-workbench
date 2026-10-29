@@ -179,6 +179,12 @@ export function estateTools(deps: ToolDeps) {
           }),
         ),
         notes: Type.Optional(Type.Boolean({ description: 'Include notes (default true).' })),
+        limit: Type.Optional(
+          Type.Integer({
+            minimum: 1,
+            description: 'Most history rows to return, newest first (default 200).',
+          }),
+        ),
       }),
       timeoutMs: 20_000,
       target: (args) => args.bucket ?? 'memory',
@@ -214,7 +220,7 @@ export function estateTools(deps: ToolDeps) {
             ]
           }),
         }
-        const issues = (await deps.estate.issueRows(config.id, lang, 100)).filter(
+        const issues = (await deps.estate.issueRows(config.id, lang, 10_000)).filter(
           (issue) =>
             (!args.bucket || issue.bucket === args.bucket) &&
             (!args.code || issue.code === args.code),
@@ -225,7 +231,7 @@ export function estateTools(deps: ToolDeps) {
             : await deps.db.listNotes({
                 scope: args.bucket ? 'bucket' : undefined,
                 ref: args.bucket ? `${config.id}/${args.bucket}` : undefined,
-                limit: 20,
+                limit: 10_000,
               })
         const newest = buckets.reduce<string | null>(
           (at, row) => (row.posture_at && (!at || row.posture_at > at) ? row.posture_at : at),
@@ -236,13 +242,15 @@ export function estateTools(deps: ToolDeps) {
           null,
         )
         let historyTable: Table | undefined
+        let historyMore = 0
+        const historyLimit = Math.max(1, args.limit ?? 200)
         if (args.history) {
           const eventRows = await deps.db.listIssueEvents({
             providerId: config.id,
             bucket: args.bucket,
             code: args.code,
             since: args.since,
-            limit: 80,
+            limit: historyLimit + 1,
           })
           const changeRows = (await deps.db.listChanges(config.id, args.since)).filter(
             (change) => !args.bucket || change.bucket === args.bucket,
@@ -255,7 +263,7 @@ export function estateTools(deps: ToolDeps) {
               : await deps.db.listReadings({
                   providerId: config.id,
                   since: args.since,
-                  limit: 30,
+                  limit: historyLimit + 1,
                 })
           const titleOf = (code: string) => {
             const rule = BY_CODE.get(code)
@@ -286,9 +294,11 @@ export function estateTools(deps: ToolDeps) {
             ]),
           ]
           rows.sort((a, b) => String(b[0]).localeCompare(String(a[0])))
+          historyMore = Math.max(0, rows.length - historyLimit)
           historyTable = {
             columns: ['When', 'Event', 'Bucket', 'Evidence'],
-            rows: rows.slice(0, 60),
+            rows: rows.slice(0, historyLimit),
+            ...(historyMore ? { truncated: true } : {}),
           }
         }
         const open = issues.filter((issue) => issue.status === 'open')
@@ -309,6 +319,11 @@ export function estateTools(deps: ToolDeps) {
                   ? `History (newest first, ${historyTable.rows.length} row(s)):`
                   : 'History: no matching Issue event or posture change is remembered.',
                 ...historyTable.rows.map((row) => `${row[0]} ${row[1]} ${row[2]} — ${row[3]}`),
+                ...(historyMore
+                  ? [
+                      `More history exists beyond these ${historyTable.rows.length} rows; raise limit or narrow with since, bucket or code.`,
+                    ]
+                  : []),
               ]
             : []),
           ...notes.map((note) => `note: ${note.text}`),
@@ -360,7 +375,7 @@ export function estateTools(deps: ToolDeps) {
       run: async (args, run) => {
         const { config, client } = await run.provider(args.provider_id)
         let issues: { bucket: string; code: string; severity: Severity }[] = (
-          await deps.db.listIssues({ providerId: config.id, status: 'open', limit: 500 })
+          await deps.db.listIssues({ providerId: config.id, status: 'open', limit: 10_000 })
         )
           .filter((issue) => !args.bucket || issue.bucket === args.bucket)
           .filter((issue) => !args.code || issue.code === args.code)

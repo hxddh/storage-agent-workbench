@@ -185,7 +185,7 @@ has the complete history or that an unlisted change did not happen.
 
 `query` exists for questions that do not fit one bucket or one object. The
 script runs in a QuickJS sandbox with ten read-only primitives. The query's
-step shows the returned rows (at most 500; the model sees at most 40) and the
+step shows the returned rows (at most 500, all of them sent to the model) and the
 script as evidence.
 
 When a bucket has S3 Inventory, `inventory` reads the latest manifest and one
@@ -244,7 +244,7 @@ reasoning models, off otherwise. Every model gets the same tools, prompt and
   20-second reserve. An incomplete survey reports pending buckets.
 - CloudTrail covers 90 days and is attributed for at most six changed buckets
   per survey; only management events are considered.
-- A change plan covers the selected open risks (at most 500) and reports any
+- A change plan covers the selected open risks and reports any
   residual rule that has no generated change. A merged lifecycle omits Terraform
   when existing rules contain fields the renderer cannot reproduce.
 - A code-mode script runs under the call, listing, time and memory budgets above.
@@ -285,7 +285,7 @@ undecided.
 `Prepared a change plan` step in the conversation. Each step
 carries AWS CLI, Terraform and API document text plus an impact preview from the
 remembered posture. It can target one bucket and code, or every open risk (it
-scans up to 500). Lifecycle changes for one bucket merge into one document; when
+). Lifecycle changes for one bucket merge into one document; when
 existing rules are present, the Terraform tab is omitted rather than rendering
 an incomplete authoritative resource. A policy change is merged with the
 current policy only when that policy was read and names no account id.

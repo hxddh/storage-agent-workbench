@@ -275,24 +275,24 @@ export function bucketTools(deps: ToolDeps) {
             facts.push(['Grants', 'not readable'])
           }
         }
-        if (aspects.has('preview') && size > 0 && size <= 1_048_576) {
-          const textLike =
-            contentType.startsWith('text/') ||
-            contentType.includes('json') ||
-            contentType.includes('xml') ||
-            contentType.includes('csv')
-          if (textLike) {
-            try {
-              const object = await client.send(
-                new GetObjectCommand({
-                  Bucket: args.bucket,
-                  Key: args.key,
-                  Range: 'bytes=0-8191',
-                }),
-                { abortSignal: run.signal },
-              )
-              const body = await object.Body?.transformToString()
-              if (body) {
+        if (aspects.has('preview') && size > 0) {
+          // The first 8 KiB, whatever the object's size or declared type: a text
+          // file labelled octet-stream is still text. Bytes that are not text are
+          // said to be binary rather than shown.
+          try {
+            const object = await client.send(
+              new GetObjectCommand({ Bucket: args.bucket, Key: args.key, Range: 'bytes=0-8191' }),
+              { abortSignal: run.signal },
+            )
+            const bytes = await object.Body?.transformToByteArray()
+            if (bytes?.length) {
+              const body = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+              const odd = [...body].filter(
+                (char) => char === '\uFFFD' || (char < ' ' && !'\n\r\t'.includes(char)),
+              ).length
+              if (bytes.includes(0) || odd > body.length * 0.05)
+                facts.push(['Preview', 'binary content, not shown'])
+              else
                 preview = {
                   language: contentType.includes('json')
                     ? 'json'
@@ -301,12 +301,11 @@ export function bucketTools(deps: ToolDeps) {
                       : contentType.includes('csv')
                         ? 'csv'
                         : 'text',
-                  text: body.slice(0, 8192),
+                  text: body,
                 }
-              }
-            } catch {
-              // A preview is best-effort; the facts still stand.
             }
+          } catch {
+            facts.push(['Preview', 'not readable'])
           }
         }
         return {

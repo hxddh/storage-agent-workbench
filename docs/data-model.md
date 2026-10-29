@@ -48,8 +48,8 @@ open Issue totals at the time — no verdict, never a request, answer, policy
 document, account id or secret. Every row 36 writes has `trigger = 'task'`;
 `estate` history shows older `check` and `reverify` rows as `checked` and
 `rechecked`. Only the agent reads them: a change plan's baseline is the
-account's latest row, and `estate` history includes up to 30 reading rows in an
-unfiltered view. The window does not show readings.
+account's latest row, and an unfiltered `estate` history includes them among
+its rows. The window does not show readings.
 
 `task_meta.model_json` is a per-task model override (`provider`, `modelId`,
 `baseUrl`, `thinking`); null means the model in Settings. The provider key is

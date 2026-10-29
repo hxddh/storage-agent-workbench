@@ -264,6 +264,25 @@ describe('entry projection', () => {
     expect(out).toHaveLength(0)
   })
 
+  it('says when a reply was cut at the model’s output limit', () => {
+    const out = entries([
+      {
+        id: 'cut1',
+        kind: 'pi.assistant',
+        model: [
+          {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Partly' }],
+            stopReason: 'length',
+            timestamp: 1,
+          },
+        ],
+      },
+    ])
+    expect(out.map((entry) => entry.kind)).toEqual(['answer', 'notice'])
+    expect(out[1]).toMatchObject({ code: 'cut', tone: 'warn' })
+  })
+
   it('keeps a call the harness blocked, as a step that did not run', () => {
     const out = entries([
       {

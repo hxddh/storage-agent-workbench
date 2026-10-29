@@ -72,6 +72,20 @@ into report sections. 35.x tasks open as conversations.
   a scheduled check's message only names its account. Step notes are counts
   ("2 findings · 1 unread", "3 of 4 ok"), not verdicts like "partly blind".
 
+- **The agent reads what the user gave it, in full.** `query` gains `rows()`:
+  one redacted page (≤1,000) of an attached log or inventory at a time, by
+  whitelisted filters, no SQL; `aggregate` returns up to 1,000 groups and says
+  when it cut. `object` previews the first 8 KiB of any object, sniffing text
+  instead of trusting the content type. Evidence lists (policy actions and
+  conditions, access-path actions, permission gaps, posture changes, CloudTrail
+  events) are no longer cut; CloudTrail attribution stays at six buckets per
+  survey because its lookups are rate-limited, and says how many it skipped.
+  `estate` history takes a `limit` and says when more exist; `change_plan`
+  reads every open Issue; the `principal` lookup examines every remembered
+  bucket; error and script output are no longer cut short — `bound()` is the
+  one size limit, and it says when it cuts. A reply that reaches the model's
+  output limit is marked as cut. Probe latency is measured, not judged.
+
 ### Removed
 
 - The scripted account check and re-check (`Engine.check()`,

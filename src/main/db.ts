@@ -576,7 +576,7 @@ export class AppDb {
       params.push(filter.since)
     }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    params.push(Math.max(1, Math.min(filter.limit ?? 80, 500)))
+    params.push(Math.max(1, Math.min(filter.limit ?? 80, 10_000)))
     const rows = await this.raw.all<{
       id: string
       issue_id: string
@@ -695,7 +695,7 @@ export class AppDb {
       params.push(filter.since)
     }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    params.push(Math.max(1, Math.min(filter.limit ?? 100, 500)))
+    params.push(Math.max(1, Math.min(filter.limit ?? 100, 10_000)))
     return this.raw.all<ReadingRecord>(
       `SELECT * FROM readings ${clause} ORDER BY at DESC, id DESC LIMIT ?`,
       ...params,
@@ -741,7 +741,7 @@ export class AppDb {
       params.push(filter.status)
     }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    params.push(Math.max(1, Math.min(filter.limit ?? 50, 1000)))
+    params.push(Math.max(1, Math.min(filter.limit ?? 50, 10_000)))
     return this.raw.all<IssueRecord>(
       `SELECT * FROM issues ${clause}
        ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -974,7 +974,7 @@ export class AppDb {
       params.push(filter.ref)
     }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    params.push(Math.max(1, Math.min(filter.limit ?? 20, 100)))
+    params.push(Math.max(1, Math.min(filter.limit ?? 20, 10_000)))
     return this.raw.all<NoteRecord>(
       `SELECT * FROM notes ${clause} ORDER BY created_at DESC LIMIT ?`,
       ...params,

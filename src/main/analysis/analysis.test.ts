@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { aggregate, preview } from './aggregate'
+import { aggregate, preview, readRows } from './aggregate'
 import { maskIp, normalizeTimestamp } from './formats'
 import { importDataset, importInventoryFiles } from './import'
 
@@ -62,6 +62,20 @@ describe('inventory import and aggregation', () => {
 
     const sum = aggregate(db, 'inventory', { metric: 'total_size' })
     expect(sum.value).toBe(400)
+
+    // The rows themselves page through, filtered by whitelisted columns only.
+    const first = readRows(db, 'inventory', { limit: 2 })
+    expect(first.rows).toHaveLength(2)
+    expect(first.next).toBe(2)
+    const rest = readRows(db, 'inventory', { limit: 2, offset: first.next })
+    expect(rest.rows).toHaveLength(1)
+    expect(rest.next).toBeNull()
+    expect(readRows(db, 'inventory', { filters: { storage_class: 'GLACIER' } }).rows).toHaveLength(
+      1,
+    )
+    expect(() => readRows(db, 'inventory', { filters: { 'size; DROP': 1 } })).toThrow(
+      /Unknown filter/,
+    )
     expect(preview(db, 'inventory', 2).rows).toHaveLength(2)
   })
 

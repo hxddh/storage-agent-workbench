@@ -19,6 +19,7 @@ import { agentTool, limitParam, providerParam, type ToolDeps, Type } from './pol
 
 const HARD_MAX_BUCKETS = 5000
 const CONCURRENCY = 12
+const ATTRIBUTED_BUCKETS = 6
 const TIMEOUT_MS = 300_000
 /** Stop starting buckets this long before the tool's timeout, and report the rest as pending. */
 const RESERVE_MS = 20_000
@@ -243,6 +244,7 @@ export function surveyTool(deps: ToolDeps) {
         observations.push(...result.observations)
       }
 
+      let unattributed = 0
       let attribution:
         | {
             status: 'ok' | 'denied' | 'unsupported' | 'error'
@@ -254,7 +256,11 @@ export function surveyTool(deps: ToolDeps) {
           }
         | undefined
       if (aws && postureChanges.length) {
-        const buckets = [...new Set(postureChanges.map((change) => change.bucket))].slice(0, 6)
+        // CloudTrail LookupEvents is rate-limited per account (about 2 calls a second);
+        // attribution reads the first six changed buckets and says how many it left.
+        const changedBuckets = [...new Set(postureChanges.map((change) => change.bucket))]
+        const buckets = changedBuckets.slice(0, ATTRIBUTED_BUCKETS)
+        unattributed = changedBuckets.length - buckets.length
         const looked = await Promise.all(
           buckets.map((bucket) =>
             attribute(
@@ -274,7 +280,7 @@ export function surveyTool(deps: ToolDeps) {
             (worst, item) => (rank[item.status] > rank[worst] ? item.status : worst),
             'ok',
           ),
-          events: looked.flatMap((item) => item.events).slice(0, 20),
+          events: looked.flatMap((item) => item.events),
           from: first?.from ?? '',
           to: first?.to ?? '',
           days: first?.days ?? 90,
@@ -397,7 +403,6 @@ export function surveyTool(deps: ToolDeps) {
       if (postureChanges.length)
         lines.push(
           `Changed since the last reading: ${postureChanges
-            .slice(0, 80)
             .map((change) => `${change.bucket} ${change.field} ${change.before} → ${change.after}`)
             .join('; ')}.${
             attribution
@@ -408,6 +413,10 @@ export function surveyTool(deps: ToolDeps) {
                 : attribution.status === 'ok'
                   ? ` CloudTrail: no matching management event in the last ${attribution.days} days${attribution.truncated ? ' (truncated)' : ''}.`
                   : ` CloudTrail attribution: ${attribution.status} (${attribution.days}-day window).`
+              : ''
+          }${
+            unattributed
+              ? ` CloudTrail was not read for ${unattributed} more changed bucket(s); its lookups are rate-limited.`
               : ''
           }`,
         )
@@ -444,7 +453,7 @@ export function surveyTool(deps: ToolDeps) {
           accountRead:
             aws && (account.pab.status === 'available' || account.pab.status === 'not_configured'),
           capacity: totals,
-          postureChanges: postureChanges.slice(0, 80),
+          postureChanges,
           ...(attribution ? { attribution } : {}),
           coverage: {
             visible: visible.length,

@@ -202,12 +202,22 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
           })
         const text = textOf(message)
         if (text) out.push({ id, kind: 'answer', at, text })
-        else if (message.stopReason === 'error' && message.errorMessage)
+        // The provider stopped at its output limit: what the agent wrote is cut, and says so.
+        if (message.stopReason === 'length')
+          out.push({
+            id: `${id}:length`,
+            kind: 'notice',
+            at,
+            code: 'cut',
+            text: '',
+            tone: 'warn',
+          })
+        if (!text && message.stopReason === 'error' && message.errorMessage)
           out.push({
             id,
             kind: 'notice',
             at,
-            text: message.errorMessage.slice(0, 300),
+            text: message.errorMessage,
             tone: 'error',
             action: 'retry',
           })

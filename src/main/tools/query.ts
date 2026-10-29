@@ -29,7 +29,13 @@ import { CodemodeSandbox, type CodemodeTool } from '@earendil-works/pi-codemode'
 import type { AccessCoverage, Chart, Table } from '@shared/contract'
 import { parse as parseCsv } from 'csv-parse/sync'
 import { parquetReadObjects } from 'hyparquet'
-import { AggregationError, aggregate, type DatasetKind, preview } from '../analysis/aggregate'
+import {
+  AggregationError,
+  aggregate,
+  type DatasetKind,
+  preview,
+  readRows,
+} from '../analysis/aggregate'
 import { datasetBytes, importDataset, importInventoryFiles } from '../analysis/import'
 import { decide } from '../estate/rules'
 import type { ProviderConfig } from '../providers'
@@ -59,8 +65,9 @@ export const QUERY_API = `Primitives (all read-only, all async, all scoped to th
   principal({bucket?, principal?, limit?}): {bucket?, paths, coverage}   // effective access for one bucket, or remembered buckets a principal reaches
   inventory({bucket, maxRows?, full?}): {file, rows, format, manifestAt, truncated, note}   // one manifest page, or full?: import every manifest file into a local dataset for aggregate()
   dataset({file, kind?}): {file, kind, rows, columns}   // import one attached access log or inventory
-  aggregate({file, metric, groupBy?, filters?, limit?}): {rows}
-Call them as tools.list({...}) etc. dataset and aggregate are the only way to read an attached file; raw rows never reach you. Return an array of flat rows (objects with string/number/boolean values), or {rows, chart: {label: "<column>", value: "<numeric column>"}}. text("…") adds a line of output.
+  aggregate({file, metric, groupBy?, filters?, limit?}): {rows, truncated}   // limit ≤ 1000 groups
+  rows({file, filters?, limit?, offset?}): {columns, rows, next}   // one page (≤ 1000) of the dataset's rows, redacted; next is the offset of the following page
+Call them as tools.list({...}) etc. An attached file is read by importing it with dataset, then aggregate or rows; there is no SQL. Return an array of flat rows (objects with string/number/boolean values), or {rows, chart: {label: "<column>", value: "<numeric column>"}}. text("…") adds a line of output.
 Budget per script: ${QUERY_BUDGET.calls} calls, ${QUERY_BUDGET.listed.toLocaleString('en-US')} listed items, ${QUERY_BUDGET.timeoutMs / 1000} s.`
 
 class BudgetError extends Error {}
@@ -68,9 +75,9 @@ class BudgetError extends Error {}
 function cell(value: unknown): string | number | null {
   if (value === null || value === undefined) return null
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
-  if (typeof value === 'string') return redact(value).slice(0, 500)
+  if (typeof value === 'string') return redact(value)
   if (typeof value === 'boolean') return value ? 'true' : 'false'
-  return redact(JSON.stringify(value)).slice(0, 500)
+  return redact(JSON.stringify(value))
 }
 
 /** The script's value as a table and an optional bar chart. */
@@ -514,6 +521,44 @@ function primitives(ctx: Context): CodemodeTool[] {
               : [{ value: result.value }],
             metric,
             groupBy: result.groupBy,
+            truncated: result.truncated,
+          }
+        } catch (error) {
+          if (error instanceof AggregationError) throw new Error(error.message)
+          throw error
+        }
+      },
+    },
+    {
+      name: 'rows',
+      description: 'One page of an imported dataset’s rows, redacted.',
+      execute: async (args) => {
+        spend()
+        const a = (args ?? {}) as {
+          file?: unknown
+          filters?: unknown
+          limit?: unknown
+          offset?: unknown
+        }
+        const file = String(a.file ?? '')
+        const dataset = ctx.datasets.get(file)
+        if (!dataset) throw new Error(`Import '${file}' with dataset() first.`)
+        const filters =
+          a.filters && typeof a.filters === 'object' && !Array.isArray(a.filters)
+            ? (a.filters as Record<string, string>)
+            : null
+        try {
+          const page = readRows(dataset.path, dataset.kind, {
+            filters,
+            limit: Number(a.limit ?? 100),
+            offset: Number(a.offset ?? 0),
+          })
+          return {
+            columns: page.columns,
+            rows: page.rows.map((row) =>
+              Object.fromEntries(Object.entries(row).map(([key, value]) => [key, cell(value)])),
+            ),
+            next: page.next,
           }
         } catch (error) {
           if (error instanceof AggregationError) throw new Error(error.message)
@@ -798,7 +843,7 @@ function primitives(ctx: Context): CodemodeTool[] {
         // Access paths redact the account id; match the same shape so a full
         // ARN argument still finds a policy path that names it.
         const needle = wanted.replace(/\b\d{12}\b/g, '<account>')
-        const limit = Math.max(1, Math.min(Number(a.limit ?? 10) || 10, 20))
+        const limit = Math.max(1, Number(a.limit) || Number.POSITIVE_INFINITY)
         const session: AccessSession = {}
         const readOne = async (bucket: string) => {
           const name = bucketArg({ bucket })
@@ -990,7 +1035,6 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
         .filter((item) => item.type === 'text')
         .map((item) => (item as { text: string }).text)
         .join('\n')
-        .slice(0, 2000)
       if (!result.ok) {
         const reason =
           result.error.kind === 'timeout'
@@ -998,9 +1042,7 @@ export function queryTool(deps: ToolDeps, timeoutMs = QUERY_BUDGET.timeoutMs) {
             : result.error.kind === 'aborted'
               ? 'The script was stopped.'
               : `${result.error.name ?? 'Error'}: ${result.error.message}`
-        throw new Error(
-          `${reason}${output ? `\nOutput before it failed:\n${output}` : ''}`.slice(0, 1500),
-        )
+        throw new Error(`${reason}${output ? `\nOutput before it failed:\n${output}` : ''}`)
       }
       const { table, chart } = toTable(result.value)
       const preview = [

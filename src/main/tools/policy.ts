@@ -192,12 +192,12 @@ export function agentTool<T extends TSchema>(
         })
         const forModel =
           status === 'refused'
-            ? `Refused: ${message.slice(0, 400)}`
+            ? `Refused: ${message}`
             : status === 'stopped'
               ? 'Stopped by the user before this call finished.'
               : status === 'timeout'
                 ? `Timed out after ${Math.round(def.timeoutMs / 1000)} s. Nothing after the last progress line was read.`
-                : `Error: ${message.slice(0, 400)}`
+                : `Error: ${message}`
         const evidenceId = api.callId ? String(api.callId) : undefined
         const details: ToolDetails = {
           target,
@@ -217,7 +217,7 @@ export function agentTool<T extends TSchema>(
         }
         await detailsWrite
         return {
-          output: [{ type: 'text' as const, text: envelope(forModel, evidenceId) }],
+          output: [{ type: 'text' as const, text: envelope(bound(forModel), evidenceId) }],
           isError: true,
           details: details as never,
         }

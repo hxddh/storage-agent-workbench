@@ -27,7 +27,7 @@ nothing itself.
 | memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | the remembered bucket table with age, every Issue (each line has `· rule <code>`), notes; with `history`, Issue events, posture changes and reading counts | bucket table, Issues, notes, optional history table |
 | memory | `note` | `text`, `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
 | memory | `accept_risk` | `provider_id?`, `bucket` (empty for the account rule), `code` (the rule code as `estate` lists it), `accept?` (default true; false reopens) | the window asks the user; it is not accepted until they confirm | confirmation card with **Accept risk** or **Reopen** |
-| change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue; both plan that change for that bucket, Issue or not) | one change plan: baseline (latest account survey, as counts), merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
+| change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue; both plan that change for that bucket, Issue or not) | one change plan: baseline (latest account survey, as counts), merged steps, manual blockers, residual, impact | plan rows; each step opens CLI/Terraform/API tabs and impact |
 | ask | `ask` | `question`, `options?`, `note?` | the question; the turn ends until the user answers | the question as an agent message, with a button per option, if any, while it waits |
 
 ## Answer and citations
@@ -72,7 +72,8 @@ account:
 | `principal({bucket?, principal?, limit?})` | grant evidence for one bucket, or remembered buckets a principal reaches, with coverage |
 | `inventory({bucket, maxRows?, full?})` | latest S3 Inventory manifest and one bounded page; `full` imports every manifest file into a dataset |
 | `dataset({file, kind?})` | import one attached access log or inventory into a local SQLite dataset |
-| `aggregate({file, metric, groupBy?, filters?, limit?})` | whitelisted aggregate over an imported dataset |
+| `aggregate({file, metric, groupBy?, filters?, limit?})` | whitelisted aggregate over an imported dataset (≤1,000 groups, with `truncated`) |
+| `rows({file, filters?, limit?, offset?})` | one redacted page (≤1,000) of an imported dataset's rows, with the next offset |
 
 Budget per script: 2,000 calls, 500,000 listed items, 120 seconds and 256 MiB;
 the script's length is not limited. The returned rows (at most 500 on the page,
@@ -115,16 +116,18 @@ the risk fixed, it says so instead of offering the button.
 - The harness blocks a call only past a runaway ceiling of **100** rounds of
   tool calls in one turn. There are no per-model budgets, and it never refuses
   a repeated call; how much to read is the agent's decision.
-- `object.preview` reads at most 8 KiB and only for text-like content types under
-  1 MiB; the body of a large object is never downloaded.
-- `dataset` imports at most 2,000,000 rows and `aggregate` answers only
-  whitelisted metrics and dimensions; it never accepts SQL.
+- `object.preview` reads the first 8 KiB of any object, whatever its declared
+  type; bytes that are not text are reported as binary, not shown. The rest of
+  the body is never downloaded.
+- `dataset` imports at most 2,000,000 rows; `aggregate` answers whitelisted
+  metrics and dimensions and `rows` filters by whitelisted columns; neither
+  accepts SQL.
 - `note` is redacted and recorded as `author=agent`; its length and the number
   of notes are not capped.
 - `survey` opens and resolves Issues through `estate`, never through prose.
-- `estate(history: true)` reads at most 80 Issue events and 200 posture
-  changes, merges and orders them newest first, and keeps at most 60 rows in
-  the view. An unfiltered history also includes at most 30 reading records.
+- `estate(history: true)` merges Issue events, posture changes and (unfiltered)
+  reading records newest first, up to `limit` rows (default 200), and says when
+  more exist.
   Reading rows are account-wide, so a `bucket` or `code` filter omits them.
   `since` is an ISO date or timestamp. History is memory evidence, never raw
   request text, and it does not make the current reading fresh.

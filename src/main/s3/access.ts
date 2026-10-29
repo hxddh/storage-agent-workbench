@@ -79,8 +79,8 @@ function path(
 ): AccessPath {
   return {
     source,
-    principal: principal.replace(/\b\d{12}\b/g, '<account>').slice(0, 240),
-    actions: [...new Set(actions)].slice(0, 20),
+    principal: principal.replace(/\b\d{12}\b/g, '<account>'),
+    actions: [...new Set(actions)],
     condition,
     public: isPublic,
     note,

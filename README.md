@@ -45,7 +45,8 @@ Version in this tree: **36.0.0**.
   script open under the query's step.
 - **Import logs and inventories.** Attach an access log or S3 Inventory, then
   use `dataset`, `aggregate`, `inventory` or `principal`. A full Inventory can
-  be imported into a local dataset; raw rows never reach the model.
+  be imported into a local dataset; the agent reads it with `aggregate`, or
+  page by page with `rows` (redacted, client IPs masked).
 - **Turn risks into one change plan.** `change_plan` produces AWS CLI, Terraform
   and API document text with an impact preview built from what the estate
   remembers. A batch plan merges lifecycle rules per bucket, checks the current

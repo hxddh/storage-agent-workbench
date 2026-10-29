@@ -183,10 +183,9 @@ export function evaluatePolicy(document: string | undefined | null): PolicyFacts
     if (facts.statements.length >= 20) facts.statementsTruncated = true
     else {
       const principal = statement.NotPrincipal
-        ? `everyone except ${JSON.stringify(statement.NotPrincipal).slice(0, 120)}`
+        ? `everyone except ${JSON.stringify(statement.NotPrincipal)}`
         : principalText(statement.Principal)
-      const actions =
-        statement.NotAction !== undefined ? ['*'] : list(statement.Action).map(String).slice(0, 12)
+      const actions = statement.NotAction !== undefined ? ['*'] : list(statement.Action).map(String)
       const condition =
         statement.Condition && typeof statement.Condition === 'object'
           ? Object.entries(statement.Condition as Record<string, unknown>)
@@ -195,7 +194,6 @@ export function evaluatePolicy(document: string | undefined | null): PolicyFacts
                   ? Object.keys(block as Record<string, unknown>).map((key) => `${operator}:${key}`)
                   : [],
               )
-              .slice(0, 6)
               .join(', ') || null
           : null
       facts.statements.push({

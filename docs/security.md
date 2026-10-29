@@ -27,9 +27,12 @@
    `<`, `>` and `&` are escaped before wrapping, so an object tag, metadata
    value or error message cannot close the envelope. Bucket names, object keys
    and log lines are data, not instructions.
-6. **No model-facing raw rows.** Logs and inventories are parsed into a local
-   SQLite file; the model receives only aggregates and bounded samples. A query
-   script's rows are capped at 500 on the page and 40 in the model prompt.
+6. **Attached data is parsed, masked and redacted before the model reads it.**
+   Logs and inventories are parsed into a local SQLite file with client IPs
+   masked at import. The agent reads it with whitelisted `aggregate`s or one
+   redacted page of `rows` at a time (≤1,000); there is no SQL. Every result
+   passes `redact()`, the untrusted-data envelope and `bound()`, and the step
+   says when `bound()` cut it.
    Estate history is likewise structured: Issue-event kinds, dates, bucket,
    rule and redacted evidence, plus posture changes. Raw user requests and the
    `search_docs` text are not part of memory and never enter a prompt.

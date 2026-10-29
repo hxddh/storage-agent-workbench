@@ -312,7 +312,7 @@ export interface Assessed {
 }
 
 /** App notices are codes; the window words them in the user's language. */
-export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'budget'
+export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'budget' | 'cut'
 
 export interface LiveTool {
   callId: string

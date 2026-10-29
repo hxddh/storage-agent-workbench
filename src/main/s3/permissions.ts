@@ -59,7 +59,7 @@ export function permissionGaps(facts: BucketFacts, access = false): PermissionGa
       action: 'organizations:ListPoliciesForTarget',
     })
   }
-  return gaps.slice(0, 16)
+  return gaps
 }
 
 export function accessPermissionGaps(
