@@ -27,6 +27,8 @@ export function registerIpc(app: App): void {
 
   ipcMain.handle('agent:older', (_event, id: string, before: string) => app.tasks.older(id, before))
 
+  ipcMain.handle('agent:childEntries', (_event, id: string) => app.tasks.childEntries(id))
+
   ipcMain.handle(
     'agent:createTask',
     async (_event, text: string, tokens: string[], context?: ContextRef[]) => {

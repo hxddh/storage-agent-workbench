@@ -286,7 +286,11 @@ try {
   await say('Delegate a bucket survey')
   const delegated = await openTool('Delegated to a child agent')
   await delegated.locator('.delegate-view').waitFor({ timeout: 30_000 })
-  console.log('DELEGATE OK')
+  // The child's own conversation shows in place: its request and its steps.
+  await delegated.locator('.child-request:has-text("Survey my account.")').waitFor({ timeout: 10_000 })
+  const childSteps = await delegated.locator('.child-steps > li.step').count()
+  if (childSteps < 1) await fail('delegate step shows none of the child agent steps')
+  console.log(`DELEGATE OK: ${childSteps} child step(s)`)
 
   const db = readFileSync(join(dataDir, 'storage-agent.db'))
   console.log('DB BYTES:', db.length)

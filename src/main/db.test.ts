@@ -72,7 +72,6 @@ describe('schema', () => {
       'agent_tools',
       'audit',
       'datasets',
-      'notes',
       'providers',
       'search_docs',
       'search_docs_fts',
@@ -80,24 +79,6 @@ describe('schema', () => {
     ])
     // Opening it again changes nothing.
     expect((await AppDb.open(raw)).resetTasks).toBe(false)
-  })
-
-  it('migrates a v17 database in place and adds agent tools', async () => {
-    const raw = await openNodeSqliteDatabase(
-      join(mkdtempSync(join(tmpdir(), 'sa-v17-')), 'db.sqlite'),
-    )
-    await raw.exec(`
-      CREATE TABLE providers (id TEXT PRIMARY KEY, name TEXT);
-      PRAGMA user_version = 17;
-    `)
-    const db = await AppDb.open(raw)
-    expect(db.resetTasks).toBe(false)
-    const tables = await raw.all<{ name: string }>(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_tools'",
-    )
-    expect(tables).toHaveLength(1)
-    const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(HOST_SCHEMA_VERSION)
   })
 
   it('starts over from a database of any other layout, pi tables included', async () => {
@@ -109,7 +90,7 @@ describe('schema', () => {
       CREATE TABLE pi_entries (id INTEGER PRIMARY KEY);
       CREATE TABLE providers (id TEXT PRIMARY KEY, name TEXT, kind TEXT);
       INSERT INTO providers VALUES ('p', 'Old', 'aws');
-      PRAGMA user_version = 16;
+      PRAGMA user_version = 18;
     `)
     const db = await AppDb.open(raw)
     expect(db.resetTasks).toBe(true)
@@ -172,15 +153,4 @@ it('purges a delegated child conversation and its task rows', async () => {
     const rows = await db.raw.all<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)
     expect(rows[0]?.n, table).toBe(0)
   }
-})
-
-describe('notes', () => {
-  it('are plain text, newest first, and outlive the account they mention', async () => {
-    const db = await open()
-    await db.insertNote({ text: 'first' })
-    await new Promise((resolve) => setTimeout(resolve, 5))
-    await db.insertNote({ text: 'second' })
-    await db.deleteProvider('p')
-    expect((await db.listNotes()).map((note) => note.text)).toEqual(['second', 'first'])
-  })
 })

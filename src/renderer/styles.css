@@ -2700,9 +2700,22 @@ sup.cite.missing {
   border-left: 2px solid var(--accent);
   padding-left: 10px;
 }
-.delegate-answer {
-  margin: 0 0 4px;
+.view-link-host {
+  color: var(--ink-3);
+  font-size: 11.75px;
+}
+.child-steps {
+  margin: 0;
+}
+.child-request {
+  list-style: none;
+  color: var(--ink-2);
+  margin: 0 0 6px;
   white-space: pre-wrap;
+}
+.child-text {
+  list-style: none;
+  margin: 6px 0 0;
 }
 @media (max-width: 860px) {
   .view-row {

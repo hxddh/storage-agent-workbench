@@ -38,7 +38,14 @@ export function delegateTool(deps: ToolDeps) {
         },
         context,
       )
-      const settled = await submission.wait(context)
+      // Stop is the user's control: stopping the parent stops the child too.
+      const signal = (context as { abortSignal?: AbortSignal }).abortSignal
+      const stopChild = () => void conversation.abort(context).catch(() => undefined)
+      if (signal?.aborted) stopChild()
+      signal?.addEventListener('abort', stopChild, { once: true })
+      const settled = await submission
+        .wait(context)
+        .finally(() => signal?.removeEventListener('abort', stopChild))
       const entries = (await deps.entries?.(String(child))) ?? []
       const answer = entries.findLast((entry) => entry.kind === 'answer')?.text ?? ''
       const calls = entries.filter((entry) => entry.kind === 'tool').length
@@ -63,6 +70,7 @@ export function delegateTool(deps: ToolDeps) {
         view: {
           kind: 'delegate',
           title: args.title ?? 'Child agent',
+          task: redact(task),
           conversationId: String(child),
           answer: redact(answer),
           status,

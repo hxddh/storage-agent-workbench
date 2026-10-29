@@ -8,27 +8,16 @@ import { CloudFrontClient } from '@aws-sdk/client-cloudfront'
 import { CloudTrailClient } from '@aws-sdk/client-cloudtrail'
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch'
 import { ConfigServiceClient } from '@aws-sdk/client-config-service'
-import { CostExplorerClient } from '@aws-sdk/client-cost-explorer'
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { EC2Client } from '@aws-sdk/client-ec2'
-import { ECRClient } from '@aws-sdk/client-ecr'
 import { GuardDutyClient } from '@aws-sdk/client-guardduty'
 import { IAMClient } from '@aws-sdk/client-iam'
 import { KMSClient } from '@aws-sdk/client-kms'
-import { LambdaClient } from '@aws-sdk/client-lambda'
 import { OrganizationsClient } from '@aws-sdk/client-organizations'
-import { RDSClient } from '@aws-sdk/client-rds'
-import { Route53Client } from '@aws-sdk/client-route-53'
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3'
 import { S3ControlClient } from '@aws-sdk/client-s3-control'
-import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager'
 import { SecurityHubClient } from '@aws-sdk/client-securityhub'
-import { ServiceQuotasClient } from '@aws-sdk/client-service-quotas'
 import { SNSClient } from '@aws-sdk/client-sns'
 import { SQSClient } from '@aws-sdk/client-sqs'
-import { SSMClient } from '@aws-sdk/client-ssm'
-import { GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts'
-import { SupportClient } from '@aws-sdk/client-support'
+import { STSClient } from '@aws-sdk/client-sts'
 import { fromIni } from '@aws-sdk/credential-provider-ini'
 import type { Account, AccountInput } from '@shared/contract'
 import type { AppDb, ProviderRow } from './db'
@@ -120,24 +109,13 @@ const SERVICE_CLIENTS: Record<string, (options: Record<string, unknown>) => Clie
   accessanalyzer: (o) => new AccessAnalyzerClient(o),
   cloudwatch: (o) => new CloudWatchClient(o),
   cloudtrail: (o) => new CloudTrailClient(o),
-  ec2: (o) => new EC2Client(o),
-  lambda: (o) => new LambdaClient(o),
-  dynamodb: (o) => new DynamoDBClient(o),
-  rds: (o) => new RDSClient(o),
   cloudfront: (o) => new CloudFrontClient(o),
-  route53: (o) => new Route53Client(o),
   config: (o) => new ConfigServiceClient(o),
   securityhub: (o) => new SecurityHubClient(o),
   guardduty: (o) => new GuardDutyClient(o),
-  ecr: (o) => new ECRClient(o),
   sns: (o) => new SNSClient(o),
   sqs: (o) => new SQSClient(o),
-  secretsmanager: (o) => new SecretsManagerClient(o),
-  ssm: (o) => new SSMClient(o),
-  servicequotas: (o) => new ServiceQuotasClient(o),
-  support: (o) => new SupportClient(o),
   backup: (o) => new BackupClient(o),
-  costexplorer: (o) => new CostExplorerClient(o),
 }
 
 const GLOBAL = new Set(['iam', 'organizations', 'route53', 'cloudfront', 'support', 'costexplorer'])
@@ -146,7 +124,6 @@ export class Providers {
   private readonly names = new Map<string, { at: number; names: string[] }>()
   private readonly clients = new Map<string, S3Client>()
   private readonly services = new Map<string, Client>()
-  private readonly accountIds = new Map<string, string | null>()
 
   constructor(
     private readonly db: AppDb,
@@ -333,20 +310,6 @@ export class Providers {
     return this.clientFor(provider, 'sts', provider.region || 'us-east-1') as STSClient
   }
 
-  /** The account's own id, cached; null when the endpoint cannot answer STS. */
-  async accountId(provider: ProviderConfig): Promise<string | null> {
-    if (this.accountIds.has(provider.id)) return this.accountIds.get(provider.id) ?? null
-    try {
-      const identity = await this.sts(provider).send(new GetCallerIdentityCommand({}))
-      const id = identity.Account && /^\d{12}$/.test(identity.Account) ? identity.Account : null
-      this.accountIds.set(provider.id, id)
-      return id
-    } catch {
-      this.accountIds.set(provider.id, null)
-      return null
-    }
-  }
-
   /** The regional client factory a reading uses; a custom endpoint has one region. */
   regional(provider: ProviderConfig): ((region: string) => S3Client) | undefined {
     if (provider.endpoint) return undefined
@@ -355,7 +318,6 @@ export class Providers {
 
   private forget(id: string): void {
     this.names.delete(id)
-    this.accountIds.delete(id)
     for (const map of [this.clients, this.services] as Map<string, { destroy(): void }>[]) {
       for (const [key, client] of map) {
         if (key.startsWith(`${id}:`)) {

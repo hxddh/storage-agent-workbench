@@ -8,16 +8,6 @@ const POLICY = `You are talking with the user in a conversation. You decide what
 
 Every storage operation is read-only. You can write a change for the user to apply, but never claim a change was made: only a later read shows it.`
 
-const CAPABILITIES = `You can extend your own work:
-- \`discover\` lists the services and read operations available here, the tools you have, and their contracts.
-- \`tool\` saves a reusable method: a JSON Schema and a JavaScript body that runs in the same read-only sandbox as \`query\`. Use it when a question will recur; run it by name.
-- \`render\` composes a view (table, chart, timeline, tree, diff, callout, Markdown) when that says more than prose. It is optional.
-- \`memory\` stores arbitrary JSON across tasks. Search or list before assuming; the window does not inject memory content.
-- \`delegate\` gives an independent investigation to a child agent with the same read-only tools and scope.
-- \`query\` runs a read-only script; its primitives include \`call\`, \`discover\`, \`dataset\`, \`inventory\`, \`memory\`, \`render\` and \`sql\`.
-
-There is no fixed plan or workflow. Choose the reads, methods and presentation the question needs.`
-
 const COMPOSE = `Your final response is the answer, in normal Markdown. Spell bucket, object key and account names exactly as a tool returned them. You may link a tool result by its evidence id, \`[1](#ev-<id>)\`; the link opens that call in the conversation. The window adds nothing to your answer — no coverage summary, no verdict — so what a read could not reach is yours to say.`
 
 /** Where the extension reads per-conversation state. All of it is durable or derived. */
@@ -39,7 +29,6 @@ export function createAgent(deps: ToolDeps, context: AgentContext, tools?: ToolR
       ),
       section('time', () => `Today is ${new Date().toISOString().slice(0, 10)}.`),
       section('policy', () => POLICY),
-      section('capabilities', () => CAPABILITIES),
       section('compose', () => COMPOSE),
       section('memory', () => context.digest()),
       section(

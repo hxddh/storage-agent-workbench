@@ -238,10 +238,25 @@ function Block({ block, t }: { block: ViewBlock; t: Dict }) {
       )
     case 'link':
       return (
-        <a className="view-link" href={block.href} target="_blank" rel="noreferrer">
-          {block.text}
+        // Where a link goes is on show before it is clicked: the host, and the whole URL on hover.
+        <a
+          className="view-link"
+          href={block.href}
+          target="_blank"
+          rel="noreferrer"
+          title={block.href}
+        >
+          {block.text} <span className="view-link-host">{hostOf(block.href)}</span>
         </a>
       )
+  }
+}
+
+function hostOf(href: string): string {
+  try {
+    return new URL(href).host
+  } catch {
+    return href
   }
 }
 

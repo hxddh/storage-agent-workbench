@@ -9,6 +9,7 @@ import { MemoryStore } from '../memory'
 import type { ProviderConfig, Providers } from '../providers'
 import { delegateTool } from './delegate'
 import { discoverTool } from './discover'
+import { createTools } from './index'
 import { memoryTool } from './memory'
 import type { ToolDeps } from './policy'
 import { renderTool } from './render'
@@ -106,6 +107,16 @@ describe('agent-authored tools', () => {
     expect(JSON.stringify(echoed.details.view)).toContain('logs')
   })
 
+  it('stores an account in an ARN as <account>, for call to fill in', async () => {
+    await run(toolTool(deps), {
+      action: 'save',
+      name: 'role_check',
+      code: "return 'arn:aws:iam::123456789012:role/x'",
+    })
+    const saved = await db.getAgentTool('role_check', 'c1')
+    expect(saved?.code).toContain('arn:aws:iam::<account>:role/x')
+  })
+
   it('does not let a method reach the network or filesystem', async () => {
     await run(toolTool(deps), {
       action: 'save',
@@ -172,6 +183,7 @@ describe('delegate', () => {
           fn({ createConversation: async () => ({ id: 'child' }) }),
         conversation: async () => ({
           submit: async () => ({ wait: async () => ({ status: 'done' }) }),
+          abort: async () => undefined,
         }),
       } as never,
       { abortSignal: new AbortController().signal } as never,
@@ -181,6 +193,40 @@ describe('delegate', () => {
       .join('')
     expect(text).toContain('&lt;/untrusted-data&gt;')
     expect(text).not.toContain('</untrusted-data><script>')
+  })
+})
+
+describe('delegate stop', () => {
+  it('stops the child when the parent is stopped', async () => {
+    deps.entries = async () => []
+    const controller = new AbortController()
+    let aborted = false
+    let finish: (value: unknown) => void = () => undefined
+    const pending = delegateTool(deps).execute(
+      { task: 'survey' } as never,
+      {
+        taskId: 't1',
+        conversationId: 'c1',
+        callId: 'call-2',
+        commit: async (fn: (tx: unknown) => Promise<string>) =>
+          fn({ createConversation: async () => ({ id: 'child' }) }),
+        conversation: async () => ({
+          submit: async () => ({
+            wait: () => new Promise((resolve) => (finish = resolve)),
+          }),
+          abort: async () => {
+            aborted = true
+            finish({ status: 'unanswered', reason: 'aborted' })
+          },
+        }),
+      } as never,
+      { abortSignal: controller.signal } as never,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    controller.abort()
+    const result = (await pending) as { details: { status: string } }
+    expect(aborted).toBe(true)
+    expect(result.details.status).toBe('stopped')
   })
 })
 
@@ -195,7 +241,9 @@ describe('discover', () => {
       operation: 'GetBucketPolicy',
     })
     expect(op.details.status).toBe('done')
-    expect(op.text).toContain('readOnly')
+    expect(op.text).toContain('Bucket')
+    expect(op.text).toContain('Policy')
+    createTools(deps)
     const tools = await run(discoverTool(deps), { kind: 'tools' })
     expect(tools.text).toContain('render')
   })

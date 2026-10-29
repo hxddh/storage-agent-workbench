@@ -16,28 +16,17 @@ import * as cloudfront from '@aws-sdk/client-cloudfront'
 import * as cloudtrail from '@aws-sdk/client-cloudtrail'
 import * as cloudwatch from '@aws-sdk/client-cloudwatch'
 import * as config from '@aws-sdk/client-config-service'
-import * as costexplorer from '@aws-sdk/client-cost-explorer'
-import * as dynamodb from '@aws-sdk/client-dynamodb'
-import * as ec2 from '@aws-sdk/client-ec2'
-import * as ecr from '@aws-sdk/client-ecr'
 import * as guardduty from '@aws-sdk/client-guardduty'
 import * as iam from '@aws-sdk/client-iam'
 import * as kms from '@aws-sdk/client-kms'
-import * as lambda from '@aws-sdk/client-lambda'
 import * as organizations from '@aws-sdk/client-organizations'
-import * as rds from '@aws-sdk/client-rds'
-import * as route53 from '@aws-sdk/client-route-53'
 import * as s3 from '@aws-sdk/client-s3'
 import * as s3control from '@aws-sdk/client-s3-control'
-import * as secretsmanager from '@aws-sdk/client-secrets-manager'
 import * as securityhub from '@aws-sdk/client-securityhub'
-import * as servicequotas from '@aws-sdk/client-service-quotas'
 import * as sns from '@aws-sdk/client-sns'
 import * as sqs from '@aws-sdk/client-sqs'
-import * as ssm from '@aws-sdk/client-ssm'
 import * as sts from '@aws-sdk/client-sts'
 import { GetCallerIdentityCommand } from '@aws-sdk/client-sts'
-import * as support from '@aws-sdk/client-support'
 import type { ProviderConfig, Providers } from '../providers'
 import { redact } from '../security/redact'
 import { ScopeError } from '../security/scope'
@@ -53,31 +42,19 @@ const MODULES: Record<string, Record<string, unknown>> = {
   accessanalyzer,
   cloudwatch,
   cloudtrail,
-  ec2,
-  lambda,
-  dynamodb,
-  rds,
   cloudfront,
-  route53,
   config,
   securityhub,
   guardduty,
-  ecr,
   sns,
   sqs,
-  secretsmanager,
-  ssm,
-  servicequotas,
-  support,
   backup,
-  costexplorer,
 }
 
 export const SERVICES = Object.keys(MODULES)
 
 /** Operations whose names say they read. */
-const READ =
-  /^(?:Get|List|Head|Describe|Lookup|Search|Select|Simulate|BatchGet|Query|Scan)(?:[A-Z]|$)/
+const READ = /^(?:Get|List|Head|Describe|Lookup|Search|Select|Simulate|BatchGet)(?:[A-Z]|$)/
 
 /**
  * Reads that hand out credentials or start state on the service side. They
@@ -87,15 +64,8 @@ const NEVER = new Set([
   'sts:GetSessionToken',
   'sts:GetFederationToken',
   'sts:GetWebIdentityToken',
+  'sts:GetDelegatedAccessToken',
   'kms:GetParametersForImport',
-  // Secret stores: their read operations return the secret itself.
-  'ecr:GetAuthorizationToken',
-  'secretsmanager:GetSecretValue',
-  'secretsmanager:BatchGetSecretValue',
-  'ssm:GetParameter',
-  'ssm:GetParameters',
-  'ssm:GetParametersByPath',
-  'ssm:GetParameterHistory',
 ])
 
 /** Every operation a service offers, for the error that names a wrong one. */
@@ -107,33 +77,43 @@ export function operationsOf(service: string): string[] {
     .sort()
 }
 
-/**
- * Replace the account's exact id, not every 12-digit number. A timestamp, an
- * object key or a policy condition is data; only the id this account actually
- * has is removed. ARNs are handled by `redact`.
- */
-export function scrub(value: unknown, accountIds: readonly string[] = [], field = ''): unknown {
-  const ids = accountIds.filter((id) => /^\d{12}$/.test(id))
-  if (typeof value === 'string') {
-    let text = redact(value).replaceAll('[account]', '<account>')
-    for (const id of ids) text = text.replaceAll(id, '<account>')
-    // A policy principal can name another account without an ARN. Account
-    // fields are identifiers, not arbitrary numbers, so only those fields are
-    // rewritten; timestamps and object keys stay intact.
-    if (
-      /^(principal|aws|accountid|account|ownerid|owner|sourceaccount|targetaccount)$/i.test(field)
-    )
-      text = text.replace(/\b\d{12}\b/g, '<account>')
-    return text
+/** The member names of an operation's input and output, as the bundled SDK models them. */
+export function operationShape(
+  service: string,
+  operation: string,
+): { input: string[] | null; output: string[] | null } {
+  const module = MODULES[service] ?? {}
+  const members = (...names: string[]): string[] | null => {
+    for (const name of names) {
+      const shape = module[`${name}$`]
+      if (Array.isArray(shape) && Array.isArray(shape[4])) return shape[4] as string[]
+    }
+    return null
   }
-  if (Array.isArray(value)) return value.map((item) => scrub(item, ids, field))
+  return {
+    input: members(`${operation}Request`, `${operation}Input`),
+    output: members(`${operation}Output`, `${operation}Response`, `${operation}Result`),
+  }
+}
+
+/**
+ * Every 12-digit number in a value becomes `<account>`, keys included: an
+ * account id never reaches the model, whichever account it names. ARNs are
+ * masked by `redact`.
+ */
+export function scrub(value: unknown): unknown {
+  if (typeof value === 'string')
+    return redact(value)
+      .replaceAll('[account]', '<account>')
+      .replace(/\b\d{12}\b/g, '<account>')
+  if (Array.isArray(value)) return value.map(scrub)
   if (value instanceof Date) return value.toISOString()
   if (value instanceof Uint8Array) return { base64: Buffer.from(value).toString('base64') }
   if (value && typeof value === 'object')
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .filter(([key]) => key !== '$metadata')
-        .map(([key, item]) => [key, scrub(item, ids, key)]),
+        .map(([key, item]) => [scrub(key) as string, scrub(item)]),
     )
   return value
 }
@@ -198,6 +178,13 @@ function withAccount(value: unknown, account: string): unknown {
 function mentionsAccount(value: unknown): boolean {
   return JSON.stringify(value ?? null).includes('<account>')
 }
+
+/**
+ * What one body read holds unless the agent asks for more: it protects the
+ * user's disk and memory, not the agent's reach. `max_bytes` changes it, and a
+ * `Range` reads any part of an object.
+ */
+export const DEFAULT_BODY_BYTES = 1024 * 1024
 
 /** A body is streamed to the task folder, never held whole in memory. */
 async function readBody(
@@ -332,7 +319,7 @@ export interface CallInput {
   operation: string
   input?: Record<string, unknown>
   region?: string
-  /** For a streamed body (GetObject): read at most this many bytes; default: the whole body. */
+  /** For a streamed body (GetObject): read at most this many bytes (default 1 MiB). */
   maxBytes?: number
   /** Internal: read the whole body for an inventory manifest. */
   fullBody?: boolean
@@ -353,7 +340,7 @@ export function checkCall(config: ProviderConfig, call: CallInput): void {
   const operation = String(call.operation ?? '')
   if (!READ.test(operation) || NEVER.has(`${service}:${operation}`))
     throw new ScopeError(
-      `${service}:${operation} is not a read this app runs. This app only reads: operations named Get, List, Head, Describe, Lookup, Search, Select, Simulate, BatchGet, Query or Scan, except secret-store and credential reads.`,
+      `${service}:${operation} is not a read this app runs. This app only reads: operations named Get, List, Head, Describe, Lookup, Search, Select, Simulate or BatchGet, except the few that hand out credentials.`,
     )
   if (typeof MODULES[service]?.[`${operation}Command`] !== 'function')
     throw new Error(
@@ -405,14 +392,14 @@ export async function callApi(deps: CallDeps, call: CallInput): Promise<unknown>
   if (body && typeof body[Symbol.asyncIterator] === 'function')
     out.Body = await readBody(
       body,
-      call.maxBytes ?? Number.POSITIVE_INFINITY,
+      call.fullBody ? Number.POSITIVE_INFINITY : (call.maxBytes ?? DEFAULT_BODY_BYTES),
       deps.bodyDir,
       call.fullBody,
     )
   // SelectObjectContent answers with an event stream: the records as text, the rest as events.
   const events = out.Payload as AsyncIterable<Record<string, unknown>> | undefined
   if (events && typeof events[Symbol.asyncIterator] === 'function')
-    out.Payload = await readEvents(events, call.maxBytes ?? Number.POSITIVE_INFINITY)
+    out.Payload = await readEvents(events, call.maxBytes ?? DEFAULT_BODY_BYTES)
   // An S3 listing shows only the buckets this account may read.
   if (service === 's3' && call.operation === 'ListBuckets' && Array.isArray(out.Buckets)) {
     const scope = config.scope.buckets
@@ -421,8 +408,7 @@ export async function callApi(deps: CallDeps, call: CallInput): Promise<unknown>
         (item) => item.Name && scope.includes(item.Name),
       )
   }
-  const accountId = await providers.accountId(config).catch(() => null)
-  return scrub(documents(out), accountId ? [accountId] : [])
+  return scrub(documents(out))
 }
 
 /**

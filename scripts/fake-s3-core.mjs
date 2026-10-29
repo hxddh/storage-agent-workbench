@@ -156,6 +156,8 @@ export function respond(buckets, request) {
         body: '',
       }
     }
+    // A body larger than one default read.
+    if (key === 'large.txt') return reply(200, 'x'.repeat(3 * 1024 * 1024), 'text/plain')
     return reply(200, 'hello from the fake bucket', 'text/plain')
   }
 

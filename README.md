@@ -7,7 +7,7 @@ every tool call the agent made and what it returned. Nothing in storage is
 written, deleted or changed. The agent may write a change for you to apply; the
 app never runs it.
 
-Version in this tree: **38.0.0**.
+Version in this tree: **39.0.0**.
 
 ![A conversation in Storage Agent](docs/screenshot.png)
 
@@ -15,11 +15,10 @@ Version in this tree: **38.0.0**.
 
 - **Reads what the services return.** `call` runs one read-only operation of a
   bundled AWS SDK client: S3, S3 Control, STS, IAM, Organizations, KMS, Access
-  Analyzer, CloudWatch, CloudTrail, EC2, Lambda, DynamoDB, RDS, CloudFront,
-  Route 53, Config, Security Hub, GuardDuty, ECR, SNS, SQS, Secrets Manager,
-  SSM, Service Quotas, Support, Backup and Cost Explorer. Any operation named
-  Get, List, Head, Describe, Lookup, Search, Select, Simulate, BatchGet, Query
-  or Scan runs. The response is JSON, or the service's error code, HTTP status
+  Analyzer, CloudWatch, CloudTrail, Config, CloudFront, Backup, Security Hub,
+  GuardDuty, SNS and SQS: the storage and the account around it. Any operation
+  named Get, List, Head, Describe, Lookup, Search, Select, Simulate or BatchGet
+  runs. The response is JSON, or the service's error code, HTTP status
   and message.
 - **Answers questions over many objects.** `query` runs a read-only JavaScript
   script in a QuickJS sandbox. Its primitives include `call()`, `dataset()`,
@@ -126,28 +125,28 @@ prove the harness runs; they are not a model-quality score. See
 
 - No storage put, delete or mutate call exists. Only operations whose names
   say they read run, and the few reads that hand out credentials do not.
-  Secret-store and registry-credential reads (ECR, Secrets Manager and SSM
-  parameters) are refused.
+  Services whose reads return secrets or run compute (Lambda, EC2, Secrets
+  Manager, SSM, ECR, DynamoDB) are not bundled.
 - Secrets are sealed with Electron `safeStorage`, or a local AES-256-GCM key
   file when no OS keyring exists. A profile account stores a profile name,
   never a key. The renderer never receives a credential.
 - Account ids never reach the model, the window, a log or SQLite. Every
-  response and error passes through `scrub()`, which replaces the caller's
-  actual account id and account fields (such as a policy principal) with
-  `<account>` and redacts the account in ARNs. Other 12-digit data is not
-  rewritten. The agent writes `<account>` where the
-  caller's id belongs and `call` fills it in.
+  response and error passes through `scrub()`, which replaces every 12-digit
+  number with `<account>`, whichever account it names, and redacts the account
+  in ARNs. The agent writes `<account>` where the caller's id belongs and
+  `call` fills it in.
 - Tool output reaches the model inside `<untrusted-data>`, redacted. Tool
   status comes from structured details, never from result text.
 - A denied or unsupported call comes back as the service's error. The call
   stays in the conversation; saying what could not be read is the agent's.
 - Every read goes through the agent. Without a model the window asks for one;
   without an account it asks for one.
-- The harness sets no round ceiling, call budget or fixed output cap; **Stop**
-  is yours. The model's output budget is a bounded default of
-  `min(8,192, context window)` tokens.
-- An object body streams to the task folder; `max_bytes` can stop it earlier.
-  A 64 KiB preview is returned with a `ref`, and `more` reads any offset.
+- The harness sets no round ceiling, call budget or fixed output cap: each
+  model's output maximum is learned from its provider. **Stop** is yours, and
+  stopping a task stops its child agents.
+- An object body streams to the task folder, up to `max_bytes` (default 1 MiB,
+  the agent's to raise; a `Range` reads any part). A 64 KiB preview is
+  returned with a `ref`, and `more` reads any offset.
 - Installers are signed and notarized only when every signing secret is
   configured. Without a model key, release notes carry a smoke result, not a
   model-quality claim.

@@ -11,13 +11,15 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { MemoryRow, NoteRow } from '@shared/contract'
+import type { MemoryRow } from '@shared/contract'
 import { checkSql } from './sql'
 
 export interface MemoryDoc {
   id: string
   scope: 'task' | 'user'
   conversationId: string | null
+  /** The task that wrote it last; null when the window or nothing wrote it. */
+  origin: string | null
   key: string
   value: unknown
   text: string
@@ -30,6 +32,7 @@ interface Row {
   id: string
   scope: string
   conversation_id: string | null
+  origin: string | null
   key: string
   value_json: string
   text: string
@@ -38,11 +41,14 @@ interface Row {
   updated_at: string
 }
 
+const MEMORY_VERSION = 1
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS docs (
   id TEXT PRIMARY KEY,
   scope TEXT NOT NULL,
   conversation_id TEXT,
+  origin TEXT,
   key TEXT NOT NULL,
   value_json TEXT NOT NULL,
   text TEXT NOT NULL,
@@ -54,6 +60,11 @@ CREATE TABLE IF NOT EXISTS docs (
 CREATE INDEX IF NOT EXISTS docs_key ON docs (key);
 CREATE INDEX IF NOT EXISTS docs_scope ON docs (scope, conversation_id);
 `
+
+/** A LIKE pattern's literal text: `%`, `_` and `\\` match only themselves. */
+function like(text: string): string {
+  return text.replace(/[%_\\]/g, (m) => `\\${m}`)
+}
 
 function textOf(value: unknown): string {
   if (typeof value === 'string') return value
@@ -83,6 +94,7 @@ function doc(row: Row): MemoryDoc {
     id: row.id,
     scope: row.scope === 'task' ? 'task' : 'user',
     conversationId: row.conversation_id,
+    origin: row.origin ?? null,
     key: row.key,
     value,
     text: row.text,
@@ -107,7 +119,12 @@ export class MemoryStore {
     const db = new DatabaseSync(path)
     db.exec('PRAGMA journal_mode = WAL')
     db.exec('PRAGMA synchronous = NORMAL')
+    // One layout; a file of any other starts over.
+    const version = (db.prepare('PRAGMA user_version').get() as { user_version: number })
+      .user_version
+    if (version !== MEMORY_VERSION) db.exec('DROP TABLE IF EXISTS docs')
     db.exec(SCHEMA)
+    db.exec(`PRAGMA user_version = ${MEMORY_VERSION}`)
     return new MemoryStore(path, db)
   }
 
@@ -118,8 +135,9 @@ export class MemoryStore {
     tags?: string[]
     scope?: 'task' | 'user'
     conversationId?: string | null
+    origin?: string | null
   }): MemoryDoc {
-    const key = input.key.trim().slice(0, 300)
+    const key = input.key.trim()
     if (!key) throw new Error('memory key is required.')
     const scope = input.scope === 'task' ? 'task' : 'user'
     const conversationId = scope === 'task' ? (input.conversationId ?? null) : null
@@ -129,16 +147,18 @@ export class MemoryStore {
       .prepare(`SELECT * FROM docs WHERE scope = ? AND conversation_id IS ? AND key = ?`)
       .get(scope, conversationId, key) as unknown as Row | undefined
     const valueJson = JSON.stringify(input.value ?? null)
-    const text = (input.text?.trim() || textOf(input.value)).slice(0, 200_000)
-    const tags = (input.tags ?? []).filter((tag) => typeof tag === 'string').slice(0, 32)
+    const text = input.text?.trim() || textOf(input.value)
+    const tags = (input.tags ?? []).filter((tag) => typeof tag === 'string')
+    const origin = input.origin ?? null
     if (existing) {
       this.db
         .prepare(
-          `UPDATE docs SET value_json = ?, text = ?, tags_json = ?, updated_at = ? WHERE id = ?`,
+          `UPDATE docs SET value_json = ?, text = ?, tags_json = ?, origin = ?, updated_at = ? WHERE id = ?`,
         )
-        .run(valueJson, text, JSON.stringify(tags), at, existing.id)
+        .run(valueJson, text, JSON.stringify(tags), origin, at, existing.id)
       return doc({
         ...existing,
+        origin,
         value_json: valueJson,
         text,
         tags_json: JSON.stringify(tags),
@@ -148,14 +168,15 @@ export class MemoryStore {
     const id = randomUUID()
     this.db
       .prepare(
-        `INSERT INTO docs (id, scope, conversation_id, key, value_json, text, tags_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO docs (id, scope, conversation_id, origin, key, value_json, text, tags_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, scope, conversationId, key, valueJson, text, JSON.stringify(tags), at, at)
+      .run(id, scope, conversationId, origin, key, valueJson, text, JSON.stringify(tags), at, at)
     return doc({
       id,
       scope,
       conversation_id: conversationId,
+      origin,
       key,
       value_json: valueJson,
       text,
@@ -197,32 +218,31 @@ export class MemoryStore {
     }
     if (input.prefix) {
       clauses.push("key LIKE ? ESCAPE '\\'")
-      params.push(`${input.prefix.replace(/[%_\\]/g, (m) => `\\${m}`)}%`)
+      params.push(`${like(input.prefix)}%`)
     }
     if (input.tag) {
-      clauses.push('tags_json LIKE ?')
-      params.push(`%${JSON.stringify(input.tag).slice(1, -1)}%`)
+      clauses.push("tags_json LIKE ? ESCAPE '\\'")
+      params.push(`%${like(JSON.stringify(input.tag))}%`)
     }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
-    const limit = Math.max(1, Math.min(input.limit ?? 100, 500))
+    // No limit unless the caller asks for one; -1 is SQLite's "all".
+    const limit = input.limit && input.limit > 0 ? input.limit : -1
     const rows = this.db
       .prepare(`SELECT * FROM docs ${where} ORDER BY updated_at DESC LIMIT ?`)
       .all(...params, limit) as unknown as Row[]
     return rows.map(doc)
   }
 
-  search(query: string, limit = 20): MemoryDoc[] {
+  search(query: string, limit?: number): MemoryDoc[] {
     const needle = query.trim()
     if (!needle) return []
+    const pattern = `%${like(needle)}%`
     const rows = this.db
       .prepare(
-        `SELECT * FROM docs WHERE text LIKE ? OR key LIKE ? ORDER BY updated_at DESC LIMIT ?`,
+        `SELECT * FROM docs WHERE text LIKE ? ESCAPE '\\' OR key LIKE ? ESCAPE '\\'
+         ORDER BY updated_at DESC LIMIT ?`,
       )
-      .all(
-        `%${needle.replace(/[%_\\]/g, (m) => `\\${m}`)}%`,
-        `%${needle}%`,
-        Math.max(1, Math.min(limit, 100)),
-      ) as unknown as Row[]
+      .all(pattern, pattern, limit && limit > 0 ? limit : -1) as unknown as Row[]
     return rows.map(doc)
   }
 
@@ -260,22 +280,13 @@ export class MemoryStore {
 
   /** The window's list: every document, newest first. */
   rows(): MemoryRow[] {
-    return this.list({ limit: 500 }).map((item) => ({
+    return this.list().map((item) => ({
       id: item.id,
       key: item.key,
       scope: item.scope,
       text: item.text,
       createdAt: item.createdAt,
     }))
-  }
-
-  /** Bring v37 notes into the memory file once. */
-  importNotes(notes: readonly NoteRow[]): void {
-    for (const note of notes) {
-      const key = `note:${note.id}`
-      if (this.get(key)) continue
-      this.put({ key, value: note.text, text: note.text, tags: ['note'], scope: 'user' })
-    }
   }
 
   close(): void {

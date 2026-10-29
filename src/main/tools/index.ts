@@ -12,7 +12,7 @@ import { renderTool } from './render'
 import { toolTool } from './tool'
 
 export function createTools(deps: ToolDeps): ToolRegistration[] {
-  return [
+  const tools = [
     callTool(deps),
     queryTool(deps),
     probeTool(deps),
@@ -25,4 +25,6 @@ export function createTools(deps: ToolDeps): ToolRegistration[] {
     // Asking the user is the one tool that does not read storage.
     askTool(),
   ] as ToolRegistration[]
+  deps.catalog = tools.map((tool) => ({ name: tool.name, description: tool.description }))
+  return tools
 }

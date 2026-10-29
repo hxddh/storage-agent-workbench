@@ -53,8 +53,8 @@ Script aliases: `npm run e2e`, `npm run e2e:audit`, `npm run eval`,
   pages through every object, scope holds inside a script, a script runs until
   stopped, SQL over an attached log only reads;
 - log normalization, IP masking, CSV and Parquet import, inventory import;
-- the schema: created on a new file, migrated from 17 in place, and started
-  over from an older incompatible layout with pi tables included;
+- the schema: created on a new file, and started over from any other version
+  with pi tables included; the memory file likewise;
 - the search index (CJK substrings, FTS ranking, `%` and `_` as text);
 - the entry projection, the live projection and the conversation thread
   (order, steers, the live slot, citations, what each call returned, the

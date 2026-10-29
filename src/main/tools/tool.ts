@@ -7,8 +7,6 @@ import { agentTool, providerParam, type ToolDeps, Type } from './policy'
 import { sandboxPrimitives, toTable } from './query'
 
 const NAME = /^[a-z][a-z0-9_]{1,48}$/
-const MAX_CODE = 200_000
-const MAX_SCHEMA = 100_000
 
 /** The agent's own methods: code in the same read-only sandbox as `query`. */
 export function toolTool(deps: ToolDeps) {
@@ -42,22 +40,21 @@ export function toolTool(deps: ToolDeps) {
         if (!NAME.test(name))
           throw new Error('tool name must start with a letter and use a-z, 0-9, _ (2–49 chars).')
         if (!args.code?.trim()) throw new Error('tool code is required.')
-        if (args.code.length > MAX_CODE)
-          throw new Error(`tool code is limited to ${MAX_CODE} chars.`)
         const schema = args.schema ?? { type: 'object', additionalProperties: true }
         if (!schema || typeof schema !== 'object' || Array.isArray(schema))
           throw new Error('tool schema must be a JSON Schema object.')
-        const schemaJson = redact(JSON.stringify(schema))
-        if (schemaJson.length > MAX_SCHEMA)
-          throw new Error(`tool schema is limited to ${MAX_SCHEMA} chars.`)
+        // Credential-shaped text never reaches SQLite; an account in an ARN is
+        // stored as `<account>`, which `call` fills in when the method runs.
+        const stored = (text: string) => redact(text).replaceAll('[account]', '<account>')
+        const schemaJson = stored(JSON.stringify(schema))
         const scope = args.scope === 'task' ? 'task' : 'user'
         const row = await deps.db.upsertAgentTool({
           scope,
           conversationId: scope === 'task' ? run.conversationId : null,
           name,
-          description: redact(args.description?.trim() ?? '').slice(0, 500),
+          description: stored(args.description?.trim() ?? ''),
           schemaJson,
-          code: redact(args.code),
+          code: stored(args.code),
         })
         return {
           model: `Saved tool '${row.name}' (${row.scope}).`,

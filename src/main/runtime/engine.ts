@@ -9,7 +9,7 @@
 import { configure } from '@earendil-works/pi-durable'
 import type { AttachmentRef, ContextRef, NoticeCode } from '@shared/contract'
 import { escapeTags } from '../security/redact'
-import { installModel } from './model'
+import { installModel, learnOutputLimit } from './model'
 import type { RunData } from './project'
 import { CONTEXT, type RunOutcome, type Runtime } from './session'
 import type { Tasks } from './tasks'
@@ -124,7 +124,15 @@ export class Engine {
           ...(chosen.provider !== stored.provider ? { keyRef: '' } : {}),
         }
       : stored
-    const model = installModel(this.deps.models, effective, this.deps.vault)
+    const limit = await learnOutputLimit(this.deps.models, effective, this.deps.vault)
+    const model = installModel(
+      this.deps.models,
+      effective,
+      this.deps.vault,
+      undefined,
+      undefined,
+      limit,
+    )
     await this.runtime.pi.commit(
       (tx) =>
         configure(tx, conversation.id, {

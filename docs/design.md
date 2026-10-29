@@ -192,8 +192,10 @@ query's step. Byte columns render as human sizes; CSV keeps raw numbers.
 A `render` result is a view document, not JSON: the app draws its Markdown,
 tables, charts, trees, timelines, diffs, callouts, key-value rows and code.
 Every block is data and follows the same typography and tokens as the rest of
-the page. A `memory` result is a table of documents. A `delegate` result is the
-child's answer and its status, not a transcript.
+the page. A `render` link shows its host after its text, and its whole URL on
+hover. A `memory` result is a table of documents, each with the task that
+wrote it. A `delegate` result is the child's conversation in place: its
+request, its steps (each opens like any other step) and its text.
 
 The step's argument summary is shown for a storage read where its input helps
 (`call`, `query`, `probe`, `more`). For `render`, `memory`, `tool`, `delegate`,

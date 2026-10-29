@@ -4,15 +4,15 @@
 
 1. **Read-only.** No product tool calls a mutating storage or cloud API.
    `call` (`s3/api.ts`) runs an operation only when its name starts with Get,
-   List, Head, Describe, Lookup, Search, Select, Simulate, BatchGet, Query or
-   Scan and it exists on a bundled SDK client. `NEVER` refuses the reads that
-   hand out credentials or start state on the service (STS `GetSessionToken`,
-   `GetFederationToken`, `GetWebIdentityToken`; KMS `GetParametersForImport`).
-   Secret-store and registry-credential reads are refused too: ECR
-   `GetAuthorizationToken`, Secrets Manager `GetSecretValue` and
-   `BatchGetSecretValue`, SSM `GetParameter`, `GetParameters`,
-   `GetParametersByPath` and `GetParameterHistory`. A refused call sends
-   nothing. There is no shell, raw HTTP proxy, write
+   List, Head, Describe, Lookup, Search, Select, Simulate or BatchGet and it
+   exists on a bundled SDK client. `NEVER` refuses the reads that hand out
+   credentials or start state on the service (STS `GetSessionToken`,
+   `GetFederationToken`, `GetWebIdentityToken`, `GetDelegatedAccessToken`;
+   KMS `GetParametersForImport`). The bundled services are the storage and the
+   account around it; a service whose reads return secrets or run compute
+   (Lambda function configuration and code URLs, EC2 user data and console
+   output, Secrets Manager, SSM parameters and command output, ECR layer URLs,
+   DynamoDB items) is not bundled at all. A refused call sends nothing. There is no shell, raw HTTP proxy, write
    endpoint or apply action. A change the agent writes is text for the user;
    the app never runs it.
 2. **Scope.** An account may name a bucket allow-list. On a scoped account,
@@ -32,11 +32,12 @@
    profile account stores only the profile name; the AWS SDK resolves it from
    the user's `~/.aws` files at call time, and the app reads those files only
    for profile names.
-4. **Account ids.** `scrub()` (`s3/api.ts`) replaces the caller's actual
-   12-digit account id and account fields (such as a policy principal) with
-   `<account>` and lets `redact()` handle the account in ARNs. It does not
-   rewrite every 12-digit number: a timestamp, an object key or a policy
-   condition is data. Every `call` response, every `probe`
+4. **Account ids.** `scrub()` (`s3/api.ts`) replaces every 12-digit number,
+   keys included, with `<account>`, whichever account it names: the caller's,
+   an organization member's, a cross-account principal's, one inside a
+   CloudTrail event string. `redact()` masks the account in ARNs. A 12-digit
+   object key or timestamp is masked too; that is the price of never letting
+   an id through. Every `call` response, every `probe`
    answer and every value a `query` script returns is scrubbed, and
    `describeError()` scrubs every tool's error text. Where the agent writes
    `<account>` in an input, and for S3 Control's `AccountId`, `call` puts in
@@ -121,12 +122,16 @@
   Inventory files stream to disk. A Parquet file is read whole into
   memory. Attachments are not malware-scanned.
 - **A hostile object body.** A streamed `GetObject` body is written to the
-  task folder; the model gets a 64 KiB preview and a ref. `max_bytes` can stop
-  the stream earlier. The bytes are never executed, and `more` reads text by
+  task folder up to `max_bytes` (default 1 MiB, so one read cannot fill the
+  disk); the model gets a 64 KiB preview and a ref. The bytes are never executed, and `more` reads text by
   offset. An event stream is read up to `max_bytes`.
 - **A hostile memory document or method.** Memory values are data; a method's
   code runs only in the QuickJS sandbox with read-only primitives. Neither can
-  reach the host filesystem, network, process or vault.
+  reach the host filesystem, network, process or vault. Untrusted tool output
+  can still persuade the agent to remember something false; a recalled
+  document reaches the model inside `<untrusted-data>` with the task that
+  wrote it and when, and Settings lists every document so the user can forget
+  one.
 - **`probe`** sends one unsigned request, without credentials, only to the
   account's endpoint host or a host under it (on AWS, an S3 host).
 - **The renderer is sandboxed**: `contextIsolation`, sandbox, no

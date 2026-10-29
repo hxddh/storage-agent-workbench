@@ -261,6 +261,12 @@ export class Tasks {
     }
   }
 
+  /** A delegated child conversation, as the window renders it. */
+  async childEntries(conversationId: string): Promise<UiEntry[]> {
+    if (!/^\d+$/.test(String(conversationId))) return []
+    return this.runtime.entries(String(conversationId))
+  }
+
   async older(
     taskId: string,
     before: string,
