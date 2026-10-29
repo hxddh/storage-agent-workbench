@@ -6,36 +6,34 @@ A **task** is one conversation: your messages and, between them, every tool
 call the agent made and what it said. Nothing is written, deleted or changed in
 storage. The agent may write a change for you to apply; the app never runs it.
 
-Version in this tree: **36.0.0**.
+Version in this tree: **37.0.0**.
 
 ![A conversation in Storage Agent](docs/screenshot.png)
 
 ## What it does
 
-- **Reads what the storage APIs return.** `config` reads one bucket's
-  configuration section by section — location, policy, policy status, public
-  access block, ACL, ownership, encryption, versioning, object lock, lifecycle,
-  replication, CORS, website, logging, notification, inventory, tagging — each
-  as `{ status, value }` or `{ status, error }`. On AWS, `account` reads the
-  account-wide public access block, IAM authorization details, SCPs, a KMS key
-  policy, Access Analyzer findings, CloudWatch storage metrics and CloudTrail
-  events, the same way. The tools return data, not judgements: what is public,
-  risky or missing is the agent's to decide and say.
-- **Browses and checks.** `buckets`, `objects` (keys, versions or incomplete
-  uploads, a page at a time) and `object` (metadata, tags, ACL, a bounded text
-  preview). `probe` checks an endpoint's reach, TLS, latency, bucket region and
-  addressing.
-- **Answers open questions with code mode.** `query` runs a short read-only
-  script in a QuickJS sandbox for questions over many objects or buckets:
-  largest prefixes, data untouched for a year, versions piling up. It has no
-  network, filesystem, process, timer or model access. The rows and the script
-  open under the query's step.
-- **Reads logs and inventories.** Inside `query`, `inventory` reads a bucket's
-  latest S3 Inventory manifest, or imports every manifest file into a local
-  dataset; `dataset` imports an attached access log or inventory; `aggregate`
-  and `rows` read it (redacted, client IPs masked). There is no SQL.
-- **Remembers in notes.** The agent writes `note`s; they are shown to it at the
-  start of every turn, and you can forget them in Settings.
+- **Reads what the services return.** `call` runs one read-only operation of
+  any AWS SDK client the app bundles — S3, S3 Control, STS, IAM, Organizations,
+  KMS, Access Analyzer, CloudWatch and CloudTrail — named Get, List, Head,
+  Describe, Lookup, Search, Select or Simulate. It returns the service's
+  response as JSON, or its error code, HTTP status and message. A custom-endpoint
+  account answers every service at its own endpoint. The tools return data, not
+  judgements: what is public, risky or missing is the agent's to decide and say.
+- **Probes the endpoint.** `probe` sends one unsigned HEAD or GET to the
+  account's endpoint and returns the addresses, status, headers, TLS
+  certificate and timing. It marks nothing as passed or failed.
+- **Answers open questions with code mode.** `query` runs a read-only
+  JavaScript script in a QuickJS sandbox for questions over many objects or
+  buckets: largest prefixes, data untouched for a year, versions piling up. Its
+  primitives are `call()`, `dataset()` (an attached access log or inventory),
+  `inventory()` (every file of a bucket's latest S3 Inventory) and `sql()` (one
+  read-only SELECT over a dataset). It has no network, filesystem, process,
+  timer or model access, and runs until it returns or you stop it.
+- **Reads long results whole.** A result longer than 24,000 characters reaches
+  the agent in pieces; `more` reads the rest.
+- **Remembers in notes.** The agent writes `note`s, and can forget its own;
+  every note is shown to it at the start of every turn, and you can forget any
+  of them in Settings.
 - **Asks when it must.** `ask` puts a question in the conversation, with up to
   six options as buttons.
 - **Writes changes as text.** Asked for a fix, the agent writes the command or
@@ -43,8 +41,8 @@ Version in this tree: **36.0.0**.
   says a change was made; only a later read shows it.
 - **Shows what the agent did.** Each tool call is a step where it happened: a
   state mark, what it read, a note and its time. Opening it shows the shaped
-  result and exactly what the agent received. A `config` read opens as its
-  sections with their status and JSON. Provider reasoning appears as `Thought`
+  result and exactly what the agent received. A `call` or `probe` step opens
+  as the response's JSON. Provider reasoning appears as `Thought`
   only when the provider returns it. The agent may link a call as
   `[1](#ev-<id>)`; the link opens that step in place. The app adds no report,
   verdict or summary of its own. Save Markdown, copy a task link, export JSON
@@ -64,10 +62,9 @@ Settings holds the model, accounts, memory, language, theme and notifications.
 ┌──────────────────────────── Electron ────────────────────────────┐
 │ renderer (React, sandboxed)        main                          │
 │ tasks · conversation ·      ⇄ IPC ⇄  pi-durable harness          │
-│ composer                                ├ 7 read tools           │
-│                                         ├ note                   │
-│                                         ├ ask                    │
-│                                         ├ s3/raw (readers)       │
+│ composer                                ├ call · query · probe   │
+│                                         ├ more · note · ask      │
+│                                         ├ s3/api (any read)      │
 │                                         └ pi-ai → model          │
 │                              one SQLite: pi_* + host tables      │
 │                              tasks/<id>/uploads + datasets       │
@@ -85,7 +82,7 @@ Settings holds the model, accounts, memory, language, theme and notifications.
 - **One SQLite database** through Node's built-in `node:sqlite`; pi's tables
   use the `pi_` prefix. Each imported dataset is a separate SQLite file.
 - **Scope** (`scope.buckets`) is enforced in the main process by
-  `assertInScope` before any bucket read. Focus in the composer is not scope.
+  before any bucket call, and a bucket listing shows only the scoped buckets. Focus in the composer is not scope.
 
 ## Development
 
@@ -127,24 +124,32 @@ runs prove the harness runs; they are not a model-quality score. See
 - Secrets are sealed with Electron `safeStorage`, or a local AES-256-GCM file
   when no OS keyring exists. Profile accounts store a profile name, never a key.
   The renderer receives masked metadata, never a credential.
-- Account ids never reach the model, the window, a log or SQLite: reads that
-  carry them pass through `scrub()`, which replaces each 12-digit number with
-  `<account>`, and `redact()` masks the account in any ARN.
-- Tool output reaches the model inside `<untrusted-data>` and is bounded and
-  redacted. Tool status comes from `details.status`, never from result text.
-- A denied or unsupported read comes back as that status with the provider's
-  error. The call stays in the conversation; saying what could not be read is
+- Only operations whose names say they read run; the few reads that hand out
+  credentials (`sts:GetSessionToken` and the like) do not.
+- Account ids never reach the model, the window, a log or SQLite: every
+  response and error passes through `scrub()`, which replaces each 12-digit
+  number with `<account>`, and `redact()` masks the account in any ARN. The
+  agent writes `<account>` where the caller's id belongs and `call` fills it in.
+- Tool output reaches the model inside `<untrusted-data>`, redacted. Tool
+  status comes from `details.status`, never from result text.
+- A denied or unsupported call comes back as the service's error code, HTTP
+  status and message. The call stays in the conversation; saying what could not be read is
   the agent's. The app adds no coverage summary or verdict.
 - Every read goes through the agent. Without a model the window says so and
   asks for one; without an account it asks for one.
-- `query` runs under call, listing, time and memory budgets. Inventory full
-  imports are bounded by files, bytes and 2,000,000 rows.
+- The harness sets no round ceiling, timeout, call budget or fixed output cap;
+  how long to work is the agent's, and **Stop** is yours. Two defaults protect
+  this machine and the agent can raise them: sandbox memory (`memory_mb`,
+  1024 MB) and body bytes per read (`max_bytes`, 1 MiB). The window shows up
+  to 10,000 query rows; the agent gets all of them.
 - Release installers are signed and notarized only when all signing secrets are
   configured. Without a real `EVAL_API_KEY`, the release notes carry a smoke
   result rather than a model-quality claim.
 - The rule engine and Issues, the survey, estate, change-plan and accept-risk
   tools, generated change plans, reading records, scheduled checks, **Check
-  account** and demo storage were removed in 36.0.
+  account** and demo storage were removed in 36.0. The `buckets`, `objects`,
+  `object`, `config` and `account` tools and the 100-round ceiling were removed
+  in 37.0; `call` replaces the five tools.
 
 The exact current behavior, limits and IAM actions are in [docs/](docs/README.md);
 the changelog and release notes are history, not current documentation.

@@ -1,6 +1,6 @@
 # Documentation
 
-These pages describe the behavior of the **36.0.0** tree. They are not a
+These pages describe the behavior of the **37.0.0** tree. They are not a
 roadmap and not a substitute for the code.
 
 | File | What it is |
@@ -8,7 +8,7 @@ roadmap and not a substitute for the code.
 | [product.md](product.md) | Tasks as conversations, Home, the reads, memory, Settings and limits |
 | [architecture.md](architecture.md) | Processes, runtime flow, modules and storage layout |
 | [data-model.md](data-model.md) | Host tables, pi tables, datasets and retention |
-| [tools.md](tools.md) | The nine tools, citations, code mode and limits |
+| [tools.md](tools.md) | The six tools, citations, code mode and defaults |
 | [security.md](security.md) | Secrets, scope, redaction, account ids and the trust boundary |
 | [iam.md](iam.md) | The read-only IAM actions and what each one enables |
 | [capabilities.md](capabilities.md) | Provider capability matrix |
@@ -40,10 +40,9 @@ roadmap and not a substitute for the code.
   opens that step in place. The app never writes into it.
 - **Thought** — a provider-supplied reasoning summary, never a fabricated chain
   of thought. An omitted summary stays visibly omitted.
-- **Read** — one API answer as a tool returns it: `{ status, value }` or
-  `{ status, error }`. The status is `available`, `not_configured`,
-  `access_denied`, `provider_unsupported`, `missing`, `region_mismatch` or
-  `error`. A read is data; it carries no judgement.
+- **Read** — one `call`: the service's response as JSON, or its error code,
+  HTTP status and message. A 404 such as `NoSuchBucketPolicy` is an answer like
+  any other. A read is data; it carries no judgement.
 - **Note** — a fact the agent chose to remember. Notes are the agent's memory
   between tasks; the user can forget them in Settings.
 - **Change** — text the agent writes (a CLI command, a policy) for the user to
@@ -53,5 +52,7 @@ The run page of 35.x (scope line, Findings and Not checked strips, earlier
 runs) and the scripted check were removed in 36.0, and so were the rule engine
 and Issues, the `survey`, `estate`, `change_plan` and `accept_risk` tools,
 deterministic change plans, reading records and posture history, scheduled
-checks, **Check account** and demo storage. Older tasks still show their calls
-to those tools.
+checks, **Check account** and demo storage. 37.0 replaced the `buckets`,
+`objects`, `object`, `config` and `account` tools with `call`, added `more`, and
+removed the 100-round ceiling. Older tasks still show their calls to all of
+those tools.

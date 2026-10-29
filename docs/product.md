@@ -52,7 +52,7 @@ ask.
   call appears when it starts, open, with its real progress; it settles in
   place and folds to one line. A provider reasoning summary appears as a
   `Thought` step; when the provider returns none, the open step says so.
-  Completed, failed, refused, stopped and timed-out calls stay in order.
+  Completed, failed, refused and stopped calls stay in order.
 - Every step can show exactly what the agent received from that call, so the
   page never shows more than the agent saw.
 - The agent's text is normal Markdown, and a turn can hold several texts
@@ -67,8 +67,8 @@ ask.
   a `Continued this task` divider.
 - A turn that fails or ends without an answer becomes one notice with
   **Retry**; Retry sends the last user message again with its files and focus.
-  A turn that made 100 rounds of tool calls says so; its next call does not
-  run. A reply cut at the model's output limit says so where it stops.
+  There is no round ceiling: the agent works until it answers or the user
+  stops it. A reply cut at the model's output limit says so where it stops.
 - A follow-up is the next message in the same thread.
 - Long tasks survive a restart; pi resumes interrupted work.
 - A turn that finishes while the window is in the background sends one system
@@ -90,38 +90,32 @@ works the same way.
 
 ## What the agent reads
 
-The tools return data, not judgements. A read returns each API's answer as
-`{ status, value }` or `{ status, error }`, with the status `available`,
-`not_configured`, `access_denied`, `provider_unsupported`, `missing`,
-`region_mismatch` or `error`. A denied read is a denied read, with the
-provider's error; it is never turned into an empty or clean value.
+The tools return data, not judgements.
 
-- **`buckets`, `objects`, `object`** — the bucket list; keys, versions or
-  incomplete multipart uploads a page at a time (up to 1,000 rows, with a `next`
-  token); one object's metadata, tags, ACL and a bounded text preview. A large
-  body is never downloaded.
-- **`config`** — one bucket's configuration, section by section: `location`,
-  `policy` (parsed), `policy_status`, `public_access_block`, `acl`,
-  `ownership`, `encryption`, `versioning`, `object_lock`, `lifecycle`,
-  `replication`, `cors`, `website`, `logging`, `notification`, `inventory` and
-  `tagging`. The agent can ask for some sections or all of them. Its step opens
-  as the sections with their status and JSON.
-- **`account`** — account-level data on AWS: the account-wide public access
-  block, one page of IAM authorization details (users, groups, roles and their
-  policies), the SCPs that apply through the OU chain, a KMS key policy, Access
-  Analyzer findings, CloudWatch daily storage size by storage type and object
-  count for a bucket (default 14 days), and one page of CloudTrail management
-  events naming a bucket (default 90 days). Paged reads return a token for the
-  next page. On another provider it answers `provider_unsupported` without
-  calling anything.
-- **`probe`** — one endpoint check: reach, TLS, latency, bucket region and
-  path-style addressing.
+- **`call`** — one read-only operation of any AWS SDK client the app bundles:
+  `s3`, `s3control`, `sts`, `iam`, `organizations`, `kms`, `accessanalyzer`,
+  `cloudwatch` and `cloudtrail`. Any operation named Get, List, Head, Describe,
+  Lookup, Search, Select or Simulate runs, with its input as the SDK names it;
+  nothing else does, and the few reads that hand out credentials are refused.
+  The result is the service's response as JSON (a policy document parsed), or
+  its error code, HTTP status and message. A 404 such as `NoSuchBucketPolicy` is
+  an answer, not a failure to hide. A `GetObject` body is read up to
+  `max_bytes` (default 1 MiB): text as text, anything else as base64. A
+  custom-endpoint account answers every service at its own endpoint; its
+  credentials are never sent to AWS. Its step opens as the response's JSON.
+- **`probe`** — one unsigned HEAD or GET to the account's endpoint or a host
+  under it: resolved addresses, HTTP status, headers, the TLS certificate and
+  timing. It carries no credentials and marks nothing as ok or failed.
+- **`more`** — a result longer than 24,000 characters reaches the agent as its
+  first piece; the whole result is kept in the task folder and `more` reads on
+  from an offset. Nothing a tool returned is out of the agent's reach.
 
 Who can reach a bucket, whether it is public, what changed and who changed it
 are the agent's to work out from these reads and say. The app evaluates no
 policy, merges no grants and estimates no cost. Account ids never reach the
-agent: `scrub()` replaces each 12-digit number with `<account>`, and the id STS
-returns is used only as the argument of the account-wide block and SCP reads.
+agent: `scrub()` replaces each 12-digit number with `<account>`. The agent
+writes `<account>` where the caller's id belongs, and `call` fills it in from
+STS for that call only (S3 Control's `AccountId` always).
 
 ## Changes
 
@@ -133,36 +127,33 @@ says so and the agent reads again.
 
 ## Inventory and open questions
 
-`query` exists for questions that do not fit one bucket or one object. The
-script runs in a QuickJS sandbox with nine read-only primitives: `buckets`,
-`list`, `head`, `config`, `account`, `inventory`, `dataset`, `aggregate` and
-`rows`. `config` and `account` are the tools' own reads. The query's step shows
-the returned rows (at most 500, all of them sent to the model), a bar chart
-when the rows have one label and one number, the script and its output.
+`query` exists for questions that span more than one call carries: every
+object in a bucket, every bucket, an inventory, an attached log. The script
+runs in a QuickJS sandbox with four read-only primitives:
 
-When a bucket has S3 Inventory, `inventory` reads the latest manifest and one
-bounded page (default 100 rows, maximum 1,000) or imports every manifest file
-with `full: true`. A page reads CSV up to 32 MiB or Parquet up to 16 MiB; a
-larger file is reported, not silently cut. Full import is bounded to 1,000
-files, 128 MiB per file, 512 MiB total and 2,000,000 rows. The result states the
-manifest date and whether it was truncated.
+- `call()` — any read the `call` tool makes, under the same rules;
+- `dataset()` — imports an attached access log or inventory into a local
+  SQLite table, client IPs masked;
+- `inventory()` — imports every file of a bucket's latest S3 Inventory
+  manifest into one dataset, and gives the manifest date;
+- `sql()` — one read-only SELECT (or WITH … SELECT) over a dataset's `rows`.
 
-An attached access log or inventory is imported with `dataset`, then read with
-whitelisted `aggregate` metrics (at most 1,000 groups) or with `rows`, a page of
-at most 1,000 redacted rows with client IPs masked. There is no SQL.
-
-Code mode budgets are 2,000 calls, 500,000 listed items, 120 seconds and 256 MiB
-per script. It never accepts network, filesystem, process, timer or module
-access.
+The script runs until it returns or the user stops it. Its memory defaults to
+1024 MB, which the agent can raise with `memory_mb`; that default protects the
+machine, not the storage. The query's step shows the returned rows (up to
+10,000 in the window; the agent gets all of them), a bar chart when the rows
+have one label and one number, the script and its output. It never accepts
+network, filesystem, process, timer or module access.
 
 ## Memory
 
 The agent's memory is its notes. `note` saves a fact about the storage, an
-account or a bucket, with secrets redacted. The prompt's memory digest names
-the accounts (their ids are tool arguments) and the first 12 notes, with the
-total count. Notes are what the agent chose to remember, not a fresh read; when
-to rely on them is the agent's. Settings lists the 100 most recent notes, and
-any of them can be forgotten there.
+account or a bucket, with secrets redacted, and forgets a note of its own that
+no longer holds. The prompt's memory digest names the accounts (their ids are
+tool arguments) and every note, newest first, with its id and whether the user
+wrote it. Notes are what the agent chose to remember, not a fresh read; when to
+rely on them is the agent's. Settings lists every note, and any of them can be
+forgotten there.
 
 There is no remembered bucket posture, Issue list, reading history or
 background monitor. Deleting a task purges its conversation, entries, datasets,
@@ -189,8 +180,10 @@ fallback for short CJK queries, and returns at most 20 hits.
 
 The provider reports the model list in Settings. The context window is inferred
 (unknown models fall back to 128k), and reasoning is on at medium for known
-reasoning models, off otherwise. Every model gets the same tools, prompt and
-100-round runaway ceiling; nothing is tuned down for a smaller one.
+reasoning models, off otherwise. The output limit is the model's own maximum:
+once per model per launch, a one-word request offers the whole context window,
+and a provider that refuses names its maximum. Every model gets the same tools
+and prompt; nothing is tuned down for a smaller one.
 
 ## Settings
 
@@ -201,8 +194,7 @@ reasoning models, off otherwise. Every model gets the same tools, prompt and
 - **Storage accounts** — provider kind (auto or explicit), endpoint, region,
   keys or AWS profile, optional bucket scope and path-style addressing. The
   account list shows the masked key id or profile name.
-- **Memory** — a note age filter and the notes the agent wrote. Notes can be
-  forgotten here.
+- **Memory** — a note age filter and every note. Notes can be forgotten here.
 - **Appearance** — English/Chinese, system/light/dark, notification switch.
 - **Version** — installed version and the update state; a missing feed says so
   instead of failing silently.
@@ -212,11 +204,10 @@ reasoning models, off otherwise. Every model gets the same tools, prompt and
 - The tools return what the APIs answer. Whether that adds up to "public" or
   "safe" is the agent's judgement, and the agent can be wrong; every read it
   relied on is in the conversation to check.
-- Account-level reads exist on AWS only. S3-compatible providers answer what
-  they implement; the rest comes back `provider_unsupported`.
-- IAM and CloudTrail are read a page at a time; the agent decides whether to
-  read further pages.
-- A code-mode script runs under the call, listing, time and memory budgets above.
+- A custom endpoint answers what it implements; an operation it does not
+  implement comes back as its own error.
+- Paged APIs are read a page at a time, with the service's own page size; the
+  agent decides whether to read further pages, or pages through in `query`.
 - Attachments are limited to ten files and 4 GiB each.
 - There is no scheduled check, background watch, demo storage, dashboard,
   second window or import from an earlier app version.

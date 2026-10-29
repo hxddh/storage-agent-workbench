@@ -29,8 +29,10 @@ lists now (cached for a minute in memory).
 
 `notes` is the agent's memory. `note` writes a row with `author = 'agent'`;
 `ref` is the provider id for a provider note and `<provider>/<bucket>` for a
-bucket note. The digest shows the first 12 notes of N at the start of every
-turn. The user forgets a note in Settings.
+bucket note. The digest lists every note with its id and author at the start
+of every turn, except notes older than the retention set in Settings. The
+agent can forget a note it wrote (`note` with `forget`); the user forgets any
+note in Settings.
 
 `task_meta.model_json` is a per-task model override (`provider`, `modelId`,
 `baseUrl`, `thinking`); null means the model in Settings. The provider key is
@@ -43,7 +45,10 @@ user message, steers included (`kind = 'user'`), and one per agent text
 scrolls to that message. Title search reads `task_meta` directly.
 
 `audit` records executed tool calls: tool, redacted target (none for `note`),
-outcome (`ok`, `refused`, `stopped`, `error`) and conversation.
+outcome (`ok`, `refused`, `stopped`, `error`) and conversation. For `call` the
+target is `<service> <operation>`, with the bucket when the input names one.
+
+37.0 changes no table; the head stays 16.
 
 ## pi tables
 
@@ -59,31 +64,34 @@ Entry kinds the window understands:
 | `sa.run` | a user message; data `{ trigger: 'user', text, attachments, context? }`. It starts a turn |
 | `sa.steer` | a message sent while the agent works; data `{ text, attachments, context? }`. It joins the running turn |
 | `sa.resume` | the user continued a stopped turn; the model gets `Continue.` and nothing else; shown as a divider |
-| `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window. Codes written: `stopped`, `no_answer`, `failed`, `budget` |
+| `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window. Codes written: `stopped`, `no_answer`, `failed`; 36.x also wrote `budget` (the removed round ceiling), which still shows |
 | `pi.assistant` | model output; its text and reasoning are projected, `model` is not sent to the window. A message that stopped at the output limit adds a `cut` notice |
 | `pi.tool-result` | a tool result; `details` is `{ target, note, progress, args, view, ms, status, evidenceId }`; its text content is exactly what the model received, and the step shows it |
 | `pi.compaction` | compaction divider |
 
-`details.view` is one of the `ToolView` kinds in `shared/contract.ts`:
-`buckets`, `objects`, `object`, `raw` (a `config` or `account` read as the API
-returned it), `probe`, `note`, `query` and `question`. The window renders a view
-only for a tool this build registers and a kind it knows (`project.ts`
-`viewOf`). A call to a tool of an earlier version (`survey`, `estate`,
-`change_plan`, `accept_risk`, …) still shows as a step with its status, note and
+`details.view` is one of the `ToolView` kinds in `shared/contract.ts`: `raw`
+(a `call` response or a `probe` answer, as JSON), `note` (`note` and `more`),
+`query` and `question`. The window renders a view only for a tool this build
+registers and a kind it knows (`project.ts` `viewOf`). A call to a tool of an
+earlier version (`buckets`, `objects`, `object`, `config`, `account`, `survey`,
+`estate`, `change_plan`, `accept_risk`, …) still shows as a step with its status, note and
 exactly what the agent received, without a view.
 
 Entries 35.x wrote still open: an `sa.call` reads as a tool step and an
 `sa.answer` as agent text; the `sa.run` that started a 35.x scripted check
 (`trigger: 'check'` or `'recheck'`) and an `sa.reverify` comparison are not
-shown. A `pi.user` entry (35.x's answer correction) is not shown either. 36
+shown. A `pi.user` entry (35.x's answer correction) is not shown either. 37
 writes none of these.
 
-A call the runaway ceiling blocked has no `details`: it shows as a step that
-did not run, with the block text as what the agent received. An `ask` result
-carries a `question` view; the turn ends until the user answers.
+A call the 36.x round ceiling blocked has no `details`: it shows as a step that
+did not run, with the block text as what the agent received. 37 blocks no call.
+An `ask` result carries a `question` view; the turn ends until the user
+answers.
 
-The turn's round count is never stored separately: `runtime/agent.ts` derives
-it from these entries, so a restarted process has the same ceiling.
+A result longer than one piece (24,000 characters) is not stored in the entry:
+the entry holds the first piece, exactly what the model received, and the
+whole text is a file at `tasks/<conversation>/results/<evidence>.txt` that
+`more` reads.
 
 pi's `pi.usage` document supplies the task's token and cost totals; the
 overflow menu's JSON export includes them.
@@ -106,12 +114,13 @@ starts the task history over: it drops the `pi_*` tables and clears
 
 One SQLite file per import at `tasks/<conversation>/datasets/<id>.sqlite`.
 `access_logs` and `inventory_objects` hold redacted, normalized rows, with
-client IPs masked at import. They are reached through `query`'s `dataset`,
-`aggregate` and `rows` primitives; there is no separate analysis tool and no
-arbitrary SQL. Imports are capped at 2,000,000 rows; a larger file is imported
-up to the cap and reported as truncated. Inventory full imports are also bounded
-by manifest file count, per-file bytes and total bytes. Dataset files are never
-loaded into model context.
+client IPs masked at import. They are created by `query`'s `dataset` (an attached file) and
+`inventory` (every file of a bucket's latest S3 Inventory manifest, streamed to
+disk) primitives, and read with `sql`: one `SELECT` over a `rows` view of the
+dataset's table (`TABLES` in `analysis/dataset.ts`), on a read-only
+connection. There is no separate analysis tool. Imports have no row cap.
+Dataset files are never loaded into model context; only the rows a script
+returns reach the model.
 
 ## Retention
 
@@ -120,12 +129,12 @@ Tasks, entries and notes persist until the user deletes them.
 Deleting a task is a real purge in one transaction: `task_meta`, `search_docs`,
 the task's `pi_conversations` / `pi_entries` / `pi_tasks` / `pi_submissions` /
 `pi_documents` / `pi_document_revisions` rows, datasets, audit events, and
-`tasks/<conversation>/` on disk (uploads included).
+`tasks/<conversation>/` on disk (uploads and kept results included).
 
 Removing an account deletes the provider row and its account- and
 bucket-scoped notes. Audit rows of tasks that read it stay with their tasks.
 There is no import from earlier versions of the app.
 
-The sidebar reads the 500 most recently updated tasks and Settings shows the
-100 most recent notes; older rows remain in the database. This is an
+The sidebar reads the 500 most recently updated tasks; older rows remain in
+the database. This is an
 implementation limit, not a second archive.
