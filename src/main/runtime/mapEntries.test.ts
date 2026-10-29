@@ -8,8 +8,12 @@ describe('entry projection', () => {
     const out = entries([
       {
         id: 'e1',
-        kind: 'sa.user',
-        data: { text: 'Which buckets are public?', attachments: [{ name: 'log.csv', bytes: 12 }] },
+        kind: 'sa.run',
+        data: {
+          trigger: 'user',
+          text: 'Which buckets are public?',
+          attachments: [{ name: 'log.csv', bytes: 12 }],
+        },
       },
     ])
     expect(out).toHaveLength(1)
@@ -185,37 +189,58 @@ describe('entry projection', () => {
     ])
   })
 
-  it('expands a model-free audit into ordinary checks and a grounded answer', () => {
+  it('projects a scripted check as a boundary, ordinary calls and its answer', () => {
     const out = entries([
+      { id: 'run1', kind: 'sa.run', data: { trigger: 'check', at: '2026-10-24T12:00:00.000Z' } },
       {
-        id: 'audit1',
-        kind: 'sa.audit',
+        id: 'call1',
+        kind: 'sa.call',
         data: {
+          name: 'survey',
           at: '2026-10-24T12:00:00.000Z',
-          verdict: '1 issue is open across 1 bucket including `demo`.',
-          checks: [
-            {
-              name: 'survey',
-              target: 'Demo',
-              status: 'done',
-              note: '1 bucket',
-              ms: 4,
-              at: '2026-10-24T12:00:00.000Z',
-              view: {
-                kind: 'buckets',
-                rows: { columns: ['Bucket'], rows: [['demo']] },
-              },
-            },
-          ],
+          details: {
+            target: 'Demo',
+            note: '1 bucket',
+            ms: 4,
+            status: 'done',
+            evidenceId: 'chk_1',
+            key: 'k1',
+            assessed: { opened: 1, resolved: 0, recurred: 0 },
+            view: { kind: 'buckets', rows: { columns: ['Bucket'], rows: [['demo']] } },
+          },
+        },
+      },
+      {
+        id: 'ans1',
+        kind: 'sa.answer',
+        data: {
+          text: '1 risk is open across 1 bucket, including `demo`.',
+          at: '2026-10-24T12:00:01.000Z',
         },
       },
     ])
-    expect(out).toHaveLength(2)
-    expect(out[0]).toMatchObject({ kind: 'tool', name: 'survey', target: 'Demo' })
+    expect(out.map((entry) => entry.kind)).toEqual(['check', 'tool', 'answer'])
+    expect(out[0]).toMatchObject({ mode: 'check' })
     expect(out[1]).toMatchObject({
-      kind: 'answer',
-      text: '1 issue is open across 1 bucket including `demo`.',
+      name: 'survey',
+      target: 'Demo',
+      evidenceId: 'chk_1',
+      key: 'k1',
+      assessed: { opened: 1 },
     })
+    expect(out[2]).toMatchObject({ source: 'check' })
+  })
+
+  it('keeps a steer apart from a request', () => {
+    const out = entries([
+      {
+        id: 's1',
+        kind: 'sa.steer',
+        data: { text: 'Only the finance account', attachments: [] },
+        model: [{ role: 'user', content: 'Only the finance account', timestamp: 2 }],
+      },
+    ])
+    expect(out[0]).toMatchObject({ kind: 'steer', text: 'Only the finance account' })
   })
 
   it('shows a harness correction as a validation event and a resume as a boundary', () => {
@@ -223,7 +248,7 @@ describe('entry projection', () => {
       { id: 'e10', kind: 'pi.user', model: [{ role: 'user', content: 'Rewrite the verdict' }] },
       {
         id: 'e11',
-        kind: 'sa.continue',
+        kind: 'sa.resume',
         model: [{ role: 'user', content: 'Continue', timestamp: 3 }],
       },
     ])

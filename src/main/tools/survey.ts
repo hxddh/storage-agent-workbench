@@ -53,7 +53,7 @@ export function surveyTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'survey',
     description:
-      'Survey a storage account read-only: list its buckets; read each bucket’s exposure, encryption, public access blocks, TLS policy, ACLs, CORS, logging and lifecycle; read the account-wide public access block and, on AWS, each bucket’s size, object count, growth and monthly storage estimate; open or resolve Issues. Buckets read longest ago come first; when it stops early, call it again to read the rest. Pass `buckets` to re-read only those (for example after the user applied a change).',
+      'Survey a storage account read-only: list its buckets; read each bucket’s exposure, encryption, public access blocks, TLS policy, ACLs, CORS, logging and lifecycle; read the account-wide public access block and, on AWS, each bucket’s size, object count, growth and monthly storage estimate; and let the rules open or resolve Issues. Buckets read longest ago come first; when it stops early, call it again to read the rest. Pass `buckets` to re-read only those (for example after the user applied a change).',
     parameters: Type.Object({
       provider_id: providerParam,
       buckets: Type.Optional(
@@ -134,11 +134,10 @@ export function surveyTool(deps: ToolDeps) {
         )
         await deps.db.setAccountPosture(config.id, rememberAccount(account))
         const decision = decideAccount(account, aws, deps.lang())
-        const applied = await deps.estate.apply(
+        const applied = await run.assess.apply(
           config.id,
           ACCOUNT_SCOPE,
           decision.verdict === null ? {} : { account_public_access_block_missing: decision },
-          run.conversationId,
         )
         observations.push(...applied.observations)
         changed.opened += applied.delta.opened
@@ -217,12 +216,7 @@ export function surveyTool(deps: ToolDeps) {
             await deps.db.insertChanges(config.id, bucket, changes)
           }
           await deps.db.upsertBucket(config.id, bucket, rememberable(facts), facts.region)
-          const applied = await deps.estate.apply(
-            config.id,
-            bucket,
-            decide(facts, deps.lang()),
-            run.conversationId,
-          )
+          const applied = await run.assess.apply(config.id, bucket, decide(facts, deps.lang()))
           observations.push(...applied.observations)
           changed.opened += applied.delta.opened
           changed.resolved += applied.delta.resolved
@@ -243,7 +237,7 @@ export function surveyTool(deps: ToolDeps) {
       }
       gone.push(...missing)
       if (gone.length) {
-        const result = await deps.estate.gone(config.id, gone, run.conversationId)
+        const result = await run.assess.gone(config.id, gone)
         changed.resolved += result.resolved
         observations.push(...result.observations)
       }

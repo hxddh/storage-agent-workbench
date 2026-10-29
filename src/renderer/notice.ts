@@ -1,4 +1,4 @@
-import type { NoticeFact } from '@shared/facts'
+import type { NoticeFact } from '@shared/trace'
 import type { Dict } from './i18n'
 
 /** App notices are codes; provider errors are shown as their own text. */

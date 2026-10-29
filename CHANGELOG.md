@@ -1,3 +1,72 @@
+## 35.0.0 — 2026-10-29
+
+One engine, one log, one reducer. A model run and a scripted check are the same
+kind of run; the run's state is derived from durable entries; the window renders
+every run through one projection. Tasks from earlier versions are not carried
+over.
+
+### Changed
+
+- **Scripted runs call the agent's tools.** `Check account` and Re-check call
+  `survey` and `config` through the same registry and `agentTool()` as the model,
+  leave ordinary tool entries (`sa.call`), show live in the trace, can be
+  stopped, and write an answer that cites its own calls. The answer also carries
+  the calls' enveloped output as context, so a question asked afterwards in the
+  same task can read and cite the check. The model-free `audit()` path,
+  `sa.audit` and `shared/audit.ts` are gone.
+- **Re-check is its own run** in the same task (`sa.run` with `trigger:
+  'recheck'`): the earlier answer moves under Earlier in this task, the re-check
+  opens with its trace, and its comparison row shows what changed and which plan
+  steps are confirmed, not applied or unknown.
+- **Run state is derived, not held.** `shared/ledger.ts` folds the entries into
+  the run's calls, names, evidence and coverage. The agent's hooks rebuild it
+  from the durable log, so a restart or resume keeps the round budget,
+  repeated-read guard and grounding. The in-memory run map is gone. Repeated
+  reads are recognised by an argument key written into the call's details.
+- **Issues change in one place.** `estate/assess.ts` is the only writer of Issue
+  transitions; tools hand it the rules' decisions and the transitions are
+  recorded on the call and shown in its trace row.
+- **Validation is structure, not wording.** One correction per run for an
+  ungrounded name, a citation that does not resolve, or a paragraph that names a
+  read bucket without citing it. The English/Chinese "clean claim" and
+  "is public" prose classifiers are removed; the scope line and Not checked,
+  computed from the readings, are the authority on coverage.
+- **One reducer.** `shared/trace.ts` replaces `facts.ts`, `run.ts` and
+  `activity.ts`; the window, search and export use it. Search indexes every
+  run's answer and every run's findings; a hit on an earlier run opens it.
+- **The window is split by responsibility:** `Run`, `Answer`, `Trace`,
+  `Evidence`, `EarlierRuns`. Ungrounded names are now marked inline.
+- **Runtime split:** `harness.ts` is replaced by `session.ts`, `engine.ts`,
+  `tasks.ts` and `check.ts`.
+
+### Fixed
+
+- Retry after a steer resubmitted the steer text instead of the run's request.
+- A per-task model did not get its own round budget, and the model tier was
+  global across concurrent tasks.
+- Installing a task's model replaced the provider every running task used;
+  each model configuration is now its own provider.
+- A steer that arrived after the run settled started a run that skipped
+  settlement (no index, readings or notice); it is now a new request.
+- A run that read access for several buckets re-read IAM and SCPs for each
+  one; one access session is now shared per run and dropped when it settles.
+
+### Data
+
+- Schema head 15. Migration 15 drops the `pi_*` tables and clears task rows,
+  search rows, datasets and audit rows (and `tasks/` on disk). Accounts,
+  remembered posture, Issues and their history, notes and readings stay.
+
+### Verification
+
+- Typecheck, Biome, unit tests, build, bundle budget, contrast, production
+  audit, SBOM, full E2E, no-model E2E, eval smoke, bench smoke (15 scenarios,
+  must-pass gate), cold-start performance, screenshots and the visual gate, and
+  the moto compatibility suite. The real-model bench was not run here: no model
+  key is available in the build environment. CI now runs it on `main` for a
+  small- and a large-tier model when the key exists, and the release gate runs
+  it three times per scenario on both models.
+
 ## 34.0.0 — 2026-10-29
 
 - The run is the agent's trace, not a report: `shared/trace.ts` is the one run

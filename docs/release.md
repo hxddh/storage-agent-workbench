@@ -12,8 +12,11 @@ The normal CI workflow runs on `main` and pull requests:
   production dependency audit and SBOM;
 - the real-window E2E with fake S3 and a fake OpenAI-compatible model;
 - the no-model first-run E2E;
-- the smoke eval, the behavior bench, cold-start performance, screenshots and
-  visual comparison;
+- the smoke eval, the behavior bench smoke, cold-start performance, screenshots
+  and visual comparison;
+- on `main`, the real-model bench for a small-tier and a large-tier model
+  (three runs per scenario) when `EVAL_API_KEY` and the model variables exist;
+  without them the job says it did not run;
 - the moto compatibility suite.
 
 The Release workflow itself does not run typecheck, lint or unit tests. Tag a
@@ -23,8 +26,9 @@ commit from a green `main`; do not use the tag workflow as a substitute for CI.
 
 1. **Evaluation** — if the `EVAL_API_KEY` secret exists, the job runs
    `scripts/eval.mjs --runs 2` for the primary and secondary model variables,
-   then `scripts/bench.mjs` against the primary model. If it does not exist, it
-   runs `scripts/eval.mjs --smoke` and `scripts/bench.mjs --smoke`. A smoke
+   then `scripts/bench.mjs --runs 3` against the primary and the secondary
+   model. If it does not exist, it runs `scripts/eval.mjs --smoke` and
+   `scripts/bench.mjs --smoke`. A smoke
    report proves the harness and trace plumbing run; it is not a model-quality
    score. The bench scores the trace and answer (calls, coverage, citations,
    steer, resume, re-check, model choice), not the app's facts projection.
@@ -58,10 +62,14 @@ application itself still has the read-only, scope and secret boundaries in
 
 Real-model evaluation is valuable but not guaranteed by the repository alone:
 it needs a provider key and model variables. The release records a smoke result
-when they are absent. The eval covers 29 storage scenarios; the bench covers 11
-agent-behavior scenarios and scores the trace and answer. Both fail on a
-must-pass regression; reports are attached and named after the model, never the
-key. A smoke report is labeled as plumbing only.
+when they are absent. The eval covers 29 storage scenarios; the bench covers 15
+agent-behavior scenarios and scores the trace and answer, including a retry
+after a steer, a scripted check's parity with a model run, a question after a
+check, and a re-check as its own run. The bench gate: every must-pass check
+passes in every run and at least 90% of soft checks pass. A smoke bench uses the
+same gate (the fake model is deterministic, so a failure is a plumbing
+regression). Reports are attached and named after the model, never the key. A
+smoke report is labeled as plumbing only.
 
 For an open-model baseline, point the same eval at Ollama. The local server
 ignores the API key; set `OLLAMA_API_KEY` to any non-empty value for the client:
@@ -101,12 +109,12 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest published release is **34.0.0** (2026-10-29). Earlier release notes
+The latest release is **35.0.0** (2026-10-29). Earlier release notes
 may describe retired behavior; they are history. Keep `README.md`,
 `CHANGELOG.md` and this paragraph in step with the next tag, and refresh
-`docs/screenshot.png` if the surface changed. 33.0 makes the run answer-first:
-the latest request owns its scope and evidence, a citation opens an in-place
-peek, and Sources is one on-demand drawer. Work is below the answer in every
-state; plan lives inside Work while live or stopped with a blocker. The new
-`ask` control tool can end a run with one clarification question. It keeps the
-read-only boundary, final-message answer and evidence citations.
+`docs/screenshot.png` if the surface changed. 35.0 is one engine: a model run
+and a scripted check call the same tools and leave the same entries; the run's
+state is derived from those entries; Issues change only in `estate/assess.ts`;
+the answer is validated for structure, never wording; and one reducer
+(`shared/trace.ts`) renders every run. Migration 15 starts the task history
+over and keeps accounts, memory, Issues and readings.

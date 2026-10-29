@@ -319,7 +319,11 @@ try {
   await page.locator('.sidebar-search input').fill('abort rule')
   await page.waitForSelector('.search-hit:has-text("abort rule")', { timeout: 10_000 })
   await page.locator('.search-hit', { hasText: 'abort rule' }).first().click()
-  await page.waitForSelector('.brief .verdict:has-text("abort rule")', { timeout: 10_000 })
+  // The change plan's task was re-checked since: its answer is an earlier run now.
+  await page.waitForSelector(
+    '.brief .verdict:has-text("abort rule"), .run-turn-summary:has-text("abort rule")',
+    { timeout: 10_000 },
+  )
   console.log('SEARCH OPEN OK')
 
   await page.locator('.sidebar-search input').fill('multipart')

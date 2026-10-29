@@ -7,7 +7,7 @@ composes a **run** from its final answer and the evidence behind it. A
 Nothing is written, deleted or changed in storage, and the app never applies a
 change plan.
 
-Version in this tree: **34.0.0**.
+Version in this tree: **35.0.0**.
 
 ![A run in Storage Agent](docs/screenshot.png)
 
@@ -19,8 +19,9 @@ Version in this tree: **34.0.0**.
   reads up to 5,000 buckets, longest-unread first, and stops before its 300-second
   timeout rather than pretending it finished. Twelve deterministic rules turn
   those readings into current risks; a blind read leaves its rule undecided.
-- **Check account without a model or an API key.** Home can survey and read
-  access evidence, then write one deterministic `sa.audit` entry. The task opens
+- **Check account without a model or an API key.** Home runs the agent's own
+  read-only tools in a fixed order and writes a cited answer from what they
+  returned; the calls show in the same trace as a model run. The task opens
   immediately and progress is visible. On a first run, demo storage is an
   explicit **Try with demo storage** choice; the app never adds it silently.
 - **Read access evidence.** Bucket policy and ACL grants are read locally; IAM

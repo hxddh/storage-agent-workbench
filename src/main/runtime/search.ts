@@ -1,6 +1,4 @@
-import type { SearchHit, UiEntry } from '@shared/contract'
-import { deriveFacts, factsSearchText } from '@shared/facts'
-import { buildRun } from '@shared/run'
+import type { SearchHit } from '@shared/contract'
 import type { AppDb } from '../db'
 
 /**
@@ -51,25 +49,4 @@ export async function searchTasks(db: AppDb, query: string): Promise<SearchHit[]
     })
   }
   return [...hits.values()].slice(0, 20)
-}
-
-/** The rows a settled task contributes to the index, from the same projection the window renders. */
-export function searchDocsFor(
-  entries: readonly UiEntry[],
-): { entryId: string; kind: string; text: string; at: string }[] {
-  const docs: { entryId: string; kind: string; text: string; at: string }[] = []
-  for (const entry of entries) {
-    if (entry.kind === 'user')
-      docs.push({ entryId: entry.id, kind: 'user', text: entry.text, at: entry.at })
-  }
-  // The projection may be partial while a task is still working; the
-  // deterministic evidence must still be searchable even then.
-  let run: ReturnType<typeof buildRun> | null = null
-  try {
-    run = buildRun(entries)
-  } catch {
-    run = null
-  }
-  docs.push(...factsSearchText(run?.facts ?? deriveFacts(entries)))
-  return docs
 }

@@ -1,6 +1,5 @@
 import type {
   AppEvent,
-  AuditProgress,
   Bootstrap,
   ContextRef,
   LocalModel,
@@ -41,12 +40,9 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [fatal, setFatal] = useState(false)
   const [searchSignal, setSearchSignal] = useState(0)
-  const [auditing, setAuditing] = useState(false)
-  const [auditProgress, setAuditProgress] = useState<{
-    taskId: string
-    progress: AuditProgress
-  } | null>(null)
-  const [auditError, setAuditError] = useState<string | null>(null)
+  // Only while a check is being started; the run itself shows its progress.
+  const [starting, setStarting] = useState(false)
+  const [checkError, setCheckError] = useState<string | null>(null)
   const restored = useRef(false)
 
   const lang = boot?.settings.language ?? 'en'
@@ -93,9 +89,6 @@ export function App() {
         setView((current) =>
           current && current.task.id === event.taskId ? { ...current, live: event.live } : current,
         )
-      } else if (event.type === 'audit') {
-        setAuditProgress(event.progress ? { taskId: event.taskId, progress: event.progress } : null)
-        if (!event.progress) setAuditing(false)
       } else if (event.type === 'usage') {
         setView((current) =>
           current && current.task.id === event.taskId
@@ -160,7 +153,7 @@ export function App() {
       }
       if (command === 'reverify') {
         const current = viewRef.current
-        if (current && !current.live) void window.agent.reverifyTask(current.task.id)
+        if (current && !current.live) void window.agent.recheckTask(current.task.id)
       }
     })
   }, [newTask, openSettings])
@@ -229,36 +222,31 @@ export function App() {
     await refresh()
   }
 
-  const startDemo = async () => {
-    if (auditing) return
-    setAuditError(null)
-    setAuditing(true)
+  const check = async () => {
+    setCheckError(null)
+    setStarting(true)
     try {
-      await window.agent.addDemoAccount()
-      await refresh()
-      setAuditing(false)
-      await audit()
-    } catch (error) {
-      setAuditing(false)
-      setAuditError(error instanceof Error ? error.message : String(error))
-    }
-  }
-
-  const audit = async () => {
-    if (auditing) return
-    setAuditing(true)
-    setAuditProgress(null)
-    setAuditError(null)
-    try {
-      const next = await window.agent.audit()
+      const next = await window.agent.check()
       setView(next)
       setFocusId(null)
       setSidebarOpen(false)
       void refresh()
     } catch (error) {
-      setAuditProgress(null)
-      setAuditing(false)
-      setAuditError(error instanceof Error ? error.message : String(error))
+      setCheckError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  const startDemo = async () => {
+    if (starting) return
+    setCheckError(null)
+    try {
+      await window.agent.addDemoAccount()
+      await refresh()
+      await check()
+    } catch (error) {
+      setCheckError(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -336,12 +324,17 @@ export function App() {
               focusId={focusId}
               onRetry={() => void window.agent.retryTask(view.task.id)}
               onContinue={() => void window.agent.continueTask(view.task.id)}
-              onReverify={() => window.agent.reverifyTask(view.task.id).then(() => undefined)}
+              onRecheck={() =>
+                void window.agent
+                  .recheckTask(view.task.id)
+                  .catch((error) =>
+                    setCheckError(error instanceof Error ? error.message : String(error)),
+                  )
+              }
               onClarify={(text) => void submit(text, [])}
               onOlder={loadOlder}
-              onAudit={() => void audit()}
-              auditing={auditing}
-              auditProgress={auditProgress?.taskId === view.task.id ? auditProgress.progress : null}
+              onCheck={() => void check()}
+              checking={starting}
               modelLabel={boot?.model?.modelId ?? null}
               models={localModels}
               onModel={(model) => void setModel(model)}
@@ -354,13 +347,13 @@ export function App() {
             onAddAccount={() => openSettings('accounts')}
             onUseLocal={startLocal}
             onDemo={() => void startDemo()}
-            onAudit={() => void audit()}
-            auditing={auditing}
+            onAudit={() => void check()}
+            auditing={starting}
             tasks={tasks}
             onOpenTask={(id) => void openTask(id)}
           />
         ) : null}
-        {auditError && <p className="brief-error audit-error">{auditError}</p>}
+        {checkError && <p className="brief-error audit-error">{checkError}</p>}
         <Composer
           lang={lang}
           modelLabel={boot?.model?.modelId ?? null}

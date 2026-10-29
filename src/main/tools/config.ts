@@ -1,5 +1,5 @@
 import { aspectsOf, decide, reviewFindings } from '../estate/rules'
-import { readAccess } from '../s3/access'
+import { type AccessSession, readAccess } from '../s3/access'
 import { readAccount, UNREAD_ACCOUNT } from '../s3/account'
 import { readBucket, rememberable } from '../s3/facts'
 import { accessPermissionGaps, permissionGaps } from '../s3/permissions'
@@ -61,6 +61,7 @@ export function configTool(deps: ToolDeps) {
               : undefined,
           organizations: aws ? deps.providers.organizations(config) : undefined,
           signal: run.signal,
+          session: accessSession(deps, run.conversationId),
         })
         const lines = access.paths.length
           ? access.paths
@@ -105,12 +106,7 @@ export function configTool(deps: ToolDeps) {
       const decisions = Object.fromEntries(
         Object.entries(decide(facts, deps.lang())).filter(([code]) => wanted.has(code)),
       )
-      const { observations } = await deps.estate.apply(
-        config.id,
-        args.bucket,
-        decisions,
-        run.conversationId,
-      )
+      const { observations } = await run.assess.apply(config.id, args.bucket, decisions)
       const previous = (await deps.estate.postureOf(config.id, args.bucket)) ?? {}
       await deps.db.upsertBucket(
         config.id,
@@ -161,6 +157,15 @@ export function configTool(deps: ToolDeps) {
       }
     },
   })
+}
+
+/** The run's access session: IAM details and SCPs are read once, not per bucket. */
+function accessSession(deps: ToolDeps, conversationId: string): AccessSession | undefined {
+  const sessions = deps.accessSessions
+  if (!sessions) return undefined
+  const session = sessions.get(conversationId) ?? {}
+  sessions.set(conversationId, session)
+  return session
 }
 
 /** The remembered posture keys each aspect reads; the others keep their last value. */

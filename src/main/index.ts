@@ -9,7 +9,7 @@ import {
 import { app, BrowserWindow, crashReporter, Menu, Notification, nativeTheme, shell } from 'electron'
 import { App } from './app'
 import { registerIpc } from './ipc'
-import type { RunOutcome } from './runtime/harness'
+import type { RunOutcome } from './runtime/session'
 import { startUpdater } from './updater'
 import { loadWindowBounds, saveWindowBounds } from './window-state'
 

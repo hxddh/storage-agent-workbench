@@ -46,23 +46,26 @@ Home or Settings.
 
 ## Starting a check
 
-**Check account** is deterministic and never calls a model:
+**Check account** is a scripted run: the same tools the agent uses, called in a
+fixed order, with no model:
 
 1. It creates a task immediately with a title such as
    `Check · Demo · 2026-10-25 05:45`.
-2. It surveys every configured account and emits transient survey progress.
-3. It reads access evidence for up to 24 buckets per account, preferring buckets
-   with open risks. When that is fewer than the account has, it reports
-   `examined / total`.
-4. It writes one durable `sa.audit` entry. The final checks and the deterministic
-   summary are synthesized into the ordinary run surface; the page carries a
-   `Deterministic account check` tag.
+2. It calls `survey` for every configured account; the call is live in the
+   trace with its real progress (`12 of 40 buckets`).
+3. It calls `config` with the access aspect for up to 24 buckets per account,
+   preferring buckets with open risks. When that is fewer than the account has,
+   the answer says `examined / total`.
+4. It writes its answer from what those calls returned, citing the survey; the
+   page carries a `Deterministic account check` tag. Every call is a row in the
+   trace, exactly as in a model run. A question asked afterwards in the same
+   task can read and cite the check's results.
 
 An account can opt into a daily or weekly scheduled check in Settings. It
 runs only while the app is open, uses the same model-free readers and never
 writes storage. It is a snapshot, not a monitor; a closed app performs no work.
 
-The progress line is live; the final checks are written when the reading ends.
+Each call is written when it settles; a stopped check ends with what it read.
 A check is a snapshot, not a continuous monitor. **Check again** in a run
 starts another check task; it does not mutate the old one. A settled reading
 also records one `readings` row per account with its coverage and current open
@@ -150,7 +153,7 @@ Top to bottom:
    The footer names the model and the run's calls and tokens.
 
 Copy answer and a single overflow menu are always visible in the run header. The
-overflow contains save Markdown, check again, re-verify, copy task link, export
+overflow contains save Markdown, check again, re-check, copy task link, export
 evidence and save PDF. Save and PDF include the answer, the trace, the current
 findings, accepted and fixed folds, read timestamps and redacted views; there is
 no secret or unredacted provider document in them. Printing expands the trace
@@ -309,7 +312,7 @@ into every prompt. The answer format does not change.
 - The model-free check examines access paths for at most 24 buckets per account.
 - CloudTrail covers 90 days and is attributed for at most six changed buckets
   per survey; only management events are considered.
-- Re-verification replays at most 50 buckets per account, has a 120-second
+- A re-check replays at most 50 buckets per account, has a 300-second
   budget, and reports skipped or truncated buckets. A change plan covers the
   selected open risks (at most 500) and reports any residual rule that has no
   generated change. A merged lifecycle omits Terraform when existing rules contain
@@ -364,8 +367,9 @@ risks it does not cover, and is text the user applies. The bucket name must
 match `[A-Za-z0-9][A-Za-z0-9._-]{0,254}`; otherwise no safe change is generated.
 The app never applies the text and there is no Apply button.
 
-**Re-verify** is the only path that confirms a plan step. It re-reads the plan's
-buckets and the account-wide block, applies the same rules, and reports
+**Re-check** is the only path that confirms a plan step. It is a scripted run in
+the same task: it re-reads the plan's buckets and the account-wide block with the
+same tools, applies the same rules, and reports
 `confirmed` only when every code in the step is now clear. An open or accepted
 risk is `not applied`; an unchecked bucket or undecided rule is `still unknown`.
 
