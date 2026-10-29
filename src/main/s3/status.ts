@@ -82,11 +82,3 @@ export function blind(status: ReadStatus): boolean {
     status === 'truncated'
   )
 }
-
-export function dimensionStatus(result: Read<unknown>, configured: boolean): ReadStatus {
-  return result.status === 'available'
-    ? configured
-      ? 'available'
-      : 'not_configured'
-    : result.status
-}

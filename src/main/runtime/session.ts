@@ -3,8 +3,8 @@
  *
  * pi owns the durable loop: storage, resume, steering, abort, compaction and
  * tool tasks. This opens it once, installs the one extension, and answers the
- * questions both sides ask: which conversation, which entries, which model
- * tier. Nothing that decides a run's behaviour is kept here in memory; the
+ * questions both sides ask: which conversation, which entries, which model.
+ * Nothing that decides a run's behaviour is kept here in memory; the
  * extension rebuilds what it needs from the entries.
  */
 import { join } from 'node:path'
@@ -19,16 +19,14 @@ import {
   type ToolRegistration,
 } from '@earendil-works/pi-durable'
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
-import type { AppEvent, Live, TaskModel, TaskSummary, UiEntry } from '@shared/contract'
+import type { AppEvent, TaskModel, TaskSummary, UiEntry } from '@shared/contract'
 import type { AppDb } from '../db'
-import type { Estate } from '../estate/estate'
-import { contextFor } from '../model-catalog'
 import type { Providers } from '../providers'
 import type { Vault } from '../security/vault'
 import type { Settings } from '../settings'
 import { createTools } from '../tools'
 import type { ToolDeps } from '../tools/policy'
-import { buildDigest, createAgent, type ModelTier, tierFor } from './agent'
+import { buildDigest, createAgent } from './agent'
 import { mapEntries } from './project'
 
 export const CONTEXT = BACKGROUND_CONTEXT
@@ -44,7 +42,6 @@ export type RunOutcome = 'answered' | 'failed' | 'stopped'
 export interface RuntimeDeps {
   db: AppDb
   providers: Providers
-  estate: Estate
   settings: Settings
   vault: Vault
   models: ReturnType<typeof createModels>
@@ -89,17 +86,12 @@ export function parseTaskModel(raw: string | null | undefined): TaskModel | null
 export class Runtime {
   /** Tasks whose last run failed; the sidebar marks them. */
   readonly failed = new Set<string>()
-  /** The live slot of a scripted run, which has no pi generation to show. */
-  readonly scripted = new Map<string, Live>()
-  /** Stop for a scripted run; a model run stops through pi's abort. */
-  readonly stops = new Map<string, AbortController>()
   private digest = ''
 
   private constructor(
     readonly deps: RuntimeDeps,
     readonly pi: Harness,
     readonly tools: ToolDeps,
-    /** The registered tools; a scripted run calls the same ones the model does. */
     readonly registry: ToolRegistration[],
   ) {}
 
@@ -108,11 +100,9 @@ export class Runtime {
     const tools: ToolDeps = {
       db: deps.db,
       providers: deps.providers,
-      estate: deps.estate,
       datasetsDir: deps.dirs.datasets,
       uploadsDir: deps.dirs.uploads,
       lang: () => deps.settings.get().language,
-      accessSessions: new Map(),
     }
     const list = createTools(tools)
     let runtime: Runtime | null = null
@@ -122,7 +112,6 @@ export class Runtime {
         tools,
         {
           records: (id) => runtime?.records(id) ?? Promise.resolve(null),
-          tier: (id) => runtime?.tier(id) ?? Promise.resolve('mid'),
           digest: () => runtime?.digest ?? '',
           language: () => deps.settings.get().language,
         },
@@ -147,7 +136,7 @@ export class Runtime {
   }
 
   async refreshDigest(): Promise<void> {
-    this.digest = await buildDigest(this.tools)
+    this.digest = await buildDigest(this.tools, this.deps.settings.get().noteTtlDays)
   }
 
   async conversation(id: string): Promise<Conversation | null> {
@@ -185,21 +174,7 @@ export class Runtime {
     return parseTaskModel((await this.deps.db.getTaskMeta(id))?.model_json)
   }
 
-  /** The tier of the model this conversation runs with, never a global setting. */
-  async tier(id: string): Promise<ModelTier> {
-    const stored = this.deps.settings.get().model
-    const chosen = await this.taskModel(id)
-    if (
-      chosen &&
-      !(stored && chosen.provider === stored.provider && chosen.modelId === stored.modelId)
-    )
-      return tierFor(contextFor(chosen.modelId))
-    // An unset window (0) is unknown, as in `installModel`: infer it from the id.
-    if (!stored) return tierFor(null)
-    return tierFor(stored.contextWindow > 0 ? stored.contextWindow : contextFor(stored.modelId))
-  }
-
-  /** Append an entry the model does not answer: a notice, a scripted call, a check's result. */
+  /** Append an entry the model does not answer: a notice. */
   async write(
     conversation: Conversation,
     kind: string,

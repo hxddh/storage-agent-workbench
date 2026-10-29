@@ -1,3 +1,78 @@
+## 36.0.0 — 2026-10-29
+
+Storage Agent is a native agent. The model reads, judges and says what it
+found; the app gives it read-only tools that return what the storage APIs
+return, keeps the safety boundaries, and shows each call where it happened. The
+rule engine, Issues, change plans, scripted and scheduled checks, and demo
+storage are gone. Each task is one conversation. 35.x tasks open as
+conversations; their calls to removed tools show what the agent received.
+
+### Changed
+
+- **Tools return data, not judgements.** `config` reads one bucket's
+  configuration section by section (location, policy, policy status, public
+  access block, ACL, ownership, encryption, versioning, object lock, lifecycle,
+  replication, CORS, website, logging, notification, inventory, tagging), each
+  as `{ status, value }` or `{ status, error }`, with the policy parsed. The new
+  `account` tool reads AWS account-level data the same way: the account-wide
+  public access block, IAM authorization details (paged), the SCPs that apply,
+  a KMS key policy, Access Analyzer findings, CloudWatch storage metrics and
+  CloudTrail events (paged). `buckets` lists every bucket in scope. Nothing
+  decides what is public, risky or missing; the agent does, and says so.
+- **Account ids are scrubbed, not hidden behind verdicts.** Every 12-digit
+  number in a read, and in any tool's error text, becomes `<account>`.
+- **A conversation, not a run page.** One ordered thread: your messages (a
+  steer shows where it was said), the agent's text, provider reasoning in full,
+  each tool call as a step you open in place with exactly what the agent
+  received, clarifying questions with one-click options, notices with Retry or
+  Continue, and a divider where a stopped turn was continued. A `config` or
+  `account` step opens as its sections, each with its status and JSON.
+- **The agent writes any change itself.** There is no `change_plan`: a fix is
+  the agent's own text (a CLI command, a policy) for you to apply, and the
+  prompt says only a later read shows it applied.
+- **Memory is the agent's notes.** The prompt's memory block names the accounts
+  and the first 12 notes; `note` writes one. `@` offers accounts and the bucket
+  names an account lists now.
+- **One override: a 100-round runaway ceiling** per turn, the same for every
+  model. No repeated-read block, no per-model budgets, no working limits; the
+  sandbox's call, listing, time and memory budgets stay. The prompt states the
+  hard rules and does not prescribe a workflow.
+- **Home lists the accounts and nothing about them**, with Add an account, Set
+  up a model when there is none, and local models when found. It sends nothing
+  for you.
+
+### Removed
+
+- The rule engine and Issues (`estate/rules.ts`, `assess.ts`, `estate.ts`,
+  `changes.ts`), severities, findings, posture memory and its diffs, reading
+  records, and the `survey`, `estate`, `change_plan` and `accept_risk` tools,
+  with the confirmation step that accepted a risk.
+- App-made access verdicts: `s3/facts.ts`, `access.ts`, `policy.ts`,
+  `permissions.ts`, `changes.ts`, `metrics.ts` and the coverage and blind-spot
+  summaries built on them.
+- The scripted account check and re-check, scheduled checks and their setting,
+  the Check account button and its canned message.
+- Demo storage: the in-process demo account and Try with demo storage. The fake
+  S3 is a test fixture in `scripts/` only.
+- App-level answer validation (ungrounded names, unresolved-citation notices,
+  answer correction), the scope line, Findings and Not checked strips, Earlier
+  in this task and the "Worked for" summary. The `plan` and `skill` tools.
+- Migration 16 drops `issues`, `issue_events`, `readings`, `posture_changes` and
+  `buckets`, and the providers' `schedule`, `account_json` and `account_at`.
+  Accounts, notes and tasks stay.
+
+### Checks
+
+- `scripts/e2e.mjs`, `e2e-audit.mjs`, `bench.mjs`, `eval.mjs` and `shots.mjs`
+  read the conversation. The fake model works like an agent: it lists the
+  buckets, reads each configuration and answers from what it read. `eval.mjs`
+  scores what the agent said against the fake storage's known truth and never
+  counts calls against it; the bench adds `memory` and `fix` (a command for the
+  user, never a claimed write). The no-model first-run proof checks that nothing
+  is added or run on its own. The moto compatibility test reads `config` and
+  `account` against an independent AWS emulator and checks the account id never
+  reaches the agent.
+
 ## 35.0.0 — 2026-10-29
 
 One engine, one log, one reducer. A model run and a scripted check are the same

@@ -64,7 +64,9 @@ export function installModel(
   const baseUrl = baseUrlOf(stored)
   const contextWindow = stored.contextWindow > 0 ? stored.contextWindow : 128_000
   const reasoning = stored.thinking !== 'off'
-  // The verdict is two sentences; the budget is for tool calls and, when on, thinking.
+  // The request's output limit. A provider rejects one above the model's own
+  // maximum, which the catalog does not know, so this stays at a size every
+  // supported model accepts; a reply that reaches it is shown as cut.
   const maxTokens = Math.max(
     4096,
     Math.min(reasoning ? 32_000 : 8192, Math.floor(contextWindow / 4)),

@@ -23,3 +23,15 @@ export function shortDate(value: Date | string | undefined | null): string {
   if (Number.isNaN(date.getTime())) return '—'
   return date.toISOString().slice(0, 10)
 }
+
+/** A table as the model reads it: a header line and tab-separated rows. */
+export function tableText(
+  columns: readonly string[],
+  rows: readonly (readonly unknown[])[],
+): string {
+  return [columns, ...rows]
+    .map((row) =>
+      row.map((value) => (value === null || value === undefined ? '' : String(value))).join('\t'),
+    )
+    .join('\n')
+}

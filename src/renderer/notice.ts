@@ -1,5 +1,7 @@
-import type { NoticeFact } from '@shared/trace'
+import type { ThreadItem } from '@shared/conversation'
 import type { Dict } from './i18n'
+
+type NoticeFact = Extract<ThreadItem, { kind: 'notice' }>
 
 /** App notices are codes; provider errors are shown as their own text. */
 export function noticeText(notice: NoticeFact, t: Dict): string {
@@ -12,8 +14,8 @@ export function noticeText(notice: NoticeFact, t: Dict): string {
           ? t.noticeFailed
           : notice.code === 'budget'
             ? t.noticeBudget
-            : notice.code === 'model_missing'
-              ? t.noticeModelMissing
+            : notice.code === 'cut'
+              ? t.noticeCut
               : ''
   if (!base) return notice.text
   return notice.text && notice.code !== 'stopped' ? `${base} ${notice.text}` : base

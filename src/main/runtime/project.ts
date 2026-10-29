@@ -14,11 +14,10 @@ import type {
   Live,
   LiveTool,
   NoticeCode,
-  ReverifyReport,
-  RunTrigger,
   ToolDetails,
   ToolName,
   ToolStatus,
+  ToolView,
   UiEntry,
   Usage,
 } from '@shared/contract'
@@ -72,8 +71,21 @@ function thinkingOf(message: ModelMessage | undefined): string {
     .trim()
 }
 
-function toolName(value: string | undefined): ToolName | null {
-  return value && TOOL_NAMES.has(value as ToolName) ? (value as ToolName) : null
+const VIEW_KINDS = new Set<string>([
+  'buckets',
+  'objects',
+  'object',
+  'raw',
+  'probe',
+  'note',
+  'query',
+  'question',
+])
+
+/** A view this version renders; a call from an earlier version shows what the agent received. */
+function viewOf(name: string, view: ToolView | null | undefined): ToolView | null {
+  if (!view || !TOOL_NAMES.has(name as ToolName) || !VIEW_KINDS.has(view.kind)) return null
+  return view
 }
 
 /** `agentTool()` details; 17.x results carry the same shape without `status`. */
@@ -81,25 +93,18 @@ function isDetails(value: unknown): value is Partial<ToolDetails> & { target: st
   return Boolean(value) && typeof value === 'object' && 'target' in (value as object)
 }
 
-/** What a run-starting entry carries. */
+/** What a user message carries. */
 export interface RunData {
-  trigger: RunTrigger
+  trigger: 'user'
   text?: string
   attachments?: AttachmentRef[]
   context?: ContextRef[]
 }
 
-/** A scripted call: the same shaped details `agentTool()` returns to a model run. */
-export interface CallData {
-  name: ToolName
-  at: string
-  details: ToolDetails
-}
-
 function toolEntry(
   id: string,
   at: string,
-  name: ToolName,
+  name: string,
   details: (Partial<ToolDetails> & { target: string }) | null,
   fallback: { isError: boolean; text: string; ms?: number; callId?: string },
 ): UiEntry {
@@ -114,11 +119,10 @@ function toolEntry(
     note: details ? (details.note ?? null) : fallback.isError ? blockedNote(fallback.text) : null,
     args: details?.args ?? null,
     ms: details?.ms ?? fallback.ms ?? null,
-    view: details?.view ?? null,
+    view: viewOf(name, details?.view),
     ...(fallback.callId ? { callId: fallback.callId } : {}),
     ...(details?.evidenceId ? { evidenceId: details.evidenceId } : {}),
-    ...(details?.key ? { key: details.key } : {}),
-    ...(details?.assessed ? { assessed: details.assessed } : {}),
+    ...(fallback.text ? { output: fallback.text } : {}),
   }
 }
 
@@ -131,11 +135,9 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
     const at = iso(message?.timestamp)
     switch (entry.kind) {
       case 'sa.run': {
-        const data = (entry.data ?? {}) as Partial<RunData> & { at?: string }
-        if (data.trigger === 'check' || data.trigger === 'recheck') {
-          out.push({ id, kind: 'check', at: data.at ?? at, mode: data.trigger })
-          break
-        }
+        const data = (entry.data ?? {}) as Partial<RunData> & { trigger?: string }
+        // 35.0 wrote a scripted check's start here; its calls and answer follow as entries.
+        if (data.trigger && data.trigger !== 'user') break
         out.push({
           id,
           kind: 'user',
@@ -147,7 +149,9 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
         break
       }
       case 'sa.steer': {
-        const data = (entry.data ?? {}) as Partial<RunData>
+        const data = (entry.data ?? {}) as Partial<RunData> & { trigger?: string }
+        // 35.0 wrote a scripted check's start here; its calls and answer follow as entries.
+        if (data.trigger && data.trigger !== 'user') break
         out.push({
           id,
           kind: 'steer',
@@ -161,12 +165,13 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       case 'sa.resume':
         out.push({ id, kind: 'resume', at })
         break
+      // 35.0 scripted checks: their calls and answer read as ordinary conversation items.
       case 'sa.call': {
-        const data = entry.data as CallData | undefined
-        const name = toolName(data?.name)
-        if (data && name)
+        const data = entry.data as { name?: string; at?: string; details?: ToolDetails } | undefined
+        const name = data?.name
+        if (data?.details && name)
           out.push(
-            toolEntry(id, data.at, name, data.details, {
+            toolEntry(id, data.at ?? at, name, data.details, {
               isError: data.details.status !== 'done',
               text: '',
             }),
@@ -175,13 +180,7 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       }
       case 'sa.answer': {
         const data = entry.data as { text?: string; at?: string } | undefined
-        if (data?.text)
-          out.push({ id, kind: 'answer', at: data.at ?? at, text: data.text, source: 'check' })
-        break
-      }
-      case 'sa.reverify': {
-        const data = entry.data as ReverifyReport | undefined
-        if (data) out.push({ id, kind: 'reverify', at: data.at, report: data })
+        if (data?.text) out.push({ id, kind: 'answer', at: data.at ?? at, text: data.text })
         break
       }
       case 'sa.notice': {
@@ -204,14 +203,6 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
         })
         break
       }
-      // `pi.user` entries are the harness's own messages to the model: a
-      // correction is part of the run, and the window shows it.
-      case 'pi.user': {
-        const text = textOf(message)
-        if (text)
-          out.push({ id, kind: 'validation', at, text: redact(text).slice(0, 1200), tone: 'warn' })
-        break
-      }
       case 'pi.assistant': {
         if (!message) break
         for (const part of parts(message))
@@ -221,16 +212,26 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
             id: `${id}:thinking`,
             kind: 'reasoning',
             at,
-            text: redact(thinkingOf(message)).slice(0, 4000),
+            text: redact(thinkingOf(message)),
           })
         const text = textOf(message)
-        if (text) out.push({ id, kind: 'answer', at, text, source: 'model' })
-        else if (message.stopReason === 'error' && message.errorMessage)
+        if (text) out.push({ id, kind: 'answer', at, text })
+        // The provider stopped at its output limit: what the agent wrote is cut, and says so.
+        if (message.stopReason === 'length')
+          out.push({
+            id: `${id}:length`,
+            kind: 'notice',
+            at,
+            code: 'cut',
+            text: '',
+            tone: 'warn',
+          })
+        if (!text && message.stopReason === 'error' && message.errorMessage)
           out.push({
             id,
             kind: 'notice',
             at,
-            text: message.errorMessage.slice(0, 300),
+            text: message.errorMessage,
             tone: 'error',
             action: 'retry',
           })
@@ -238,11 +239,9 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
       }
       case 'pi.tool-result': {
         if (!message) break
-        const name = toolName(message.toolName ?? toolNames.get(message.toolCallId ?? ''))
+        const name = message.toolName ?? toolNames.get(message.toolCallId ?? '')
         if (!name) break
         const details = isDetails(message.details) ? message.details : null
-        // A call the harness blocked never read anything; it is not a check.
-        if (!details && message.isError && BLOCKED.test(textOf(message))) break
         // A result without our details came from pi itself: the call never
         // reached `agentTool()` (aborted before start, or faulted).
         out.push(
@@ -277,9 +276,7 @@ export function roundsOf(entries: readonly EntryRecord[]): number {
   return rounds
 }
 
-const BLOCKED = /step budget reached|already ran in this (?:task|run)/i
-
-/** A result pi wrote without running the tool; its text is not shown. */
+/** A result pi wrote without running the tool (a budget block); its text is the step's output. */
 function blockedNote(text: string): string | null {
   return text ? 'Did not run' : null
 }
@@ -308,7 +305,7 @@ export class LiveTracker {
     this.runStarted.set(taskId, startedAt)
     const tools: LiveTool[] = []
     for (const slot of live.tools ?? []) {
-      const name = toolName(slot.name)
+      const name = slot.name
       if (!name) continue
       const details = isDetails(slot.details) ? slot.details : null
       const since = this.toolStarted.get(slot.callId) ?? new Date().toISOString()
@@ -334,7 +331,7 @@ export class LiveTracker {
     const reasoningStarted = this.reasoningStarted.get(taskId)
     const reasoning = reasoningStarted
       ? {
-          summary: summary ? redact(summary).slice(0, 4000) : null,
+          summary: summary ? redact(summary) : null,
           startedAt: reasoningStarted,
         }
       : null

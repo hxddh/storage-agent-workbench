@@ -10,7 +10,7 @@ import {
 } from '@aws-sdk/client-s3'
 import type { Table } from '@shared/contract'
 import { describe } from '../providers'
-import { formatBytes, iso, shortDate } from '../util'
+import { formatBytes, iso, shortDate, tableText } from '../util'
 import {
   agentTool,
   assertInScope,
@@ -25,8 +25,7 @@ export function bucketTools(deps: ToolDeps) {
   return [
     agentTool(deps, {
       name: 'buckets',
-      description:
-        'List the buckets this account can see, with creation dates. Cheap; use it before a full survey.',
+      description: 'List the buckets this account can see, with creation dates.',
       parameters: Type.Object({ provider_id: providerParam }),
       timeoutMs: 30_000,
       target: () => 'account',
@@ -40,10 +39,7 @@ export function bucketTools(deps: ToolDeps) {
         )
         const rows = buckets.map((bucket) => [bucket.Name ?? '', shortDate(bucket.CreationDate)])
         return {
-          model: `${buckets.length} bucket(s): ${buckets
-            .map((b) => b.Name)
-            .slice(0, 40)
-            .join(', ')}`,
+          model: `${buckets.length} bucket(s):\n${tableText(['Bucket', 'Created'], rows)}`,
           note: `${buckets.length} bucket${buckets.length === 1 ? '' : 's'}`,
           view: {
             kind: 'buckets' as const,
@@ -56,7 +52,7 @@ export function bucketTools(deps: ToolDeps) {
     agentTool(deps, {
       name: 'objects',
       description:
-        'List object keys, object versions, or incomplete multipart uploads in one bucket. Read-only and bounded.',
+        'List object keys, object versions, or incomplete multipart uploads in one bucket, one page at a time (up to 1000 rows); pass the returned `next` token to read the following page.',
       parameters: Type.Object({
         provider_id: providerParam,
         bucket: bucketParam,
@@ -66,18 +62,40 @@ export function bucketTools(deps: ToolDeps) {
             description: 'keys (default), versions, or uploads.',
           }),
         ),
-        limit: limitParam(200),
+        limit: limitParam(1000),
+        token: Type.Optional(
+          Type.String({
+            description: 'The `next` token a previous page returned, to read the page after it.',
+          }),
+        ),
       }),
       timeoutMs: 60_000,
       target: (args) => args.bucket,
       run: async (args, run) => {
         const { config, client } = await run.provider(args.provider_id)
         assertInScope(config, args.bucket)
-        const limit = Math.max(1, Math.min(args.limit ?? 50, 200))
+        const limit = Math.max(1, Math.min(args.limit ?? 100, 1000))
         const prefix = args.prefix || undefined
+        // One opaque token per listing kind: S3's own markers, carried as JSON.
+        const marker = (() => {
+          try {
+            return args.token ? (JSON.parse(args.token) as Record<string, string>) : {}
+          } catch {
+            throw new Error('The token is not one this tool returned.')
+          }
+        })()
+        const next = (value: Record<string, string | undefined> | null) =>
+          value && Object.values(value).some(Boolean) ? JSON.stringify(value) : null
+        const more = (token: string | null) => (token ? `\nnext: ${token}` : '')
         if (args.kind === 'versions') {
           const response = await client.send(
-            new ListObjectVersionsCommand({ Bucket: args.bucket, Prefix: prefix, MaxKeys: limit }),
+            new ListObjectVersionsCommand({
+              Bucket: args.bucket,
+              Prefix: prefix,
+              MaxKeys: limit,
+              KeyMarker: marker.key,
+              VersionIdMarker: marker.version,
+            }),
             { abortSignal: run.signal },
           )
           const rows = (response.Versions ?? []).map((v) => [
@@ -87,8 +105,13 @@ export function bucketTools(deps: ToolDeps) {
             formatBytes(v.Size),
             shortDate(v.LastModified),
           ])
+          const token = response.IsTruncated
+            ? next({ key: response.NextKeyMarker, version: response.NextVersionIdMarker })
+            : null
           return {
-            model: `${rows.length} version(s) in ${args.bucket}${prefix ? ` under ${prefix}` : ''}.`,
+            model: `${rows.length} version(s) in ${args.bucket}${prefix ? ` under ${prefix}` : ''}${
+              response.IsTruncated ? ' (more exist)' : ''
+            }:\n${tableText(['Key', 'Version', 'Latest', 'Size', 'Modified'], rows)}${more(token)}`,
             note: `${rows.length} version${rows.length === 1 ? '' : 's'}`,
             view: {
               kind: 'objects' as const,
@@ -106,6 +129,8 @@ export function bucketTools(deps: ToolDeps) {
               Bucket: args.bucket,
               Prefix: prefix,
               MaxUploads: limit,
+              KeyMarker: marker.key,
+              UploadIdMarker: marker.upload,
             }),
             { abortSignal: run.signal },
           )
@@ -115,8 +140,13 @@ export function bucketTools(deps: ToolDeps) {
             u.StorageClass ?? '',
             iso(u.Initiated),
           ])
+          const token = response.IsTruncated
+            ? next({ key: response.NextKeyMarker, upload: response.NextUploadIdMarker })
+            : null
           return {
-            model: `${rows.length} incomplete upload(s) in ${args.bucket}.`,
+            model: `${rows.length} incomplete upload(s) in ${args.bucket}${
+              response.IsTruncated ? ' (more exist)' : ''
+            }:\n${tableText(['Key', 'Upload', 'Class', 'Initiated'], rows)}${more(token)}`,
             note: `${rows.length} upload${rows.length === 1 ? '' : 's'}`,
             view: {
               kind: 'objects' as const,
@@ -133,9 +163,13 @@ export function bucketTools(deps: ToolDeps) {
             Bucket: args.bucket,
             Prefix: prefix,
             MaxKeys: limit,
+            ContinuationToken: marker.continuation,
           }),
           { abortSignal: run.signal },
         )
+        const token = response.IsTruncated
+          ? next({ continuation: response.NextContinuationToken })
+          : null
         const rows = (response.Contents ?? []).map((object) => [
           object.Key ?? '',
           formatBytes(object.Size),
@@ -144,8 +178,8 @@ export function bucketTools(deps: ToolDeps) {
         ])
         return {
           model: `${rows.length} object(s) in ${args.bucket}${prefix ? ` under ${prefix}` : ''}${
-            response.IsTruncated ? ' (truncated)' : ''
-          }.`,
+            response.IsTruncated ? ' (more exist)' : ''
+          }:\n${tableText(['Key', 'Size', 'Class', 'Modified'], rows)}${more(token)}`,
           note: `${rows.length} object${rows.length === 1 ? '' : 's'}`,
           view: {
             kind: 'objects' as const,
@@ -204,8 +238,8 @@ export function bucketTools(deps: ToolDeps) {
           if (head.ServerSideEncryption) facts.push(['Encryption', head.ServerSideEncryption])
           if (head.VersionId) facts.push(['Version', head.VersionId])
           const metadata = Object.entries(head.Metadata ?? {})
-          if (metadata.length)
-            facts.push(['Metadata', metadata.map(([k, v]) => `${k}=${v}`).join(', ')])
+          // Metadata names only: values can hold anything the uploader put there.
+          if (metadata.length) facts.push(['Metadata', metadata.map(([k]) => k).join(', ')])
         } catch (error) {
           throw new Error(describe(error))
         }
@@ -241,24 +275,24 @@ export function bucketTools(deps: ToolDeps) {
             facts.push(['Grants', 'not readable'])
           }
         }
-        if (aspects.has('preview') && size > 0 && size <= 1_048_576) {
-          const textLike =
-            contentType.startsWith('text/') ||
-            contentType.includes('json') ||
-            contentType.includes('xml') ||
-            contentType.includes('csv')
-          if (textLike) {
-            try {
-              const object = await client.send(
-                new GetObjectCommand({
-                  Bucket: args.bucket,
-                  Key: args.key,
-                  Range: 'bytes=0-8191',
-                }),
-                { abortSignal: run.signal },
-              )
-              const body = await object.Body?.transformToString()
-              if (body) {
+        if (aspects.has('preview') && size > 0) {
+          // The first 8 KiB, whatever the object's size or declared type: a text
+          // file labelled octet-stream is still text. Bytes that are not text are
+          // said to be binary rather than shown.
+          try {
+            const object = await client.send(
+              new GetObjectCommand({ Bucket: args.bucket, Key: args.key, Range: 'bytes=0-8191' }),
+              { abortSignal: run.signal },
+            )
+            const bytes = await object.Body?.transformToByteArray()
+            if (bytes?.length) {
+              const body = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+              const odd = [...body].filter(
+                (char) => char === '\uFFFD' || (char < ' ' && !'\n\r\t'.includes(char)),
+              ).length
+              if (bytes.includes(0) || odd > body.length * 0.05)
+                facts.push(['Preview', 'binary content, not shown'])
+              else
                 preview = {
                   language: contentType.includes('json')
                     ? 'json'
@@ -267,16 +301,17 @@ export function bucketTools(deps: ToolDeps) {
                       : contentType.includes('csv')
                         ? 'csv'
                         : 'text',
-                  text: body.slice(0, 8192),
+                  text: body,
                 }
-              }
-            } catch {
-              // A preview is best-effort; the facts still stand.
             }
+          } catch {
+            facts.push(['Preview', 'not readable'])
           }
         }
         return {
-          model: `${args.bucket}/${args.key}: ${facts.map(([k, v]) => `${k}=${v}`).join('; ')}`,
+          model: `${args.bucket}/${args.key}: ${facts.map(([k, v]) => `${k}=${v}`).join('; ')}${
+            preview ? `\nFirst ${preview.text.length} characters of the body:\n${preview.text}` : ''
+          }`,
           note: formatBytes(size),
           view: { kind: 'object' as const, facts, preview },
         }

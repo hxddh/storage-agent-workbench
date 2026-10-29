@@ -4,52 +4,13 @@
  * configuration APIs answer, including the 501s and 403s real providers send,
  * and an optional deterministic set of objects.
  *
- * The end-to-end server (`scripts/fake-s3.mjs`) puts HTTP around it; the demo
- * account calls it in process, so the demo needs no port and no network.
+ * `scripts/fake-s3.mjs` puts HTTP around it for the end-to-end runs and tests.
  */
 
 /** The two buckets the end-to-end run uses. */
 export const DEFAULT_BUCKETS = {
-  'demo-public': { public: true, encryption: false },
-  'demo-private': { public: false, encryption: true, blocked: true },
-}
-
-/** The demo estate: a believable small company, with something to find in it. */
-export const DEMO_BUCKETS = {
-  'acme-web-assets': {
-    public: true,
-    encryption: true,
-    objects: { count: 1800, prefixes: ['img/', 'css/', 'js/'] },
-  },
-  'acme-data-lake': {
-    encryption: true,
-    blocked: true,
-    versioning: true,
-    lifecycle: 'expire',
-    objects: { count: 6000, prefixes: ['raw/events/', 'raw/clicks/', 'curated/daily/', 'tmp/'] },
-  },
-  'acme-backups': {
-    encryption: true,
-    blocked: true,
-    lifecycle: 'abort',
-    objects: { count: 900, prefixes: ['db/', 'configs/'] },
-  },
-  'acme-partner-share': {
-    conditional: true,
-    encryption: true,
-    cors: '*',
-    objects: { count: 300, prefixes: ['inbound/', 'outbound/'] },
-  },
-  'acme-legacy-uploads': {
-    aclDenied: true,
-    objects: { count: 1200, prefixes: ['2019/', '2020/', '2021/'] },
-  },
-  'acme-logs': {
-    encryption: true,
-    blocked: true,
-    lifecycle: 'abort',
-    objects: { count: 2400, prefixes: ['cloudfront/', 's3/'] },
-  },
+  'web-assets': { public: true, encryption: false },
+  'data-lake': { public: false, encryption: true, blocked: true },
 }
 
 const xml = (body) => `<?xml version="1.0" encoding="UTF-8"?>${body}`
@@ -163,7 +124,7 @@ export function respond(buckets, request) {
     return reply(
       200,
       xml(
-        `<ListAllMyBucketsResult><Owner><ID>demo</ID><DisplayName>demo</DisplayName></Owner><Buckets>${Object.keys(
+        `<ListAllMyBucketsResult><Owner><ID>owner</ID><DisplayName>owner</DisplayName></Owner><Buckets>${Object.keys(
           buckets,
         )
           .map(
@@ -278,7 +239,7 @@ export function respond(buckets, request) {
     return reply(
       200,
       xml(
-        '<AccessControlPolicy><Owner><ID>demo</ID></Owner><AccessControlList><Grant><Grantee><Type>CanonicalUser</Type><ID>demo</ID></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>',
+        '<AccessControlPolicy><Owner><ID>owner</ID></Owner><AccessControlList><Grant><Grantee><Type>CanonicalUser</Type><ID>owner</ID></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>',
       ),
     )
   }

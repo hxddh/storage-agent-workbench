@@ -1,43 +1,46 @@
 # Read-only IAM
 
-Storage Agent never executes a write action. This policy covers the read APIs
-the current build calls. Every statement is optional: a missing permission
-becomes a named blind spot, not a clean result. `s3:GetObject` is also used to
-read an S3 Inventory manifest and its object files; `s3:GetObjectAcl` and
-`s3:GetObjectTagging` are needed only for those object aspects.
+Storage Agent never executes a write action. This policy covers exactly the
+read APIs the current build calls (`s3/raw.ts`, `tools/browse.ts`,
+`tools/probe.ts`, `tools/query.ts`, `tools/account.ts`). Every statement is
+optional: a missing permission comes back as an `access_denied` section or read
+(`config`, `account`) or a failed step with the provider's error (the other
+tools), and the agent says what it could not read.
 
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "ReadBucketConfiguration",
+      "Sid": "ListAndBucketConfiguration",
       "Effect": "Allow",
       "Action": [
         "s3:ListAllMyBuckets",
-        "s3:GetBucketLocation",
         "s3:ListBucket",
         "s3:ListBucketVersions",
         "s3:ListBucketMultipartUploads",
+        "s3:GetBucketLocation",
         "s3:GetBucketPolicy",
         "s3:GetBucketPolicyStatus",
+        "s3:GetBucketPublicAccessBlock",
         "s3:GetBucketAcl",
-        "s3:GetBucketCORS",
-        "s3:GetBucketVersioning",
+        "s3:GetBucketOwnershipControls",
         "s3:GetEncryptionConfiguration",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketObjectLockConfiguration",
         "s3:GetLifecycleConfiguration",
         "s3:GetReplicationConfiguration",
+        "s3:GetBucketCORS",
+        "s3:GetBucketWebsite",
         "s3:GetBucketLogging",
-        "s3:GetBucketOwnershipControls",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:GetBucketTagging",
         "s3:GetBucketNotification",
-        "s3:ListBucketInventoryConfigurations"
+        "s3:GetInventoryConfiguration",
+        "s3:GetBucketTagging"
       ],
       "Resource": "*"
     },
     {
-      "Sid": "ReadObjectDataAndInventory",
+      "Sid": "ReadObjectsAndInventory",
       "Effect": "Allow",
       "Action": [
         "s3:GetObject",
@@ -47,19 +50,10 @@ read an S3 Inventory manifest and its object files; `s3:GetObjectAcl` and
       "Resource": "*"
     },
     {
-      "Sid": "ReadAccountPosture",
+      "Sid": "ReadAccountLevel",
       "Effect": "Allow",
       "Action": [
-        "s3:GetAccountPublicAccessBlock"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "ReadEvidence",
-      "Effect": "Allow",
-      "Action": [
-        "cloudwatch:GetMetricData",
-        "cloudtrail:LookupEvents",
+        "s3:GetAccountPublicAccessBlock",
         "iam:GetAccountAuthorizationDetails",
         "organizations:ListParents",
         "organizations:ListPoliciesForTarget",
@@ -67,7 +61,9 @@ read an S3 Inventory manifest and its object files; `s3:GetObjectAcl` and
         "kms:DescribeKey",
         "kms:GetKeyPolicy",
         "access-analyzer:ListAnalyzers",
-        "access-analyzer:ListFindings"
+        "access-analyzer:ListFindings",
+        "cloudwatch:GetMetricData",
+        "cloudtrail:LookupEvents"
       ],
       "Resource": "*"
     }
@@ -76,25 +72,33 @@ read an S3 Inventory manifest and its object files; `s3:GetObjectAcl` and
 ```
 
 `sts:GetCallerIdentity` is called to obtain the account id for the account-wide
-block and SCP lookup. It is an identity call, not an IAM permission, and the id
-is dropped after the call. Narrowing `Resource` to the configured buckets and
-objects is compatible with the app's scope, but it is the user's choice.
+block and the SCP lookup. It needs no IAM permission, and the id is used for
+those requests only, never returned. Narrowing `Resource` to the configured
+buckets and objects is compatible with the app's scope, but it is the user's
+choice.
 
-## What each block enables
+## What each action enables
 
-| Statement | Enables | When it is missing |
+| Action | API | Used by |
 |---|---|---|
-| `s3:ListAllMyBuckets` | the account survey's bucket list | the survey cannot start |
-| `s3:GetBucket*`, `ListBucketVersions`, `ListBucketMultipartUploads` | posture, exposure, lifecycle, logging, tags, versions and uploads | the matching rule or object question is undecided; the run names the action |
-| `s3:GetObject` | object metadata and a bounded preview; inventory manifest/files | object and inventory questions stay open |
-| `s3:GetObjectAcl`, `s3:GetObjectTagging` | those two object aspects | the object view says the aspect is not readable |
-| `s3:GetAccountPublicAccessBlock` | the account-wide block, S3.1 | account block is unknown, never assumed off |
-| `cloudwatch:GetMetricData` | size, objects and storage-class mix | capacity is unavailable, not zero |
-| `cloudtrail:LookupEvents` | who changed a bucket | the change is shown with the actor unknown |
-| `iam:GetAccountAuthorizationDetails` | identity, group, managed-policy, boundary and trust evaluation | IAM is a blind spot; policy and ACL grants still show |
-| `organizations:ListParents`, `organizations:ListPoliciesForTarget`, `organizations:DescribePolicy` | SCPs inherited from the account, OUs and root | SCPs are a blind spot; identity grants still show |
-| `kms:DescribeKey`, `kms:GetKeyPolicy` | the key policy for SSE-KMS | the key policy is a blind spot |
-| `access-analyzer:ListAnalyzers`, `access-analyzer:ListFindings` | Access Analyzer findings | findings are unavailable; local policy reading still runs |
+| `s3:ListAllMyBuckets` | ListBuckets | `buckets`, `query` `buckets()`, `probe` latency, the `@` menu |
+| `s3:ListBucket` | ListObjectsV2, HeadBucket | `objects`, `query` `list()` and inventory manifests, `probe` location and addressing |
+| `s3:ListBucketVersions` | ListObjectVersions | `objects` and `list()` with `kind: versions` |
+| `s3:ListBucketMultipartUploads` | ListMultipartUploads | `objects` and `list()` with `kind: uploads` |
+| `s3:GetObject` | HeadObject, GetObject (ranged) | `object` head and preview, `query` `head()`, inventory manifest and files |
+| `s3:GetObjectAcl`, `s3:GetObjectTagging` | GetObjectAcl, GetObjectTagging | `object` `acl` and `tags` aspects |
+| `s3:GetBucketLocation` | GetBucketLocation | every `config` read (the `location` section and the regional client) |
+| the other `s3:GetBucket*` / `s3:Get*Configuration` actions | one `config` section each | `config` and `query` `config()` |
+| `s3:GetInventoryConfiguration` | ListBucketInventoryConfigurations | the `inventory` section and `query` `inventory()` |
+| `s3:GetAccountPublicAccessBlock` | S3 Control GetPublicAccessBlock | `account` `public_access_block` |
+| `iam:GetAccountAuthorizationDetails` | the same | `account` `iam` |
+| `organizations:ListParents`, `ListPoliciesForTarget`, `DescribePolicy` | the same | `account` `scps` |
+| `kms:DescribeKey`, `kms:GetKeyPolicy` | the same | `account` `kms_key_policy` |
+| `access-analyzer:ListAnalyzers`, `ListFindings` | the same | `account` `access_analyzer` |
+| `cloudwatch:GetMetricData` | the same | `account` `storage_metrics` |
+| `cloudtrail:LookupEvents` | the same | `account` `cloudtrail` |
+
+A denied read is reported as denied, never as an empty configuration.
 
 ## Boundaries
 
@@ -102,11 +106,9 @@ objects is compatible with the app's scope, but it is the user's choice.
   not an authorization shortcut: a broad IAM policy does not make the app read
   buckets outside the configured list.
 - `@` context in the composer is focus only. It cannot grant access.
-- The app never stores an account id. ARNs in views and model text are redacted
-  to `<account>` before they leave the reading.
-- The model sees bounded, redacted tool output, not a raw policy document. A
-  generated change plan is text; applying it needs credentials the app does not
-  use.
-- Access analysis is evidence, not an authorization decision. A list can be
-  incomplete because a principal was not enumerated, a condition was not
-  evaluated, or a read was denied; the page says so.
+- The app never stores or shows an account id. Values from `config` and
+  `account` are scrubbed to `<account>`, and ARNs in any text are redacted
+  before they leave the main process.
+- The model sees bounded, redacted tool output. A change the agent writes is
+  text; applying it needs permissions this policy does not grant and the app
+  does not use.

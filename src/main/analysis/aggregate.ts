@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import type { Chart, Table } from '@shared/contract'
+import type { Table } from '@shared/contract'
 
 export type DatasetKind = 'access_log' | 'inventory'
 
@@ -73,7 +73,7 @@ const ACCESS_FILTERS = new Set([
 ])
 const INVENTORY_FILTERS = new Set(['bucket', 'prefix', 'storage_class'])
 
-export const MAX_GROUPS = 50
+export const MAX_GROUPS = 1000
 
 export class AggregationError extends Error {}
 
@@ -203,6 +203,53 @@ export function aggregate(
   }
 }
 
+export const MAX_ROWS_PAGE = 1000
+
+/**
+ * One page of an imported dataset's rows, filtered by the same whitelisted
+ * columns `aggregate` takes; never SQL. The caller redacts the values.
+ */
+export function readRows(
+  path: string,
+  kind: DatasetKind,
+  request: {
+    filters?: Record<string, string | number> | null
+    limit?: number | null
+    offset?: number | null
+  },
+): { columns: string[]; rows: Record<string, unknown>[]; next: number | null } {
+  if (!existsSync(path)) throw new AggregationError('This dataset has no analytical database yet.')
+  const table = TABLES[kind]
+  const filters = kind === 'access_log' ? ACCESS_FILTERS : INVENTORY_FILTERS
+  const where: string[] = []
+  const params: (string | number)[] = []
+  for (const [column, value] of Object.entries(request.filters ?? {})) {
+    requireValue('filter column', column, filters)
+    where.push(`${column} = ?`)
+    params.push(value)
+  }
+  const limit = Math.max(1, Math.min(Number(request.limit ?? 100) || 100, MAX_ROWS_PAGE))
+  const offset = Math.max(0, Number(request.offset ?? 0) || 0)
+  const db = new DatabaseSync(path, { readOnly: true })
+  try {
+    const rows = db
+      .prepare(
+        `SELECT * FROM ${table}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit + 1, offset) as Record<string, unknown>[]
+    const columns = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+      (column) => column.name,
+    )
+    return {
+      columns,
+      rows: rows.slice(0, limit),
+      next: rows.length > limit ? offset + limit : null,
+    }
+  } finally {
+    db.close()
+  }
+}
+
 export function preview(path: string, kind: DatasetKind, limit = 5): Table {
   const db = new DatabaseSync(path, { readOnly: true })
   try {
@@ -224,33 +271,4 @@ export function preview(path: string, kind: DatasetKind, limit = 5): Table {
   } finally {
     db.close()
   }
-}
-
-export function countRows(path: string, kind: DatasetKind): number {
-  const db = new DatabaseSync(path, { readOnly: true })
-  try {
-    const row = db.prepare(`SELECT count(*) AS n FROM ${TABLES[kind]}`).get() as
-      | { n: number }
-      | undefined
-    return row?.n ?? 0
-  } finally {
-    db.close()
-  }
-}
-
-export function tableFromAggregate(result: AggregateResult): Table {
-  if (result.groups) {
-    return {
-      columns: [result.groupBy ?? 'group', result.metric],
-      rows: result.groups.map((group) => [group.group, group.value]),
-      truncated: result.truncated,
-    }
-  }
-  return { columns: [result.metric], rows: [[result.value ?? null]] }
-}
-
-export function chartFromAggregate(result: AggregateResult, unit?: string): Chart | null {
-  if (!result.groups || result.groups.length < 2) return null
-  const top = result.groups.slice(0, 10)
-  return { type: 'bar', labels: top.map((g) => g.group), values: top.map((g) => g.value), unit }
 }

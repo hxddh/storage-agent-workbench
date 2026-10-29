@@ -14,7 +14,7 @@ The normal CI workflow runs on `main` and pull requests:
 - the no-model first-run E2E;
 - the smoke eval, the behavior bench smoke, cold-start performance, screenshots
   and visual comparison;
-- on `main`, the real-model bench for a small-tier and a large-tier model
+- on `main`, the real-model bench for a small and a large model
   (three runs per scenario) when `EVAL_API_KEY` and the model variables exist;
   without them the job says it did not run;
 - the moto compatibility suite.
@@ -29,9 +29,11 @@ commit from a green `main`; do not use the tag workflow as a substitute for CI.
    then `scripts/bench.mjs --runs 3` against the primary and the secondary
    model. If it does not exist, it runs `scripts/eval.mjs --smoke` and
    `scripts/bench.mjs --smoke`. A smoke
-   report proves the harness and trace plumbing run; it is not a model-quality
-   score. The bench scores the trace and answer (calls, coverage, citations,
-   steer, resume, re-check, model choice), not the app's facts projection.
+   report proves the harness and conversation plumbing run; it is not a
+   model-quality score. The eval scores the agent's answer against the fake
+   storage's known truth; the bench scores the conversation the agent produced
+   (calls, citations, clarify, steer, resume, follow-ups, a change for the user
+   to apply, model choice) and what it said.
 2. **Signing detection** — checks all seven signing secrets. Only when every one
    is present is the build marked signed.
 3. **Build** — macOS x64 and arm64 (`.dmg`, `.zip`), Windows NSIS `.exe`, Linux
@@ -62,10 +64,11 @@ application itself still has the read-only, scope and secret boundaries in
 
 Real-model evaluation is valuable but not guaranteed by the repository alone:
 it needs a provider key and model variables. The release records a smoke result
-when they are absent. The eval covers 29 storage scenarios; the bench covers 15
-agent-behavior scenarios and scores the trace and answer, including a retry
-after a steer, a scripted check's parity with a model run, a question after a
-check, and a re-check as its own run. The bench gate: every must-pass check
+when they are absent. The eval covers 28 storage scenarios, each scored on what
+the agent said against what the fake storage holds; the bench covers 13
+agent-behavior scenarios and scores the conversation, including a retry after a
+steer, a follow-up in the same thread and a fix written as text without a
+claimed write. The bench gate: every must-pass check
 passes in every run and at least 90% of soft checks pass. A smoke bench uses the
 same gate (the fake model is deterministic, so a failure is a plumbing
 regression). Reports are attached and named after the model, never the key. A
@@ -109,12 +112,19 @@ in `CHANGELOG.md` and on the GitHub release.
 
 ## Current release facts
 
-The latest release is **35.0.0** (2026-10-29). Earlier release notes
+The latest release is **36.0.0** (2026-10-29). Earlier release notes
 may describe retired behavior; they are history. Keep `README.md`,
 `CHANGELOG.md` and this paragraph in step with the next tag, and refresh
-`docs/screenshot.png` if the surface changed. 35.0 is one engine: a model run
-and a scripted check call the same tools and leave the same entries; the run's
-state is derived from those entries; Issues change only in `estate/assess.ts`;
-the answer is validated for structure, never wording; and one reducer
-(`shared/trace.ts`) renders every run. Migration 15 starts the task history
-over and keeps accounts, memory, Issues and readings.
+`docs/screenshot.png` if the surface changed. 36.0 makes the window a
+conversation and the agent the only reader: each task is one thread of the
+user's messages and the agent's steps and text, projected by
+`shared/conversation.ts`, and every read goes through the agent. The tools are
+nine (`buckets`, `objects`, `object`, `config`, `account`, `probe`, `query`,
+`note`, `ask`) and return each API's answer as it came, scrubbed of account
+ids (`s3/raw.ts`). The rule engine and Issues, the `survey`, `estate`,
+`change_plan` and `accept_risk` tools, generated change plans, reading records
+and posture history, scheduled checks, **Check account**, demo storage, the
+scripted check and re-check, app-level answer validation, the scope line and
+the evidence strips were removed. The runaway ceiling still derives from
+durable entries. Schema head 16 drops the rule engine's tables and the
+providers' schedule and account columns; 35.x tasks open as conversations.

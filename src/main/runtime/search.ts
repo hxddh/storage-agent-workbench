@@ -3,7 +3,7 @@ import type { AppDb } from '../db'
 
 /**
  * Sidebar search over titles (read from `task_meta`) and the derived
- * `search_docs` index: requests, findings and the current answer. `LIKE`
+ * `search_docs` index: the user's messages and the agent's text. `LIKE`
  * handles Chinese substrings that a trigram index cannot.
  */
 export async function searchTasks(db: AppDb, query: string): Promise<SearchHit[]> {
@@ -28,6 +28,8 @@ export async function searchTasks(db: AppDb, query: string): Promise<SearchHit[]
   }
   for (const doc of await db.searchDocs(q, 300)) {
     if (hits.has(doc.conversation_id)) continue
+    // 35.x indexed its findings; a finding is the agent's data now, not something said.
+    if (doc.kind === 'finding') continue
     const task = byId.get(doc.conversation_id)
     if (!task) continue
     const index = doc.text.toLowerCase().indexOf(needle)
@@ -38,7 +40,7 @@ export async function searchTasks(db: AppDb, query: string): Promise<SearchHit[]
     hits.set(doc.conversation_id, {
       taskId: doc.conversation_id,
       title: task.title,
-      kind: doc.kind === 'user' ? 'user' : doc.kind === 'finding' ? 'finding' : 'answer',
+      kind: doc.kind === 'user' ? 'user' : 'answer',
       snippet: `${start > 0 ? '…' : ''}${doc.text
         .slice(start, end)
         .replace(/\s+/g, ' ')

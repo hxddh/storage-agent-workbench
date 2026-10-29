@@ -1,11 +1,11 @@
-/** The first paint is Home + Composer; lazy Markdown and Settings are not counted. */
+/** The first paint is Home + Composer; the lazy Conversation, Markdown and Settings chunks are not counted. */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
 import { join } from 'node:path'
 
 const dir = 'out/renderer/assets'
 const files = readdirSync(dir).filter((name) => name.endsWith('.js'))
-const lazy = (name) => /^(Settings|Run|Brief|Markdown)-/.test(name)
+const lazy = (name) => /^(Settings|Conversation|Markdown)-/.test(name)
 let initial = 0
 let gzip = 0
 let largest = 0

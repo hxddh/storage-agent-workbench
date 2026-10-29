@@ -1,21 +1,12 @@
 import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
-import type {
-  AppEvent,
-  Bootstrap,
-  EstateOverview,
-  ModelInput,
-  TaskSummary,
-  UpdateState,
-} from '@shared/contract'
+import type { AppEvent, Bootstrap, ModelInput, TaskSummary, UpdateState } from '@shared/contract'
 import { app } from 'electron'
 import { AppDb } from './db'
-import { Estate } from './estate/estate'
 import { Providers } from './providers'
 import { Engine } from './runtime/engine'
 import { createModelSet, testModel, testModelDraft } from './runtime/model'
-import { isScheduleDue } from './runtime/schedule'
 import { type RunOutcome, Runtime, runtimeDirs } from './runtime/session'
 import { Tasks } from './runtime/tasks'
 import { Vault } from './security/vault'
@@ -33,7 +24,6 @@ export interface ShellHooks {
 export class App {
   db!: AppDb
   providers!: Providers
-  estate!: Estate
   settings!: Settings
   vault!: Vault
   runtime!: Runtime
@@ -46,9 +36,6 @@ export class App {
   private database!: Database
   private dataDir = ''
   private readonly models = createModelSet()
-  private scheduleTimer: ReturnType<typeof setInterval> | null = null
-  private scheduleBusy = false
-  private readonly scheduleAttempts = new Map<string, string>()
   private hooks: ShellHooks = {
     emit: () => undefined,
     settled: () => undefined,
@@ -69,14 +56,12 @@ export class App {
     }
     this.vault = new Vault(dataDir)
     this.providers = new Providers(this.db, this.vault)
-    this.estate = new Estate(this.db)
     this.staging = new Staging(join(dataDir, 'staging'))
     await this.staging.clear()
 
     this.runtime = await Runtime.open(this.database, {
       db: this.db,
       providers: this.providers,
-      estate: this.estate,
       settings: this.settings,
       vault: this.vault,
       models: this.models,
@@ -92,39 +77,6 @@ export class App {
 
   setHooks(hooks: ShellHooks): void {
     this.hooks = hooks
-    this.startSchedules()
-  }
-
-  /** Opt-in checks run only while the app process is open. */
-  private startSchedules(): void {
-    if (this.scheduleTimer) return
-    this.scheduleTimer = setInterval(() => void this.runScheduled(), 60_000)
-    this.scheduleTimer.unref?.()
-    void this.runScheduled()
-  }
-
-  private async runScheduled(): Promise<void> {
-    if (this.scheduleBusy) return
-    this.scheduleBusy = true
-    try {
-      for (const account of await this.providers.list()) {
-        if (!isScheduleDue(account.schedule, undefined)) continue
-        const last = (await this.db.listReadings({ providerId: account.id, limit: 1 }))[0]
-        if (!isScheduleDue(account.schedule, last?.at ?? this.scheduleAttempts.get(account.id)))
-          continue
-        this.scheduleAttempts.set(account.id, new Date().toISOString())
-        const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
-        const title = `${this.settings.get().language === 'zh' ? '定期检查' : 'Scheduled check'} · ${account.name} · ${stamp}`
-        const taskId = await this.tasks.newTask(title)
-        // The engine's settlement notifies like any other run.
-        await this.engine.check(taskId, [account.id])
-      }
-    } catch {
-      // A scheduled read must never take down the window. Its task page keeps
-      // any failure it wrote; the next interval can try again.
-    } finally {
-      this.scheduleBusy = false
-    }
   }
 
   setUpdate(update: UpdateState): void {
@@ -152,36 +104,9 @@ export class App {
           }
         : null,
       settings: this.settings.public(),
-      overview: await this.overview(),
       update: this.update,
       lastTaskId: lastTaskId && tasks.some((task) => task.id === lastTaskId) ? lastTaskId : null,
     }
-  }
-
-  /** A quiet account summary: no dashboard, no chart, no per-bucket table. */
-  async overview(): Promise<EstateOverview> {
-    const accounts = await this.providers.list()
-    const summary = []
-    let lastCompleteRead: string | null = null
-    for (const account of accounts) {
-      const buckets = await this.db.listBuckets(account.id)
-      const complete = await this.db.latestCompleteReading(account.id)
-      if (complete && (!lastCompleteRead || complete.at > lastCompleteRead))
-        lastCompleteRead = complete.at
-      const openTotal = await this.db.countOpenIssues(account.id)
-      const openHigh = await this.db.countOpenHigh(account.id)
-      summary.push({
-        id: account.id,
-        name: account.name,
-        kind: account.kind,
-        buckets: buckets.length,
-        lastCompleteRead: complete?.at ?? null,
-        openHigh,
-        openTotal,
-      })
-    }
-    const changesSince = lastCompleteRead ? await this.db.countOpenedSinceAll(lastCompleteRead) : 0
-    return { accounts: summary, lastCompleteRead, changesSince }
   }
 
   async testModel(input?: ModelInput): Promise<{ ok: boolean; detail: string }> {
@@ -199,8 +124,6 @@ export class App {
   }
 
   async dispose(): Promise<void> {
-    if (this.scheduleTimer) clearInterval(this.scheduleTimer)
-    this.scheduleTimer = null
     await this.tasks?.close().catch(() => undefined)
     await this.runtime?.close().catch(() => undefined)
     await this.database?.close().catch(() => undefined)

@@ -7,7 +7,6 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CloudTrailClient } from '@aws-sdk/client-cloudtrail'
 import { CreateKeyCommand, DescribeKeyCommand, KMSClient } from '@aws-sdk/client-kms'
 import {
   CreateBucketCommand,
@@ -22,21 +21,18 @@ import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { ToolDetails } from '@shared/contract'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { AppDb } from './db'
-import { Estate } from './estate/estate'
 import { emulatorControl, Providers } from './providers'
-import { attribute } from './s3/changes'
 import type { Vault } from './security/vault'
+import { accountTool } from './tools/account'
 import { configTool } from './tools/config'
-import { surveyTool } from './tools/survey'
+import type { ToolDeps } from './tools/policy'
 
 const endpoint = process.env.STORAGE_AGENT_AWS_ENDPOINT
 const credentials = { accessKeyId: 'testing', secretAccessKey: 'testing' }
 
 describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
   const s3 = new S3Client({ region: 'us-east-1', endpoint, forcePathStyle: true, credentials })
-  let deps: ConstructorParameters<typeof Estate>[0] extends never
-    ? never
-    : Parameters<typeof surveyTool>[0]
+  let deps: ToolDeps
 
   beforeAll(async () => {
     const policy = (bucket: string, condition?: Record<string, unknown>) =>
@@ -96,59 +92,65 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     deps = {
       db,
       providers,
-      estate: new Estate(db),
       datasetsDir: () => tmpdir(),
       uploadsDir: () => tmpdir(),
       lang: () => 'en',
     }
   })
 
-  const survey = async () => {
-    const result = await surveyTool(deps).execute(
-      {} as never,
+  type Sections = Record<string, { status: string; value?: unknown; error?: string }>
+  const call = async (
+    tool: { execute: (...args: never[]) => ReturnType<ReturnType<typeof configTool>['execute']> },
+    args: Record<string, unknown>,
+  ) => {
+    const result = await (tool.execute as (...args: unknown[]) => ReturnType<typeof tool.execute>)(
+      args,
       { conversationId: 'c', output: () => undefined, details: async () => undefined } as never,
       {} as never,
     )
     const details = result.details as unknown as ToolDetails
-    if (details.view?.kind !== 'survey') throw new Error(`expected a survey view: ${details.note}`)
-    return details.view
+    if (details.view?.kind !== 'raw') throw new Error(`expected a raw view: ${details.note}`)
+    const text = result.output
+      ?.map((part: { type: string; text?: string }) => (part.type === 'text' ? part.text : ''))
+      .join('')
+    return { value: details.view.value, text: text ?? '' }
   }
+  const config = async (bucket: string) =>
+    (await call(configTool(deps), { bucket })).value as Sections
 
-  it('reads exposure the way AWS decides it', async () => {
-    const view = await survey()
-    const publicOf = new Map(view.buckets.rows.map((row) => [row[0], row[1]]))
-    expect(publicOf.get('c-public-policy')).toBe('public')
-    expect(publicOf.get('c-public-acl')).toBe('public')
-    expect(publicOf.get('c-narrowed')).toBe('no')
-    expect(publicOf.get('c-locked')).toBe('no')
+  it('returns what AWS decides about exposure, as AWS says it', async () => {
+    const policy = await config('c-public-policy')
+    expect(policy.policy?.status).toBe('available')
+    expect(policy.policy_status?.value).toMatchObject({ PolicyStatus: { IsPublic: true } })
+    const acl = await config('c-public-acl')
+    expect(JSON.stringify(acl.acl?.value)).toContain('AllUsers')
+    const narrowed = await config('c-narrowed')
+    expect(narrowed.policy_status?.value).toMatchObject({ PolicyStatus: { IsPublic: false } })
+    const locked = await config('c-locked')
+    expect(locked.public_access_block?.value).toMatchObject({
+      PublicAccessBlockConfiguration: { BlockPublicPolicy: true, RestrictPublicBuckets: true },
+    })
   })
 
-  it('reads access policy paths and tolerates an unavailable analyzer', async () => {
-    const result = await configTool(deps).execute(
-      { bucket: 'c-public-policy', aspect: 'access' } as never,
-      { conversationId: 'c', output: () => undefined, details: async () => undefined } as never,
-      {} as never,
-    )
-    const details = result.details as unknown as ToolDetails
-    if (details.view?.kind !== 'config') throw new Error('expected a config view')
-    expect(details.view.access?.some((item) => item.source === 'policy')).toBe(true)
-    expect(details.view.access?.some((item) => item.public)).toBe(true)
-  })
-
-  it('reads KMS metadata and CloudTrail event history', async () => {
+  it('reads a KMS key policy and CloudTrail events, and never sends the account id', async () => {
     const kms = new KMSClient({ region: 'us-east-1', endpoint, credentials })
     const created = await kms.send(new CreateKeyCommand({ Description: 'compat' }))
     const keyId = created.KeyMetadata?.KeyId
-    expect(keyId).toBeTruthy()
     const described = await kms.send(new DescribeKeyCommand({ KeyId: keyId }))
     expect(described.KeyMetadata?.KeyId).toBe(keyId)
-    const trail = new CloudTrailClient({ region: 'us-east-1', endpoint, credentials })
-    const attribution = await attribute(trail, 'c-public-policy')
-    expect(['ok', 'denied', 'unsupported', 'error']).toContain(attribution.status)
+    const sts = new STSClient({ region: 'us-east-1', endpoint, credentials })
+    const account = (await sts.send(new GetCallerIdentityCommand({}))).Account!
+    const key = await call(accountTool(deps), { read: 'kms_key_policy', key: keyId })
+    expect(key.value).toMatchObject({ status: 'available' })
+    expect(key.text).not.toContain(account)
+    const trail = await call(accountTool(deps), { read: 'cloudtrail', bucket: 'c-public-policy' })
+    expect(['available', 'access_denied', 'provider_unsupported', 'error']).toContain(
+      (trail.value as { status: string }).status,
+    )
+    expect(trail.text).not.toContain(account)
   })
 
-  it('reads the account-wide block, and lets it cancel exposure', async () => {
-    expect((await survey()).account?.pab).toBe('off')
+  it('reads the account-wide block', async () => {
     const sts = new STSClient({ region: 'us-east-1', endpoint, credentials })
     const account = (await sts.send(new GetCallerIdentityCommand({}))).Account!
     const control = emulatorControl({ region: 'us-east-1', credentials }, endpoint!)
@@ -163,8 +165,11 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
         },
       }),
     )
-    const view = await survey()
-    expect(view.account?.pab).toBe('on')
-    expect(view.buckets.rows.every((row) => row[1] === 'no')).toBe(true)
+    const block = await call(accountTool(deps), { read: 'public_access_block' })
+    expect(block.value).toMatchObject({
+      status: 'available',
+      value: { PublicAccessBlockConfiguration: { BlockPublicAcls: true } },
+    })
+    expect(block.text).not.toContain(account)
   })
 })

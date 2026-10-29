@@ -392,9 +392,7 @@ export function Sidebar({
                     ? t.hitTitle
                     : hit.kind === 'user'
                       ? t.hitRequest
-                      : hit.kind === 'answer'
-                        ? t.hitAnswer
-                        : t.hitFinding}
+                      : t.hitAnswer}
                 </span>
                 <span className="hit-title">{hit.title}</span>
                 {hit.snippet.trim() !== hit.title.trim() && (

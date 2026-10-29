@@ -1,4 +1,4 @@
-import type { ContextRef, EstateRef, Live, StagedFile } from '@shared/contract'
+import type { ContextRef, Live, StagedFile, StorageRef } from '@shared/contract'
 import { ArrowUp, AtSign, ChevronDown, Paperclip, Square, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { dict, fill, toolLabel } from './i18n'
@@ -31,7 +31,7 @@ export function Composer({
   const [focused, setFocused] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [context, setContext] = useState<ContextRef[]>([])
-  const [refs, setRefs] = useState<EstateRef[]>([])
+  const [refs, setRefs] = useState<StorageRef[]>([])
   const [picker, setPicker] = useState<string | null>(null)
   const [pickIndex, setPickIndex] = useState(0)
   const [now, setNow] = useState(Date.now())
@@ -91,7 +91,7 @@ export function Composer({
     setPickIndex(0)
     let live = true
     void window.agent
-      .estateRefs(picker)
+      .storageRefs(picker)
       .then((rows) => {
         if (live) setRefs(rows)
       })
@@ -111,7 +111,7 @@ export function Composer({
     return () => document.removeEventListener('pointerdown', close)
   }, [picker])
 
-  const pick = (item: EstateRef) => {
+  const pick = (item: StorageRef) => {
     setContext((current) =>
       current.some((ref) => ref.providerId === item.providerId && ref.label === item.label)
         ? current
@@ -122,7 +122,6 @@ export function Composer({
               providerId: item.providerId,
               label: item.label,
               ...(item.bucket ? { bucket: item.bucket } : {}),
-              ...(item.issueId ? { issueId: item.issueId } : {}),
             },
           ].slice(0, 8),
     )

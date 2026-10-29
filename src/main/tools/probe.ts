@@ -7,7 +7,7 @@ export function probeTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'probe',
     description:
-      'Probe an S3-compatible endpoint read-only: reachability, TLS, latency, bucket region, and path-style addressing. Use it when a connection or signature fails.',
+      'Probe an S3-compatible endpoint read-only: reachability, TLS, latency, bucket region, and path-style addressing.',
     parameters: Type.Object({
       provider_id: providerParam,
       bucket: Type.Optional(
@@ -55,7 +55,7 @@ export function probeTool(deps: ToolDeps) {
             checks.push({
               name: 'Reachability',
               ok: false,
-              detail: error instanceof Error ? error.message.slice(0, 160) : 'unreachable',
+              detail: error instanceof Error ? error.message : 'unreachable',
               ms: Date.now() - started,
             })
           }
@@ -78,7 +78,7 @@ export function probeTool(deps: ToolDeps) {
           try {
             await client.send(new ListBucketsCommand({}), { abortSignal: run.signal })
             const ms = Date.now() - started
-            checks.push({ name: 'Latency', ok: ms < 2000, detail: `ListBuckets in ${ms} ms`, ms })
+            checks.push({ name: 'Latency', ok: true, detail: `ListBuckets in ${ms} ms`, ms })
           } catch (error) {
             checks.push({
               name: 'Latency',
@@ -142,7 +142,7 @@ export function probeTool(deps: ToolDeps) {
         model: checks
           .map((check) => `${check.ok ? 'ok' : 'fail'} ${check.name}: ${check.detail}`)
           .join('\n'),
-        note: checks.every((check) => check.ok) ? 'all checks passed' : 'a check failed',
+        note: `${checks.filter((check) => check.ok).length} of ${checks.length} ok`,
         view: { kind: 'probe' as const, endpoint, checks },
       }
     },

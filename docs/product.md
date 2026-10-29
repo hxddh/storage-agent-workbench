@@ -1,293 +1,196 @@
 # Product
 
-Storage Agent is a local, read-only agent for object storage. It answers by
-reading an account, remembers what it read, and projects the latest result as a run:
-the answer it composed, the work behind it, and the evidence behind that. It is not
-a console, a dashboard, a ticket system or a chat product.
+Storage Agent is a local, read-only agent for object storage. You talk with it;
+it reads the account with read-only tools and answers in its own words. Each
+task is one conversation. The agent reads, judges and says what it found; the
+app gives it tools that return what the storage APIs return, enforces the
+safety boundaries and shows each call where it happened. The app decides
+nothing about the storage: no rules, no findings, no verdict, no report. It is
+not a console, a dashboard or a ticket system.
 
 ## The surfaces
 
 1. **Task list** — new task, search, pinned/today/earlier groups, task state and
-   relative time, rename, pin, delete and Settings. A new task starts empty; a
-   deterministic account check also appears here. The task open at quit opens at
-   launch.
-2. **Task** — durable history of runs, not a transcript. The page shows the
-   latest run; the composer stays.
-   The evidence index is folded inside this one page; there is no separate
-   evidence page.
+   relative time, rename, pin, delete and Settings. A new task starts empty. The
+   task open at quit opens at launch.
+2. **Task** — one conversation: the user's messages and, between them, what the
+   agent did and said, in order. The composer stays at the foot.
 3. **Settings** — a full-screen sheet closed with the **X** at its top-left, for
    the model, storage accounts, memory, language, theme and notifications. It is
    one sheet, not a wizard.
 
 The composer is docked at the foot of the window on Home and in a task. It sends
-a model request, a steer while a run is active, or a follow-up in the same task.
-An unsent draft is kept locally per task and restored when the task reopens.
-Without a model it is disabled for free-form questions; a model-free account
-check still works.
+a message, a steer while the agent works, or a follow-up in the same task. An
+unsent draft is kept locally per task and restored when the task reopens.
+Without a model the composer is disabled and says `Set up a model to ask a
+question.`
 
 ## Home
 
-Home is a quiet estate ledger, not a dashboard:
+Home is a starting point, not a dashboard. It holds:
 
-- one row per account with remembered bucket count, the last complete reading
-  (or `no complete reading`) and open high/total risk;
-- a line for new risks since the latest complete reading;
-- **Check account**;
-- on narrow windows, where the task list is an overlay, recent runs, five at
-  most, as quiet one-line links; the desktop sidebar already holds them;
-- the composer in its usual place.
+- the title, `What should I check?`;
+- the accounts the agent can read, one row each with its name and provider
+  kind, and nothing more. Without an account, one line instead:
+  `No account yet. Add one, then ask.`, or, before a model exists, `The agent
+  needs a model to read your storage. Set one up and add an account.`;
+- **Add an account**;
+- **Set up a model** when there is no model, and, with an account but no model,
+  the hint `Set up a model to ask a question.`;
+- before a model exists, models already running in Ollama or LM Studio, each a
+  one-click `Use <model>`;
+- on narrow windows, where the task list is an overlay, recent tasks, five at
+  most, as quiet one-line links; the desktop sidebar already holds them.
 
-With no account, the explicit choices are **Try with demo storage** and a setup
-action: **Set up a model** before a model exists, or **Add an account** once one
-does. With an account but no model, Home still offers **Check account** while
-**Set up a model** remains available. Demo storage is in-process and never added
-silently. Local models already running in Ollama or LM Studio can be chosen from
-Home or Settings.
+Home has no canned prompt and starts nothing. To learn what an account holds,
+ask.
 
-## Starting a check
+## A conversation
 
-**Check account** is a scripted run: the same tools the agent uses, called in a
-fixed order, with no model:
-
-1. It creates a task immediately with a title such as
-   `Check · Demo · 2026-10-25 05:45`.
-2. It calls `survey` for every configured account; the call is live in the
-   trace with its real progress (`12 of 40 buckets`).
-3. It calls `config` with the access aspect for up to 24 buckets per account,
-   preferring buckets with open risks. When that is fewer than the account has,
-   the answer says `examined / total`.
-4. It writes its answer from what those calls returned, citing the survey; the
-   page carries a `Deterministic account check` tag. Every call is a row in the
-   trace, exactly as in a model run. A question asked afterwards in the same
-   task can read and cite the check's results.
-
-An account can opt into a daily or weekly scheduled check in Settings. It
-runs only while the app is open, uses the same model-free readers and never
-writes storage. It is a snapshot, not a monitor; a closed app performs no work.
-
-Each call is written when it settles; a stopped check ends with what it read.
-A check is a snapshot, not a continuous monitor. **Check again** in a run
-starts another check task; it does not mutate the old one. A settled reading
-also records one `readings` row per account with its coverage and current open
-risk. It stores no request, answer text, policy or secret.
-
-## A model task
-
-- The request is recorded immediately; the run is durable.
-- While it runs, Work appears below the answer. A tool call appears when it
-  starts and shows its real progress (`3 of 12 buckets`); it settles in place.
-  A provider reasoning summary appears as `Thought`; an omitted summary stays
-  explicitly omitted. Completed, failed, stopped and timed-out calls remain in
-  order. Work folds to one `Worked for …` row when the answer settles.
-- The agent may publish a short plan; it updates as the work changes. The plan
-  lives inside Work while the run is in flight, and remains there for a stopped
-  run or a blocked step. It is not a separate page section. A plan is optional:
-  a direct answer does not need one.
-- While it works, a draft answer and the current plan are visible; the finished
-  answer replaces the draft.
-- When the evidence is ready, the agent writes its final response in normal
-  Markdown. It cites a tool result by its evidence id as `[1](#ev-<id>)`; the
-  window resolves the actual view and opens the matching check. Every citation
-  is checked against the task's tool results. A missing one produces a quiet
-  warning rather than a broken link. There is no answer tool and no report
-  block language.
-- **Enter** while running steers the current run; the steer carries its files
-  and @ focus with it. **Stop** (or ⌘.) keeps what was read and offers
-  **Continue** without adding a new question.
-- A failed model run becomes one notice with **Retry**; it asks the last request
-  again with its files. A stopped run offers **Continue**. A failed model-free
-  check surfaces its error on the page; starting the check again creates a new
-  task.
+- The message is recorded immediately; the turn is durable.
+- While the agent works, its steps appear below the message in order. A tool
+  call appears when it starts, open, with its real progress; it settles in
+  place and folds to one line. A provider reasoning summary appears as a
+  `Thought` step; when the provider returns none, the open step says so.
+  Completed, failed, refused, stopped and timed-out calls stay in order.
+- Every step can show exactly what the agent received from that call, so the
+  page never shows more than the agent saw.
+- The agent's text is normal Markdown, and a turn can hold several texts
+  between calls. Text streams in while it is written. The agent may link a call
+  as `[1](#ev-<id>)`; clicking the link opens that step in place. There is no
+  answer tool and no report block language, and the app does not check, mark or
+  rewrite the text.
+- **Enter** while the agent works steers the current turn; the steer carries
+  its files and `@` focus with it and shows as a dashed message where it was
+  said. **Stop** (or ⌘.) keeps what was read and writes `Stopped. What was read
+  is kept.` with **Continue**; Continue sends `Continue.` in the same task after
+  a `Continued this task` divider.
+- A turn that fails or ends without an answer becomes one notice with
+  **Retry**; Retry sends the last user message again with its files and focus.
+  A turn that made 100 rounds of tool calls says so; its next call does not
+  run. A reply cut at the model's output limit says so where it stops.
+- A follow-up is the next message in the same thread.
 - Long tasks survive a restart; pi resumes interrupted work.
-- A run that finishes while the window is in the background sends one system
+- A turn that finishes while the window is in the background sends one system
   notification (Settings can turn it off). The dock badge or taskbar progress
   shows work in flight.
-- A model run uses the task's model override when one is set, otherwise the
-  model in Settings; reasoning level and context window are inferred from that
-  model. The provider key always comes from the saved model. A model-free check
-  uses neither.
+- A turn uses the task's model when one is chosen in the conversation's
+  **Model** select, otherwise the model in Settings; reasoning level and context
+  window are inferred from that model. The provider key always comes from the
+  saved model.
+- A task with more than the initial 200 entries offers **Load earlier entries**
+  at the top instead of silently dropping them.
 
-There is no chat transcript. Earlier requests remain in the durable task and
-appear under **Earlier in this task**: one compact row per turn, expandable to
-its question, summary and check count. The latest turn stays expanded in the run
-header. A task with more than the initial 200 entries offers **Load earlier
-entries** on demand instead of silently dropping them. A deterministic account check has no question; its page starts with the
-scope line and the verdict, not a task title posing as a request.
+## Clarifying questions
 
-## The run
+The agent may call `ask` with a question and, if it wants, up to six options.
+The question is an agent message; while it waits, each option is a button that
+sends that option as the next message, and typing an answer in the composer
+works the same way.
 
-The page is composed for the question, not for every fact the task has read.
-Top to bottom:
+## What the agent reads
 
-1. **Run header** — the latest question (never the task title posing as one),
-   account name(s), a scope line, `checked / total` buckets and the last read
-   time when they apply. The scope line is one of `All n buckets checked`,
-   `All n buckets checked · x open questions · y blocked`,
-   `Not fully checked: n`, `From memory · …`, `Live read · …`,
-   `Based on a reading · …` or `Not read yet`. Copy answer and one overflow menu
-   sit here. A failed or stopped storage read keeps the line open. A narrowed
-   re-read never turns an account-wide gap into a complete reading. Severity
-   counts live with the risk list, not in the header.
-2. **Notices** — stopped, failed, no-answer, model-missing and budget notices,
-   with Retry or Continue where they apply.
-3. **Clarification** — when a request is genuinely ambiguous, the agent may
-   end the run with one `ask` question and 2–4 concrete options. The composer
-   remains the answer surface; the next user reply starts the next run.
-4. **Answer** — the agent's final response, normal Markdown. Inline citations
-   use `[1](#ev-<evidence id>)`. Clicking one opens an in-place evidence peek;
-   the full record is the trace. The window validates every citation, leaves a
-   broken one as plain text and adds a quiet warning. There is no answer tool
-   and no report block language. A response with no citation is still complete
-   and does not invent a proof table.
-5. **Trace** — the current run's one ordered record: plan revisions, provider
-   reasoning summary, running and completed tool calls, validation events,
-   steer, resume and re-check. While the run is planning or investigating the
-   trace is the primary content; when the answer arrives it becomes the primary
-   content and the trace folds to one `Worked for … · n calls` row. Opening a
-   call shows its typed result. Failed, stopped and timed-out calls stay in
-   place.
-6. **Evidence strip** — one compact row for **Findings** and one for **Not
-   checked** when they have content. Findings are a safety summary, not a
-   second report: the agent's citations decide what the answer uses, while the
-   strip keeps a blind spot visible even when the answer does not mention it.
-   The footer names the model and the run's calls and tokens.
+The tools return data, not judgements. A read returns each API's answer as
+`{ status, value }` or `{ status, error }`, with the status `available`,
+`not_configured`, `access_denied`, `provider_unsupported`, `missing`,
+`region_mismatch` or `error`. A denied read is a denied read, with the
+provider's error; it is never turned into an empty or clean value.
 
-Copy answer and a single overflow menu are always visible in the run header. The
-overflow contains save Markdown, check again, re-check, copy task link, export
-evidence and save PDF. Save and PDF include the answer, the trace, the current
-findings, accepted and fixed folds, read timestamps and redacted views; there is
-no secret or unredacted provider document in them. Printing expands the trace
-and the evidence strip first.
+- **`buckets`, `objects`, `object`** — the bucket list; keys, versions or
+  incomplete multipart uploads a page at a time (up to 1,000 rows, with a `next`
+  token); one object's metadata, tags, ACL and a bounded text preview. A large
+  body is never downloaded.
+- **`config`** — one bucket's configuration, section by section: `location`,
+  `policy` (parsed), `policy_status`, `public_access_block`, `acl`,
+  `ownership`, `encryption`, `versioning`, `object_lock`, `lifecycle`,
+  `replication`, `cors`, `website`, `logging`, `notification`, `inventory` and
+  `tagging`. The agent can ask for some sections or all of them. Its step opens
+  as the sections with their status and JSON.
+- **`account`** — account-level data on AWS: the account-wide public access
+  block, one page of IAM authorization details (users, groups, roles and their
+  policies), the SCPs that apply through the OU chain, a KMS key policy, Access
+  Analyzer findings, CloudWatch daily storage size by storage type and object
+  count for a bucket (default 14 days), and one page of CloudTrail management
+  events naming a bucket (default 90 days). Paged reads return a token for the
+  next page. On another provider it answers `provider_unsupported` without
+  calling anything.
+- **`probe`** — one endpoint check: reach, TLS, latency, bucket region and
+  path-style addressing.
 
-A deterministic check has no model question; its page starts with the scope
-line and a synthesized answer, and uses the same trace and evidence strip. It
-carries the `Deterministic account check` tag. The footer model is the model in
-Settings unless the task has a per-task override.
+Who can reach a bucket, whether it is public, what changed and who changed it
+are the agent's to work out from these reads and say. The app evaluates no
+policy, merges no grants and estimates no cost. Account ids never reach the
+agent: `scrub()` replaces each 12-digit number with `<account>`, and the id STS
+returns is used only as the argument of the account-wide block and SCP reads.
 
-### Findings and risks
+## Changes
 
-Findings are current state, not history. Results fold in order: a survey
-replaces what the task knew about its account, a review replaces what it knew
-about the rules it read, and a reading that proves a rule clean removes its
-finding. The estate's current acceptance status is laid over the result. A
-finding from memory says when it was read and is marked possibly stale after the
-Settings threshold.
-
-Findings become the page's **Risks**. They are merged by rule and bucket,
-ordered by severity and grouped by bucket. Five are shown; the rest expand in
-place with one **N more risks** control. Each risk names its rule, severity,
-bucket and evidence. Clicking it opens the check that proved it. **Accept risk**
-appears on hover or keyboard focus. Accepted risks are folded, with
-**Reopen**. A finding the task saw open and then proved fixed goes into one green
-one-line fold. If the survey view carries fewer risks than the account has, the
-page says how many.
-
-Internally the durable entity is still an `Issue`, in `open`, `resolved` or
-`accepted` state. Rules open and close it; the model never does. Accepting is
-the user's decision and survives later readings while the risk is still
-observed. A bucket that a complete listing no longer shows gets `gone_at`; its
-Issues resolve as `gone`.
-
-### Open questions
-
-**Not read** is not a warning decoration. It is the list of questions the task
-cannot answer:
-
-- buckets whose exposure or a required configuration read was blind;
-- buckets a stopped or timed-out survey did not reach;
-- buckets outside a capped survey;
-- rules that stayed undecided because a dimension could not be read;
-- permissions the reading needed but did not have;
-- configured buckets that disappeared from a complete listing.
-
-If there are no findings and this list is empty, the page says no problem was
-found. If either has content, it does not.
-
-## Access evidence
-
-`config` with `aspect: "access"` answers what the readings show about who can
-reach a bucket. It combines:
-
-- bucket policy statements, evaluated locally, including conditions and
-  public/blocked status;
-- bucket ACL grants;
-- IAM users, groups and roles, their inline, attached and group policies,
-  permission boundaries and role trust, evaluated locally;
-- SCPs from the account, OU and root chain when Organizations permits;
-- KMS key policy when the bucket uses SSE-KMS;
-- Access Analyzer findings when an analyzer exists.
-
-Identity grants are intersected with bucket-policy Denies and, when read, SCPs
-and permission boundaries. Object and bucket actions are paired with their
-matching resource form; ARNs are case-sensitive. A grant to another account is
-evidence with an unread external identity policy, not a clean allow.
-
-This is **grant evidence**, not one complete authorization verdict. Policy and
-ACL rows are not merged with every identity, SCP and condition into a single
-yes/no. Conditions are shown but not evaluated; service principals, federated
-identities and some external policies are not enumerated. The page shows
-principal coverage (`evaluated / total`), undecided conditions and truncation.
-A denied read is a blind spot, never an empty grant list.
-
-The `principal()` code-mode primitive provides the reverse view over remembered
-buckets and reports how many buckets it examined. It is bounded, not an
-account-wide proof.
-
-## Changes and attribution
-
-A survey compares the new reading with the last remembered posture. It records
-differences in policy, ACL, public access block, encryption, versioning,
-lifecycle, logging, CORS and object ownership.
-
-On AWS it then queries CloudTrail for management events over a stated 90-day
-window, using each bucket's own region. It attributes changes for at most six
-changed buckets per survey and shows at most 20 matching events. If the lookup
-is denied, unsupported or fails, the actor remains unknown; it is never reported
-as nobody. A truncated lookup says so. The run never claims that CloudTrail
-has the complete history or that an unlisted change did not happen.
+Asked for a fix, the agent writes the change — an AWS CLI command, a policy, a
+lifecycle document — in its own Markdown, for the user to apply. The app never
+runs it and has no Apply button. The prompt says never to claim a change was
+made: only a later read shows it. To learn whether a change landed, the user
+says so and the agent reads again.
 
 ## Inventory and open questions
 
 `query` exists for questions that do not fit one bucket or one object. The
-script runs in a QuickJS sandbox with ten read-only primitives. The page shows
-the returned rows (at most 500; the model sees at most 40) and the script as
-evidence.
+script runs in a QuickJS sandbox with nine read-only primitives: `buckets`,
+`list`, `head`, `config`, `account`, `inventory`, `dataset`, `aggregate` and
+`rows`. `config` and `account` are the tools' own reads. The query's step shows
+the returned rows (at most 500, all of them sent to the model), a bar chart
+when the rows have one label and one number, the script and its output.
 
 When a bucket has S3 Inventory, `inventory` reads the latest manifest and one
 bounded page (default 100 rows, maximum 1,000) or imports every manifest file
 with `full: true`. A page reads CSV up to 32 MiB or Parquet up to 16 MiB; a
 larger file is reported, not silently cut. Full import is bounded to 1,000
-files, 128 MiB per file, 512 MiB total and 2,000,000 rows. The page states the
-manifest date and whether coverage is partial.
+files, 128 MiB per file, 512 MiB total and 2,000,000 rows. The result states the
+manifest date and whether it was truncated.
+
+An attached access log or inventory is imported with `dataset`, then read with
+whitelisted `aggregate` metrics (at most 1,000 groups) or with `rows`, a page of
+at most 1,000 redacted rows with client IPs masked. There is no SQL.
 
 Code mode budgets are 2,000 calls, 500,000 listed items, 120 seconds and 256 MiB
-per script. It never accepts arbitrary SQL, network, filesystem, process or
-module access.
+per script. It never accepts network, filesystem, process, timer or module
+access.
 
-## Capacity
+## Memory
 
-On AWS a survey reads CloudWatch daily storage metrics: size by storage class,
-object count, 14-day growth and a storage-only list-price estimate at us-east-1
-prices. The figure is an estimate, not a bill; requests, transfer, retrieval and
-discounts are not included. S3-compatible endpoints publish no equivalent, so
-the app measures with `query` instead and does not invent a number.
+The agent's memory is its notes. `note` saves a fact about the storage, an
+account or a bucket, with secrets redacted. The prompt's memory digest names
+the accounts (their ids are tool arguments) and the first 12 notes, with the
+total count. Notes are what the agent chose to remember, not a fresh read; when
+to rely on them is the agent's. Settings lists the 100 most recent notes, and
+any of them can be forgotten there.
+
+There is no remembered bucket posture, Issue list, reading history or
+background monitor. Deleting a task purges its conversation, entries, datasets,
+uploads, search rows, audit rows and task directory. Removing an account
+removes its account and bucket notes. See [data-model.md](data-model.md).
+
+## Saving a task
+
+One overflow menu at the top of the conversation holds **Save as…** (Markdown:
+the messages, the agent's text and one line per call), **Copy link**, **Export
+sources** (JSON: the task, the projected conversation and usage) and **Save
+PDF**, which prints the window with every step open. Each agent text has its own
+**Copy answer** on hover.
 
 ## Search
 
-⌘K focuses the sidebar search. It covers task titles, requests, risks and the
-answer summary. A risk hit opens its task with the risk highlighted; a summary
-hit opens the run and scrolls to the answer. Title search reads `task_meta`; the rest reads the
-derived `search_docs` index. Search uses FTS5 trigram ranking, with a LIKE fallback for short CJK queries, and returns
-at most 20 hits.
+⌘K focuses the sidebar search. It covers task titles, the user's messages
+(steers included) and the agent's text. A message or text hit opens its task and
+scrolls to that message. Title search reads `task_meta`; the rest reads the
+derived `search_docs` index. Search uses FTS5 trigram ranking, with a LIKE
+fallback for short CJK queries, and returns at most 20 hits.
 
 ## Model fit
 
 The provider reports the model list in Settings. The context window is inferred
 (unknown models fall back to 128k), and reasoning is on at medium for known
-reasoning models, off otherwise. Context below 64k is a small model, below 200k
-mid, otherwise large. Small gets a 14-round budget, mid 24 and large 32. The
-agent asks for one of the four method cards with `skill`; they are not injected
-into every prompt. The answer format does not change.
+reasoning models, off otherwise. Every model gets the same tools, prompt and
+100-round runaway ceiling; nothing is tuned down for a smaller one.
 
 ## Settings
 
@@ -295,10 +198,10 @@ into every prompt. The answer format does not change.
   provider's models automatically; the manual fetch remains only when no key is
   present. Save stores it; Test checks the values in the form, even before
   saving.
-- **Accounts** — provider kind (auto or explicit), endpoint, region, keys or
-  AWS profile, optional bucket scope and path-style addressing. The account
-  list shows the masked key id or profile name.
-- **Memory** — the stale threshold and the notes the agent wrote. Notes can be
+- **Storage accounts** — provider kind (auto or explicit), endpoint, region,
+  keys or AWS profile, optional bucket scope and path-style addressing. The
+  account list shows the masked key id or profile name.
+- **Memory** — a note age filter and the notes the agent wrote. Notes can be
   forgotten here.
 - **Appearance** — English/Chinese, system/light/dark, notification switch.
 - **Version** — installed version and the update state; a missing feed says so
@@ -306,94 +209,14 @@ into every prompt. The answer format does not change.
 
 ## Known limits
 
-- Access evidence is partial by design; see above and `docs/security.md`.
-- A survey is capped at 5,000 buckets and has a 300-second budget with a
-  20-second reserve. An incomplete survey reports pending buckets.
-- The model-free check examines access paths for at most 24 buckets per account.
-- CloudTrail covers 90 days and is attributed for at most six changed buckets
-  per survey; only management events are considered.
-- A re-check replays at most 50 buckets per account, has a 300-second
-  budget, and reports skipped or truncated buckets. A change plan covers the
-  selected open risks (at most 500) and reports any residual rule that has no
-  generated change. A merged lifecycle omits Terraform when existing rules contain
-  fields the renderer cannot reproduce.
-- A code-mode script is bounded to 6,000 characters and the budgets above.
-- Notes are capped at 500; each note is at most 1,000 characters.
+- The tools return what the APIs answer. Whether that adds up to "public" or
+  "safe" is the agent's judgement, and the agent can be wrong; every read it
+  relied on is in the conversation to check.
+- Account-level reads exist on AWS only. S3-compatible providers answer what
+  they implement; the rest comes back `provider_unsupported`.
+- IAM and CloudTrail are read a page at a time; the agent decides whether to
+  read further pages.
+- A code-mode script runs under the call, listing, time and memory budgets above.
 - Attachments are limited to ten files and 4 GiB each.
-- There is no automatic background watch, dashboard, chat transcript, second
-  window or import from an earlier app version.
-
-## Issues from rules
-
-Twelve deterministic rules produce Issues. A rule is decided only from a
-reading that could see the required dimension; a blind read leaves it
-undecided.
-
-| Code | Severity | Control | Rule |
-|---|---|---|---|
-| `account_public_access_block_missing` | medium | S3.1 | Account-wide public access block not fully enabled (AWS) |
-| `public_exposure` | high | S3.2 | Bucket is publicly accessible |
-| `wildcard_principal` | medium | | Policy allows a wildcard principal |
-| `insecure_transport` | medium | S3.5 | Policy does not deny plain HTTP (AWS) |
-| `cors_all_origins` | medium | | CORS allows all origins |
-| `no_default_encryption` | medium | | No default encryption |
-| `public_access_block_missing` | medium | S3.8 | Public access block not fully enabled (names the switches that are off) |
-| `acls_enabled` | low | S3.12 | ACLs still decide access (ownership not enforced) |
-| `access_logging_off` | low | S3.9 | Server access logging is off |
-| `no_abort_mpu` | medium | | Incomplete multipart uploads are never cleaned up |
-| `noncurrent_never_expire` | medium | | Noncurrent versions never expire |
-| `large_standard_only` | low | | At least 500 GiB and 90% Standard, with no transition and no lifecycle rule that moves it (AWS, CloudWatch) |
-
-Exposure is proved by the provider's policy-status verdict when one exists, or
-by evaluating the policy document locally. A public access block at the bucket
-or account level can cancel exposure. A bucket is never called clean because a
-read failed; an unread policy, ACL or configuration leaves the matching rule
-undecided.
-
-## Change plans
-
-`change_plan` returns one deterministic change plan. It is the tool behind the
-**Change plan** row in Sources. Each step
-carries AWS CLI, Terraform and API document text plus an impact preview from the
-remembered posture. It can target one bucket and code, or every open risk (it
-scans up to 500). Lifecycle changes for one bucket merge into one document; when
-existing rules are present, the Terraform tab is omitted rather than rendering
-an incomplete authoritative resource. A policy change is merged with the
-current policy only when that policy was read and names no account id.
-Otherwise the step is marked manual and keeps its blocker; the plan never
-reproduces an unread or account-bearing policy in the window. The plan states
-its baseline (the latest complete reading or remembered state), lists residual
-risks it does not cover, and is text the user applies. The bucket name must
-match `[A-Za-z0-9][A-Za-z0-9._-]{0,254}`; otherwise no safe change is generated.
-The app never applies the text and there is no Apply button.
-
-**Re-check** is the only path that confirms a plan step. It is a scripted run in
-the same task: it re-reads the plan's buckets and the account-wide block with the
-same tools, applies the same rules, and reports
-`confirmed` only when every code in the step is now clear. An open or accepted
-risk is `not applied`; an unchecked bucket or undecided rule is `still unknown`.
-
-## Memory and retention
-
-The estate is remembered bucket posture with the date it was read, open and
-accepted Issues with their evidence, notes, the latest change rows and a compact
-`readings` history (trigger, coverage counts, open totals and whether the read
-was complete). The agent reads memory first and surveys only when memory is
-empty, stale or the question is about current exposure. It re-reads only the
-bucket the user says they fixed.
-
-`estate` also answers temporal questions with `history: true`: Issue events
-(opened, resolved, recurred, gone, accepted, reopened), posture changes and
-reading events (read, checked, rechecked), newest first. Issue events and
-posture changes narrow by bucket, code or `since`; reading events are
-account-wide, so a bucket or code filter omits them. The page renders
-that history under the existing Data section; it is evidence about what
-happened, not a new findings list. The model sees the same structured rows
-inside the untrusted-data envelope; raw requests and `search_docs` text are
-never part of memory.
-
-There is no automatic watch or background monitor. An account can opt into a
-daily or weekly read-only scheduled check while the app is open. Deleting a task
-purges its conversation, entries, documents, datasets, uploads, search rows,
-audit rows and task directory. Issue event history remains with a null
-conversation id. See [data-model.md](data-model.md) for the exact tables.
+- There is no scheduled check, background watch, demo storage, dashboard,
+  second window or import from an earlier app version.

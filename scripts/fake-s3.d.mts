@@ -1,5 +1,5 @@
 import type { Server } from 'node:http'
-import type { FakeBucket } from '../src/main/demo/fake-s3-core.mjs'
+import type { FakeBucket } from './fake-s3-core.mjs'
 
 export type { FakeBucket }
 

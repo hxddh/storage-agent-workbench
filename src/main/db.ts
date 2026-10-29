@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
-import type { Severity } from '@shared/contract'
 import { detectProviderKind } from './s3/capabilities'
 
-export const HOST_SCHEMA_VERSION = 15
+export const HOST_SCHEMA_VERSION = 16
 
 export interface ProviderRow {
   id: string
@@ -20,75 +18,6 @@ export interface ProviderRow {
   created_at: string
   auth: 'keys' | 'profile'
   profile: string | null
-  account_json?: string | null
-  account_at?: string | null
-  schedule?: string
-}
-
-export interface BucketRow {
-  provider_id: string
-  name: string
-  posture_json: string | null
-  posture_at: string | null
-  first_seen: string
-  last_seen: string
-  region: string | null
-  gone_at: string | null
-}
-
-export interface IssueRecord {
-  id: string
-  provider_id: string
-  bucket: string
-  code: string
-  severity: Severity
-  status: IssueStatus
-  opened_at: string
-  resolved_at: string | null
-  last_seen_at: string
-  recurred: number
-  detail: string | null
-  accepted_at: string | null
-}
-
-export type IssueStatus = 'open' | 'resolved' | 'accepted'
-
-export type IssueEvent = 'opened' | 'resolved' | 'recurred' | 'gone' | 'accepted' | 'reopened'
-
-/** One life-cycle event joined to the Issue it belongs to, for estate history. */
-export interface IssueEventRecord {
-  id: string
-  issue_id: string
-  conversation_id: string | null
-  kind: IssueEvent
-  at: string
-  detail: string | null
-  provider_id: string
-  bucket: string
-  code: string
-  severity: Severity
-  status: IssueStatus
-  last_seen_at: string
-}
-
-export type ReadingTrigger = 'check' | 'task' | 'reverify'
-
-/** A settled reading of an account, with its coverage and current open risk. */
-export interface ReadingRecord {
-  id: string
-  conversation_id: string | null
-  provider_id: string
-  at: string
-  trigger: ReadingTrigger
-  complete: number
-  visible: number
-  processed: number
-  pending: number
-  denied: number
-  unknown: number
-  truncated: number
-  open_high: number
-  open_total: number
 }
 
 export interface NoteRecord {
@@ -122,41 +51,7 @@ CREATE TABLE IF NOT EXISTS providers (
   secret_ref TEXT NOT NULL,
   session_ref TEXT,
   scope_json TEXT NOT NULL DEFAULT '{"buckets":[]}',
-  created_at TEXT NOT NULL,
-  schedule TEXT NOT NULL DEFAULT 'off'
-);
-
-CREATE TABLE IF NOT EXISTS buckets (
-  provider_id TEXT NOT NULL,
-  name TEXT NOT NULL,
-  posture_json TEXT,
-  posture_at TEXT,
-  first_seen TEXT NOT NULL,
-  last_seen TEXT NOT NULL,
-  PRIMARY KEY (provider_id, name)
-);
-
-CREATE TABLE IF NOT EXISTS issues (
-  id TEXT PRIMARY KEY,
-  provider_id TEXT NOT NULL,
-  bucket TEXT NOT NULL,
-  code TEXT NOT NULL,
-  severity TEXT NOT NULL,
-  status TEXT NOT NULL,
-  opened_at TEXT NOT NULL,
-  resolved_at TEXT,
-  last_seen_at TEXT NOT NULL,
-  recurred INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (provider_id, bucket, code)
-);
-
-CREATE TABLE IF NOT EXISTS issue_events (
-  id TEXT PRIMARY KEY,
-  issue_id TEXT NOT NULL,
-  conversation_id TEXT,
-  kind TEXT NOT NULL,
-  at TEXT NOT NULL,
-  detail_json TEXT
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS notes (
@@ -177,21 +72,12 @@ CREATE TABLE IF NOT EXISTS audit (
   at TEXT NOT NULL
 );
 
-
 CREATE TABLE IF NOT EXISTS task_meta (
   conversation_id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   pinned INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS posture_changes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  provider_id TEXT NOT NULL,
-  bucket TEXT NOT NULL,
-  at TEXT NOT NULL,
-  changes_json TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS datasets (
@@ -204,26 +90,6 @@ CREATE TABLE IF NOT EXISTS datasets (
   created_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS readings (
-  id TEXT PRIMARY KEY,
-  conversation_id TEXT,
-  provider_id TEXT NOT NULL,
-  at TEXT NOT NULL,
-  trigger TEXT NOT NULL,
-  complete INTEGER NOT NULL DEFAULT 0,
-  visible INTEGER NOT NULL DEFAULT 0,
-  processed INTEGER NOT NULL DEFAULT 0,
-  pending INTEGER NOT NULL DEFAULT 0,
-  denied INTEGER NOT NULL DEFAULT 0,
-  unknown INTEGER NOT NULL DEFAULT 0,
-  truncated INTEGER NOT NULL DEFAULT 0,
-  open_high INTEGER NOT NULL DEFAULT 0,
-  open_total INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS issues_open ON issues (provider_id, status, severity);
-CREATE INDEX IF NOT EXISTS readings_provider_at ON readings (provider_id, complete, at);
-CREATE INDEX IF NOT EXISTS issue_events_issue ON issue_events (issue_id, at);
 CREATE INDEX IF NOT EXISTS notes_scope ON notes (scope, ref, created_at);
 CREATE INDEX IF NOT EXISTS datasets_conversation ON datasets (conversation_id);
 
@@ -272,7 +138,8 @@ export class AppDb {
       // and the user-owned accepted state.
       const add = async (table: string, column: string, ddl: string) => {
         const columns = await raw.all<{ name: string }>(`PRAGMA table_info(${table})`)
-        if (!columns.some((c) => c.name === column))
+        // A table a later version dropped is not created again to be altered.
+        if (columns.length && !columns.some((c) => c.name === column))
           await raw.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
       }
       await add('providers', 'auth', "auth TEXT NOT NULL DEFAULT 'keys'")
@@ -380,9 +247,19 @@ export class AppDb {
       await raw.exec('DELETE FROM search_docs_fts')
       await raw.exec('DELETE FROM datasets')
       await raw.exec('DELETE FROM audit')
-      await raw.exec('UPDATE issue_events SET conversation_id = NULL')
-      await raw.exec('UPDATE readings SET conversation_id = NULL')
       resetTasks = true
+    }
+    if (version < 16) {
+      // 36.0: the agent judges; the app keeps no verdicts of its own. The rule
+      // engine's Issues and their events, the remembered posture, its diffs and
+      // the reading records are dropped, with the provider columns only they
+      // and the removed scheduled checks used. Accounts, notes and tasks stay.
+      for (const table of ['issue_events', 'issues', 'readings', 'posture_changes', 'buckets'])
+        await raw.exec(`DROP TABLE IF EXISTS ${table}`)
+      const columns = await raw.all<{ name: string }>('PRAGMA table_info(providers)')
+      for (const column of ['account_json', 'account_at', 'schedule'])
+        if (columns.some((c) => c.name === column))
+          await raw.exec(`ALTER TABLE providers DROP COLUMN ${column}`)
     }
     if (version < HOST_SCHEMA_VERSION) {
       await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
@@ -405,14 +282,13 @@ export class AppDb {
   async upsertProvider(row: ProviderRow): Promise<void> {
     await this.raw.run(
       `INSERT INTO providers (id, name, kind, endpoint, region, force_path_style, access_key_id,
-         secret_ref, session_ref, scope_json, created_at, auth, profile, schedule)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         secret_ref, session_ref, scope_json, created_at, auth, profile)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name, kind = excluded.kind, endpoint = excluded.endpoint, region = excluded.region,
          force_path_style = excluded.force_path_style, access_key_id = excluded.access_key_id,
          secret_ref = excluded.secret_ref, session_ref = excluded.session_ref,
-         scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile,
-         schedule = excluded.schedule`,
+         scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile`,
       row.id,
       row.name,
       row.kind,
@@ -426,372 +302,14 @@ export class AppDb {
       row.created_at,
       row.auth,
       row.profile,
-      row.schedule ?? 'off',
     )
-  }
-
-  async setAccountPosture(id: string, posture: Record<string, unknown>): Promise<void> {
-    await this.raw.run(
-      'UPDATE providers SET account_json = ?, account_at = ? WHERE id = ?',
-      JSON.stringify(posture),
-      new Date().toISOString(),
-      id,
-    )
-  }
-
-  async countOpenIssues(providerId: string): Promise<number> {
-    const row = await this.raw.get<{ n: number }>(
-      "SELECT count(*) AS n FROM issues WHERE provider_id = ? AND status = 'open'",
-      providerId,
-    )
-    return row?.n ?? 0
-  }
-
-  async countOpenHigh(providerId: string): Promise<number> {
-    const row = await this.raw.get<{ n: number }>(
-      "SELECT count(*) AS n FROM issues WHERE provider_id = ? AND status = 'open' AND severity = 'high'",
-      providerId,
-    )
-    return row?.n ?? 0
   }
 
   async deleteProvider(id: string): Promise<void> {
     await this.raw.run('DELETE FROM providers WHERE id = ?', id)
-    await this.raw.run('DELETE FROM buckets WHERE provider_id = ?', id)
-    await this.raw.run('DELETE FROM issues WHERE provider_id = ?', id)
-    await this.raw.run('DELETE FROM posture_changes WHERE provider_id = ?', id)
-    await this.raw.run('DELETE FROM readings WHERE provider_id = ?', id)
     // Provider and bucket notes carry the provider id in `ref`. Remove them
     // with the account; an account-scoped memory cannot outlive its account.
     await this.raw.run('DELETE FROM notes WHERE ref = ? OR ref LIKE ?', id, `${id}/%`)
-  }
-
-  // -- buckets --------------------------------------------------------------
-
-  async upsertBucket(
-    providerId: string,
-    name: string,
-    posture: Record<string, unknown>,
-    region: string | null = null,
-  ): Promise<void> {
-    const at = new Date().toISOString()
-    await this.raw.run(
-      `INSERT INTO buckets (provider_id, name, posture_json, posture_at, first_seen, last_seen, region, gone_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-       ON CONFLICT(provider_id, name) DO UPDATE SET
-         posture_json = excluded.posture_json, posture_at = excluded.posture_at,
-         last_seen = excluded.last_seen, region = coalesce(excluded.region, buckets.region),
-         gone_at = NULL`,
-      providerId,
-      name,
-      JSON.stringify(posture),
-      at,
-      at,
-      at,
-      region,
-    )
-  }
-
-  /** Record that a complete listing no longer shows these buckets. */
-  async markGone(providerId: string, names: string[]): Promise<void> {
-    const at = new Date().toISOString()
-    for (const name of names) {
-      await this.raw.run(
-        'UPDATE buckets SET gone_at = ? WHERE provider_id = ? AND name = ? AND gone_at IS NULL',
-        at,
-        providerId,
-        name,
-      )
-    }
-  }
-
-  async insertChanges(
-    providerId: string,
-    bucket: string,
-    changes: import('@shared/contract').PostureChange[],
-  ): Promise<void> {
-    if (!changes.length) return
-    await this.raw.run(
-      'INSERT INTO posture_changes (provider_id, bucket, at, changes_json) VALUES (?, ?, ?, ?)',
-      providerId,
-      bucket,
-      changes[0]!.at,
-      JSON.stringify(changes),
-    )
-  }
-
-  async listChanges(
-    providerId: string,
-    since?: string | null,
-  ): Promise<import('@shared/contract').PostureChange[]> {
-    const rows = await this.raw.all<{ changes_json: string; at: string }>(
-      since
-        ? 'SELECT changes_json, at FROM posture_changes WHERE provider_id = ? AND at >= ? ORDER BY at DESC LIMIT 200'
-        : 'SELECT changes_json, at FROM posture_changes WHERE provider_id = ? ORDER BY at DESC LIMIT 200',
-      ...(since ? [providerId, since] : [providerId]),
-    )
-    const out: import('@shared/contract').PostureChange[] = []
-    for (const row of rows) {
-      try {
-        const parsed = JSON.parse(row.changes_json) as import('@shared/contract').PostureChange[]
-        if (Array.isArray(parsed)) out.push(...parsed)
-      } catch {
-        // A damaged historical row is not a reason to fail the current reading.
-      }
-    }
-    return out.slice(0, 200)
-  }
-
-  async listIssueEvents(
-    filter: {
-      providerId?: string
-      bucket?: string
-      code?: string
-      since?: string
-      limit?: number
-    } = {},
-  ): Promise<IssueEventRecord[]> {
-    const where: string[] = []
-    const params: (string | number)[] = []
-    if (filter.providerId) {
-      where.push('i.provider_id = ?')
-      params.push(filter.providerId)
-    }
-    if (filter.bucket) {
-      where.push('i.bucket = ?')
-      params.push(filter.bucket)
-    }
-    if (filter.code) {
-      where.push('i.code = ?')
-      params.push(filter.code)
-    }
-    if (filter.since) {
-      where.push('e.at >= ?')
-      params.push(filter.since)
-    }
-    const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    params.push(Math.max(1, Math.min(filter.limit ?? 80, 500)))
-    const rows = await this.raw.all<{
-      id: string
-      issue_id: string
-      conversation_id: string | null
-      kind: IssueEvent
-      at: string
-      detail_json: string | null
-      provider_id: string
-      bucket: string
-      code: string
-      severity: Severity
-      status: IssueStatus
-      last_seen_at: string
-      issue_detail: string | null
-    }>(
-      `SELECT e.id, e.issue_id, e.conversation_id, e.kind, e.at, e.detail_json,
-              i.provider_id, i.bucket, i.code, i.severity, i.status, i.last_seen_at,
-              i.detail AS issue_detail
-         FROM issue_events e
-         JOIN issues i ON i.id = e.issue_id
-         ${clause}
-        ORDER BY e.at DESC
-        LIMIT ?`,
-      ...params,
-    )
-    return rows.map((row) => {
-      let detail = row.issue_detail
-      try {
-        const parsed = row.detail_json ? (JSON.parse(row.detail_json) as unknown) : null
-        if (parsed && typeof parsed === 'object' && 'detail' in parsed) {
-          const value = (parsed as { detail?: unknown }).detail
-          if (typeof value === 'string') detail = value
-        }
-      } catch {
-        // A damaged event payload still leaves the event's date and kind usable.
-      }
-      return {
-        id: row.id,
-        issue_id: row.issue_id,
-        conversation_id: row.conversation_id,
-        kind: row.kind,
-        at: row.at,
-        detail,
-        provider_id: row.provider_id,
-        bucket: row.bucket,
-        code: row.code,
-        severity: row.severity,
-        status: row.status,
-        last_seen_at: row.last_seen_at,
-      }
-    })
-  }
-
-  async insertReading(input: {
-    conversationId: string | null
-    providerId: string
-    at: string
-    trigger: ReadingTrigger
-    complete: boolean
-    visible: number
-    processed: number
-    pending: number
-    denied: number
-    unknown: number
-    truncated: number
-    openHigh: number
-    openTotal: number
-  }): Promise<ReadingRecord> {
-    const record: ReadingRecord = {
-      id: randomUUID(),
-      conversation_id: input.conversationId,
-      provider_id: input.providerId,
-      at: input.at,
-      trigger: input.trigger,
-      complete: input.complete ? 1 : 0,
-      visible: Math.max(0, input.visible),
-      processed: Math.max(0, input.processed),
-      pending: Math.max(0, input.pending),
-      denied: Math.max(0, input.denied),
-      unknown: Math.max(0, input.unknown),
-      truncated: Math.max(0, input.truncated),
-      open_high: Math.max(0, input.openHigh),
-      open_total: Math.max(0, input.openTotal),
-    }
-    await this.raw.run(
-      `INSERT INTO readings
-        (id, conversation_id, provider_id, at, trigger, complete, visible, processed,
-         pending, denied, unknown, truncated, open_high, open_total)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      record.id,
-      record.conversation_id,
-      record.provider_id,
-      record.at,
-      record.trigger,
-      record.complete,
-      record.visible,
-      record.processed,
-      record.pending,
-      record.denied,
-      record.unknown,
-      record.truncated,
-      record.open_high,
-      record.open_total,
-    )
-    return record
-  }
-
-  async listReadings(
-    filter: { providerId?: string; complete?: boolean; since?: string; limit?: number } = {},
-  ): Promise<ReadingRecord[]> {
-    const where: string[] = []
-    const params: (string | number)[] = []
-    if (filter.providerId) {
-      where.push('provider_id = ?')
-      params.push(filter.providerId)
-    }
-    if (filter.complete !== undefined) {
-      where.push('complete = ?')
-      params.push(filter.complete ? 1 : 0)
-    }
-    if (filter.since) {
-      where.push('at >= ?')
-      params.push(filter.since)
-    }
-    const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    params.push(Math.max(1, Math.min(filter.limit ?? 100, 500)))
-    return this.raw.all<ReadingRecord>(
-      `SELECT * FROM readings ${clause} ORDER BY at DESC, id DESC LIMIT ?`,
-      ...params,
-    )
-  }
-
-  async latestCompleteReading(providerId?: string): Promise<ReadingRecord | undefined> {
-    return providerId
-      ? this.raw.get<ReadingRecord>(
-          'SELECT * FROM readings WHERE provider_id = ? AND complete = 1 ORDER BY at DESC, id DESC LIMIT 1',
-          providerId,
-        )
-      : this.raw.get<ReadingRecord>(
-          'SELECT * FROM readings WHERE complete = 1 ORDER BY at DESC, id DESC LIMIT 1',
-        )
-  }
-
-  async countOpenedSinceAll(since: string): Promise<number> {
-    const row = await this.raw.get<{ n: number }>(
-      "SELECT count(*) AS n FROM issues WHERE status = 'open' AND opened_at > ?",
-      since,
-    )
-    return row?.n ?? 0
-  }
-
-  async listBuckets(providerId: string): Promise<BucketRow[]> {
-    return this.raw.all<BucketRow>(
-      'SELECT * FROM buckets WHERE provider_id = ? AND gone_at IS NULL ORDER BY name',
-      providerId,
-    )
-  }
-
-  async countBuckets(providerId: string): Promise<number> {
-    const row = await this.raw.get<{ n: number }>(
-      'SELECT count(*) AS n FROM buckets WHERE provider_id = ? AND gone_at IS NULL',
-      providerId,
-    )
-    return row?.n ?? 0
-  }
-
-  // -- issues ---------------------------------------------------------------
-
-  async listIssues(
-    filter: { providerId?: string; status?: IssueStatus; limit?: number } = {},
-  ): Promise<IssueRecord[]> {
-    const where: string[] = []
-    const params: (string | number)[] = []
-    if (filter.providerId) {
-      where.push('provider_id = ?')
-      params.push(filter.providerId)
-    }
-    if (filter.status) {
-      where.push('status = ?')
-      params.push(filter.status)
-    }
-    const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    params.push(Math.max(1, Math.min(filter.limit ?? 50, 1000)))
-    return this.raw.all<IssueRecord>(
-      `SELECT * FROM issues ${clause}
-       ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
-                last_seen_at DESC, bucket, code
-       LIMIT ?`,
-      ...params,
-    )
-  }
-
-  async issueStatuses(ids: string[]): Promise<Record<string, IssueStatus>> {
-    const out: Record<string, IssueStatus> = {}
-    for (let start = 0; start < ids.length; start += 200) {
-      const chunk = ids.slice(start, start + 200)
-      if (!chunk.length) break
-      const rows = await this.raw.all<{ id: string; status: IssueStatus }>(
-        `SELECT id, status FROM issues WHERE id IN (${chunk.map(() => '?').join(',')})`,
-        ...chunk,
-      )
-      for (const row of rows) out[row.id] = row.status
-    }
-    return out
-  }
-
-  async getIssue(id: string): Promise<IssueRecord | undefined> {
-    return this.raw.get<IssueRecord>('SELECT * FROM issues WHERE id = ?', id)
-  }
-
-  async findIssue(
-    providerId: string,
-    bucket: string,
-    code: string,
-  ): Promise<IssueRecord | undefined> {
-    return this.raw.get<IssueRecord>(
-      'SELECT * FROM issues WHERE provider_id = ? AND bucket = ? AND code = ?',
-      providerId,
-      bucket,
-      code,
-    )
   }
 
   async deleteNote(id: string): Promise<void> {
@@ -806,150 +324,6 @@ export class AppDb {
         )
       : await this.raw.get<{ n: number }>('SELECT count(*) AS n FROM notes')
     return row?.n ?? 0
-  }
-
-  /**
-   * Record one rule observation. `observed` true opens or keeps an Issue; false
-   * resolves it. An accepted Issue stays accepted while it is still observed:
-   * acceptance belongs to the user, and only a clean reading ends it.
-   */
-  async upsertIssue(input: {
-    providerId: string
-    bucket: string
-    code: string
-    severity: Severity
-    observed: boolean
-    detail?: string | null
-    conversationId: string | null
-    resolution?: 'resolved' | 'gone'
-  }): Promise<{ issue: IssueRecord | null; event: IssueEvent | null }> {
-    const at = new Date().toISOString()
-    const detail = input.detail ?? null
-    const existing = await this.findIssue(input.providerId, input.bucket, input.code)
-    if (input.observed) {
-      if (!existing) {
-        const id = randomUUID()
-        await this.raw.run(
-          `INSERT INTO issues (id, provider_id, bucket, code, severity, status, opened_at,
-             resolved_at, last_seen_at, recurred, detail, accepted_at)
-           VALUES (?, ?, ?, ?, ?, 'open', ?, NULL, ?, 0, ?, NULL)`,
-          id,
-          input.providerId,
-          input.bucket,
-          input.code,
-          input.severity,
-          at,
-          at,
-          detail,
-        )
-        await this.insertEvent(id, input.conversationId, 'opened', at, detail ? { detail } : null)
-        return { issue: (await this.getIssue(id))!, event: 'opened' }
-      }
-      if (existing.status === 'resolved') {
-        await this.raw.run(
-          `UPDATE issues SET status = 'open', severity = ?, resolved_at = NULL, accepted_at = NULL,
-             last_seen_at = ?, recurred = recurred + 1, detail = ? WHERE id = ?`,
-          input.severity,
-          at,
-          detail,
-          existing.id,
-        )
-        await this.insertEvent(
-          existing.id,
-          input.conversationId,
-          'recurred',
-          at,
-          detail ? { detail } : null,
-        )
-        return { issue: (await this.getIssue(existing.id))!, event: 'recurred' }
-      }
-      await this.raw.run(
-        'UPDATE issues SET severity = ?, last_seen_at = ?, detail = coalesce(?, detail) WHERE id = ?',
-        input.severity,
-        at,
-        detail,
-        existing.id,
-      )
-      return { issue: (await this.getIssue(existing.id))!, event: null }
-    }
-    if (existing && existing.status !== 'resolved') {
-      const event = input.resolution ?? 'resolved'
-      await this.raw.run(
-        "UPDATE issues SET status = 'resolved', resolved_at = ?, last_seen_at = ? WHERE id = ?",
-        at,
-        at,
-        existing.id,
-      )
-      await this.insertEvent(existing.id, input.conversationId, event, at, null)
-      return { issue: (await this.getIssue(existing.id))!, event }
-    }
-    return { issue: existing ?? null, event: null }
-  }
-
-  /** The user accepts a risk, or takes the acceptance back. Never the model. */
-  async setAccepted(id: string, accepted: boolean): Promise<IssueRecord | undefined> {
-    const issue = await this.getIssue(id)
-    if (!issue || issue.status === 'resolved') return issue
-    const at = new Date().toISOString()
-    if (accepted && issue.status === 'open') {
-      await this.raw.run(
-        "UPDATE issues SET status = 'accepted', accepted_at = ? WHERE id = ?",
-        at,
-        id,
-      )
-      await this.insertEvent(id, null, 'accepted', at, null)
-    } else if (!accepted && issue.status === 'accepted') {
-      await this.raw.run("UPDATE issues SET status = 'open', accepted_at = NULL WHERE id = ?", id)
-      await this.insertEvent(id, null, 'reopened', at, null)
-    }
-    return this.getIssue(id)
-  }
-
-  async openIssuesFor(providerId: string, bucket: string): Promise<IssueRecord[]> {
-    return this.raw.all<IssueRecord>(
-      "SELECT * FROM issues WHERE provider_id = ? AND bucket = ? AND status != 'resolved'",
-      providerId,
-      bucket,
-    )
-  }
-
-  async countIssues(status: IssueStatus): Promise<number> {
-    const row = await this.raw.get<{ n: number }>(
-      'SELECT count(*) AS n FROM issues WHERE status = ?',
-      status,
-    )
-    return row?.n ?? 0
-  }
-
-  async insertEvent(
-    issueId: string,
-    conversationId: string | null,
-    kind: string,
-    at: string,
-    detail: unknown,
-  ): Promise<void> {
-    await this.raw.run(
-      'INSERT INTO issue_events (id, issue_id, conversation_id, kind, at, detail_json) VALUES (?, ?, ?, ?, ?, ?)',
-      randomUUID(),
-      issueId,
-      conversationId,
-      kind,
-      at,
-      detail === null ? null : JSON.stringify(detail),
-    )
-  }
-
-  async issuesForConversation(conversationId: string): Promise<IssueRecord[]> {
-    const rows = await this.raw.all<{ issue_id: string }>(
-      'SELECT DISTINCT issue_id FROM issue_events WHERE conversation_id = ?',
-      conversationId,
-    )
-    const out: IssueRecord[] = []
-    for (const row of rows) {
-      const issue = await this.getIssue(row.issue_id)
-      if (issue) out.push(issue)
-    }
-    return out
   }
 
   // -- notes ----------------------------------------------------------------
@@ -986,7 +360,7 @@ export class AppDb {
       params.push(filter.ref)
     }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    params.push(Math.max(1, Math.min(filter.limit ?? 20, 100)))
+    params.push(Math.max(1, Math.min(filter.limit ?? 20, 10_000)))
     return this.raw.all<NoteRecord>(
       `SELECT * FROM notes ${clause} ORDER BY created_at DESC LIMIT ?`,
       ...params,
@@ -1133,8 +507,6 @@ export class AppDb {
       await tx.run('DELETE FROM pi_submissions WHERE conversation_id = ?', id)
       await tx.run('DELETE FROM pi_entries WHERE conversation_id = ?', id)
       await tx.run('DELETE FROM pi_conversations WHERE id = ?', id)
-      await tx.run('UPDATE issue_events SET conversation_id = NULL WHERE conversation_id = ?', id)
-      await tx.run('UPDATE readings SET conversation_id = NULL WHERE conversation_id = ?', id)
       await tx.run('DELETE FROM datasets WHERE conversation_id = ?', id)
       await tx.run('DELETE FROM audit WHERE conversation_id = ?', id)
     })
@@ -1250,8 +622,4 @@ export class AppDb {
   async deleteDataset(id: string): Promise<void> {
     await this.raw.run('DELETE FROM datasets WHERE id = ?', id)
   }
-}
-
-export function databasePath(userData: string): string {
-  return join(userData, 'storage-agent.db')
 }

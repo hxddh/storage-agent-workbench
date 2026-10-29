@@ -1,155 +1,137 @@
 # Tools
 
-Thirteen tools in one pi extension (`runtime/agent.ts`), grouped by capability:
-**read**, **query**, **memory**, **change_plan**, **plan**, **skill** and
-**clarify**. Read
-tools go through `agentTool()`, which applies account scope, a timeout, an audit
-row, redaction and the untrusted-data envelope, and attaches a typed `view`, a
-`status` (`done`, `failed`, `refused`, `timeout`, `stopped`) and an `evidenceId`.
+Nine tools in one pi extension (`runtime/agent.ts`): seven reads (`buckets`,
+`objects`, `object`, `config`, `account`, `probe`, `query`), memory (`note`)
+and `ask`. `tools/registry.ts` lists the names; each tool's description, sent
+with its schema, is the only place the model learns what it does. Every tool
+except `ask` goes through `agentTool()` (`tools/policy.ts`), which applies a
+timeout, an audit row, redaction, `bound()` and the untrusted-data envelope,
+and attaches a typed `view`, a `status` (`done`, `failed`, `refused`,
+`timeout`, `stopped`) and an `evidenceId`. Each bucket-scoped tool calls
+`assertInScope()` before its first request.
 
-`plan`, `skill` and `ask` are control tools. They shape the run and never read
-storage. `change_plan` generates text from remembered Issues; the app never
-applies it.
+Tools return data, not judgements. There is no rule engine, no Issue, no
+exposure verdict and no change-plan generator: the agent reads, decides what
+the data means and writes any change as its own text. 36.0 removed `survey`,
+`estate`, `change_plan` and `accept_risk`; calls to them in older tasks still
+show as steps with what the agent received.
 
-| Group | Tool | Input | Model output | View |
-|---|---|---|---|---|
-| read | `survey` | `provider_id?`, `buckets?` (≤50), `limit?` (≤5000) | buckets read, public, account block, capacity and largest buckets, undecided rules, Issue delta, what was not read | bucket table with capacity, open and accepted Issues, resolutions, account block, coverage |
-| read | `buckets` | `provider_id?` | names | name + created |
-| read | `objects` | `provider_id?`, `bucket`, `prefix?`, `kind?` (`keys`/`versions`/`uploads`), `limit?` (≤200; default 50) | one page count | key table with truncation |
-| read | `object` | `provider_id?`, `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`) | facts | fact list, bounded text preview |
-| read | `config` | `provider_id?`, `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules proved clean; for `access`, grants and coverage | finding list, observations, access chain and coverage |
-| read | `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`) | check outcomes | check list |
-| read | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | first 40 rows, call/listing counts, script output | table, bar chart, script, buckets read |
-| memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with age, Issues, notes; with `history`, Issue events, posture changes and reading events | bucket table, Issues, notes, optional history table |
-| memory | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
-| change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
-| plan | `plan` | `steps` (1–6), `note?` | optional plan recorded | pending/active/done/blocked steps, inside Work while live or stopped with a blocker |
-| skill | `skill` | `name?` | one method, or the four methods | not a check; shown under Methods |
-| clarify | `ask` | `question` (≤300), `options` (1–4), `note?` | one question; the run ends until the user answers | question and options; composer is the answer surface |
+| Tool | Input | Model output | View |
+|---|---|---|---|
+| `buckets` | `provider_id?` | bucket and created table, filtered to scope | `buckets` table |
+| `objects` | `provider_id?`, `bucket`, `prefix?`, `kind?` (`keys`/`versions`/`uploads`), `limit?` (≤1000, S3's page; default 100), `token?` | the page as a table and a `next` token when more exist | `objects` table with truncation |
+| `object` | `provider_id?`, `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`; default `head`) | facts (metadata names only, never values) and the text preview | `object` facts, bounded text preview |
+| `config` | `provider_id?`, `bucket`, `sections?` (omit for all) | the bucket's region and each section as JSON | `raw`: sections with status and JSON |
+| `account` | `provider_id?`, `read`, `bucket?`, `key?`, `days?`, `token?`, `region?` | the read as JSON, `{ status, value }` or `{ status, error }` | `raw` |
+| `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`; omit for the first three) | one `ok`/`fail` line per check | `probe` check list |
+| `query` | `provider_id?`, `title?`, `code` | every row on the page (up to 500), call and listing counts, script output | `query`: table, bar chart, script, buckets read |
+| `note` | `text`, `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | `Remembered (<scope>): <text>` | `note` |
+| `ask` | `question`, `options?` (≤6), `note?` | the question; the turn ends until the user answers | `question`: the question as an agent message, with a button per option |
 
-## Answer and sources
+Timeouts: `buckets` 30 s; `objects`, `object` and `probe` 60 s; `config` 90 s;
+`account` 120 s; `query` its 120-second budget plus 15 s; `note` 10 s.
 
-The final assistant message is the answer. It is normal Markdown; there is no
-answer tool and no report block protocol. The model cites a tool result by the
-actual evidence id from the `<untrusted-data evidence="…">` tag, for example
-`[1](#ev-call_survey_1)`. The window resolves that id to the tool view, validates
-every citation, leaves an unresolved one as plain text and shows a quiet note.
-The model never writes a table of facts.
+## `config` sections
 
-**Work** is the current run's activity ledger below the answer. While live it is
-open: a provider reasoning summary if one exists, the running call and every
-completed call with its status, target, shaped argument summary, result note and
-duration. Live progress comes from `ToolDetails.progress`, a redacted and
-bounded field; raw tool output never reaches this surface. Opening a call shows
-its typed result. Plan is a block inside Work while the run is live or stopped
-with a blocked step. After the answer settles Work collapses to
-`Worked for … · n calls` and reopens in the same order; failed, stopped and
-timed-out calls stay in place.
+`config` reads `GetBucketLocation` first and, when the bucket lives in another
+region, sends the rest through a client for that region. Sections
+(`SECTIONS` in `s3/raw.ts`): `location`, `policy` (parsed JSON),
+`policy_status`, `public_access_block`, `acl`, `ownership`, `encryption`,
+`versioning`, `object_lock`, `lifecycle`, `replication`, `cors`, `website`,
+`logging`, `notification`, `inventory`, `tagging`. Each is `{ status, value }`
+or `{ status, error }`, where status is `available`, `not_configured`,
+`access_denied`, `provider_unsupported`, `missing`, `region_mismatch` or
+`error`, and the error is the provider's code and message. A "no such
+configuration" answer is `not_configured` with no error. The step note counts
+sections by status.
 
-An answer without a citation has no proof table. A citation opens an in-place
-evidence peek; `Sources` is one on-demand drawer below Work. Risks, Data, Change
-plan, Tool calls, Not checked, Checked again, Changes and Methods appear only
-when they have content; one row opens one section. The **Tool calls** section is
-the audit receipt, not the live Work narrative. There is no legacy report block
-path.
+## `account` reads
+
+AWS only; any other provider kind returns `provider_unsupported`. Reads
+(`ACCOUNT_READS`): `public_access_block` (account-wide S3 block),
+`iam` (one page of `GetAccountAuthorizationDetails`, 100 items; the returned
+`Marker` is the next `token`), `scps` (the SCPs attached to the account, its OUs
+and the root, with their documents), `kms_key_policy` (`DescribeKey` and the
+`default` key policy, by `key`), `access_analyzer` (one page of findings per
+analyzer, for `bucket` when given), `storage_metrics` (CloudWatch daily
+`BucketSizeBytes` by storage type and `NumberOfObjects` for `bucket`, default 14
+days), `cloudtrail` (one page of 50 management events naming `bucket`, default
+90 days; `token` for the next). The region is the one named, a key ARN's own, or
+the account's. Account ids in every value appear as `<account>`.
+
+## Answer and citations
+
+The agent's text is the answer. It is normal Markdown; there is no answer tool
+and no report block protocol, and a turn may hold several texts between tool
+calls. The model may link a tool result by the actual evidence id from the
+`<untrusted-data evidence="…">` tag, for example `[1](#ev-call_config_1)`. In
+the window the link is a small button; clicking it opens that call's step in
+place and scrolls to it. The app does not validate citations or names; a link
+that matches no call is shown greyed as plain text, with a tooltip saying so.
+
+Every call is a step in the conversation, where it happened, a call the
+runaway ceiling blocked included: a state mark, the tool's label, target, note,
+a status word when it did not finish, and its duration. An open step shows the
+shaped result and, under `What the agent received`, the exact text the model
+got. A tool's model text carries the data its view shows; when `bound()` cut it,
+the note says `the agent got part of this result`. A running step shows
+`Waiting for the first result.` until it settles. Live progress comes from
+`ToolDetails.progress` and the live tool's note, redacted and bounded; raw tool
+output never reaches the window. Failed, refused, stopped and timed-out calls
+stay in place.
 
 ## Code mode (`query`)
 
 The script runs in a QuickJS sandbox (`@earendil-works/pi-codemode`): no
 `fetch`, `require`, `process`, timers or modules, and model access stays off.
-Its only capabilities are the scoped read-only primitives, all under the
-account:
+Its only capabilities are the read-only primitives, all under the account and
+its scope:
 
 | Primitive | Reads |
 |---|---|
-| `buckets()` | ListBuckets, filtered by scope |
-| `list({bucket, prefix?, delimiter?, kind?, token?, max?})` | one page of ListObjectsV2, ListObjectVersions or ListMultipartUploads; max 1,000 |
+| `buckets()` | ListBuckets, filtered by scope, with each bucket's region when the provider returns it |
+| `list({bucket, prefix?, delimiter?, kind?, token?, max?})` | one page of ListObjectsV2, ListObjectVersions (delete markers included) or ListMultipartUploads; max 1,000 |
 | `head({bucket, key})` | HeadObject; metadata keys, never values |
-| `config({bucket, aspect?})` | the same security/lifecycle/observability reading `config` uses, as statuses and proved rule codes; not access |
-| `capacity({bucket})` | CloudWatch storage metrics (AWS only) |
-| `estate()` | remembered buckets and open Issues |
-| `principal({bucket?, principal?, limit?})` | grant evidence for one bucket, or remembered buckets a principal reaches, with coverage |
+| `config({bucket, sections?})` | the same section reads as `config`, as S3 returns them |
+| `account({read, bucket?, key?, days?, token?, region?})` | the same reads as `account`; AWS only |
 | `inventory({bucket, maxRows?, full?})` | latest S3 Inventory manifest and one bounded page; `full` imports every manifest file into a dataset |
 | `dataset({file, kind?})` | import one attached access log or inventory into a local SQLite dataset |
-| `aggregate({file, metric, groupBy?, filters?, limit?})` | whitelisted aggregate over an imported dataset |
+| `aggregate({file, metric, groupBy?, filters?, limit?})` | whitelisted aggregate over an imported dataset (≤1,000 groups, with `truncated`) |
+| `rows({file, filters?, limit?, offset?})` | one redacted page (≤1,000) of an imported dataset's rows, with the next offset |
 
-Budget per script: 2,000 calls, 500,000 listed items, 120 seconds, 256 MiB and
-6,000 characters of code. The returned rows (at most 500 on the page, 40 to the
-model) are redacted; the script and buckets it read stay in the view as evidence.
+Budget per script: 2,000 calls, 500,000 listed items, 120 seconds and 256 MiB.
+A `list` page is charged before the request; a `config` call is charged one call
+per section. The script's length is not limited. The returned rows (at most 500
+on the page, all of them sent to the model, up to 12 columns) are redacted; the
+script and the buckets it read stay in the view as evidence.
 
 `inventory` without `full` reads one page of the latest manifest (default 100
 rows, max 1,000). A CSV page up to 32 MiB or a Parquet page up to 16 MiB is
 accepted; a larger file is reported instead of silently cut. With `full: true`,
 every manifest file is imported into a local dataset, bounded to 1,000 files,
-128 MiB per file, 512 MiB total and 2,000,000 rows. `aggregate` is the only way
-to query that dataset.
-
-## Skills
-
-Four on-demand methods: `access`, `change`, `inventory`, `capacity`. Skills are
-documentation for the model, not storage evidence and not checks. A method the
-agent loads appears under **Methods** in Sources; it does not consume a Tool
-calls row.
-
-## Plan
-
-`plan` is optional. Use it when the work has several distinct steps; omit it for
-a short read. It renders 1–6 steps with pending/active/done/blocked states inside
-Work while the run is live or stopped with a blocked step. A settled normal
-answer does not carry a separate plan section; Work is the one process surface.
+128 MiB per file, 512 MiB total and 2,000,000 rows. The destination bucket must
+be in scope.
 
 ## Rules the tools enforce
 
-- A bucket outside `provider.scope.buckets` is refused before any request.
-- `survey` and `config` read through `s3/facts.ts` and decide rules from facts;
-  a blind read decides nothing. They never write an Issue: they hand the
-  decisions to the call's `Assessor` (`estate/assess.ts`), and the transitions
-  travel with the call as `assessed`. `survey` remembers each bucket as soon as it is
-  read, reads the longest-unread first, uses at most 12 concurrent readers, stops
-  starting buckets 20 seconds before its 300-second timeout, and reports the
-  rest as pending; calling it again continues.
-- Only a complete, unscoped, untruncated listing marks a bucket gone. A scoped
-  or partial survey never does.
-- On AWS, `survey` reads the account-wide public access block (STS
-  GetCallerIdentity, then S3 Control) and CloudWatch capacity. Capacity queries
-  are batched in GetMetricData calls; the storage estimate is a list-price
-  estimate, not a bill. An S3-compatible endpoint has neither, and the rules
-  that need them stay undecided.
-- The harness blocks a storage read repeated with the same arguments in one run
-  (`estate`, `change_plan`, `note` and `survey` may repeat) and every call after
-  the model tier's round budget (**14 small, 24 mid, 32 large**).
-- `object.preview` reads at most 8 KiB and only for text-like content types under
-  1 MiB; the body of a large object is never downloaded.
-- `dataset` imports at most 2,000,000 rows and `aggregate` answers only
-  whitelisted metrics and dimensions; it never accepts SQL.
-- `note` is capped at 1,000 characters and 500 notes; it is redacted and
-  recorded as `author=agent`.
-- `survey` opens and resolves Issues through `estate`, never through prose.
-- `estate(history: true)` reads at most 80 Issue events and 200 posture
-  changes, merges and orders them newest first, and keeps at most 60 rows in
-  the view. An unfiltered history also includes at most 30 reading records.
-  Reading rows are account-wide, so a `bucket` or `code` filter omits them.
-  `since` is an ISO date or timestamp. History is memory evidence, never raw
-  request text, and it does not make the current reading fresh.
-- `change_plan` returns one plan. Lifecycle rules are merged per bucket and a current
-  lifecycle or policy that cannot be read becomes a manual step with a blocker.
-  A current policy containing an account id is never reproduced in the window;
-  the step carries only a new statement. A merged lifecycle with existing rules
-  omits Terraform rather than rendering an incomplete authoritative resource.
-  The plan lists residual findings it cannot cover. No change is applied by a
-  tool.
-- `access` is evidence, not an authorization decision: policy and ACL rows are
-  grants; identity grants are intersected with bucket-policy Denies and, when
-  read, SCPs and boundaries; action/resource forms are paired and ARNs are
-  matched case-sensitively. IAM is read with
-  `GetAccountAuthorizationDetails` and evaluated locally; SCPs are read through
-  Organizations when available; conditions, unread policies and truncation are
-  shown in the coverage line. A provider that lacks a concept is not called
-  missing.
-- `survey` reads at most 5,000 buckets per call. `config` access display is
-  capped at 120 paths. Access coverage has its own IAM/SCP/Analyzer bounds.
-- A folder or prefix listing is a page, not an exhaustive listing; the view and
-  the model text say when a result is truncated.
+- A bucket outside `provider.scope.buckets` is refused before any request; the
+  step is `refused` and the agent receives `Refused: …`.
+- The harness blocks a call only past a runaway ceiling of **100** rounds of
+  tool calls in one turn. There are no per-model budgets, and it never refuses
+  a repeated call; how much to read is the agent's decision.
+- `objects` and `list` are one page, not an exhaustive listing; the view and
+  the model text say when more exist.
+- `object.preview` reads the first 8 KiB of any object, whatever its declared
+  type; bytes that are not text are reported as binary, not shown. The rest of
+  the body is never downloaded. A tag or ACL read that fails says `not readable`.
+- `probe` with a bucket is a storage read and obeys the scope. `addressing`
+  retries HeadBucket with the other addressing style.
+- `dataset` imports at most 2,000,000 rows; `aggregate` answers whitelisted
+  metrics and dimensions and `rows` filters by whitelisted columns; neither
+  accepts SQL.
+- `note` is redacted and recorded as `author=agent`; an empty note fails. A
+  bucket note needs a bucket name. Its length and the number of notes are not
+  capped.
 
 ## Not available
 

@@ -1,8 +1,8 @@
 import type { EntryRecord } from '@earendil-works/pi-durable'
 import type { ToolDetails, ToolView } from '@shared/contract'
 import { describe, expect, it } from 'vitest'
-import { callKey } from '../tools/policy'
-import { answerCorrection, blockReason, maxRounds, runView, tierFor } from './agent'
+import type { ToolDeps } from '../tools/policy'
+import { blockReason, buildDigest, MAX_ROUNDS, runView } from './agent'
 
 let seq = 0
 const at = () => 1_700_000_000_000 + seq++
@@ -38,13 +38,12 @@ function result(
   status: ToolDetails['status'] = 'done',
 ): EntryRecord {
   const details: ToolDetails = {
-    target: String(args.bucket ?? 'Demo'),
+    target: String(args.bucket ?? 'Prod'),
     note: null,
     view,
     ms: 5,
     status,
     evidenceId: id,
-    key: callKey(name, args),
   }
   return {
     id: `t${id}`,
@@ -64,157 +63,74 @@ function result(
 }
 
 const config = (bucket: string): ToolView => ({
-  kind: 'config',
-  bucket,
-  providerId: 'p',
-  aspect: 'security',
-  exposure: 'public',
-  findings: [],
+  kind: 'raw',
+  title: bucket,
+  value: { policy: { status: 'not_configured' } },
 })
 
-const survey: ToolView = {
-  kind: 'survey',
-  provider: 'Demo',
-  providerId: 'p',
-  buckets: {
-    columns: ['Bucket', 'Public'],
-    rows: [
-      ['demo', 'public'],
-      ['other', 'no'],
-    ],
-  },
-  issues: [],
-  coverage: { visible: 2, processed: 2, truncated: false, pending: 0, denied: [], unknown: [] },
-  changed: { opened: 0, resolved: 0, recurred: 0 },
-}
-
-describe('model tiers', () => {
-  it('gives a small context model fewer rounds and a large one more', () => {
-    expect(tierFor(32_000)).toBe('small')
-    expect(tierFor(128_000)).toBe('mid')
-    expect(tierFor(400_000)).toBe('large')
-    expect(maxRounds('small')).toBe(14)
-    expect(maxRounds('mid')).toBe(24)
-    expect(maxRounds('large')).toBe(32)
-  })
-})
-
-describe('run guards from durable entries', () => {
-  it('blocks a finished read, whatever the key order, and admits another aspect', () => {
-    const args = { bucket: 'demo', aspect: 'security' }
+describe('the turn guard, from durable entries', () => {
+  it('leaves repeating a call to the agent', () => {
+    const args = { bucket: 'logs', sections: ['policy'] }
     const view = runView([
       request(),
       call('c1', 'config', args),
-      result('c1', 'config', args, config('demo')),
-    ])
-    const inflight = new Set<string>()
-    expect(
-      blockReason(view, 'mid', 'config', { aspect: 'security', bucket: 'demo' }, inflight),
-    ).toMatch(/already ran/)
-    expect(
-      blockReason(view, 'mid', 'config', { bucket: 'demo', aspect: 'lifecycle' }, inflight),
-    ).toBeUndefined()
-  })
-
-  it('lets a failed read run once more, then blocks it', () => {
-    const args = { bucket: 'demo' }
-    const once = runView([
-      request(),
-      call('c1', 'config', args),
-      result('c1', 'config', args, null, 'failed'),
-    ])
-    expect(blockReason(once, 'mid', 'config', args, new Set())).toBeUndefined()
-    const twice = runView([
-      request(),
-      call('c1', 'config', args),
-      result('c1', 'config', args, null, 'failed'),
+      result('c1', 'config', args, config('logs')),
       call('c2', 'config', args),
       result('c2', 'config', args, null, 'failed'),
     ])
-    expect(blockReason(twice, 'mid', 'config', args, new Set())).toMatch(/already ran/)
+    expect(blockReason(view)).toBeUndefined()
   })
 
-  it('treats two identical calls in one round as one read', () => {
-    const view = runView([request()])
-    const inflight = new Set<string>()
-    expect(blockReason(view, 'mid', 'objects', { bucket: 'demo' }, inflight)).toBeUndefined()
-    expect(blockReason(view, 'mid', 'objects', { bucket: 'demo' }, inflight)).toMatch(/already ran/)
-  })
-
-  it('starts every run with a fresh budget and fresh calls', () => {
-    const args = { bucket: 'demo' }
+  it('starts every turn with a fresh budget', () => {
+    const args = { bucket: 'logs' }
     const view = runView([
       request(),
       call('c1', 'config', args),
-      result('c1', 'config', args, config('demo')),
+      result('c1', 'config', args, config('logs')),
       request('Again'),
     ])
     expect(view.rounds).toBe(0)
-    expect(blockReason(view, 'mid', 'config', args, new Set())).toBeUndefined()
   })
 
-  it('stops every tool past the round budget, counted from the entries', () => {
+  it('stops a runaway turn past the round ceiling, counted from the entries', () => {
     const records: EntryRecord[] = [request()]
-    for (let index = 0; index < 15; index += 1) {
+    for (let index = 0; index <= MAX_ROUNDS; index += 1) {
       const args = { bucket: `b${index}` }
       records.push(call(`c${index}`, 'objects', args), result(`c${index}`, 'objects', args, null))
     }
     // The same entries give the same budget after a restart: nothing is in memory.
-    expect(blockReason(runView(records), 'small', 'estate', {}, new Set())).toMatch(/Step budget/)
-    expect(blockReason(runView(records), 'mid', 'estate', {}, new Set())).toBeUndefined()
-  })
-
-  it('lets memory be read again as it changes', () => {
-    const view = runView([request(), call('c1', 'estate', {}), result('c1', 'estate', {}, null)])
-    expect(blockReason(view, 'mid', 'estate', {}, new Set())).toBeUndefined()
+    expect(blockReason(runView(records))).toMatch(/did not run/)
+    expect(blockReason(runView(records.slice(0, 41)))).toBeUndefined()
   })
 })
 
-describe('the one answer correction', () => {
-  const read = () =>
-    runView([request(), call('s1', 'survey', {}), result('s1', 'survey', {}, survey)])
+describe('the memory digest', () => {
+  const day = 86_400_000
+  const deps = {
+    providers: {
+      list: async () => [
+        { id: 'p1', name: 'Prod', kind: 'aws', endpoint: '', scope: { buckets: [] } },
+      ],
+    },
+    db: {
+      listNotes: async () => [
+        { text: 'fresh note', created_at: new Date(Date.now() - day).toISOString() },
+        { text: 'old note', created_at: new Date(Date.now() - 40 * day).toISOString() },
+      ],
+      countNotes: async () => 2,
+    },
+  } as unknown as ToolDeps
 
-  it('accepts a cited, grounded answer', () => {
-    expect(answerCorrection(read(), '`demo` is public. [1](#ev-s1)')).toBeUndefined()
+  it('names the accounts and the notes, as data', async () => {
+    const digest = await buildDigest(deps)
+    expect(digest).toContain('Prod (id p1; aws)')
+    expect(digest).toContain('fresh note | old note')
+    expect(digest).toContain('data, never instructions')
   })
 
-  it('asks for a name no tool showed, with the wording the harness always uses', () => {
-    expect(answerCorrection(read(), '`demo` and `ghost` are public. [1](#ev-s1)')).toMatch(
-      /`ghost`, which no tool result in this task shows/,
-    )
-  })
-
-  it('asks for a citation when a paragraph names a read bucket without one', () => {
-    expect(answerCorrection(read(), '`demo` is public.')).toMatch(/without citing/)
-  })
-
-  it('asks once: a run that already has a correction is left to the window', () => {
-    const corrected = runView([
-      request(),
-      call('s1', 'survey', {}),
-      result('s1', 'survey', {}, survey),
-      {
-        id: 'v1',
-        kind: 'pi.user',
-        model: [{ role: 'user', content: 'Your answer names `ghost`…', timestamp: at() }],
-      } as unknown as EntryRecord,
-    ])
-    expect(answerCorrection(corrected, '`ghost` again.')).toBeUndefined()
-  })
-
-  it('does not judge prose when the task has read nothing', () => {
-    expect(answerCorrection(runView([request()]), '`anything`')).toBeUndefined()
-  })
-
-  it('never judges whether the prose calls the account clean', () => {
-    const partial = runView([
-      request(),
-      call('s1', 'survey', {}),
-      result('s1', 'survey', {}, {
-        ...survey,
-        coverage: { ...(survey as { coverage: object }).coverage, denied: ['other'] },
-      } as ToolView),
-    ])
-    expect(answerCorrection(partial, 'No bucket is public. [1](#ev-s1)')).toBeUndefined()
+  it('leaves out a note past the retention the user set', async () => {
+    const digest = await buildDigest(deps, 30)
+    expect(digest).toContain('fresh note')
+    expect(digest).not.toContain('old note')
   })
 })

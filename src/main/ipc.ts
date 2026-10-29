@@ -25,24 +25,6 @@ export function registerIpc(app: App): void {
     app.tasks.open(id, focus),
   )
 
-  ipcMain.handle('agent:check', async () => {
-    const accounts = await app.providers.list()
-    if (accounts.length === 0) throw new Error('Choose a storage account first.')
-    const lang = app.settings.get().language
-    const names = accounts
-      .slice(0, 2)
-      .map((account) => account.name)
-      .join(', ')
-    // A check is a snapshot. Include the minute so two checks on the same day
-    // remain distinguishable in the task list.
-    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
-    const title = `${lang === 'zh' ? '检查' : 'Check'} · ${names} · ${stamp}`
-    const id = await app.tasks.newTask(title)
-    // Return the task immediately; the scripted run's calls and answer arrive
-    // through the task watch instead of making the window wait for the sweep.
-    void app.engine.check(id).catch(() => undefined)
-    return app.tasks.open(id)
-  })
   ipcMain.handle('agent:older', (_event, id: string, before: string) => app.tasks.older(id, before))
 
   ipcMain.handle(
@@ -63,8 +45,8 @@ export function registerIpc(app: App): void {
     },
   )
 
-  ipcMain.handle('agent:estateRefs', (_event, query: string) =>
-    app.tasks.estateRefs(String(query ?? '').slice(0, 120)),
+  ipcMain.handle('agent:storageRefs', (_event, query: string) =>
+    app.tasks.storageRefs(String(query ?? '').slice(0, 120)),
   )
   ipcMain.handle('agent:setTaskModel', (_event, taskId: string, model: TaskModel | null) =>
     app.tasks.setTaskModel(taskId, model),
@@ -87,7 +69,6 @@ export function registerIpc(app: App): void {
   ipcMain.handle('agent:deleteTask', (_event, id: string) => app.tasks.deleteTask(id))
   ipcMain.handle('agent:retryTask', (_event, id: string) => app.engine.retry(id))
   ipcMain.handle('agent:continueTask', (_event, id: string) => app.engine.continueTask(id))
-  ipcMain.handle('agent:recheckTask', (_event, id: string) => app.engine.recheck(id))
   ipcMain.handle('agent:search', (_event, query: string) => app.tasks.search(query))
 
   ipcMain.handle(
@@ -120,7 +101,7 @@ export function registerIpc(app: App): void {
     if (!window) return false
     const result = await dialog.showSaveDialog(window, {
       title: 'Save PDF',
-      defaultPath: 'storage-agent-brief.pdf',
+      defaultPath: 'storage-agent-conversation.pdf',
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     })
     if (result.canceled || !result.filePath) return false
@@ -160,17 +141,7 @@ export function registerIpc(app: App): void {
 
   ipcMain.handle('agent:awsProfiles', () => awsProfiles())
 
-  ipcMain.handle('agent:addDemoAccount', async () => {
-    const account = await app.providers.addDemo()
-    await app.runtime.refreshDigest()
-    return account
-  })
-
   ipcMain.handle('agent:localModels', () => detectLocalModels())
-
-  ipcMain.handle('agent:acceptIssue', (_event, id: string, accepted: boolean) =>
-    app.tasks.acceptIssue(String(id), Boolean(accepted)),
-  )
 
   ipcMain.handle('agent:installUpdate', () => app.installUpdate?.())
 

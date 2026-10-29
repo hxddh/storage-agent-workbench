@@ -1,25 +1,22 @@
 import type { ToolRegistration } from '@earendil-works/pi-durable'
+import { accountTool } from './account'
 import { bucketTools } from './browse'
 import { configTool } from './config'
-import { askTool, planTool, skillTool } from './control'
-import { estateTools } from './estate'
+import { askTool } from './control'
+import { noteTool } from './note'
 import type { ToolDeps } from './policy'
 import { probeTool } from './probe'
 import { queryTool } from './query'
-import { surveyTool } from './survey'
 
 export function createTools(deps: ToolDeps): ToolRegistration[] {
   return [
-    // Control tools. They do not read storage; they publish the optional plan
-    // or return a method card.
-    planTool(),
-    skillTool(),
-    askTool(),
-    surveyTool(deps),
     ...bucketTools(deps),
     configTool(deps),
+    accountTool(deps),
     probeTool(deps),
-    ...estateTools(deps),
     queryTool(deps),
+    noteTool(deps),
+    // Asking the user is the one tool that does not read storage.
+    askTool(),
   ] as ToolRegistration[]
 }

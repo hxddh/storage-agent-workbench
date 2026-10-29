@@ -1,10 +1,22 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { aggregate, countRows, preview } from './aggregate'
+import { aggregate, preview, readRows } from './aggregate'
 import { maskIp, normalizeTimestamp } from './formats'
 import { importDataset, importInventoryFiles } from './import'
+
+/** Rows a dataset holds, read straight from its file. */
+function countRows(path: string, kind: 'access_log' | 'inventory'): number {
+  const db = new DatabaseSync(path, { readOnly: true })
+  try {
+    const table = kind === 'inventory' ? 'inventory_objects' : 'access_logs'
+    return (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
+  } finally {
+    db.close()
+  }
+}
 
 function temp(): string {
   return mkdtempSync(join(tmpdir(), 'sa-test-'))
@@ -31,9 +43,9 @@ describe('inventory import and aggregation', () => {
       csv,
       [
         '"bucket","key","size","storage_class","last_modified_date"',
-        '"demo","a.bin",100,"STANDARD","2026-01-01T00:00:00Z"',
-        '"demo","b.bin",200,"STANDARD","2026-01-02T00:00:00Z"',
-        '"demo","c.bin",100,"GLACIER","2026-01-03T00:00:00Z"',
+        '"logs","a.bin",100,"STANDARD","2026-01-01T00:00:00Z"',
+        '"logs","b.bin",200,"STANDARD","2026-01-02T00:00:00Z"',
+        '"logs","c.bin",100,"GLACIER","2026-01-03T00:00:00Z"',
       ].join('\n'),
     )
     const db = join(dir, 'data.sqlite')
@@ -50,6 +62,20 @@ describe('inventory import and aggregation', () => {
 
     const sum = aggregate(db, 'inventory', { metric: 'total_size' })
     expect(sum.value).toBe(400)
+
+    // The rows themselves page through, filtered by whitelisted columns only.
+    const first = readRows(db, 'inventory', { limit: 2 })
+    expect(first.rows).toHaveLength(2)
+    expect(first.next).toBe(2)
+    const rest = readRows(db, 'inventory', { limit: 2, offset: first.next })
+    expect(rest.rows).toHaveLength(1)
+    expect(rest.next).toBeNull()
+    expect(readRows(db, 'inventory', { filters: { storage_class: 'GLACIER' } }).rows).toHaveLength(
+      1,
+    )
+    expect(() => readRows(db, 'inventory', { filters: { 'size; DROP': 1 } })).toThrow(
+      /Unknown filter/,
+    )
     expect(preview(db, 'inventory', 2).rows).toHaveLength(2)
   })
 
@@ -58,13 +84,13 @@ describe('inventory import and aggregation', () => {
     const first = join(dir, 'part-1.csv')
     const second = join(dir, 'part-2.csv')
     const header = '"bucket","key","size","storage_class","last_modified_date"\n'
-    writeFileSync(first, `${header}"demo","a.bin",100,"STANDARD","2026-01-01"\n`)
-    writeFileSync(second, `${header}"demo","b.bin",200,"GLACIER","2026-01-02"\n`)
+    writeFileSync(first, `${header}"logs","a.bin",100,"STANDARD","2026-01-01"\n`)
+    writeFileSync(second, `${header}"logs","b.bin",200,"GLACIER","2026-01-02"\n`)
     const db = join(dir, 'all.sqlite')
     const result = await importInventoryFiles({
       files: [first, second],
       destPath: db,
-      fallbackBucket: 'demo',
+      fallbackBucket: 'logs',
     })
     expect(result.rows).toBe(2)
     expect(countRows(db, 'inventory')).toBe(2)
@@ -74,14 +100,14 @@ describe('inventory import and aggregation', () => {
     const dir = temp()
     const files = [1, 2, 3].map((n) => {
       const file = join(dir, `part-${n}.csv`)
-      writeFileSync(file, `"bucket","key","size"\n"demo","${n}.bin",${n}\n`)
+      writeFileSync(file, `"bucket","key","size"\n"logs","${n}.bin",${n}\n`)
       return file
     })
     const db = join(dir, 'limited.sqlite')
     const result = await importInventoryFiles({
       files,
       destPath: db,
-      fallbackBucket: 'demo',
+      fallbackBucket: 'logs',
       maxRows: 2,
     })
     expect(result.rows).toBe(2)

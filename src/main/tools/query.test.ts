@@ -6,9 +6,8 @@ import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { ToolDetails } from '@shared/contract'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFakeS3 } from '../../../scripts/fake-s3.mjs'
+import { objectsOf } from '../../../scripts/fake-s3-core.mjs'
 import { AppDb } from '../db'
-import { objectsOf } from '../demo/fake-s3-core.mjs'
-import { Estate } from '../estate/estate'
 import { Providers } from '../providers'
 import type { Vault } from '../security/vault'
 import type { ToolDeps } from './policy'
@@ -56,7 +55,6 @@ beforeAll(async () => {
   deps = {
     db,
     providers,
-    estate: new Estate(db),
     datasetsDir: () => tmpdir(),
     uploadsDir: () => tmpdir(),
     lang: () => 'en',

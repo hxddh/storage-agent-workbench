@@ -1,10 +1,9 @@
 /**
- * First-run proof: no model, no account, one click.
+ * First-run proof: no model, no account.
  *
- * The window must offer the in-process demo account explicitly, run the
- * deterministic account check, and render a run whose sentences come only
- * from the reading. The Composer stays disabled because free-form questions
- * still need a model.
+ * Everything the app reads, the agent reads, so without a model there is
+ * nobody to ask. The window adds nothing on its own and runs nothing: it
+ * offers to set up a model and add an account, and the composer waits.
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -32,28 +31,20 @@ const fail = async (message) => {
 
 try {
   await page.waitForTimeout(1200)
-  const demo = page.getByRole('button', { name: 'Try with demo storage' })
-  if ((await demo.count()) !== 1) await fail('first run does not offer exactly one demo action')
-
-  await demo.click()
-  await page.waitForSelector('.run-answer .verdict', { timeout: 120_000 })
-  const text = await page.locator('.brief').innerText()
-  if (!/risk|problem|No open|could not be read/i.test(text))
-    await fail('audit produced no conclusion')
-  const scope = await page.locator('.run-scope').innerText()
-  if (!/open questions?|Not fully checked/.test(scope) || !/blocked/.test(scope))
-    await fail(`partial reads are not named in the scope line: ${scope}`)
-  if (await page.locator('.run-answer .verdict code.ungrounded').count())
-    await fail('a model-free verdict named something no check returned')
   if (!(await page.locator('.composer textarea').isDisabled()))
     await fail('the composer accepted free-form input without a model')
-  await page.locator('.run-evidence-button', { hasText: 'Findings' }).click()
-  await page.waitForSelector('.run-finding-line', { timeout: 5_000 })
-  if ((await page.locator('.run-finding-main').count()) === 0)
-    await fail('the demo account produced no risks')
+  if ((await page.getByRole('button', { name: 'Set up a model' }).count()) === 0)
+    await fail('the window does not point at setting up a model')
+  if ((await page.getByRole('button', { name: 'Add an account' }).count()) === 0)
+    await fail('the window does not offer to add an account')
+  for (const gone of ['Check account', 'Try with demo storage'])
+    if (await page.getByRole('button', { name: gone }).count()) await fail(`${gone} is offered`)
+  if (await page.locator('.home-account').count()) await fail('an account appeared on its own')
+  if (await page.locator('.conversation').count()) await fail('a conversation started on its own')
+  if ((await page.locator('.task-row-wrap').count()) > 0) await fail('a task was created on its own')
 
   await page.screenshot({ path: out })
-  console.log('NO-MODEL AUDIT OK:', text.replace(/\s+/g, ' ').slice(0, 180))
+  console.log('NO-MODEL FIRST RUN OK: nothing added, nothing run, composer waits for a model')
 } catch (error) {
   await fail(error.message)
 } finally {

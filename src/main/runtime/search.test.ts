@@ -1,83 +1,23 @@
-import type { UiEntry } from '@shared/contract'
-import { searchRows } from '@shared/trace'
+import { searchRows } from '@shared/conversation'
 import { describe, expect, it } from 'vitest'
 
-const survey: UiEntry = {
-  id: 'audit:0',
-  kind: 'tool',
-  at: '2026-01-01T00:00:01Z',
-  name: 'survey',
-  target: 'Demo',
-  status: 'done',
-  note: null,
-  ms: null,
-  evidenceId: 'audit:0',
-  view: {
-    kind: 'survey',
-    provider: 'Demo',
-    providerId: 'p1',
-    buckets: {
-      columns: ['Bucket', 'Public'],
-      rows: [['demo', 'public']],
-    },
-    issues: [
-      {
-        id: 'i1',
-        provider: 'Demo',
-        bucket: 'demo',
-        code: 'public_exposure',
-        severity: 'high',
-        status: 'open',
-        title: 'Bucket is publicly accessible',
-        detail: 'The provider reports the bucket policy as public',
-        openedAt: '2026-01-01T00:00:00Z',
-        lastSeenAt: '2026-01-01T00:00:00Z',
-        recurred: 0,
-      },
-    ],
-    observations: [],
-    coverage: {
-      visible: 1,
-      processed: 1,
-      truncated: false,
-      pending: 0,
-      denied: [],
-      unknown: [],
-      gone: [],
-    },
-    changed: { opened: 1, resolved: 0, recurred: 0 },
-  },
-}
-
-describe('search docs', () => {
-  it('indexes a scripted check without a user request', () => {
-    const docs = searchRows([
-      { id: 'run', kind: 'check', at: '2026-01-01T00:00:00Z', mode: 'check' },
-      survey,
-      {
-        id: 'audit:answer',
-        kind: 'answer',
-        at: '2026-01-01T00:00:02Z',
-        text: 'One issue is open.',
-        source: 'check',
-      },
-    ])
-    expect(docs.some((doc) => doc.text.includes('publicly accessible'))).toBe(true)
-    expect(docs.some((doc) => doc.text === 'One issue is open.')).toBe(true)
-    expect(new Set(docs.map((doc) => doc.entryId)).size).toBe(docs.length)
-  })
-
-  it('indexes findings of every run, not only the latest', () => {
-    const docs = searchRows([
+describe('search rows', () => {
+  it('indexes every message and every agent text of the conversation, once each', () => {
+    const rows = searchRows([
       { id: 'u1', kind: 'user', at: '2026-01-01T00:00:00Z', text: 'First', attachments: [] },
-      survey,
+      { id: 'a1', kind: 'answer', at: '2026-01-01T00:00:01Z', text: '`logs` is public.' },
+      { id: 's1', kind: 'steer', at: '2026-01-01T00:00:02Z', text: 'only logs', attachments: [] },
       { id: 'u2', kind: 'user', at: '2026-01-01T00:01:00Z', text: 'Second', attachments: [] },
       { id: 'a2', kind: 'answer', at: '2026-01-01T00:01:01Z', text: 'Nothing new.' },
+      { id: 'e', kind: 'answer', at: '2026-01-01T00:01:02Z', text: '  ' },
     ])
-    expect(docs.some((doc) => doc.kind === 'finding')).toBe(true)
-    expect(docs.filter((doc) => doc.kind === 'user').map((doc) => doc.text)).toEqual([
-      'First',
-      'Second',
+    expect(rows.map((row) => `${row.kind}:${row.text}`)).toEqual([
+      'user:First',
+      'answer:`logs` is public.',
+      'user:only logs',
+      'user:Second',
+      'answer:Nothing new.',
     ])
+    expect(new Set(rows.map((row) => row.entryId)).size).toBe(rows.length)
   })
 })

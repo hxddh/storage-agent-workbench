@@ -17,7 +17,9 @@ import type { SettingsPane } from './Settings'
 // Settings is a sheet most launches never open; the run and its Markdown
 // bundle load when a task opens. Home and the composer are the first paint.
 const Settings = lazy(() => import('./Settings').then((module) => ({ default: module.Settings })))
-const Run = lazy(() => import('./Run').then((module) => ({ default: module.Run })))
+const Conversation = lazy(() =>
+  import('./Conversation').then((module) => ({ default: module.Conversation })),
+)
 
 import { Sidebar } from './Sidebar'
 
@@ -40,9 +42,6 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [fatal, setFatal] = useState(false)
   const [searchSignal, setSearchSignal] = useState(0)
-  // Only while a check is being started; the run itself shows its progress.
-  const [starting, setStarting] = useState(false)
-  const [checkError, setCheckError] = useState<string | null>(null)
   const restored = useRef(false)
 
   const lang = boot?.settings.language ?? 'en'
@@ -95,12 +94,6 @@ export function App() {
             ? { ...current, usage: event.usage }
             : current,
         )
-      } else if (event.type === 'issues') {
-        setView((current) =>
-          current
-            ? { ...current, issueStatus: { ...current.issueStatus, ...event.statuses } }
-            : current,
-        )
       } else if (event.type === 'update') {
         setBoot((current) => (current ? { ...current, update: event.update } : current))
       } else if (event.type === 'open') {
@@ -150,10 +143,6 @@ export function App() {
       if (command === 'stop') {
         const current = viewRef.current
         if (current?.live) void window.agent.stop(current.task.id)
-      }
-      if (command === 'reverify') {
-        const current = viewRef.current
-        if (current && !current.live) void window.agent.recheckTask(current.task.id)
       }
     })
   }, [newTask, openSettings])
@@ -220,34 +209,6 @@ export function App() {
       apiKey: 'local',
     })
     await refresh()
-  }
-
-  const check = async () => {
-    setCheckError(null)
-    setStarting(true)
-    try {
-      const next = await window.agent.check()
-      setView(next)
-      setFocusId(null)
-      setSidebarOpen(false)
-      void refresh()
-    } catch (error) {
-      setCheckError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setStarting(false)
-    }
-  }
-
-  const startDemo = async () => {
-    if (starting) return
-    setCheckError(null)
-    try {
-      await window.agent.addDemoAccount()
-      await refresh()
-      await check()
-    } catch (error) {
-      setCheckError(error instanceof Error ? error.message : String(error))
-    }
   }
 
   const steer = async (text: string, tokens: string[], context: ContextRef[]) => {
@@ -317,25 +278,15 @@ export function App() {
         </div>
         {view ? (
           <Suspense fallback={null}>
-            <Run
+            <Conversation
               key={view.task.id}
               view={view}
               lang={lang}
               focusId={focusId}
               onRetry={() => void window.agent.retryTask(view.task.id)}
               onContinue={() => void window.agent.continueTask(view.task.id)}
-              onRecheck={() =>
-                void window.agent
-                  .recheckTask(view.task.id)
-                  .catch((error) =>
-                    setCheckError(error instanceof Error ? error.message : String(error)),
-                  )
-              }
-              onClarify={(text) => void submit(text, [])}
+              onAnswer={(text) => void submit(text, [])}
               onOlder={loadOlder}
-              onCheck={() => void check()}
-              checking={starting}
-              modelLabel={boot?.model?.modelId ?? null}
               models={localModels}
               onModel={(model) => void setModel(model)}
             />
@@ -346,14 +297,10 @@ export function App() {
             onSetup={() => openSettings('model')}
             onAddAccount={() => openSettings('accounts')}
             onUseLocal={startLocal}
-            onDemo={() => void startDemo()}
-            onAudit={() => void check()}
-            auditing={starting}
             tasks={tasks}
             onOpenTask={(id) => void openTask(id)}
           />
         ) : null}
-        {checkError && <p className="brief-error audit-error">{checkError}</p>}
         <Composer
           lang={lang}
           modelLabel={boot?.model?.modelId ?? null}
