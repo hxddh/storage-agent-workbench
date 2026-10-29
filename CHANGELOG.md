@@ -1,3 +1,45 @@
+## 39.0.0 — 2026-10-29
+
+v38's tools stay; the limits, history and gaps it brought back are gone.
+
+- **No output cap.** Each model's output maximum is learned from its provider
+  again (`learnOutputLimit`); v38's fixed `min(8,192, context window)` cap,
+  which also held reasoning to about 7k tokens, is removed.
+- **A body read protects the disk.** `GetObject` and event streams stop at
+  `max_bytes`, default 1 MiB, the agent's to raise; a `Range` reads any part.
+  v38 streamed a whole object of any size to the task folder.
+- **Every account id is scrubbed.** `scrub()` replaces every 12-digit number,
+  whichever account it names (organization members, cross-account principals,
+  ids inside CloudTrail events), as the contract says. v38 replaced only the
+  caller's id and a few field names.
+- **Services are the storage and the account around it.** S3, S3 Control, STS,
+  IAM, Organizations, KMS, Access Analyzer, CloudWatch, CloudTrail, Config,
+  CloudFront, Backup, Security Hub, GuardDuty, SNS and SQS. Lambda, EC2,
+  DynamoDB, RDS, Route 53, ECR, Secrets Manager, SSM, Service Quotas, Support
+  and Cost Explorer are no longer bundled: their reads return secrets
+  (function environments, user data, console output, command output, layer
+  URLs), table items, or cost money. Reads are Get, List, Head, Describe,
+  Lookup, Search, Select, Simulate and BatchGet; STS `GetDelegatedAccessToken`
+  joins the refused credential reads.
+- **No history.** Schema 19; a database at any other version starts over, with
+  `tasks/` and `memory.sqlite`. The v17 migration, the database and `tasks/`
+  backups, the v37 notes import and the `notes` table are gone.
+- **Child agents are visible.** A `delegate` step shows the child's request,
+  every step (each opens like any other) and its text. Stopping the parent
+  stops the child.
+- **The prompt does not list the tools.** The capabilities section is gone;
+  each tool describes itself. `discover` lists the registered tools from the
+  registry, and for one operation returns its input and output member names
+  from the SDK model.
+- **Memory and methods.** Memory lists and searches return every match (no
+  100- or 500-row cap, no 500-character text cut); `%` and `_` match only
+  themselves; a document records the task that wrote it, and a recall carries
+  it. The memory file has its own schema version. A method's code and schema
+  have no size cap, and an account in an ARN is stored as `<account>`, which
+  `call` fills in.
+- **Links show where they go.** A view's link shows its host, and its URL on
+  hover.
+
 ## 38.0.0 — 2026-10-29
 
 The agent owns more of its own work, and the window shows less app machinery.

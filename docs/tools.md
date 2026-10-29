@@ -37,20 +37,17 @@ client. The input is the operation's own, with the field names the SDK uses.
 `checkCall()` runs before anything is sent.
 
 - **Services.** `s3`, `s3control`, `sts`, `iam`, `organizations`, `kms`,
-  `accessanalyzer`, `cloudwatch`, `cloudtrail`, `ec2`, `lambda`, `dynamodb`,
-  `rds`, `cloudfront`, `route53`, `config`, `securityhub`, `guardduty`, `ecr`,
-  `sns`, `sqs`, `secretsmanager`, `ssm`, `servicequotas`, `support`, `backup`
-  and `costexplorer`. `discover` lists the current set and each service's
-  operations.
+  `accessanalyzer`, `cloudwatch`, `cloudtrail`, `config`, `cloudfront`,
+  `backup`, `securityhub`, `guardduty`, `sns` and `sqs`: the storage and the
+  account around it. A service whose reads return secrets or run compute
+  (Lambda, EC2, Secrets Manager, SSM, ECR, DynamoDB) is not bundled.
+  `discover` lists the current set and each service's operations.
 - **Reads only.** The operation's name must start with `Get`, `List`, `Head`,
-  `Describe`, `Lookup`, `Search`, `Select`, `Simulate`, `BatchGet`, `Query` or
-  `Scan`. The `NEVER` list excludes reads that hand out credentials or start
-  state on the service: STS `GetSessionToken`, `GetFederationToken` and
-  `GetWebIdentityToken`, and KMS `GetParametersForImport`. Secret-store and
-  registry-credential reads are refused too: ECR `GetAuthorizationToken`,
-  Secrets Manager `GetSecretValue` and `BatchGetSecretValue`, SSM
-  `GetParameter`, `GetParameters`, `GetParametersByPath` and
-  `GetParameterHistory`. Anything else is refused. An unknown service or
+  `Describe`, `Lookup`, `Search`, `Select`, `Simulate` or `BatchGet`. The
+  `NEVER` list excludes reads that hand out credentials or start state on the
+  service: STS `GetSessionToken`, `GetFederationToken`,
+  `GetWebIdentityToken` and `GetDelegatedAccessToken`, and KMS
+  `GetParametersForImport`. Anything else is refused. An unknown service or
   operation fails with the list of services or of that service's reads.
 - **Scope.** On a scoped account, an S3 or S3 Control input whose `Bucket` is
   outside `scope.buckets` is refused. `Bucket` may be a name or a plain bucket
@@ -64,14 +61,16 @@ client. The input is the operation's own, with the field names the SDK uses.
 - **Response.** `$metadata` is dropped, dates become ISO strings, binary
   values become base64, and a field whose name says it is a policy is parsed
   from JSON or URL-encoded JSON. An object body that happens to be JSON stays
-  text. `scrub()` replaces the caller's actual 12-digit account id and account
-  fields (such as a policy principal) with `<account>` and redacts the account
-  in ARNs; other 12-digit data is left alone.
+  text. `scrub()` replaces every 12-digit number, keys included, with
+  `<account>`, whichever account it names, and `redact()` masks the account in
+  ARNs.
 - **Bodies.** A streamed body (`GetObject`) is written to
   `tasks/<conversation>/objects/<id>.bin` and the result carries a 64 KiB
-  preview and a `ref`. `max_bytes` stops the stream earlier. `more` reads any
+  preview and a `ref`. The stream stops at `max_bytes` (default 1 MiB, which
+  protects the user's disk; the agent raises it, or reads a `Range`) and says
+  `more: true` when the object goes on. `more` reads any
   offset of the stored body. An event stream (`SelectObjectContent`) returns
-  its record payloads as text up to `max_bytes`, and its other events as they
+  its record payloads as text up to `max_bytes` (default 1 MiB), and its other events as they
   came.
 - **Errors.** `describeError()` gives a service error as
   `Code (HTTP n): message`, scrubbed. A denied read is the service's
@@ -155,15 +154,17 @@ array of rows renders as a table.
 child conversation with the same read-only tools, account scope and memory,
 waits for it to settle, and returns its answer and call count as a delegate
 step. The child cannot write. Delegation is foreground: the parent waits for
-the child's answer. The child's conversation is owned by the task and is
-purged with it.
+the child's answer, and stopping the parent stops the child. The window shows
+the child's request, every step and its text inside the delegate step. The
+child's conversation is owned by the task and is purged with it.
 
 ## `discover`
 
 `discover` reads no storage. With no arguments it lists the bundled services.
 With `service` it lists that service's read operations; with `service` and
-`operation` it returns the operation's contract. With `kind: "tools"` it lists
-the built-in and agent-authored tools; with `tool` it returns one tool's
+`operation` it returns the operation's input and output member names, as the
+bundled SDK models them. With `kind: "tools"` it lists the registered tools,
+each with its own description, and the agent-authored methods; with `tool` it returns one tool's
 schema and scope.
 
 ## `more`

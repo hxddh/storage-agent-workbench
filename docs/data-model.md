@@ -2,17 +2,15 @@
 
 ## Host tables (`storage-agent.db`)
 
-`main/db.ts` holds one schema, `HOST_SCHEMA_VERSION` **18**, stored in
-`PRAGMA user_version`. A new database is created at that version. Version 17
-migrates in place to 18, which adds `agent_tools`. A database from an older
-incompatible layout is backed up beside the new one before it is cleared: every
-table goes, pi's included, and the shell renames `tasks/` on disk rather than
-deleting it.
+`main/db.ts` holds one schema, `HOST_SCHEMA_VERSION` **19**, stored in
+`PRAGMA user_version`. A new database is created at that version. A database at
+any other version is cleared and created again: every table goes, pi's
+included, and the shell deletes `tasks/` and `memory.sqlite` on disk. Nothing
+is migrated, imported or backed up.
 
 | Table | Columns |
 |---|---|
 | `providers` | `id`, `name`, `endpoint`, `region`, `force_path_style`, `access_key_id`, `secret_ref`, `session_ref`, `scope_json`, `created_at`, `auth` (`keys`/`profile`), `profile` |
-| `notes` | `id`, `text`, `created_at` (v37 only; imported once and cleared) |
 | `audit` | `id`, `conversation_id`, `tool`, `target`, `outcome`, `at` |
 | `task_meta` | `conversation_id`, `title`, `created_at`, `updated_at`, `pinned`, `model_json` |
 | `datasets` | `id`, `conversation_id`, `kind`, `path`, `rows`, `bytes`, `created_at` |
@@ -25,10 +23,6 @@ deleting it.
 plaintext. A profile account stores only the profile name, with an empty
 `secret_ref`. `scope_json` is `{ "buckets": [] }`; an empty list means every
 bucket the credentials can see.
-
-**`notes`** exists only to carry v37 notes forward. On startup `MemoryStore`
-imports each note as a user-scoped document with key `note:<id>`, then clears
-the table. The live memory is in `memory.sqlite`; no tool reads `notes`.
 
 **`agent_tools`** holds methods the agent wrote for itself. `scope` is `task`
 or `user`; a task method has a `conversation_id`, a user method has null.

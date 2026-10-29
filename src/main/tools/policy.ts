@@ -22,6 +22,8 @@ export interface ToolDeps {
   memory?: MemoryStore
   /** The projected entries of a conversation, for a delegate's child answer. */
   entries?: (conversationId: string) => Promise<UiEntry[]>
+  /** The registered tools, as each describes itself; `discover` lists them. */
+  catalog?: { name: string; description: string }[]
   lang: () => string
 }
 

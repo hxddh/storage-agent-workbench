@@ -11,7 +11,7 @@ Electron main                              Renderer (sandboxed)
   runtime     session · engine · tasks · agent · project · model
   tools       call, query, probe, more, discover, render,
               memory, tool, delegate, ask
-  s3/api.ts   read-only calls to 27 bundled services
+  s3/api.ts   read-only calls to 16 bundled services
   memory.ts   separate memory.sqlite
   analysis    one SQLite file per dataset
   updater     GitHub releases
@@ -67,26 +67,27 @@ budget or fixed output cap. Which calls to make, whether to repeat one, how
 much to read, whether to delegate, what to remember and how long to work are
 the agent's. **Stop** is the user's control.
 
-The model's output budget is a bounded default of
-`min(8,192, context window)` tokens. There is no hidden probe call to learn a
-provider's maximum. A reply that stops at the limit gets a `cut` notice.
+Each model's output maximum is learned once per launch (`learnOutputLimit` in
+`runtime/model.ts`): a one-word request offers the whole context window, and a
+provider that refuses names its maximum, which becomes the limit. A reply that
+stops at the limit gets a `cut` notice.
 
 A result longer than one piece (24,000 characters) is kept whole in the task
-folder for `more`. An object body streams to the task folder, with a 64 KiB
-preview in the result; `max_bytes` can stop the stream earlier. The agent
-reads any offset with `more`.
+folder for `more`. An object body streams to the task folder up to
+`max_bytes` (default 1 MiB, which protects the disk; the agent raises it or
+reads a `Range`), with a 64 KiB preview in the result. The agent reads any
+offset with `more`.
 
 There is no answer check. The app does not look for ungrounded names or ask
 the model to rewrite its text. A citation link that resolves opens its call; a
 link that does not resolve is shown as plain text with a tooltip.
 
-**Prompt sections** (`runtime/agent.ts`): identity, time, policy,
-capabilities, compose, memory, language. The memory digest (`buildDigest`)
+**Prompt sections** (`runtime/agent.ts`): identity, time, policy, compose,
+memory, language. The prompt does not list the tools: each describes itself
+with its schema, and `discover` lists them from the registry. The memory digest (`buildDigest`)
 names each account with its id, endpoint (or AWS), region and scope, and says
 how many memory documents exist. It does not inject memory content; the agent
-recalls with `memory`. The capabilities section names `discover`, `tool`,
-`render`, `memory`, `delegate` and `query`, and says there is no fixed plan or
-workflow.
+recalls with `memory`; a recalled document carries the task that wrote it.
 
 Each model configuration is its own provider in the shared pi-ai collection
 (`providerIdFor()`), so one task's model never replaces another task's.
@@ -97,10 +98,9 @@ Each model configuration is its own provider in the shared pi-ai collection
    `Settings`, `Vault`, `Providers`, `Staging`, `MemoryStore`, then `Runtime`
    (pi, one extension, the tool registry), `Tasks` and `Engine`, registers IPC
    and creates the window. The vault is not opened at launch.
-2. On first open of a v37 database, v37 notes are imported into
-   `memory.sqlite` once and cleared from the host table. Schema 17 migrates to
-   18 in place for `agent_tools`. A database from an older incompatible
-   layout is backed up beside the new one before it is cleared.
+2. A database at any `user_version` but 19 is cleared and created again;
+   `tasks/` and `memory.sqlite` are deleted with it. Nothing is migrated,
+   imported or backed up.
 3. `Tasks.newTask()` creates one pi conversation per task and writes
    `task_meta` with a title from the first message.
 4. `Engine.submit()` installs the task's model for this turn, configures the
@@ -203,5 +203,7 @@ No event store of our own, no second queue, no SSE, no answer tool or report
 protocol, no in-memory turn state, no prose classifier, no answer validation,
 no rule engine or verdicts, no scripted or scheduled run, no MCP bridge, no
 follow-up prompts, no background watch, no second window and no dashboard.
-Delegation is a foreground child conversation, not a second queue. pi owns the
+Delegation is a foreground child conversation, not a second queue; its steps
+show inside the parent's `delegate` step, and stopping the parent stops it.
+No migration, import or backup of an earlier layout. pi owns the
 durable loop; the product owns read-only tools and the safety boundaries.

@@ -78,7 +78,8 @@ workflow. The full contracts are in [tools.md](tools.md).
   input as the SDK names it. The result is the response as JSON, or the error
   code, HTTP status and message. A 404 such as `NoSuchBucketPolicy` is an
   answer. A streamed `GetObject` body is written to the task folder with a
-  64 KiB preview and a `ref`; `max_bytes` can stop it earlier.
+  64 KiB preview and a `ref`, up to `max_bytes` (default 1 MiB, the agent's
+  to raise).
 - **`query`**: a read-only JavaScript script for questions that span more than
   one call: every object in a bucket, every bucket, an inventory, an attached
   log. Its primitives include `call()`, `discover()`, `dataset()`,
@@ -100,7 +101,8 @@ workflow. The full contracts are in [tools.md](tools.md).
 - **`tool`**: save, list, run and delete a reusable method: a JSON Schema and a
   read-only JavaScript body. A method can be task- or user-scoped.
 - **`delegate`**: give a self-contained investigation to a child agent with the
-  same read-only tools, scope and memory, and return its answer as a step.
+  same read-only tools, scope and memory. Its steps show inside the delegate
+  step; stopping the task stops it.
 - **`ask`**: a question with up to six options. The turn ends until the user
   answers.
 
@@ -149,8 +151,8 @@ including CJK substrings, use `LIKE`.
 
 Settings fetches the provider's model list. The context window is inferred
 from the model id (unknown models get 128k), and reasoning is on at medium for
-known reasoning models and off otherwise. The output budget is a bounded
-default of `min(8,192, context window)` tokens. Every model gets the same
+known reasoning models and off otherwise. The output budget is the model's
+own maximum, learned from its provider on the first run. Every model gets the same
 tools and prompt.
 
 ## Settings

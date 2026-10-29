@@ -84,7 +84,9 @@ function plan(body) {
     const raw = (open >= 0 && close > open ? memory.text.slice(open + 1, close) : memory.text).trim()
     let value = {}
     try {
-      value = JSON.parse(raw)
+      // A recalled document carries its key, origin and time; the value is inside.
+      const doc = JSON.parse(raw)
+      value = doc && typeof doc === 'object' && 'value' in doc ? doc.value : doc
     } catch {}
     const publicName = Array.isArray(value.public) ? value.public[0] : value.public
     return {

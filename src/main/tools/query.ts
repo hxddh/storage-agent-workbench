@@ -22,7 +22,7 @@ import { viewDoc, viewText } from '@shared/view'
 import { type DatasetKind, preview, TABLES } from '../analysis/dataset'
 import { datasetBytes, importDataset, importInventoryFiles } from '../analysis/import'
 import type { ProviderConfig } from '../providers'
-import { type CallInput, callApi, operationsOf, SERVICES, scrub } from '../s3/api'
+import { type CallInput, callApi, operationShape, operationsOf, SERVICES, scrub } from '../s3/api'
 import { redact, redactView } from '../security/redact'
 import { assertInScope } from '../security/scope'
 import { checkSql } from '../sql'
@@ -175,16 +175,7 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
           const saved = await deps.db.listAgentTools(ctx.conversationId)
           return {
             tools: [
-              'call',
-              'query',
-              'probe',
-              'more',
-              'ask',
-              'discover',
-              'render',
-              'memory',
-              'tool',
-              'delegate',
+              ...(deps.catalog ?? []).map((tool) => tool.name),
               ...saved.map((row) => row.name),
             ],
           }
@@ -196,9 +187,10 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
             `Service '${service}' is not available. Available: ${SERVICES.join(', ')}.`,
           )
         const operations = operationsOf(service)
-        if (typeof a.operation === 'string' && !operations.includes(a.operation))
+        if (typeof a.operation !== 'string') return { service, operations }
+        if (!operations.includes(a.operation))
           throw new Error(`${service} has no read operation '${a.operation}'.`)
-        return { service, operations }
+        return { service, operation: a.operation, ...operationShape(service, a.operation) }
       },
     },
     {
@@ -226,6 +218,7 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
               : {}),
             scope,
             conversationId,
+            origin: ctx.conversationId,
           })
         }
         if (a.action === 'get') {
@@ -240,7 +233,6 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
             conversationId,
             ...(typeof a.prefix === 'string' ? { prefix: a.prefix } : {}),
             ...(typeof a.tag === 'string' ? { tag: a.tag } : {}),
-            limit: 100,
           })
         if (a.action === 'query')
           return memory.query(

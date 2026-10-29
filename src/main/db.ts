@@ -1,23 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 /**
- * The schema this version writes.
- *
- * 17 → 18 is an in-place migration (agent tools). A database from an older,
- * incompatible layout is backed up by the shell and then cleared; it is never
- * silently discarded.
+ * The one schema this version writes. A database at any other version is
+ * cleared and created again, pi's tables and `tasks/` with it.
  */
-export const HOST_SCHEMA_VERSION = 18
-
-/** Whether opening this database would clear an older, incompatible layout. */
-export async function schemaNeedsReset(raw: NodeSqliteDatabase): Promise<boolean> {
-  const row = await raw.get<{ user_version: number }>('PRAGMA user_version')
-  const tables = await raw.all<{ name: string }>(
-    "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
-  )
-  const version = row?.user_version ?? 0
-  return tables.length > 0 && (version < 17 || version > HOST_SCHEMA_VERSION)
-}
+export const HOST_SCHEMA_VERSION = 19
 
 export interface ProviderRow {
   id: string
@@ -32,12 +19,6 @@ export interface ProviderRow {
   created_at: string
   auth: 'keys' | 'profile'
   profile: string | null
-}
-
-export interface NoteRecord {
-  id: string
-  text: string
-  created_at: string
 }
 
 export interface DatasetRecord {
@@ -76,12 +57,6 @@ CREATE TABLE IF NOT EXISTS providers (
   created_at TEXT NOT NULL,
   auth TEXT NOT NULL DEFAULT 'keys',
   profile TEXT
-);
-
-CREATE TABLE IF NOT EXISTS notes (
-  id TEXT PRIMARY KEY,
-  text TEXT NOT NULL,
-  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS audit (
@@ -125,7 +100,6 @@ CREATE TABLE IF NOT EXISTS agent_tools (
   UNIQUE(scope, conversation_id, name)
 );
 
-CREATE INDEX IF NOT EXISTS notes_created ON notes (created_at);
 CREATE INDEX IF NOT EXISTS datasets_conversation ON datasets (conversation_id);
 CREATE INDEX IF NOT EXISTS agent_tools_name ON agent_tools (name);
 
@@ -163,9 +137,7 @@ export class AppDb {
       "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
     )
     const version = row?.user_version ?? 0
-    // 17 is the only layout this version migrates in place. Older layouts are
-    // incompatible; the shell backs them up before this class clears them.
-    const reset = tables.length > 0 && (version < 17 || version > HOST_SCHEMA_VERSION)
+    const reset = tables.length > 0 && version !== HOST_SCHEMA_VERSION
     if (reset) {
       await raw.exec('PRAGMA foreign_keys = OFF')
       // Shadow tables of an FTS table go with it; drop the virtual tables first.
@@ -222,32 +194,6 @@ export class AppDb {
 
   async deleteProvider(id: string): Promise<void> {
     await this.raw.run('DELETE FROM providers WHERE id = ?', id)
-  }
-
-  // -- notes ----------------------------------------------------------------
-
-  async insertNote(note: Omit<NoteRecord, 'id' | 'created_at'>): Promise<NoteRecord> {
-    const record: NoteRecord = {
-      ...note,
-      id: randomUUID(),
-      created_at: new Date().toISOString(),
-    }
-    await this.raw.run(
-      'INSERT INTO notes (id, text, created_at) VALUES (?, ?, ?)',
-      record.id,
-      record.text,
-      record.created_at,
-    )
-    return record
-  }
-
-  /** Every note, newest first. */
-  async listNotes(): Promise<NoteRecord[]> {
-    return this.raw.all<NoteRecord>('SELECT * FROM notes ORDER BY created_at DESC')
-  }
-
-  async clearNotes(): Promise<void> {
-    await this.raw.run('DELETE FROM notes')
   }
 
   // -- agent-authored tools -------------------------------------------------

@@ -1,18 +1,5 @@
-import { operationsOf, SERVICES } from '../s3/api'
+import { operationShape, operationsOf, SERVICES } from '../s3/api'
 import { agentTool, type ToolDeps, Type } from './policy'
-
-const BUILTIN = [
-  ['call', 'Run one read-only service operation.'],
-  ['query', 'Run a read-only JavaScript script over storage and datasets.'],
-  ['probe', 'Send one unsigned request to the account endpoint and read its answer.'],
-  ['more', 'Read further into a long result or an object body.'],
-  ['ask', 'Ask the user a question and end the turn.'],
-  ['discover', 'List services, operations, agent tools, and their contracts.'],
-  ['render', 'Compose a view from a declarative block tree.'],
-  ['memory', 'Read and write durable JSON memory.'],
-  ['tool', 'Save, list, run and delete a method you wrote.'],
-  ['delegate', 'Give a self-contained task to a child agent.'],
-] as const
 
 /** What the agent can ask the environment; it decides when to ask. */
 export function discoverTool(deps: ToolDeps) {
@@ -43,7 +30,11 @@ export function discoverTool(deps: ToolDeps) {
           updatedAt: row.updated_at,
         }))
         const tools = [
-          ...BUILTIN.map(([name, description]) => ({ name, description, scope: 'builtin' })),
+          ...(deps.catalog ?? []).map(({ name, description }) => ({
+            name,
+            description,
+            scope: 'builtin',
+          })),
           ...saved,
         ]
         if (args.tool) {
@@ -75,23 +66,16 @@ export function discoverTool(deps: ToolDeps) {
           throw new Error(
             `${service} has no read operation '${args.operation}'. Reads: ${operations.join(', ')}.`,
           )
+        const shape = operationShape(service, args.operation)
+        const value = {
+          service,
+          operation: args.operation,
+          input: shape.input,
+          output: shape.output,
+        }
         return {
-          model: JSON.stringify(
-            {
-              service,
-              operation: args.operation,
-              readOnly: true,
-              input: 'The operation input, with the AWS SDK field names.',
-              pagination: 'Pass the service token (ContinuationToken, NextToken, Marker) yourself.',
-            },
-            null,
-            1,
-          ),
-          view: {
-            kind: 'raw' as const,
-            title: `${service} ${args.operation}`,
-            value: { service, operation: args.operation, readOnly: true },
-          },
+          model: JSON.stringify(value, null, 1),
+          view: { kind: 'raw' as const, title: `${service} ${args.operation}`, value },
         }
       }
       return {

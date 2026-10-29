@@ -34,14 +34,6 @@ import { ChartView, TableView, ToolViewBody } from './Views'
 
 type Tool = Extract<ThreadItem, { kind: 'tool' }>
 
-/** The text before Markdown loads: no link targets or emphasis marks on show. */
-function plain(text: string): string {
-  return text
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/`([^`]*)`/g, '$1')
-}
-
 function Mark({ status }: { status: ToolStatus }) {
   if (status === 'running')
     return <LoaderCircle className="step-mark pulse-icon" size={13} aria-hidden="true" />
@@ -124,10 +116,13 @@ function ToolStep({
           {item.view?.kind === 'render' && <Blocks doc={item.view.doc} t={t} />}
           {item.view?.kind === 'delegate' && (
             <div className="delegate-view">
-              <p className="delegate-answer">{plain(item.view.answer) || t.runNoAnswer}</p>
-              <p className="quiet">
-                {item.view.status} · {item.view.calls ?? 0} call(s)
-              </p>
+              <ChildThread
+                conversationId={item.view.conversationId}
+                task={item.view.task}
+                t={t}
+                lang={lang}
+                now={now}
+              />
             </div>
           )}
           {item.view?.kind === 'memory' && (
@@ -153,6 +148,82 @@ function ToolStep({
         </div>
       )}
     </li>
+  )
+}
+
+/** A child's links: a web link opens outside; a link to one of its calls stays text. */
+const CHILD_LINKS = {
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) =>
+    href && /^https?:\/\//i.test(href) ? (
+      <a href={href} target="_blank" rel="noreferrer" title={href}>
+        {children}
+      </a>
+    ) : (
+      children
+    ),
+}
+
+/** A child agent's conversation where the delegate step happened: its request, steps and text. */
+function ChildThread({
+  conversationId,
+  task,
+  t,
+  lang,
+  now,
+}: {
+  conversationId: string
+  task: string
+  t: Dict
+  lang: Lang
+  now: number
+}) {
+  const [items, setItems] = useState<ThreadItem[] | null>(null)
+  const [opened, setOpened] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    let live = true
+    void window.agent
+      .childEntries(conversationId)
+      .then((entries) => live && setItems(thread(entries)))
+      .catch(() => live && setItems([]))
+    return () => {
+      live = false
+    }
+  }, [conversationId])
+  if (!items) return <p className="quiet">{t.runWorkWaiting}</p>
+  return (
+    <ol className="steps child-steps" aria-label={t.childSteps}>
+      <li className="child-request">{task}</li>
+      {items.map((item) =>
+        item.kind === 'thought' ? (
+          <Thought key={item.id} item={item} t={t} />
+        ) : item.kind === 'tool' ? (
+          <ToolStep
+            key={item.id}
+            item={item}
+            open={opened.has(item.id)}
+            onToggle={() =>
+              setOpened((current) => {
+                const next = new Set(current)
+                if (next.has(item.id)) next.delete(item.id)
+                else next.add(item.id)
+                return next
+              })
+            }
+            t={t}
+            lang={lang}
+            now={now}
+          />
+        ) : item.kind === 'text' ? (
+          <li className="child-text prose" key={item.id}>
+            <Markdown text={item.text} components={CHILD_LINKS} />
+          </li>
+        ) : item.kind === 'notice' ? (
+          <li className="quiet" key={item.id}>
+            {item.text}
+          </li>
+        ) : null,
+      )}
+    </ol>
   )
 }
 

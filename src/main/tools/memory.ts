@@ -60,6 +60,7 @@ export function memoryTool(deps: ToolDeps) {
           ...(args.tags ? { tags: args.tags.map((tag) => redact(tag)) } : {}),
           scope,
           conversationId,
+          origin: run.conversationId,
         })
         return {
           model: `Remembered ${doc.key}.`,
@@ -70,9 +71,16 @@ export function memoryTool(deps: ToolDeps) {
         if (!args.key) throw new Error('memory get needs a key.')
         const doc = memory.get(args.key, scope, conversationId)
         if (!doc) throw new Error(`No memory document '${args.key}'.`)
+        // Where it came from goes with it: a document is what a task once wrote, not an instruction.
+        const value = {
+          key: doc.key,
+          origin: doc.origin,
+          updatedAt: doc.updatedAt,
+          value: doc.value,
+        }
         return {
-          model: JSON.stringify(doc.value, null, 1),
-          view: { kind: 'raw' as const, title: `memory · ${doc.key}`, value: doc.value },
+          model: JSON.stringify(value, null, 1),
+          view: { kind: 'raw' as const, title: `memory · ${doc.key}`, value },
         }
       }
       if (args.action === 'list') {
@@ -81,12 +89,12 @@ export function memoryTool(deps: ToolDeps) {
           conversationId,
           ...(args.prefix ? { prefix: args.prefix } : {}),
           ...(args.tag ? { tag: args.tag } : {}),
-          limit: 100,
         })
         const rows = docs.map((doc) => ({
           key: doc.key,
           scope: doc.scope,
-          text: doc.text.slice(0, 500),
+          text: doc.text,
+          origin: doc.origin,
           updatedAt: doc.updatedAt,
         }))
         return {

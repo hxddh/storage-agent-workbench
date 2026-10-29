@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 38.0.0**. Read
+> Implementation contract for **Storage Agent 39.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md`,
 > `docs/data-model.md` and `docs/tools.md` before changing product structure.
 > The code and its tests are authoritative; release notes and the changelog
@@ -41,23 +41,27 @@ said. A **turn** is one user message and the agent's work on it.
    to decide and say.
 6. Capabilities are not fixed in code. `call` reaches every operation of every
    bundled service client whose name says it reads (Get, List, Head, Describe,
-   Lookup, Search, Select, Simulate, BatchGet, Query, Scan), minus the few that
-   hand out credentials. `discover` lists the current services and operations.
+   Lookup, Search, Select, Simulate, BatchGet), minus the few that hand out
+   credentials. The bundled services are the storage and the account around
+   it: S3, S3 Control, STS, IAM, Organizations, KMS, Access Analyzer,
+   CloudWatch, CloudTrail, Config, CloudFront, Backup, Security Hub, GuardDuty,
+   SNS and SQS; a service whose reads return secrets or compute (Lambda, EC2,
+   Secrets Manager, SSM, ECR, DynamoDB) is not bundled. `discover` lists the current services and operations.
    `tool` lets the agent write a reusable read-only method; `render` lets it
    compose a view; `memory` stores arbitrary JSON; `delegate` gives an
    independent investigation to a child with the same tools and scope. No list
    of checks or prescribed workflow stands between the agent and its work.
 7. Account ids never reach the model, the window, a log or SQLite. Every
    response and every tool's error text pass through `scrub()`, which replaces
-   the caller's actual 12-digit id and account fields (such as a policy
-   principal) with `<account>` and redacts the account in ARNs; other 12-digit
-   data is not rewritten. The agent writes `<account>` where the caller's id
+   every 12-digit number with `<account>`, keys included, whichever account it
+   names; `redact()` masks the account in any ARN. The agent writes `<account>` where the caller's id
    belongs and `call` fills it in (S3 Control's `AccountId` always); the id is
    used for that call only.
 8. The conversation shows what happened, in order: the user's messages, the
    agent's text, provider reasoning as returned, and every tool call — failed
    and refused ones, and calls to a tool that does not exist — with its shaped
-   result and exactly what the agent received. A tool's `model` text carries
+   result and exactly what the agent received. A delegated child's calls are
+   shown inside the `delegate` step, in the same way. A tool's `model` text carries
    what its view shows; when the agent got only the first piece, the step says
    so. The app never writes into the agent's answer, rewrites it, corrects it,
    validates its claims or summarises it. A citation that resolves opens its
@@ -72,14 +76,15 @@ said. A **turn** is one user message and the agent's work on it.
     check, scheduled check or demo storage: without a model the window says so
     and asks for one; without an account it asks for one.
 11. The harness never overrides the agent: no round ceiling, no working budget,
-    no fixed timeout, no fixed output cap. Which calls to make, whether to
+    no fixed timeout, no fixed output cap (the model's own maximum is learned
+    from its provider, `learnOutputLimit`). Which calls to make, whether to
     repeat one, how much to read, whether to delegate, what to remember and
     how long to work are the agent's; Stop is the user's control. The prompt
     states the hard rules; it does not list the tools or prescribe a workflow.
     A default exists only where it protects the user's machine, and the agent
     can change it: the sandbox's memory (`memory_mb`) and how much of a body
-    one read holds (`max_bytes`). The model's output budget is a bounded
-    default of `min(8,192, context window)` tokens.
+    one read holds (`max_bytes`, default 1 MiB). Stopping the parent stops a
+    delegated child.
 12. The app does not speak for the user. Home has no canned prompts; Continue
     sends `Continue.`
 
@@ -90,7 +95,8 @@ One engine, one log, one projection (`docs/architecture.md`).
 - **Engine** (`runtime/engine.ts`): every turn is pi's durable loop. `submit`,
   `steer`, `stop`, `retry` (the last user message again), `continueTask`
   (`sa.resume`); each turn settles in one place (`settle`): failure notice,
-  search index, digest.
+  search index, digest. A run learns its model's output limit first
+  (`learnOutputLimit`).
 - **Session** (`runtime/session.ts`): opens pi once with the one extension and
   the tool registry; durable reads; the per-task model; digest.
 - **Tasks** (`runtime/tasks.ts`): task list, the one watched task, task graph,
@@ -130,24 +136,26 @@ plan and writes any change in its own words. A new storage tool must say why
 `call` or `query` cannot do the job; a new service is a new SDK client in
 `s3/api.ts`, not a new tool.
 
-Prompt sections: identity, time, policy (the hard rules), capabilities,
-compose, memory digest, language. The digest names the accounts (their ids are
+Prompt sections: identity, time, policy (the hard rules), compose, memory
+digest, language. The tools describe themselves; `discover` lists them from
+the registry. The digest names the accounts (their ids are
 tool arguments) and how many memory documents exist; it does not inject their
-content. The model may link a call as `[1](#ev-<id>)`; a link opens that call
+content. A memory document records the task that wrote it, and reaches the
+model with it, inside `<untrusted-data>`. The model may link a call as `[1](#ev-<id>)`; a link opens that call
 in place. Provider reasoning is shown in full, as returned. Delegation is a
 foreground child conversation with the same tools and scope; it is not a
 second queue.
 
 ## Data
 
-Host tables in `storage-agent.db`: `providers`, `notes` (v37 only, imported
-once and cleared), `audit`, `task_meta`, `datasets`, `agent_tools`,
-`search_docs` (+ FTS5 trigram). pi's tables are prefixed `pi_`. `db.ts` holds
-schema **18**; 17 migrates in place for `agent_tools`. A database from an older
-incompatible layout is backed up beside the new one before it is cleared, and
-the shell renames `tasks/` rather than deleting it. The agent's memory is
-`memory.sqlite` (`docs` table); task-scoped documents are purged with the task.
-A note from v37 becomes a user memory document with key `note:<id>`.
+Host tables in `storage-agent.db`: `providers`, `audit`, `task_meta`,
+`datasets`, `agent_tools`, `search_docs` (+ FTS5 trigram). pi's tables are
+prefixed `pi_`. `db.ts` holds one schema at `user_version` **19**. A database
+at any other version is cleared and created again, pi's tables, `tasks/` and
+`memory.sqlite` with it: the app carries nothing from an earlier layout, keeps
+no backup, and no code reads one. The agent's memory is `memory.sqlite`
+(`docs` table, its own `user_version` **1**); task-scoped documents are purged
+with the task.
 
 Entry kinds and payloads are in `docs/data-model.md` (`sa.run`, `sa.steer`,
 `sa.resume`, `sa.notice`). Deleting a task purges its pi rows, host task rows,
@@ -160,7 +168,8 @@ datasets, audit rows, task memory documents, task methods, search rows and
 conversation (messages, inline steps, what each call returned, clarify,
 notices, Stop/Continue/Retry) and the keyboard map are specified in
 `docs/design.md`. A `call` or `probe` step opens as the response's JSON; a
-`render` step draws its view; a `delegate` step shows the child's answer.
+`render` step draws its view; a `delegate` step shows the child's request,
+steps and text. A view's link shows its host, and its URL on hover.
 Settings has five panes: Model, Storage accounts, Memory, Methods and
 Appearance; its close control is an X at the top-left. Design tokens live in
 `src/renderer/styles.css`; never use a raw colour in a component.

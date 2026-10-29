@@ -5,6 +5,7 @@ const api: AgentApi = {
   bootstrap: () => ipcRenderer.invoke('agent:bootstrap'),
   openTask: (id, focus) => ipcRenderer.invoke('agent:openTask', id, focus),
   older: (taskId, before) => ipcRenderer.invoke('agent:older', taskId, before),
+  childEntries: (id) => ipcRenderer.invoke('agent:childEntries', id),
   createTask: (text, attachments, context) =>
     ipcRenderer.invoke('agent:createTask', text, attachments, context),
   send: (taskId, text, attachments, context) =>

@@ -160,6 +160,29 @@ describe('one read-only call', () => {
     expect(JSON.parse(sent(part.text)).Body).toMatchObject({ text: 'hello', more: true })
   })
 
+  it('stops a body read at 1 MiB unless the agent asks for more', async () => {
+    const first = await call({
+      service: 's3',
+      operation: 'GetObject',
+      input: { Bucket: 'cors-open', Key: 'large.txt' },
+    })
+    const bodyOf = (result: { details: unknown }) =>
+      (result.details as { view: { value: { Body: Record<string, unknown> } } }).view.value.Body
+    expect(bodyOf(first)).toMatchObject({
+      bytesRead: 1024 * 1024,
+      more: true,
+    })
+    const whole = await call({
+      service: 's3',
+      operation: 'GetObject',
+      input: { Bucket: 'cors-open', Key: 'large.txt' },
+      max_bytes: 4 * 1024 * 1024,
+    })
+    const body = bodyOf(whole)
+    expect(body.bytesRead).toBe(3 * 1024 * 1024)
+    expect(body.more).toBeUndefined()
+  })
+
   it('streams a body to the task folder and reads it back with more', async () => {
     const all = await call({
       service: 's3',
@@ -186,17 +209,15 @@ describe('one read-only call', () => {
       /not a read/,
     )
     expect(() =>
-      checkCall(config, { service: 'secretsmanager', operation: 'GetSecretValue' }),
+      checkCall(config, { service: 'sts', operation: 'GetDelegatedAccessToken' }),
     ).toThrow(/not a read/)
-    expect(() => checkCall(config, { service: 'ssm', operation: 'GetParameter' })).toThrow(
-      /not a read/,
-    )
-    expect(() => checkCall(config, { service: 'ecr', operation: 'GetAuthorizationToken' })).toThrow(
-      /not a read/,
-    )
-    expect(() => checkCall(config, { service: 'dynamodb', operation: 'Query' })).not.toThrow()
-    expect(() => checkCall(config, { service: 'dynamodb', operation: 'Scan' })).not.toThrow()
-    expect(operationsOf('dynamodb')).toEqual(expect.arrayContaining(['Query', 'Scan']))
+    for (const service of ['secretsmanager', 'ssm', 'lambda', 'ec2', 'ecr', 'dynamodb'])
+      expect(() => checkCall(config, { service, operation: 'GetAnything' })).toThrow(
+        /service must be one of/,
+      )
+    expect(() =>
+      checkCall(config, { service: 'config', operation: 'BatchGetResourceConfig' }),
+    ).not.toThrow()
     expect(() => checkCall(config, { service: 's3', operation: 'GetNothing' })).toThrow(
       /no operation/,
     )
@@ -258,17 +279,12 @@ describe('one read-only call', () => {
     ).toEqual({ Owner: 'arn:aws:iam::<account>:root' })
   })
 
-  it('keeps a 12-digit object key or value that is not the account id', () => {
-    expect(scrub({ key: '123456789012', body: 'at 202610291234' })).toEqual({
-      key: '123456789012',
-      body: 'at 202610291234',
-    })
-  })
-
-  it('removes an account id named as a policy principal', () => {
-    expect(scrub({ Principal: { AWS: '999999999999' }, key: '999999999999' })).toEqual({
-      Principal: { AWS: '<account>' },
-      key: '999999999999',
+  it('replaces every account id, whichever account it names, keys included', () => {
+    expect(
+      scrub({ Accounts: [{ Id: '999999999999' }], Principal: { AWS: '111111111111' } }),
+    ).toEqual({ Accounts: [{ Id: '<account>' }], Principal: { AWS: '<account>' } })
+    expect(scrub({ '222222222222': 'CloudTrailEvent recipientAccountId 333333333333' })).toEqual({
+      '<account>': 'CloudTrailEvent recipientAccountId <account>',
     })
   })
 

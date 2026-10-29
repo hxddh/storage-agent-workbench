@@ -5,7 +5,7 @@ import { agentTool, providerParam, type ToolDeps, Type } from './policy'
 export function callTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'call',
-    description: `Call one read-only operation of the account's storage or an AWS service the app bundles (${SERVICES.join(', ')}), with the operation's own input as the AWS SDK names it, and get the service's response as JSON. Any operation named Get, List, Head, Describe, Lookup, Search, Select, Simulate, BatchGet, Query or Scan runs; nothing else does. Examples: s3 ListBuckets, s3 ListObjectsV2 {Bucket, Prefix, ContinuationToken}, s3 GetBucketPolicy {Bucket}, s3 GetObject {Bucket, Key, Range}, s3control GetPublicAccessBlock, iam GetAccountAuthorizationDetails, organizations ListPoliciesForTarget, cloudwatch GetMetricData, cloudtrail LookupEvents. Account ids appear as <account>; write <account> in an input where the caller's account id belongs. A custom-endpoint account answers every service at its own endpoint. A body (GetObject) streams to the task folder; the result carries a preview and a token \`more\` can read at any offset. max_bytes, when given, stops the stream earlier. A failed call returns the service's error code, HTTP status and message.`,
+    description: `Call one read-only operation of the account's storage or an AWS service the app bundles (${SERVICES.join(', ')}), with the operation's own input as the AWS SDK names it, and get the service's response as JSON. Any operation named Get, List, Head, Describe, Lookup, Search, Select, Simulate or BatchGet runs, except the few that hand out credentials; nothing else does. Examples: s3 ListBuckets, s3 ListObjectsV2 {Bucket, Prefix, ContinuationToken}, s3 GetBucketPolicy {Bucket}, s3 GetObject {Bucket, Key, Range}, s3control GetPublicAccessBlock, iam GetAccountAuthorizationDetails, organizations ListPoliciesForTarget, cloudwatch GetMetricData, cloudtrail LookupEvents. Account ids appear as <account>; write <account> in an input where the caller's account id belongs. A custom-endpoint account answers every service at its own endpoint. A body (GetObject) streams to the task folder; the result carries a preview and a token \`more\` can read at any offset. A body read stops at max_bytes (default 1 MiB, yours to raise); a Range reads any part of an object. A failed call returns the service's error code, HTTP status and message.`,
     parameters: Type.Object({
       provider_id: providerParam,
       service: Type.String({ description: `One of ${SERVICES.join(', ')}.` }),
@@ -19,7 +19,10 @@ export function callTool(deps: ToolDeps) {
         Type.String({ description: "The region to call; default the account's." }),
       ),
       max_bytes: Type.Optional(
-        Type.Integer({ minimum: 0, description: 'For a body: read at most this many bytes.' }),
+        Type.Integer({
+          minimum: 0,
+          description: 'For a body or event stream: read at most this many bytes (default 1 MiB).',
+        }),
       ),
     }),
     target: (args) => {

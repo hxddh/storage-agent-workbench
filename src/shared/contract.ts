@@ -43,12 +43,6 @@ export interface Table {
   truncated?: boolean
 }
 
-export interface NoteRow {
-  id: string
-  text: string
-  createdAt: string
-}
-
 /** A method the agent wrote for itself. */
 export interface AgentToolRow {
   id: string
@@ -63,7 +57,10 @@ export interface AgentToolRow {
 }
 
 /** A memory document, as Settings lists it. */
-export interface MemoryRow extends NoteRow {
+export interface MemoryRow {
+  id: string
+  text: string
+  createdAt: string
   key: string
   scope: 'task' | 'user'
 }
@@ -99,6 +96,8 @@ export type ToolView =
   | {
       kind: 'delegate'
       title: string
+      /** What the parent asked the child. */
+      task: string
       conversationId: string
       answer: string
       status: 'done' | 'failed' | 'stopped'
@@ -401,6 +400,8 @@ export interface AgentApi {
     taskId: string,
     before: string,
   ): Promise<{ entries: UiEntry[]; hasOlder: boolean; cursor: string | null }>
+  /** A delegated child agent's conversation, every step of it. */
+  childEntries(conversationId: string): Promise<UiEntry[]>
   createTask(text: string, attachments: string[], context?: ContextRef[]): Promise<TaskView>
   send(taskId: string, text: string, attachments: string[], context?: ContextRef[]): Promise<void>
   /** Use a different model for this task's next run; null restores Settings. */
