@@ -9,8 +9,7 @@
 import { configure } from '@earendil-works/pi-durable'
 import type { AttachmentRef, ContextRef, NoticeCode } from '@shared/contract'
 import { escapeTags } from '../security/redact'
-import { MAX_ROUNDS, runView } from './agent'
-import { installModel } from './model'
+import { installModel, learnOutputLimit } from './model'
 import type { RunData } from './project'
 import { CONTEXT, type RunOutcome, type Runtime } from './session'
 import type { Tasks } from './tasks'
@@ -116,19 +115,24 @@ export class Engine {
     if (chosen && chosen.provider !== stored.provider && !chosen.baseUrl)
       throw new Error('This task model needs a base URL.')
     // The model is installed for this run only; a task's choice never leaks into another task.
+    const effective = chosen
+      ? {
+          ...stored,
+          provider: chosen.provider,
+          modelId: chosen.modelId,
+          baseUrl: chosen.baseUrl ?? stored.baseUrl,
+          thinking: chosen.thinking,
+          ...(chosen.provider !== stored.provider ? { keyRef: '' } : {}),
+        }
+      : stored
+    const limit = await learnOutputLimit(this.deps.models, effective, this.deps.vault)
     const model = installModel(
       this.deps.models,
-      chosen
-        ? {
-            ...stored,
-            provider: chosen.provider,
-            modelId: chosen.modelId,
-            baseUrl: chosen.baseUrl ?? stored.baseUrl,
-            thinking: chosen.thinking,
-            ...(chosen.provider !== stored.provider ? { keyRef: '' } : {}),
-          }
-        : stored,
+      effective,
       this.deps.vault,
+      undefined,
+      undefined,
+      limit,
     )
     await this.runtime.pi.commit(
       (tx) =>
@@ -172,9 +176,6 @@ export class Engine {
       )
     } finally {
       if (outcome === 'failed') this.runtime.failed.add(taskId)
-      const records = await this.runtime.records(taskId)
-      const view = records ? runView(records) : null
-      if (view && view.rounds > MAX_ROUNDS) await this.notice(conversation, 'budget', 'warn')
       await this.deps.db.touchTask(taskId)
       await this.tasks.index(taskId).catch(() => undefined)
       await this.runtime.refreshDigest()

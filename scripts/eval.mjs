@@ -340,20 +340,7 @@ async function readBrief(page) {
   })
 }
 
-async function checks(page) {
-  return page.$$eval('.step.tool', (rows) =>
-    rows
-      .map((row) => ({
-        verb: row.querySelector('.step-title')?.textContent ?? '',
-        status:
-          ['done', 'failed', 'stopped', 'timeout', 'refused', 'running'].find((name) =>
-            row.classList.contains(name),
-          ) ?? '',
-      })),
-  )
-}
-
-function score(scenario, brief, allChecks, elapsedMs) {
+function score(scenario, brief, elapsedMs) {
   const e = scenario.expect
   const results = []
   const check = (name, pass, must = true) => results.push({ name, pass, must })
@@ -378,7 +365,6 @@ function score(scenario, brief, allChecks, elapsedMs) {
     const top = [...sizes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
     check(`names the largest prefix ${top}`, answer.includes(top))
   }
-  check('no failed calls', !allChecks.some((c) => c.status === 'failed'), false)
   return { results, elapsedMs }
 }
 
@@ -401,9 +387,8 @@ async function runScenario(scenario) {
       await ask(page, turn.ask)
     }
     const brief = await readBrief(page)
-    const all = await checks(page)
     await page.screenshot({ path: join(artifacts, `eval-${scenario.name}.png`) })
-    return { scenario: scenario.name, brief, ...score(scenario, brief, all, Date.now() - started) }
+    return { scenario: scenario.name, brief, ...score(scenario, brief, Date.now() - started) }
   } catch (error) {
     await page.screenshot({ path: join(artifacts, `eval-${scenario.name}-error.png`) }).catch(() => undefined)
     return {

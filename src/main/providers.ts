@@ -14,8 +14,8 @@ import { STSClient } from '@aws-sdk/client-sts'
 import { fromIni } from '@aws-sdk/credential-provider-ini'
 import type { Account, AccountInput } from '@shared/contract'
 import type { AppDb, ProviderRow } from './db'
+import { scrub } from './s3/api'
 import { detectProviderKind } from './s3/capabilities'
-import { scrub } from './s3/raw'
 import { maskKey } from './security/redact'
 import type { Vault } from './security/vault'
 
@@ -79,37 +79,39 @@ export function awsProfiles(env: NodeJS.ProcessEnv = process.env): string[] {
 }
 
 /**
- * Test seam: an AWS emulator (moto, LocalStack) that also answers STS, S3
- * Control and CloudWatch. Unset in the app, where only an account without a
- * custom endpoint is AWS.
- */
-const AWS_EMULATOR = process.env.STORAGE_AGENT_AWS_ENDPOINT || ''
-
-/**
- * S3 Control puts the account id in the host name (`<account>.s3-control…`); an
- * emulator on an address cannot answer that, so its endpoint is fixed.
+ * S3 Control puts the account id in the host name (`<account>.s3-control…`); a
+ * custom endpoint on an address cannot answer that, so its endpoint is fixed.
  */
 export function emulatorControl(
   options: Record<string, unknown>,
-  endpoint = AWS_EMULATOR,
+  endpoint: string,
 ): S3ControlClient {
   return new S3ControlClient({ ...options, endpointProvider: () => ({ url: new URL(endpoint) }) })
 }
 
+/** Any bundled service client: they all send commands and can be destroyed. */
+export interface Client {
+  send(command: never, options?: { abortSignal?: AbortSignal }): Promise<unknown>
+  destroy(): void
+}
+
+const SERVICE_CLIENTS: Record<string, (options: Record<string, unknown>) => Client> = {
+  s3control: (o) => new S3ControlClient(o),
+  sts: (o) => new STSClient(o),
+  iam: (o) => new IAMClient(o),
+  organizations: (o) => new OrganizationsClient(o),
+  kms: (o) => new KMSClient(o),
+  accessanalyzer: (o) => new AccessAnalyzerClient(o),
+  cloudwatch: (o) => new CloudWatchClient(o),
+  cloudtrail: (o) => new CloudTrailClient(o),
+}
+
+const GLOBAL = new Set(['iam', 'organizations'])
+
 export class Providers {
   private readonly names = new Map<string, { at: number; names: string[] }>()
   private readonly clients = new Map<string, S3Client>()
-  private readonly services = new Map<
-    string,
-    | STSClient
-    | S3ControlClient
-    | CloudWatchClient
-    | IAMClient
-    | KMSClient
-    | AccessAnalyzerClient
-    | CloudTrailClient
-    | OrganizationsClient
-  >()
+  private readonly services = new Map<string, Client>()
 
   constructor(
     private readonly db: AppDb,
@@ -261,11 +263,6 @@ export class Providers {
     return client
   }
 
-  /** An AWS account: the account-wide and CloudWatch reads apply. */
-  isAws(provider: ProviderConfig): boolean {
-    return provider.kind === 'aws'
-  }
-
   private credentialsOf(provider: ProviderConfig) {
     return provider.credentials.kind === 'profile'
       ? fromIni({ profile: provider.credentials.profile })
@@ -278,68 +275,35 @@ export class Providers {
         }
   }
 
-  private service<
-    T extends
-      | STSClient
-      | S3ControlClient
-      | CloudWatchClient
-      | IAMClient
-      | KMSClient
-      | AccessAnalyzerClient
-      | CloudTrailClient,
-  >(
-    provider: ProviderConfig,
-    kind: string,
-    region: string,
-    make: (options: Record<string, unknown>) => T,
-  ): T {
-    const key = `${provider.id}:${kind}:${region}`
+  /**
+   * The client of one bundled service for an account and region. A custom
+   * endpoint answers every service itself (or says it does not implement it);
+   * its credentials are never sent to AWS.
+   */
+  clientFor(provider: ProviderConfig, service: string, region: string): Client {
+    if (service === 's3') return this.client(provider, region)
+    const make = SERVICE_CLIENTS[service]
+    if (!make) throw new Error(`Unknown service ${service}.`)
+    // IAM and Organizations are global on AWS; their one endpoint is us-east-1.
+    const target = !provider.endpoint && GLOBAL.has(service) ? 'us-east-1' : region
+    const key = `${provider.id}:${service}:${target}`
     const cached = this.services.get(key)
-    if (cached) return cached as T
-    const client = make({
-      region,
+    if (cached) return cached
+    const endpoint = provider.endpoint || undefined
+    const options: Record<string, unknown> = {
+      region: target,
       credentials: this.credentialsOf(provider),
       maxAttempts: 3,
-      ...(AWS_EMULATOR && provider.endpoint === AWS_EMULATOR ? { endpoint: AWS_EMULATOR } : {}),
-    })
+      ...(endpoint ? { endpoint } : {}),
+    }
+    const client =
+      service === 's3control' && endpoint ? emulatorControl(options, endpoint) : make(options)
     this.services.set(key, client)
     return client
   }
 
   sts(provider: ProviderConfig): STSClient {
-    return this.service(provider, 'sts', provider.region || 'us-east-1', (o) => new STSClient(o))
-  }
-
-  control(provider: ProviderConfig): S3ControlClient {
-    return this.service(provider, 'control', provider.region || 'us-east-1', (o) =>
-      AWS_EMULATOR && provider.endpoint === AWS_EMULATOR
-        ? emulatorControl(o)
-        : new S3ControlClient(o),
-    )
-  }
-
-  cloudwatch(provider: ProviderConfig, region: string): CloudWatchClient {
-    return this.service(provider, 'cloudwatch', region, (o) => new CloudWatchClient(o))
-  }
-
-  iam(provider: ProviderConfig): IAMClient {
-    return this.service(provider, 'iam', 'us-east-1', (o) => new IAMClient(o))
-  }
-
-  organizations(provider: ProviderConfig): OrganizationsClient {
-    return this.service(provider, 'organizations', 'us-east-1', (o) => new OrganizationsClient(o))
-  }
-
-  kms(provider: ProviderConfig, region: string): KMSClient {
-    return this.service(provider, 'kms', region, (o) => new KMSClient(o))
-  }
-
-  accessAnalyzer(provider: ProviderConfig, region: string): AccessAnalyzerClient {
-    return this.service(provider, 'accessanalyzer', region, (o) => new AccessAnalyzerClient(o))
-  }
-
-  cloudTrail(provider: ProviderConfig, region: string): CloudTrailClient {
-    return this.service(provider, 'cloudtrail', region, (o) => new CloudTrailClient(o))
+    return this.clientFor(provider, 'sts', provider.region || 'us-east-1') as STSClient
   }
 
   /** The regional client factory a reading uses; a custom endpoint has one region. */

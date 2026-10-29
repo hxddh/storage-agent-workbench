@@ -360,9 +360,10 @@ export class AppDb {
       params.push(filter.ref)
     }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-    params.push(Math.max(1, Math.min(filter.limit ?? 20, 10_000)))
+    // No limit means every note.
+    if (filter.limit !== undefined) params.push(Math.max(1, filter.limit))
     return this.raw.all<NoteRecord>(
-      `SELECT * FROM notes ${clause} ORDER BY created_at DESC LIMIT ?`,
+      `SELECT * FROM notes ${clause} ORDER BY created_at DESC${filter.limit !== undefined ? ' LIMIT ?' : ''}`,
       ...params,
     )
   }

@@ -129,8 +129,6 @@ const en = {
   saveAs: 'Save as…',
   retry: 'Retry',
   continue: 'Continue',
-  noBuckets: 'No buckets.',
-  noObjects: 'No objects.',
   noRows: 'No rows.',
   source: 'Source',
   rename: 'Rename',
@@ -323,8 +321,6 @@ const zh: typeof en = {
   saveAs: '另存为…',
   retry: '重试',
   continue: '继续',
-  noBuckets: '没有存储桶。',
-  noObjects: '没有对象。',
   noRows: '没有数据。',
   source: '来源',
   rename: '重命名',
@@ -418,16 +414,18 @@ export function fill(template: string, values: Record<string, string | number>):
 }
 
 const TOOL_EN: Record<string, string> = {
+  call: 'Read',
+  query: 'Ran a read-only query',
+  probe: 'Probed endpoint',
+  more: 'Read more of a result',
+  note: 'Updated memory',
+  ask: 'Asked a question',
+  // Tools of earlier versions, for the calls in older tasks.
   buckets: 'Listed buckets',
   objects: 'Listed objects',
   object: 'Inspected object',
   config: 'Read configuration',
   account: 'Read account settings',
-  probe: 'Probed endpoint',
-  query: 'Ran a read-only query',
-  note: 'Remembered',
-  ask: 'Asked a question',
-  // Tools of earlier versions, for the calls in older tasks.
   survey: 'Read account',
   estate: 'Recalled memory',
   change_plan: 'Prepared a change plan',
@@ -435,16 +433,18 @@ const TOOL_EN: Record<string, string> = {
 }
 
 const TOOL_ZH: Record<string, string> = {
+  call: '读取',
+  query: '运行只读查询',
+  probe: '探测接入点',
+  more: '继续读取结果',
+  note: '更新记忆',
+  ask: '提出问题',
+  // 早期版本的工具，用于旧任务里的调用。
   buckets: '列出存储桶',
   objects: '列出对象',
   object: '查看对象',
   config: '读取配置',
   account: '读取账号设置',
-  probe: '探测接入点',
-  query: '运行只读查询',
-  note: '记住',
-  ask: '提出问题',
-  // 早期版本的工具，用于旧任务里的调用。
   survey: '读取账号',
   estate: '读取记忆',
   change_plan: '生成变更计划',

@@ -16,8 +16,6 @@ import {
   TEXT_RE,
 } from './formats'
 
-export const MAX_INGEST_ROWS = 2_000_000
-
 export interface ImportResult {
   kind: 'access_log' | 'inventory'
   rows: number
@@ -127,7 +125,6 @@ async function importAccessFromCsv(
   db.exec('BEGIN')
   try {
     for await (const row of parser as AsyncIterable<Record<string, string>>) {
-      if (count >= MAX_INGEST_ROWS) break
       const record = accessRow({
         ts: pick(row, ['timestamp', 'time', 'ts']),
         method: pick(row, ['method', 'verb']),
@@ -176,7 +173,6 @@ async function importAccessFromLines(db: DatabaseSync, path: string): Promise<nu
   db.exec('BEGIN')
   try {
     for await (const line of textLines(path)) {
-      if (count >= MAX_INGEST_ROWS) break
       const trimmed = line.trim()
       if (!trimmed) continue
       let record: AccessRow
@@ -237,9 +233,7 @@ async function importInventoryFromCsv(
   path: string,
   delimiter: string,
   fallbackBucket: string,
-  maxRows = MAX_INGEST_ROWS,
 ): Promise<number> {
-  const limit = Math.max(1, Math.min(maxRows, MAX_INGEST_ROWS))
   const parser = readStream(path).pipe(
     parse({
       columns: true,
@@ -256,7 +250,6 @@ async function importInventoryFromCsv(
   db.exec('BEGIN')
   try {
     for await (const row of parser as AsyncIterable<Record<string, string>>) {
-      if (count >= limit) break
       const record = inventoryRow({
         bucket: pick(row, ['bucket']),
         key: pick(row, ['key', 'object_key', 'object']),
@@ -280,9 +273,7 @@ async function importInventoryFromParquet(
   db: DatabaseSync,
   path: string,
   fallbackBucket: string,
-  maxRows = MAX_INGEST_ROWS,
 ): Promise<number> {
-  const limit = Math.max(1, Math.min(maxRows, MAX_INGEST_ROWS))
   const file = await asyncBufferFromFile(path)
   const rows = (await parquetReadObjects({ file })) as Record<string, unknown>[]
   const stmt = db.prepare(
@@ -292,7 +283,6 @@ async function importInventoryFromParquet(
   db.exec('BEGIN')
   try {
     for (const row of rows) {
-      if (count >= limit) break
       const record = inventoryRow({
         bucket: row.bucket,
         key: row.key ?? row.object_key,
@@ -348,7 +338,7 @@ export async function importDataset(input: {
       return {
         kind,
         rows,
-        truncated: rows >= MAX_INGEST_ROWS,
+        truncated: false,
         columns: INVENTORY_COLUMNS,
       }
     }
@@ -357,7 +347,7 @@ export async function importDataset(input: {
       detected === 'csv'
         ? await importAccessFromCsv(db, input.filePath, sample[0]!.includes('\t') ? '\t' : ',')
         : await importAccessFromLines(db, input.filePath)
-    return { kind, rows, truncated: rows >= MAX_INGEST_ROWS, columns: ACCESS_COLUMNS }
+    return { kind, rows, truncated: false, columns: ACCESS_COLUMNS }
   } finally {
     db.close()
   }
@@ -372,47 +362,24 @@ export async function importInventoryFiles(input: {
   files: string[]
   destPath: string
   fallbackBucket: string
-  maxRows?: number
 }): Promise<ImportResult> {
-  const limit = Math.max(1, Math.min(input.maxRows ?? MAX_INGEST_ROWS, MAX_INGEST_ROWS))
   const db = openDatabase(input.destPath)
   let rows = 0
-  let truncated = false
   try {
     createInventoryTable(db)
     for (const file of input.files) {
-      if (rows >= limit) {
-        truncated = true
-        break
-      }
       const lower = file.toLowerCase()
-      const remaining = limit - rows
-      // Each importer stops at MAX_INGEST_ROWS; the outer remaining check keeps
-      // a multi-file report within one budget.
-      const imported =
+      rows +=
         lower.endsWith('.parquet') || lower.endsWith('.pq')
-          ? await importInventoryFromParquet(db, file, input.fallbackBucket, remaining)
+          ? await importInventoryFromParquet(db, file, input.fallbackBucket)
           : await importInventoryFromCsv(
               db,
               file,
               lower.endsWith('.tsv') ? '\t' : ',',
               input.fallbackBucket,
-              remaining,
             )
-      rows += imported
-      // The importer stops at `remaining`; if it filled the budget, a later
-      // file or row may still exist and the report must say coverage is partial.
-      if (rows >= limit) {
-        truncated = true
-        break
-      }
     }
-    return {
-      kind: 'inventory',
-      rows,
-      truncated: truncated || rows >= limit,
-      columns: INVENTORY_COLUMNS,
-    }
+    return { kind: 'inventory', rows, truncated: false, columns: INVENTORY_COLUMNS }
   } finally {
     db.close()
   }

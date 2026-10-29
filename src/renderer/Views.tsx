@@ -1,5 +1,5 @@
 import type { Chart, Table, ToolView } from '@shared/contract'
-import { Check, Copy, Download, TriangleAlert } from 'lucide-react'
+import { Copy, Download } from 'lucide-react'
 import { useState } from 'react'
 import { type Dict, fill } from './i18n'
 import { copyText, safeFileName, toCsv } from './lib/export'
@@ -135,103 +135,13 @@ export function ChartView({ chart }: { chart: Chart }) {
   )
 }
 
-/** A read's sections ({ status, value | error }) or one document, as JSON. */
+/** A response as the service returned it. */
 function RawView({ value }: { value: unknown }) {
-  const entries =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? Object.entries(value as Record<string, unknown>)
-      : []
-  const sectioned =
-    entries.length > 0 &&
-    entries.every(
-      ([key, item]) =>
-        key === 'region' ||
-        (item !== null && typeof item === 'object' && 'status' in (item as object)),
-    )
-  if (!sectioned) return <pre className="code">{JSON.stringify(value, null, 2)}</pre>
-  return (
-    <div className="raw-sections">
-      {entries.map(([key, item]) => {
-        if (key === 'region')
-          return (
-            <div className="raw-section" key={key}>
-              <span className="raw-name mono">region</span>
-              <span className="raw-status">{String(item ?? '—')}</span>
-            </div>
-          )
-        const read = item as { status: string; value?: unknown; error?: string }
-        return (
-          <div className="raw-section" key={key}>
-            <span className="raw-name mono">{key}</span>
-            <span className={`raw-status ${read.status}`}>{read.status.replace(/_/g, ' ')}</span>
-            {read.value !== undefined && (
-              <pre className="code">{JSON.stringify(read.value, null, 2)}</pre>
-            )}
-            {read.error && <p className="raw-error">{read.error}</p>}
-          </div>
-        )
-      })}
-    </div>
-  )
+  return <pre className="code">{JSON.stringify(value, null, 2)}</pre>
 }
 
-export function ToolViewBody({
-  view,
-  t,
-  taskTitle,
-  limit,
-}: {
-  view: ToolView
-  t: Dict
-  taskTitle: string
-  limit?: number
-}) {
-  if (view.kind === 'buckets' || view.kind === 'objects') {
-    return (
-      <TableView
-        table={view.rows}
-        name={taskTitle || view.kind}
-        empty={view.kind === 'buckets' ? t.noBuckets : t.noObjects}
-        t={t}
-        limit={limit}
-      />
-    )
-  }
-  if (view.kind === 'object') {
-    if (view.facts.length === 0) return <p className="view-empty">{t.noRows}</p>
-    return (
-      <div>
-        <dl className="facts">
-          {view.facts.map(([key, value]) => (
-            <div key={key} className="fact-row">
-              <dt>{key}</dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
-        {view.preview && <pre className="code">{view.preview.text}</pre>}
-      </div>
-    )
-  }
+export function ToolViewBody({ view, t }: { view: ToolView; t: Dict }) {
   if (view.kind === 'raw') return <RawView value={view.value} />
-  if (view.kind === 'probe') {
-    return (
-      <div className="checks">
-        {view.checks.map((check) => (
-          <div className="check" key={check.name}>
-            {check.ok ? (
-              <Check size={13} className="ok" />
-            ) : (
-              <TriangleAlert size={13} className="bad" />
-            )}
-            <span>{check.name}</span>
-            <span className="detail">{check.detail}</span>
-            <span className="ms">{check.ms} ms</span>
-          </div>
-        ))}
-      </div>
-    )
-  }
   if (view.kind === 'note') return <p className="quiet">{view.text}</p>
   if (view.kind === 'query') {
     return (

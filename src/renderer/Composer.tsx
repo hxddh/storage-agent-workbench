@@ -123,7 +123,7 @@ export function Composer({
               label: item.label,
               ...(item.bucket ? { bucket: item.bucket } : {}),
             },
-          ].slice(0, 8),
+          ],
     )
     setText((value) => value.replace(/@[^@\s]*$/, '').trimEnd())
     setPicker(null)

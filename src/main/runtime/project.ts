@@ -71,16 +71,7 @@ function thinkingOf(message: ModelMessage | undefined): string {
     .trim()
 }
 
-const VIEW_KINDS = new Set<string>([
-  'buckets',
-  'objects',
-  'object',
-  'raw',
-  'probe',
-  'note',
-  'query',
-  'question',
-])
+const VIEW_KINDS = new Set<string>(['raw', 'note', 'query', 'question'])
 
 /** A view this version renders; a call from an earlier version shows what the agent received. */
 function viewOf(name: string, view: ToolView | null | undefined): ToolView | null {
@@ -262,18 +253,6 @@ export function mapEntries(entries: readonly EntryRecord[]): UiEntry[] {
     }
   }
   return out
-}
-
-/** Model rounds of the current run: assistant messages that called a tool, blocked ones too. */
-export function roundsOf(entries: readonly EntryRecord[]): number {
-  let rounds = 0
-  for (const entry of entries) {
-    if (entry.kind === 'sa.run' || entry.kind === 'sa.resume') rounds = 0
-    if (entry.kind !== 'pi.assistant') continue
-    const message = entry.model?.[0] as ModelMessage | undefined
-    if (parts(message).some((part) => part.type === 'toolCall')) rounds += 1
-  }
-  return rounds
 }
 
 /** A result pi wrote without running the tool (a budget block); its text is the step's output. */

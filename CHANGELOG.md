@@ -1,3 +1,62 @@
+## 37.0.0 — 2026-10-29
+
+Nothing in the app fixes what the agent can read or limits how it works. One
+`call` tool reaches every read-only operation of every bundled service; the
+harness sets no ceiling, budget, timeout or output cap; a long result is never
+out of reach. The safety boundaries are unchanged: read-only, bucket scope,
+redaction, account ids scrubbed, the untrusted-data envelope, the sandbox.
+
+### Changed
+
+- **One read-only `call` replaces the fixed reads.** `buckets`, `objects`,
+  `object`, `config` (17 fixed sections) and `account` (7 fixed reads) are
+  gone. `call` runs any operation of S3, S3 Control, STS, IAM, Organizations,
+  KMS, Access Analyzer, CloudWatch or CloudTrail whose name says it reads (Get,
+  List, Head, Describe, Lookup, Search, Select, Simulate — about 270 of them),
+  except the few that hand out credentials, with the operation's own input. It
+  returns the service's response as JSON, or its error code, HTTP status and
+  message. A body streams up to `max_bytes` (default 1 MiB, the agent's
+  choice). Policy documents are parsed; account ids are scrubbed; the agent
+  writes `<account>` where the caller's id belongs and S3 Control's
+  `AccountId` is filled in.
+- **No service is skipped by provider kind.** A custom-endpoint account answers
+  every service at its own endpoint, and its credentials are never sent to AWS.
+  The capability table is gone.
+- **`query` reads without budgets.** Its primitives are `call()` (the same
+  rules as the tool), `dataset()`, `inventory()` (every file of the latest
+  manifest, streamed to disk) and `sql()`: one read-only SELECT over a dataset,
+  in place of the whitelisted aggregates and row pages. No call, listing, row
+  or time budget; it runs until it returns or Stop. Sandbox memory defaults to
+  1 GiB and the agent can raise it. Import row caps are gone.
+- **No harness limits.** The 100-round ceiling and its notice, every fixed tool
+  timeout, and the fixed 8,192/32,000 output-token cap are gone. A run learns
+  its model's output maximum from the provider. Stop is the user's control.
+- **Nothing is out of reach.** A result longer than 24,000 characters gives the
+  agent its first piece and keeps the rest in the task folder; the new `more`
+  tool reads on from an offset.
+- **All of memory.** The prompt lists every note with its id and author, not
+  the first 12; `note` can forget a note the agent wrote. Settings lists every
+  note.
+- **`probe` reports, it does not judge.** One unsigned HEAD or GET to the
+  account's endpoint (or a host under it) returns addresses, HTTP status,
+  headers, the TLS certificate and timing, with no ok/fail verdict.
+- `@` focus takes any number of accounts and buckets.
+
+### Removed
+
+- `tools/browse.ts`, `tools/config.ts`, `tools/account.ts`, `s3/raw.ts`,
+  `s3/status.ts` (the status taxonomy), the provider capability table, the
+  aggregate/row whitelists, the object, table and probe-check views. Calls to
+  these tools in older tasks show what the agent received.
+
+### Checks
+
+- The fake model reads through `call` and `query` like an agent; the moto
+  compatibility test reads S3, S3 Control (account id filled in), KMS, IAM and
+  CloudTrail through `call` and checks the account id never reaches the agent.
+  `eval.mjs` no longer counts a failed call against the agent (a
+  `NoSuchBucketPolicy` is an answer).
+
 ## 36.0.0 — 2026-10-29
 
 Storage Agent is a native agent. The model reads, judges and says what it

@@ -87,13 +87,13 @@ describe('entry projection', () => {
           {
             role: 'toolResult',
             toolCallId: 'call-1',
-            toolName: 'buckets',
+            toolName: 'call',
             content: [{ type: 'text', text: 'ok' }],
             details: {
               target: 'Prod',
               note: '2 buckets',
               args: '{"provider_id":"p1"}',
-              view: { kind: 'buckets', rows: { columns: ['Bucket'], rows: [['a']] } },
+              view: { kind: 'raw', title: 's3 ListBuckets', value: { Buckets: [{ Name: 'a' }] } },
               ms: 12,
             },
             isError: false,
@@ -104,14 +104,14 @@ describe('entry projection', () => {
     ])
     expect(out[0]).toMatchObject({
       kind: 'tool',
-      name: 'buckets',
+      name: 'call',
       target: 'Prod',
       status: 'done',
       args: '{"provider_id":"p1"}',
       ms: 12,
     })
     if (out[0]?.kind !== 'tool') throw new Error('expected a tool entry')
-    expect(out[0].view?.kind).toBe('buckets')
+    expect(out[0].view?.kind).toBe('raw')
   })
 
   it('marks a tool error and keeps its note', () => {

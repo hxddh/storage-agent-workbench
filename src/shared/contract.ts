@@ -11,16 +11,7 @@ export type ModelProvider = 'anthropic' | 'openai' | 'compatible'
 export type Lang = 'en' | 'zh'
 export type Theme = 'light' | 'dark' | 'system'
 
-export type ToolName =
-  | 'buckets'
-  | 'objects'
-  | 'object'
-  | 'config'
-  | 'account'
-  | 'probe'
-  | 'query'
-  | 'note'
-  | 'ask'
+export type ToolName = 'call' | 'query' | 'probe' | 'more' | 'note' | 'ask'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
 
@@ -39,17 +30,6 @@ export interface NoteRow {
   createdAt: string
 }
 
-/**
- * One line of a review. `blind` is a read that could not see: it is shown, and
- * it never counts as clean. Codes are rule codes, `advice:*` or `blind:*`.
- */
-export interface ProbeCheck {
-  name: string
-  ok: boolean
-  detail: string
-  ms: number
-}
-
 export interface Chart {
   type: 'bar'
   labels: string[]
@@ -58,16 +38,8 @@ export interface Chart {
 }
 
 export type ToolView =
-  | { kind: 'buckets'; rows: Table }
-  | { kind: 'objects'; rows: Table }
-  | {
-      kind: 'object'
-      facts: [string, string][]
-      preview: { language: string; text: string } | null
-    }
-  /** A read returned as the API returned it: sections or documents, shown as JSON. */
+  /** A read returned as the service returned it, shown as JSON. */
   | { kind: 'raw'; title: string; value: unknown }
-  | { kind: 'probe'; endpoint: string; checks: ProbeCheck[] }
   | { kind: 'note'; text: string }
   | {
       kind: 'query'
@@ -79,7 +51,6 @@ export type ToolView =
       chart: Chart | null
       output: string | null
       calls: number
-      listed: number
       /** Buckets the script read. */
       buckets?: string[]
     }

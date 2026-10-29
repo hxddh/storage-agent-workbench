@@ -23,8 +23,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { AppDb } from './db'
 import { emulatorControl, Providers } from './providers'
 import type { Vault } from './security/vault'
-import { accountTool } from './tools/account'
-import { configTool } from './tools/config'
+import { callTool } from './tools/call'
 import type { ToolDeps } from './tools/policy'
 
 const endpoint = process.env.STORAGE_AGENT_AWS_ENDPOINT
@@ -92,42 +91,43 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     deps = {
       db,
       providers,
+      taskDir: () => tmpdir(),
       datasetsDir: () => tmpdir(),
       uploadsDir: () => tmpdir(),
       lang: () => 'en',
     }
   })
 
-  type Sections = Record<string, { status: string; value?: unknown; error?: string }>
-  const call = async (
-    tool: { execute: (...args: never[]) => ReturnType<ReturnType<typeof configTool>['execute']> },
-    args: Record<string, unknown>,
-  ) => {
-    const result = await (tool.execute as (...args: unknown[]) => ReturnType<typeof tool.execute>)(
-      args,
+  /** One `call`, and what came back: the value the window shows and the text the agent got. */
+  const call = async (args: Record<string, unknown>) => {
+    const result = await callTool(deps).execute(
+      args as never,
       { conversationId: 'c', output: () => undefined, details: async () => undefined } as never,
       {} as never,
     )
     const details = result.details as unknown as ToolDetails
-    if (details.view?.kind !== 'raw') throw new Error(`expected a raw view: ${details.note}`)
-    const text = result.output
-      ?.map((part: { type: string; text?: string }) => (part.type === 'text' ? part.text : ''))
-      .join('')
-    return { value: details.view.value, text: text ?? '' }
+    const text =
+      result.output?.map((part) => (part.type === 'text' ? part.text : '')).join('') ?? ''
+    return {
+      status: details.status,
+      value: details.view?.kind === 'raw' ? (details.view.value as Record<string, unknown>) : null,
+      text,
+    }
   }
-  const config = async (bucket: string) =>
-    (await call(configTool(deps), { bucket })).value as Sections
+  const bucketRead = (operation: string, Bucket: string) =>
+    call({ service: 's3', operation, input: { Bucket } })
 
   it('returns what AWS decides about exposure, as AWS says it', async () => {
-    const policy = await config('c-public-policy')
-    expect(policy.policy?.status).toBe('available')
-    expect(policy.policy_status?.value).toMatchObject({ PolicyStatus: { IsPublic: true } })
-    const acl = await config('c-public-acl')
-    expect(JSON.stringify(acl.acl?.value)).toContain('AllUsers')
-    const narrowed = await config('c-narrowed')
-    expect(narrowed.policy_status?.value).toMatchObject({ PolicyStatus: { IsPublic: false } })
-    const locked = await config('c-locked')
-    expect(locked.public_access_block?.value).toMatchObject({
+    const status = await bucketRead('GetBucketPolicyStatus', 'c-public-policy')
+    expect(status.value).toMatchObject({ PolicyStatus: { IsPublic: true } })
+    const policy = await bucketRead('GetBucketPolicy', 'c-public-policy')
+    expect(JSON.stringify(policy.value)).toContain('"Principal":"*"')
+    const acl = await bucketRead('GetBucketAcl', 'c-public-acl')
+    expect(JSON.stringify(acl.value)).toContain('AllUsers')
+    const narrowed = await bucketRead('GetBucketPolicyStatus', 'c-narrowed')
+    expect(narrowed.value).toMatchObject({ PolicyStatus: { IsPublic: false } })
+    const locked = await bucketRead('GetPublicAccessBlock', 'c-locked')
+    expect(locked.value).toMatchObject({
       PublicAccessBlockConfiguration: { BlockPublicPolicy: true, RestrictPublicBuckets: true },
     })
   })
@@ -140,17 +140,26 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     expect(described.KeyMetadata?.KeyId).toBe(keyId)
     const sts = new STSClient({ region: 'us-east-1', endpoint, credentials })
     const account = (await sts.send(new GetCallerIdentityCommand({}))).Account!
-    const key = await call(accountTool(deps), { read: 'kms_key_policy', key: keyId })
-    expect(key.value).toMatchObject({ status: 'available' })
+    const key = await call({
+      service: 'kms',
+      operation: 'GetKeyPolicy',
+      input: { KeyId: keyId, PolicyName: 'default' },
+    })
+    expect(key.status).toBe('done')
+    expect(JSON.stringify(key.value)).toContain('<account>')
     expect(key.text).not.toContain(account)
-    const trail = await call(accountTool(deps), { read: 'cloudtrail', bucket: 'c-public-policy' })
-    expect(['available', 'access_denied', 'provider_unsupported', 'error']).toContain(
-      (trail.value as { status: string }).status,
-    )
+    const trail = await call({
+      service: 'cloudtrail',
+      operation: 'LookupEvents',
+      input: {
+        LookupAttributes: [{ AttributeKey: 'ResourceName', AttributeValue: 'c-public-policy' }],
+      },
+    })
+    expect(['done', 'failed']).toContain(trail.status)
     expect(trail.text).not.toContain(account)
   })
 
-  it('reads the account-wide block', async () => {
+  it('reads the account-wide block and account-level IAM, without ever sending the id', async () => {
     const sts = new STSClient({ region: 'us-east-1', endpoint, credentials })
     const account = (await sts.send(new GetCallerIdentityCommand({}))).Account!
     const control = emulatorControl({ region: 'us-east-1', credentials }, endpoint!)
@@ -165,11 +174,15 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
         },
       }),
     )
-    const block = await call(accountTool(deps), { read: 'public_access_block' })
-    expect(block.value).toMatchObject({
-      status: 'available',
-      value: { PublicAccessBlockConfiguration: { BlockPublicAcls: true } },
-    })
+    // The agent never has the account id; S3 Control gets it filled in.
+    const block = await call({ service: 's3control', operation: 'GetPublicAccessBlock' })
+    expect(block.value).toMatchObject({ PublicAccessBlockConfiguration: { BlockPublicAcls: true } })
     expect(block.text).not.toContain(account)
+    // An input that names <account> gets the caller's id in its place.
+    const caller = await call({ service: 'sts', operation: 'GetCallerIdentity' })
+    expect(caller.value).toMatchObject({ Account: '<account>' })
+    const iam = await call({ service: 'iam', operation: 'GetAccountAuthorizationDetails' })
+    expect(iam.status).toBe('done')
+    expect(iam.text).not.toContain(account)
   })
 })

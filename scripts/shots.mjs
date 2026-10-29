@@ -103,7 +103,7 @@ await page.waitForTimeout(400)
 await page.screenshot({ path: join(out, '24-citation-open.png') })
 await page.locator('.step.tool .step-line[aria-expanded="true"]').first().click()
 
-await (await openStep('Read configuration')).scrollIntoViewIfNeeded()
+await (await openStep('Read')).scrollIntoViewIfNeeded()
 await page.waitForTimeout(250)
 await page.screenshot({ path: join(out, '23-tool-detail.png') })
 

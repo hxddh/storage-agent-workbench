@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import type { S3Client } from '@aws-sdk/client-s3'
 import type { Context } from '@earendil-works/chord'
 import { type Static, type TSchema, Type } from '@earendil-works/pi-ai'
@@ -5,12 +7,15 @@ import { defineTool, type ToolRegistration } from '@earendil-works/pi-durable'
 import type { ToolDetails, ToolName, ToolView } from '@shared/contract'
 import type { AppDb } from '../db'
 import type { ProviderConfig, Providers } from '../providers'
-import { scrub } from '../s3/raw'
+import { describeError } from '../s3/api'
 import { bound, escapeTags, redact, redactView } from '../security/redact'
+import { assertInScope, ScopeError } from '../security/scope'
 
 export interface ToolDeps {
   db: AppDb
   providers: Providers
+  /** The task's own folder; a result cut for the model is kept here whole. */
+  taskDir: (conversationId: string) => string
   datasetsDir: (conversationId: string) => string
   uploadsDir: (conversationId: string) => string
   lang: () => string
@@ -28,8 +33,6 @@ export interface ToolRun {
   regional?: (region: string) => S3Client
 }
 
-export class ScopeError extends Error {}
-
 /** One bounded, redacted line of the arguments the model supplied. */
 function argsSummary(args: unknown): string | null {
   try {
@@ -37,15 +40,6 @@ function argsSummary(args: unknown): string | null {
     return text && text !== '{}' ? redact(text).slice(0, 240) : null
   } catch {
     return null
-  }
-}
-
-export function assertInScope(provider: ProviderConfig, bucket: string): void {
-  if (provider.scope.buckets.length === 0) return
-  if (!provider.scope.buckets.includes(bucket)) {
-    throw new ScopeError(
-      `Bucket '${bucket}' is outside this account's scope (${provider.scope.buckets.join(', ')}).`,
-    )
   }
 }
 
@@ -57,6 +51,29 @@ function attribute(value: string): string {
     .replaceAll('>', '&gt;')
 }
 
+/** Characters of one result the model gets in one piece; `more` reads the rest. */
+export const PIECE = 24_000
+
+/** The result's path, kept whole when the model got only its first piece. */
+export function resultPath(deps: ToolDeps, conversationId: string, evidenceId: string): string {
+  return join(deps.taskDir(conversationId), 'results', `${evidenceId.replace(/[^\w.-]/g, '_')}.txt`)
+}
+
+/** The text the model gets now: all of it, or its first piece and where the rest is. */
+async function fitPiece(
+  deps: ToolDeps,
+  conversationId: string,
+  evidenceId: string | undefined,
+  text: string,
+): Promise<string> {
+  if (text.length <= PIECE) return text
+  if (!evidenceId) return bound(text, PIECE)
+  const path = resultPath(deps, conversationId, evidenceId)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, text, 'utf8')
+  return `${text.slice(0, PIECE)}\n… ${text.length - PIECE} more characters. Read them with \`more\` (evidence "${evidenceId}", offset ${PIECE}).`
+}
+
 export function envelope(text: string, evidenceId?: string): string {
   return `<untrusted-data source="storage"${evidenceId ? ` evidence="${attribute(evidenceId)}"` : ''}>\n${escapeTags(redact(text))}\n</untrusted-data>`
 }
@@ -65,7 +82,8 @@ export interface ToolDefinition<T extends TSchema> {
   name: ToolName
   description: string
   parameters: T
-  timeoutMs: number
+  /** Only where a hang is the tool's own failure (a network probe); Stop ends any call. */
+  timeoutMs?: number
   target: (args: Static<T>) => string
   run: (
     args: Static<T>,
@@ -89,8 +107,11 @@ export function agentTool<T extends TSchema>(
       } catch {
         target = ''
       }
-      const timeout = AbortSignal.timeout(def.timeoutMs)
-      const signal = context.abortSignal ? AbortSignal.any([context.abortSignal, timeout]) : timeout
+      const timeout = def.timeoutMs ? AbortSignal.timeout(def.timeoutMs) : null
+      const signals = [context.abortSignal, timeout].filter((item): item is AbortSignal =>
+        Boolean(item),
+      )
+      const signal = signals.length ? AbortSignal.any(signals) : new AbortController().signal
       const conversationId = String(api.conversationId)
       const callArgs = argsSummary(args)
       let regional: ((region: string) => S3Client) | undefined
@@ -146,9 +167,9 @@ export function agentTool<T extends TSchema>(
           outcome: 'ok',
         })
         const evidenceId = api.callId ? String(api.callId) : undefined
-        const sent = bound(result.model)
-        // When the result was cut for the model, the step says so: the view may hold more.
-        const cut = sent !== result.model ? 'the agent got part of this result' : null
+        const sent = await fitPiece(deps, conversationId, evidenceId, result.model)
+        // When the result was cut for the model, the step says so: the rest waits for `more`.
+        const cut = sent !== result.model ? 'the agent got the first part; the rest is kept' : null
         const note = [result.note ? redact(result.note) : null, cut].filter(Boolean).join(' · ')
         const details: ToolDetails = {
           target: redact(result.target ?? target),
@@ -167,13 +188,13 @@ export function agentTool<T extends TSchema>(
         }
       } catch (error) {
         // A provider's error can name the account; it never reaches the model or the window.
-        const message = scrub(error instanceof Error ? error.message : String(error)) as string
+        const message = describeError(error)
         const status: ToolDetails['status'] =
           error instanceof ScopeError
             ? 'refused'
             : context.abortSignal?.aborted
               ? 'stopped'
-              : timeout.aborted
+              : timeout?.aborted
                 ? 'timeout'
                 : 'failed'
         await deps.db.audit({
@@ -188,14 +209,14 @@ export function agentTool<T extends TSchema>(
             : status === 'stopped'
               ? 'Stopped by the user before this call finished.'
               : status === 'timeout'
-                ? `Timed out after ${Math.round(def.timeoutMs / 1000)} s. Nothing after the last progress line was read.`
+                ? `Timed out after ${Math.round((def.timeoutMs ?? 0) / 1000)} s. Nothing after the last progress line was read.`
                 : `Error: ${message}`
         const evidenceId = api.callId ? String(api.callId) : undefined
         const details: ToolDetails = {
           target,
           note:
             status === 'refused'
-              ? 'Outside scope'
+              ? redact(message).slice(0, 160)
               : status === 'stopped'
                 ? null
                 : status === 'timeout'
@@ -209,7 +230,15 @@ export function agentTool<T extends TSchema>(
         }
         await detailsWrite
         return {
-          output: [{ type: 'text' as const, text: envelope(bound(forModel), evidenceId) }],
+          output: [
+            {
+              type: 'text' as const,
+              text: envelope(
+                await fitPiece(deps, conversationId, evidenceId, forModel),
+                evidenceId,
+              ),
+            },
+          ],
           isError: true,
           details: details as never,
         }
@@ -222,11 +251,4 @@ export const providerParam = Type.Optional(
   Type.String({ description: 'Storage account id. Optional when only one account is configured.' }),
 )
 
-export const bucketParam = Type.String({ description: 'Bucket name.' })
-
-export const limitParam = (max: number) =>
-  Type.Optional(
-    Type.Integer({ minimum: 1, maximum: max, description: `Maximum rows to return (1-${max}).` }),
-  )
-
-export { Type }
+export { assertInScope, ScopeError, Type }

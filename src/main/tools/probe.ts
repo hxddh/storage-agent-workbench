@@ -1,149 +1,95 @@
-import { HeadBucketCommand, ListBucketsCommand } from '@aws-sdk/client-s3'
-import type { ProbeCheck } from '@shared/contract'
-import { describe } from '../providers'
-import { agentTool, assertInScope, providerParam, type ToolDeps, Type } from './policy'
+import { lookup } from 'node:dns/promises'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import type { TLSSocket } from 'node:tls'
+import { agentTool, providerParam, type ToolDeps, Type } from './policy'
+
+interface Answer {
+  url: string
+  addresses: string[]
+  status: number
+  headers: Record<string, string | string[] | undefined>
+  tls: Record<string, unknown> | null
+  ms: { dns: number; total: number }
+}
+
+/** One unsigned request, as the endpoint answers it: status, headers, certificate, timing. */
+async function probe(url: URL, method: 'HEAD' | 'GET', signal: AbortSignal): Promise<Answer> {
+  const started = Date.now()
+  const addresses = (await lookup(url.hostname, { all: true })).map((item) => item.address)
+  const dns = Date.now() - started
+  return new Promise((resolve, reject) => {
+    const send = url.protocol === 'https:' ? httpsRequest : httpRequest
+    const req = send(url, { method, signal }, (res) => {
+      const socket = res.socket as TLSSocket
+      const cert =
+        typeof socket.getPeerCertificate === 'function' ? socket.getPeerCertificate() : null
+      res.resume()
+      res.on('end', () =>
+        resolve({
+          url: url.toString(),
+          addresses,
+          status: res.statusCode ?? 0,
+          headers: res.headers,
+          tls:
+            cert && Object.keys(cert).length
+              ? {
+                  protocol: socket.getProtocol?.() ?? null,
+                  subject: cert.subject,
+                  issuer: cert.issuer,
+                  subjectAltName: cert.subjectaltname,
+                  validFrom: cert.valid_from,
+                  validTo: cert.valid_to,
+                  authorized: socket.authorized,
+                  authorizationError: socket.authorizationError ?? null,
+                }
+              : null,
+          ms: { dns, total: Date.now() - started },
+        }),
+      )
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
 
 export function probeTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'probe',
     description:
-      'Probe an S3-compatible endpoint read-only: reachability, TLS, latency, bucket region, and path-style addressing.',
+      "Send one unsigned HEAD or GET to the account's endpoint, or to a host under it (a virtual-hosted bucket), and get what came back: resolved addresses, HTTP status, headers, the TLS certificate and timing. It carries no credentials and reads nothing of the storage; use it to see how the endpoint answers.",
     parameters: Type.Object({
       provider_id: providerParam,
-      bucket: Type.Optional(
-        Type.String({ description: 'Bucket to test region and addressing against.' }),
+      url: Type.Optional(
+        Type.String({
+          description:
+            "Full URL on the account's endpoint host or a subdomain of it; default the endpoint itself.",
+        }),
       ),
-      check: Type.Optional(
-        Type.Union(
-          [
-            Type.Literal('reach'),
-            Type.Literal('tls'),
-            Type.Literal('latency'),
-            Type.Literal('location'),
-            Type.Literal('addressing'),
-          ],
-          { description: 'One check; omit to run reach, TLS and latency.' },
-        ),
-      ),
+      method: Type.Optional(Type.Union([Type.Literal('HEAD'), Type.Literal('GET')])),
     }),
-    timeoutMs: 60_000,
-    target: (args) => args.bucket ?? 'endpoint',
+    target: (args) => args.url ?? 'endpoint',
     run: async (args, run) => {
-      const { config, client } = await run.provider(args.provider_id)
-      // A probe that names a bucket is a storage read and must obey the account
-      // scope before any request leaves the process.
-      if (args.bucket) assertInScope(config, args.bucket)
-      const endpoint = config.endpoint || `https://s3.${config.region}.amazonaws.com`
-      const checks: ProbeCheck[] = []
-      const wanted = args.check ? [args.check] : (['reach', 'tls', 'latency'] as const)
-
-      for (const check of wanted) {
-        if (check === 'reach') {
-          const started = Date.now()
-          try {
-            const response = await fetch(endpoint, {
-              method: 'HEAD',
-              signal: AbortSignal.any([run.signal, AbortSignal.timeout(10_000)]),
-            })
-            checks.push({
-              name: 'Reachability',
-              ok: response.status < 500,
-              detail: `HTTP ${response.status} from ${endpoint}`,
-              ms: Date.now() - started,
-            })
-          } catch (error) {
-            checks.push({
-              name: 'Reachability',
-              ok: false,
-              detail: error instanceof Error ? error.message : 'unreachable',
-              ms: Date.now() - started,
-            })
-          }
-        } else if (check === 'tls') {
-          const started = Date.now()
-          const secure = endpoint.startsWith('https://')
-          checks.push({
-            name: 'TLS',
-            ok:
-              secure ||
-              endpoint.startsWith('http://127.0.0.1') ||
-              endpoint.startsWith('http://localhost'),
-            detail: secure
-              ? 'HTTPS endpoint'
-              : 'Plain HTTP — credentials cross the network unencrypted',
-            ms: Date.now() - started,
-          })
-        } else if (check === 'latency') {
-          const started = Date.now()
-          try {
-            await client.send(new ListBucketsCommand({}), { abortSignal: run.signal })
-            const ms = Date.now() - started
-            checks.push({ name: 'Latency', ok: true, detail: `ListBuckets in ${ms} ms`, ms })
-          } catch (error) {
-            checks.push({
-              name: 'Latency',
-              ok: false,
-              detail: describe(error),
-              ms: Date.now() - started,
-            })
-          }
-        } else if (check === 'location') {
-          const bucket = args.bucket
-          if (!bucket) throw new Error('location needs a bucket.')
-          const started = Date.now()
-          try {
-            await client.send(new HeadBucketCommand({ Bucket: bucket }), {
-              abortSignal: run.signal,
-            })
-            checks.push({
-              name: 'Bucket',
-              ok: true,
-              detail: `${bucket} is reachable in ${config.region}`,
-              ms: Date.now() - started,
-            })
-          } catch (error) {
-            checks.push({
-              name: 'Bucket',
-              ok: false,
-              detail: describe(error),
-              ms: Date.now() - started,
-            })
-          }
-        } else {
-          const bucket = args.bucket
-          if (!bucket) throw new Error('addressing needs a bucket.')
-          const started = Date.now()
-          const alternate = deps.providers.client({
-            ...config,
-            forcePathStyle: !config.forcePathStyle,
-          })
-          try {
-            await alternate.send(new HeadBucketCommand({ Bucket: bucket }), {
-              abortSignal: run.signal,
-            })
-            checks.push({
-              name: 'Addressing',
-              ok: !config.forcePathStyle,
-              detail: `HeadBucket succeeds with ${config.forcePathStyle ? 'path-style' : 'virtual-hosted'} addressing`,
-              ms: Date.now() - started,
-            })
-          } catch (error) {
-            checks.push({
-              name: 'Addressing',
-              ok: false,
-              detail: `Configured ${config.forcePathStyle ? 'path-style' : 'virtual-hosted'} failed: ${describe(error)}`,
-              ms: Date.now() - started,
-            })
-          }
-        }
-      }
-
+      const { config } = await run.provider(args.provider_id)
+      const endpoint = new URL(
+        config.endpoint || `https://s3.${config.region || 'us-east-1'}.amazonaws.com`,
+      )
+      const url = new URL(args.url ?? endpoint.toString())
+      // The probe reaches the account's own endpoint, never another host.
+      const host = endpoint.hostname
+      const awsS3 =
+        !config.endpoint && /(^|\.)s3([.-][\w-]+)*\.amazonaws\.com(\.cn)?$/.test(url.hostname)
+      if (url.hostname !== host && !url.hostname.endsWith(`.${host}`) && !awsS3)
+        throw new Error(`The probe reaches only ${host} and hosts under it.`)
+      const answer = await probe(url, args.method ?? 'HEAD', run.signal)
       return {
-        model: checks
-          .map((check) => `${check.ok ? 'ok' : 'fail'} ${check.name}: ${check.detail}`)
-          .join('\n'),
-        note: `${checks.filter((check) => check.ok).length} of ${checks.length} ok`,
-        view: { kind: 'probe' as const, endpoint, checks },
+        model: JSON.stringify(answer, null, 1),
+        note: `HTTP ${answer.status} · ${answer.ms.total} ms`,
+        view: {
+          kind: 'raw' as const,
+          title: `${args.method ?? 'HEAD'} ${answer.url}`,
+          value: answer,
+        },
       }
     },
   })

@@ -5,14 +5,4 @@ import type { ToolName } from '@shared/contract'
  * description, which pi sends with its schema; the prompt does not list them a
  * second time.
  */
-export const TOOL_NAMES: readonly ToolName[] = [
-  'buckets',
-  'objects',
-  'object',
-  'config',
-  'account',
-  'probe',
-  'query',
-  'note',
-  'ask',
-]
+export const TOOL_NAMES: readonly ToolName[] = ['call', 'query', 'probe', 'more', 'note', 'ask']

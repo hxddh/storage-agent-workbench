@@ -82,7 +82,7 @@ export class Tasks {
     if (!Array.isArray(context) || context.length === 0) return []
     const accounts = await this.deps.providers.list()
     const out: ContextRef[] = []
-    for (const raw of context.slice(0, 8)) {
+    for (const raw of context) {
       if (!raw || typeof raw !== 'object') continue
       const account = accounts.find((item) => item.id === raw.providerId)
       if (!account) continue
@@ -134,7 +134,7 @@ export class Tasks {
   }
 
   async notes(): Promise<NoteRow[]> {
-    const rows = await this.deps.db.listNotes({ limit: 100 })
+    const rows = await this.deps.db.listNotes()
     const ttl = this.deps.settings.get().noteTtlDays
     const cutoff = ttl > 0 ? Date.now() - ttl * 86_400_000 : null
     return rows

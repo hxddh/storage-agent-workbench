@@ -43,10 +43,11 @@ export function answer(text: string): UiEntry {
   return { id: `a${seq++}`, kind: 'answer', at: at(seq), text }
 }
 
-/** A `buckets` result listing these names. */
-export function buckets(names: string[]): Extract<ToolView, { kind: 'buckets' }> {
+/** A `call` result: ListBuckets naming these buckets. */
+export function buckets(names: string[]): Extract<ToolView, { kind: 'raw' }> {
   return {
-    kind: 'buckets',
-    rows: { columns: ['Bucket', 'Created'], rows: names.map((name) => [name, '2026-01-01']) },
+    kind: 'raw',
+    title: 's3 ListBuckets',
+    value: { Buckets: names.map((Name) => ({ Name, CreationDate: '2026-01-01T00:00:00.000Z' })) },
   }
 }

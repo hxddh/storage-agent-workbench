@@ -29,7 +29,7 @@ const call: UiEntry = {
   id: 'call-entry',
   kind: 'tool',
   at: '2026-01-01T00:00:01Z',
-  name: 'buckets',
+  name: 'call',
   target: 'Prod',
   status: 'done',
   note: '1 bucket',
@@ -138,7 +138,7 @@ describe('the conversation', () => {
     expect(onAnswer).toHaveBeenCalledWith('Prod')
   })
 
-  it('shows a configuration read section by section, as S3 returned it', async () => {
+  it('shows a call as the service answered it', async () => {
     render(
       <Conversation
         {...props}
@@ -148,29 +148,26 @@ describe('the conversation', () => {
             id: 'cfg',
             kind: 'tool',
             at: '',
-            name: 'config',
-            target: 'logs',
+            name: 'call',
+            target: 's3 GetBucketPolicy · logs',
             status: 'done',
-            note: '1 available · 1 access denied',
+            note: null,
             ms: 10,
             view: {
               kind: 'raw',
-              title: 'logs',
-              value: {
-                region: 'us-east-1',
-                policy: { status: 'available', value: { Statement: [{ Principal: '*' }] } },
-                acl: { status: 'access_denied', error: 'AccessDenied: denied' },
-              },
+              title: 's3 GetBucketPolicy',
+              value: { Policy: { Statement: [{ Principal: '*' }] } },
             },
           },
         ])}
       />,
     )
+    expect(screen.getByText('Read')).toBeTruthy()
     fireEvent.click(document.querySelector('.step-line')!)
-    await waitFor(() => expect(document.querySelector('.raw-sections')).toBeTruthy())
-    expect(screen.getByText('access denied')).toBeTruthy()
-    expect(screen.getByText('AccessDenied: denied')).toBeTruthy()
-    expect(document.querySelector('.raw-section pre')?.textContent).toContain('"Principal": "*"')
+    await waitFor(() => expect(document.querySelector('.step-detail pre.code')).toBeTruthy())
+    expect(document.querySelector('.step-detail pre.code')?.textContent).toContain(
+      '"Principal": "*"',
+    )
   })
 
   it('shows a call from an earlier version as a step with what the agent received', async () => {

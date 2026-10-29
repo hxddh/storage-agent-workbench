@@ -1,7 +1,7 @@
 /**
  * A fake OpenAI-compatible chat endpoint for local end-to-end runs. It works
- * like an agent with one call per round: it lists the buckets, reads each
- * configuration it needs, and writes its answer from what the reads returned.
+ * like an agent with one call per round: it lists the buckets with `call`,
+ * reads what it needs of each, and writes its answer from what came back.
  *
  *   node scripts/fake-model.mjs 9200
  */
@@ -15,7 +15,8 @@ const call = (id, name, args) => ({
   function: { name, arguments: JSON.stringify(args) },
 })
 
-const ACCESS = ['policy', 'policy_status', 'acl', 'public_access_block']
+/** The reads of one bucket that say whether it is public. */
+const ACCESS = ['GetBucketPolicyStatus', 'GetBucketAcl']
 
 function plan(body) {
   const messages = Array.isArray(body.messages) ? body.messages : []
@@ -50,10 +51,15 @@ function plan(body) {
     }
   }
   const made = (name) => calls.filter((item) => item.name === name)
+  const reads = (operation, bucket) =>
+    made('call').filter(
+      (item) => item.args.operation === operation && (!bucket || item.args.input?.Bucket === bucket),
+    )
   const evidence = (item) => /evidence="([^"]+)"/.exec(item?.text ?? '')?.[1] ?? ''
   const cite = (item) => (evidence(item) ? ` [1](#ev-${evidence(item)})` : '')
   const n = calls.length
   const next = (name, args) => ({ tool: call(`call_${name}_${n + 1}`, name, args) })
+  const s3 = (operation, input) => next('call', { service: 's3', operation, ...(input ? { input } : {}) })
 
   if (ask.includes('clarify') && !made('ask').length)
     return next('ask', {
@@ -65,14 +71,16 @@ function plan(body) {
   // A provider reasoning summary arrives with the first call of a turn.
   const reasoning =
     n === 0 && ask.includes('public')
-      ? 'List the buckets, then read each one’s policy status, ACL and public access block.'
+      ? 'List the buckets, then read each one’s policy status and ACL.'
       : null
   const first = (result) => (reasoning ? { reasoning, ...result } : result)
 
   // Memory is the notes in the prompt; the agent answers from them.
   if (ask.includes('last time') || ask.includes('what did you find')) {
-    const notes = (/Notes \([^)]*\): (.*)/.exec(system)?.[1] ?? '').split(' | ')
-    const note = notes.find((text) => text.includes('public'))?.replace(/\.+$/, '')
+    const note = [...system.matchAll(/^- \[[^\]]+\] (.*)$/gm)]
+      .map((match) => match[1])
+      .find((text) => text.includes('public'))
+      ?.replace(/\.+$/, '')
     return { text: note ? `I noted earlier: ${note}.` : 'I have no notes from an earlier check.' }
   }
 
@@ -80,28 +88,33 @@ function plan(body) {
 
   if (ask.includes('largest')) {
     const query = made('query')[0]
+    const bucket = bucketArg ?? 'web-assets'
     if (!query)
       return first(
         next('query', {
-          title: `Largest prefixes in ${bucketArg ?? 'web-assets'}`,
-          code: `const sizes = {}; let token = null; do { const page = await tools.list({ bucket: '${bucketArg ?? 'web-assets'}', token }); for (const o of page.items) { const p = o.key.split('/')[0] + '/'; sizes[p] = (sizes[p] ?? 0) + o.size } token = page.next } while (token); return Object.entries(sizes).sort((a, b) => b[1] - a[1]).map(([prefix, bytes]) => ({ prefix, bytes }))`,
+          title: `Largest prefixes in ${bucket}`,
+          code: `const sizes = {}; let token; do { const page = await tools.call({ service: 's3', operation: 'ListObjectsV2', input: { Bucket: '${bucket}', ContinuationToken: token } }); for (const o of page.Contents ?? []) { const p = o.Key.split('/')[0] + '/'; sizes[p] = (sizes[p] ?? 0) + o.Size } token = page.NextContinuationToken } while (token); return Object.entries(sizes).sort((a, b) => b[1] - a[1]).map(([prefix, bytes]) => ({ prefix, bytes }))`,
         }),
       )
-    const top = /"prefix":\s*"([^"]+)"/.exec(query.text)?.[1] ?? 'no prefix'
-    return { text: `\`${top}\` holds the most bytes in \`${bucketArg ?? 'web-assets'}\`.${cite(query)}` }
+    const top = /\n([^\t\n]+\/)\t\d+/.exec(query.text)?.[1] ?? 'no prefix'
+    return { text: `\`${top}\` holds the most bytes in \`${bucket}\`.${cite(query)}` }
   }
 
   // A named bucket: read what the question needs of it, then answer.
   const named = bucketArg && !ask.includes('public?') ? bucketArg : null
   if (named && (ask.includes('who can read') || ask.includes('applied') || ask.includes('fix') || ask.includes('change plan') || ask.includes('again'))) {
-    const sections = ask.includes('fix') || ask.includes('change plan') ? ['lifecycle'] : ACCESS
-    const read = made('config').find((item) => item.args.bucket === named)
-    if (!read) return first(next('config', { bucket: named, sections }))
+    const operation = ask.includes('who can read')
+      ? 'GetBucketPolicy'
+      : ask.includes('fix') || ask.includes('change plan')
+        ? 'GetBucketLifecycleConfiguration'
+        : 'GetBucketPolicyStatus'
+    const read = reads(operation, named)[0]
+    if (!read) return first(s3(operation, { Bucket: named }))
     if (ask.includes('who can read'))
       return {
         text: /"Principal": "\*"/.test(read.text)
           ? `The bucket policy grants anonymous read on \`${named}\`.${cite(read)}`
-          : `Nothing in the policy or ACL of \`${named}\` grants anonymous read.${cite(read)}`,
+          : `Nothing in the policy of \`${named}\` grants anonymous read.${cite(read)}`,
       }
     if (ask.includes('applied'))
       return {
@@ -116,29 +129,33 @@ function plan(body) {
   }
 
   // Everything else: list the buckets, read each one's access, then say what was read.
-  const listing = made('buckets')[0]
-  if (!listing) return first(next('buckets', {}))
-  const names = listing.text
-    .split('\n')
-    .map((line) => line.split('\t')[0]?.trim())
-    .filter((name) => name && /^[a-z0-9][a-z0-9.-]+$/.test(name) && name !== 'bucket')
+  const listing = reads('ListBuckets')[0]
+  if (!listing) return first(s3('ListBuckets'))
+  const names = [...listing.text.matchAll(/"Name": "([^"]+)"/g)].map((match) => match[1])
   if (ask.includes('ghost'))
     return {
       text: `No read returned a bucket named ghost-bucket, so I cannot say anything about it. This account holds ${names.map((name) => `\`${name}\``).join(', ')}.${cite(listing)}`,
     }
-  const unread = names.find((name) => !made('config').some((item) => item.args.bucket === name))
-  if (unread) return next('config', { bucket: unread, sections: ACCESS })
-  const reads = made('config')
-  const open = reads.filter((item) => /"IsPublic": true/.test(item.text) || /AllUsers/.test(item.text))
-  const denied = reads.filter((item) => /"status": "access_denied"/.test(item.text))
+  for (const name of names)
+    for (const operation of ACCESS)
+      if (!reads(operation, name).length) return s3(operation, { Bucket: name })
+  const open = names.filter((name) =>
+    ACCESS.some((operation) =>
+      reads(operation, name).some((item) => /"IsPublic": true|AllUsers/.test(item.text)),
+    ),
+  )
+  const denied = names.filter((name) =>
+    ACCESS.some((operation) => reads(operation, name).some((item) => /AccessDenied/.test(item.text))),
+  )
+  const proof = (name) => reads('GetBucketPolicyStatus', name)[0] ?? reads('GetBucketAcl', name)[0]
   const publicText = open.length
-    ? `${open.map((item) => `\`${item.args.bucket}\``).join(', ')} ${open.length === 1 ? 'is' : 'are'} public${cite(open[0])}.`
+    ? `${open.map((name) => `\`${name}\``).join(', ')} ${open.length === 1 ? 'is' : 'are'} public${cite(proof(open[0]))}.`
     : 'No bucket policy status or ACL I read makes a bucket public.'
   const deniedText = denied.length
-    ? ` I could not read every section of ${denied.map((item) => `\`${item.args.bucket}\``).join(', ')} (access denied), so that bucket is not fully checked.`
+    ? ` I could not read every part of ${denied.map((name) => `\`${name}\``).join(', ')} (access denied), so that bucket is not fully checked.`
     : ''
   if (open.length && !made('note').length && (ask.includes('survey') || ask.includes('check')))
-    return next('note', { text: `${open.map((item) => item.args.bucket).join(', ')} public at last check.` })
+    return next('note', { text: `${open.join(', ')} public at last check.` })
   return { text: `${publicText}${deniedText}` }
 }
 

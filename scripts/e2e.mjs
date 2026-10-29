@@ -155,9 +155,9 @@ try {
   for (const gone of ['Check account', 'Try with demo storage'])
     if (await page.getByRole('button', { name: gone }).count()) await fail(`${gone} is back`)
 
-  // The agent lists the buckets, reads each configuration, and answers from what it read.
+  // The agent lists the buckets, reads what it needs of each, and answers from what it read.
   await say('Which buckets are public?')
-  for (const label of ['Listed buckets', 'Read configuration'])
+  for (const label of ['Read'])
     if (!(await page.locator('.step.tool', { hasText: label }).count()))
       await fail(`the agent did not call: ${label}`)
   if (!(await lastText()).includes('web-assets')) await fail('the answer does not name web-assets')
@@ -165,9 +165,9 @@ try {
     if (await page.getByText(gone).count()) await fail(`report scaffolding is back: ${gone}`)
   await page.locator('.msg.agent .cite').last().click()
   await page.waitForSelector('.step.tool .step-detail', { timeout: 5_000 })
-  // A step shows the read section by section, and exactly what the agent received.
+  // A step shows the service's response, and exactly what the agent received.
   const cited = page.locator('.step.tool:has(.step-detail)').first()
-  await cited.locator('.raw-sections').waitFor({ timeout: 5_000 })
+  await cited.locator('.step-detail pre.code').first().waitFor({ timeout: 5_000 })
   const received = cited.locator('.step-output')
   await received.locator('summary').click()
   const sent = await received.locator('pre').innerText()
@@ -259,7 +259,7 @@ try {
   const query = await openTool('Ran a read-only query')
   const firstCell = await query.locator('.table-block table tbody td').first().innerText()
   if (firstCell !== 'reports/') await fail(`query rows: ${firstCell}`)
-  await query.locator('pre.code:has-text("tools.list")').waitFor({ timeout: 5_000 })
+  await query.locator('pre.code:has-text("tools.call")').waitFor({ timeout: 5_000 })
   console.log('QUERY OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-query.png') })
 

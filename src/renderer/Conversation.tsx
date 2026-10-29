@@ -71,7 +71,6 @@ function ToolStep({
   onToggle,
   t,
   lang,
-  taskTitle,
   now,
 }: {
   item: Tool
@@ -79,7 +78,6 @@ function ToolStep({
   onToggle: () => void
   t: Dict
   lang: Lang
-  taskTitle: string
   now: number
 }) {
   const running = item.status === 'running'
@@ -122,7 +120,7 @@ function ToolStep({
             </>
           )}
           {item.view ? (
-            <ToolViewBody view={item.view} t={t} taskTitle={taskTitle} limit={8} />
+            <ToolViewBody view={item.view} t={t} />
           ) : running ? (
             <p className="quiet">{t.runWorkWaiting}</p>
           ) : item.note ? (
@@ -501,7 +499,6 @@ export function Conversation({
                       onToggle={() => toggle(item.entryId ?? item.id)}
                       t={t}
                       lang={lang}
-                      taskTitle={view.task.title}
                       now={now}
                     />
                   ) : null,
