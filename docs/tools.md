@@ -1,15 +1,15 @@
 # Tools
 
-Thirteen tools in one pi extension (`runtime/agent.ts`), grouped by capability:
-**read**, **query**, **memory**, **change_plan**, **plan**, **skill** and
-**clarify**. Read
-tools go through `agentTool()`, which applies account scope, a timeout, an audit
+Fourteen tools in one pi extension (`runtime/agent.ts`), grouped by capability
+in `tools/registry.ts`: **read**, **query**, **memory**, **change_plan**,
+**plan**, **skill** and **ask**. Tools go through `agentTool()`, which applies account scope, a timeout, an audit
 row, redaction and the untrusted-data envelope, and attaches a typed `view`, a
 `status` (`done`, `failed`, `refused`, `timeout`, `stopped`) and an `evidenceId`.
 
-`plan`, `skill` and `ask` are control tools. They shape the run and never read
+`plan`, `skill` and `ask` are control tools. They shape the turn and never read
 storage. `change_plan` generates text from remembered Issues; the app never
-applies it.
+applies it. `accept_risk` asks the user to confirm accepting a risk; it changes
+nothing itself.
 
 | Group | Tool | Input | Model output | View |
 |---|---|---|---|---|
@@ -20,38 +20,34 @@ applies it.
 | read | `config` | `provider_id?`, `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules proved clean; for `access`, grants and coverage | finding list, observations, access chain and coverage |
 | read | `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`) | check outcomes | check list |
 | read | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | first 40 rows, call/listing counts, script output | table, bar chart, script, buckets read |
-| memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with age, Issues, notes; with `history`, Issue events, posture changes and reading events | bucket table, Issues, notes, optional history table |
+| memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | remembered buckets with age, Issues (each line ends `· rule <code>`), notes; with `history`, Issue events, posture changes and reading events | bucket table, Issues, notes, optional history table |
 | memory | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
+| memory | `accept_risk` | `provider_id?`, `bucket` (empty for the account rule), `code` (the rule code as `estate` lists it), `accept?` (default true; false reopens) | the window asks the user; it is not accepted until they confirm | confirmation card with **Accept risk** or **Reopen** |
 | change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue) | one change plan: baseline, merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
-| plan | `plan` | `steps` (1–6), `note?` | optional plan recorded | pending/active/done/blocked steps, inside Work while live or stopped with a blocker |
-| skill | `skill` | `name?` | one method, or the four methods | not a check; shown under Methods |
-| clarify | `ask` | `question` (≤300), `options` (1–4), `note?` | one question; the run ends until the user answers | question and options; composer is the answer surface |
+| plan | `plan` | `steps` (1–6), `note?` | optional plan recorded | pending/active/done/blocked checklist; only its newest version per turn is shown |
+| skill | `skill` | `name?` | one method, or the four methods | a `Read a method` step; not a check |
+| ask | `ask` | `question` (≤300), `options` (1–4), `note?` | one question; the turn ends until the user answers | the question as an agent message, with one button per option while it waits |
 
-## Answer and sources
+## Answer and citations
 
-The final assistant message is the answer. It is normal Markdown; there is no
-answer tool and no report block protocol. The model cites a tool result by the
-actual evidence id from the `<untrusted-data evidence="…">` tag, for example
-`[1](#ev-call_survey_1)`. The window resolves that id to the tool view, validates
-every citation, leaves an unresolved one as plain text and shows a quiet note.
-The model never writes a table of facts.
+The agent's text is the answer. It is normal Markdown; there is no answer tool
+and no report block protocol, and a turn may hold several texts between tool
+calls. The model may link a tool result by the actual evidence id from the
+`<untrusted-data evidence="…">` tag, for example `[1](#ev-call_survey_1)`. In
+the window the link is a small button; clicking it opens that call's step in
+place and scrolls to it. The app does not validate citations or names, and a
+link that matches no call does nothing.
 
-**Work** is the current run's activity ledger below the answer. While live it is
-open: a provider reasoning summary if one exists, the running call and every
-completed call with its status, target, shaped argument summary, result note and
-duration. Live progress comes from `ToolDetails.progress`, a redacted and
-bounded field; raw tool output never reaches this surface. Opening a call shows
-its typed result. Plan is a block inside Work while the run is live or stopped
-with a blocked step. After the answer settles Work collapses to
-`Worked for … · n calls` and reopens in the same order; failed, stopped and
-timed-out calls stay in place.
+Every call is a step in the conversation, where it happened: a state mark, the
+tool's label, target, note, a status word when it did not finish, and its
+duration. A running step is open and shows `Waiting for the first result.`
+until it settles; a settled step opens on click to show the argument summary
+and the typed result. Live progress comes from `ToolDetails.progress` and the
+live tool's note, redacted and bounded; raw tool output never reaches the
+window. Failed, refused, stopped and timed-out calls stay in place.
 
-An answer without a citation has no proof table. A citation opens an in-place
-evidence peek; `Sources` is one on-demand drawer below Work. Risks, Data, Change
-plan, Tool calls, Not checked, Checked again, Changes and Methods appear only
-when they have content; one row opens one section. The **Tool calls** section is
-the audit receipt, not the live Work narrative. There is no legacy report block
-path.
+The 35.x Work ledger, Sources drawer, Findings and Not checked strips and
+citation validation were removed in 36.0.
 
 ## Code mode (`query`)
 
@@ -88,15 +84,25 @@ to query that dataset.
 
 Four on-demand methods: `access`, `change`, `inventory`, `capacity`. Skills are
 documentation for the model, not storage evidence and not checks. A method the
-agent loads appears under **Methods** in Sources; it does not consume a Tool
-calls row.
+agent loads is a `Read a method` step like any other call.
 
 ## Plan
 
 `plan` is optional. Use it when the work has several distinct steps; omit it for
-a short read. It renders 1–6 steps with pending/active/done/blocked states inside
-Work while the run is live or stopped with a blocked step. A settled normal
-answer does not carry a separate plan section; Work is the one process surface.
+a short read. It renders 1–6 steps with pending/active/done/blocked states as a
+`Plan` block among the turn's steps. The agent revises it by calling `plan`
+again; within a turn only the newest version is shown
+(`latestPlans()` in `shared/conversation.ts`).
+
+## Accepting a risk
+
+`accept_risk` names one open or accepted Issue by account, bucket and rule code.
+It fails when no such risk is open or accepted. It returns an `accept` view and
+tells the model the risk is not accepted until the user confirms. The window
+shows a confirmation card (`Accept the risk “…” on …?`) with **Accept risk**, or
+**Reopen** for `accept: false`; only that click calls `AppDb.setAccepted`. After
+the click the card says `Accepted.` or `Reopened.`; if a later reading proved
+the risk fixed, it says so instead of offering the button.
 
 ## Rules the tools enforce
 
@@ -107,7 +113,8 @@ answer does not carry a separate plan section; Work is the one process surface.
   travel with the call as `assessed`. `survey` remembers each bucket as soon as it is
   read, reads the longest-unread first, uses at most 12 concurrent readers, stops
   starting buckets 20 seconds before its 300-second timeout, and reports the
-  rest as pending; calling it again continues.
+  rest as pending; calling it again continues. Its step note gives the buckets
+  read and, when the read changed Issues, `n new issues` and `n resolved`.
 - Only a complete, unscoped, untruncated listing marks a bucket gone. A scoped
   or partial survey never does.
 - On AWS, `survey` reads the account-wide public access block (STS
@@ -115,9 +122,10 @@ answer does not carry a separate plan section; Work is the one process surface.
   are batched in GetMetricData calls; the storage estimate is a list-price
   estimate, not a bill. An S3-compatible endpoint has neither, and the rules
   that need them stay undecided.
-- The harness blocks a storage read repeated with the same arguments in one run
-  (`estate`, `change_plan`, `note` and `survey` may repeat) and every call after
-  the model tier's round budget (**14 small, 24 mid, 32 large**).
+- The harness blocks a storage read repeated with the same arguments in one turn
+  (`estate`, `change_plan`, `note`, `survey`, `accept_risk` and the control
+  tools may repeat), allows one retry after a failed read, and blocks every call
+  after the model tier's round budget (**14 small, 24 mid, 32 large**).
 - `object.preview` reads at most 8 KiB and only for text-like content types under
   1 MiB; the body of a large object is never downloaded.
 - `dataset` imports at most 2,000,000 rows and `aggregate` answers only
