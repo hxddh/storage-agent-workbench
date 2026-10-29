@@ -32,28 +32,30 @@ The package also exposes direct aliases: `npm run e2e`, `npm run e2e:audit`,
 
 ## Tests
 
-`npm test` is the fast suite. It covers policy evaluation and exposure, the
-twelve rules and tri-state decisions, the account rule, TLS policy detection,
-Issue lifecycle (opened, resolved, gone, accepted, recurred), schema migrations,
-scope and the tool floor, code mode (sandbox, budgets, timeout, import), demo
-storage, generated change plans and impact, log normalization and IP masking,
-CSV/Parquet import and the aggregate whitelist, the search index, entry → UI
-projection (including 35.x entries and budget-blocked calls), the conversation
-projection (order, steers, the live slot, citations, what each call returned, Markdown),
-the runaway ceiling rebuilt from durable entries, migrations 15 and 16, redaction,
-provider capabilities, posture diffs, permission diagnosis, model windows,
-access evaluation and reading records. `Conversation.test.tsx` and
-`Composer.test.tsx` run in jsdom; the rest use Node.
+`npm test` is the fast suite. It covers the raw readers (each section with its
+status, denied and unsupported reads, account ids scrubbed), the tools over a
+fake S3 (scope refused before any request, paging, previews, notes without
+secrets, a stopped call as stopped), the tool floor and `ask`, code mode
+(sandbox, budgets, timeout, import), log normalization and IP masking,
+CSV/Parquet import and the aggregate whitelist, schema migrations through 16
+and provider deletion, the search index, entry → UI projection (including
+35.x entries and calls to tools of earlier versions), the live projection, the
+conversation thread (order, steers, the live slot, citations, what each call
+returned, Markdown), the runaway ceiling rebuilt from durable entries,
+redaction, provider capabilities, AWS profiles, the model catalog and the
+localized dictionaries. `Conversation.test.tsx` and `Composer.test.tsx` run in
+jsdom; the rest use Node.
 
 ### Domain and compatibility
 
 - `src/main/domain.test.ts` runs the real AWS SDK and the real tools over HTTP
-  against `scripts/fake-s3.mjs` profiles: AWS, an S3-compatible store without
-  policy status, a denied ACL, a condition-narrowed policy, CORS `*`, versioning
-  and the demo account. It uses a real SQLite estate.
+  against `scripts/fake-s3.mjs`, whose responder is `scripts/fake-s3-core.mjs`:
+  bucket profiles that answer as real providers do, including their 403s and
+  501s. It uses a real SQLite database.
 - `src/main/compat.test.ts` runs against moto, an independent AWS emulator, for
-  S3 exposure, the account-wide block and access reads where moto supports them.
-  It runs only with `STORAGE_AGENT_AWS_ENDPOINT`:
+  what AWS says about exposure, the account-wide block, a KMS key policy and
+  CloudTrail events (with the account id never sent on). It runs only with
+  `STORAGE_AGENT_AWS_ENDPOINT`:
 
   ```bash
   pip install 'moto[server]==5.2.4'
@@ -65,27 +67,34 @@ access evaluation and reading records. `Conversation.test.tsx` and
 ### Real window
 
 - `scripts/e2e.mjs` builds the app and drives the real Electron window against
-  `scripts/fake-s3.mjs` (delayed so a running check is observable) and
-  `scripts/fake-model.mjs` and drives it as a conversation. It covers model
-  setup and test, Check account filling the composer without sending (and that the 35.x scaffolding
-  `Earlier in this task`, `Not checked` and `Worked for` is gone), a follow-up
-  in the same thread, a citation opening its call, axe (serious/critical
-  violations fail), `@` focus, a clarifying question answered by an option,
-  access rows, accepting a risk through the confirmation card, applying a fix
-  outside the app and the agent's re-read, a generated change plan,
-  stop/continue, search (opening an agent text), code-mode rows and the demo
-  account.
-- `scripts/e2e-audit.mjs` starts with no model and no account, checks that the
-  composer is disabled, chooses demo storage explicitly, and checks that this
-  only adds the account: no task, no conversation, no **Check account**, and
-  **Set up a model** is offered. It captures the no-model state.
-- `scripts/shots.mjs` captures Home, Settings, the conversation (task, citation
-  open, tool detail, follow-up, estate, history, live, change plan, risk
-  confirmation), dark-mode, compact and Chinese states under
-  `.amp/in/artifacts`.
-- `scripts/visual.mjs` compares those captures to `visual/baseline`. It rejects
-  a global pixel change above 5% and any 64px tile with a large local change,
-  so a missing control is not hidden by a large unchanged window.
+  `scripts/fake-s3.mjs` (delayed so running work is observable) and
+  `scripts/fake-model.mjs`, a fake OpenAI-compatible endpoint that lists the
+  buckets, reads each configuration it needs and answers from what it read. It
+  covers model setup from the fetched list, adding an account, axe on
+  Settings, Home and the conversation (serious/critical violations fail), Home
+  without **Check account** or demo storage, an answer built from `buckets` and
+  `config` calls with the 35.x scaffolding (`Earlier in this task`, `Not
+  checked`, `Worked for`, `Findings`) absent, a citation opening a `config`
+  step section by section with exactly what the agent received, a follow-up in
+  the same thread, `@` focus, a clarifying question answered by an option, a
+  fix applied outside the app and the agent's re-read, a change written as the
+  agent's own text, stop/continue (the reply lands after the divider), search
+  opening an agent text, and code-mode rows and script.
+- `scripts/e2e-audit.mjs` starts with no model and no account and checks that
+  the composer is disabled, that **Set up a model** and **Add an account** are
+  offered, that **Check account** and **Try with demo storage** are not, and
+  that no account, task or conversation appeared on its own. It captures the
+  no-model state.
+- `scripts/shots.mjs` captures Home (empty, configured, dark, compact, Chinese),
+  Settings (model, account form, appearance, dark, compact, a Chinese test
+  error), the conversation (task, citation open, tool detail, follow-up, memory
+  in a new task, live, a written change, dark, compact) and the compact sidebar
+  under `.amp/in/artifacts`.
+- `scripts/visual.mjs` compares those captures to `visual/baseline`
+  (`01-home-light` … `24-citation-open`, including `13-memory-light` and
+  `14-change-light`). It rejects a global pixel change above 5% and any 64px
+  tile with a large local change, so a missing control is not hidden by a
+  large unchanged window.
 - `scripts/perf.mjs` launches three times and fails when the median time to a
   visible composer exceeds 1,000 ms.
 - `scripts/budget.mjs` excludes the lazily loaded `Settings`, `Conversation`
@@ -94,30 +103,34 @@ access evaluation and reading records. `Conversation.test.tsx` and
 
 ### Evaluation
 
-`scripts/eval.mjs` has 28 scenarios. It scores findings (the Issue rows in the
-conversation's survey steps), answers that name what was found and what could
-not be read, blind-spot honesty, memory-first and estate-history behavior,
-verify-after-fix, code mode, access questions,
-prompt-injection-shaped object names and call counts. The script runs the real
-window against fake S3.
+`scripts/eval.mjs` has 28 scenarios. A model drives the real window against
+fake S3 profiles whose truth is known, and each run is scored on the agent's
+last answer: the right buckets called public, no bucket called public that is
+not, what it could not read said out loud and no claim of a clean account, the
+expected conditions or prefixes named (the largest prefix is computed from the
+fake storage's own objects), a fix given as text, and no claimed write. Calls
+are reported, not judged; how much to read is the agent's. Scenarios include
+an S3-compatible store, a denied ACL, a condition-narrowed policy, a fix
+applied mid-task, memory in a new task, large and stale prefixes, and a
+prompt-injection-shaped object key.
 
-`scripts/bench.mjs` has 14 agent-behavior scenarios scored on the conversation:
-`public-account`, `blind-acl`, `memory-first`, `clarify`, `fix-plan`, `query`,
+`scripts/bench.mjs` has 13 agent-behavior scenarios scored on the conversation:
+`public-account`, `blind-acl`, `memory`, `clarify`, `fix`, `query`,
 `unknown-bucket`, `citation-validity`, `stop-continue`, `steer`,
-`model-switch`, `retry-after-steer`, `follow-up` and `accept-risk`. `--smoke`
-runs them with the fake model.
+`model-switch`, `retry-after-steer` and `follow-up`. `--smoke` runs them with
+the fake model.
 
 ```bash
 xvfb-run -a node scripts/eval.mjs --smoke
 EVAL_PROVIDER=anthropic EVAL_MODEL=... EVAL_API_KEY=... \
-  xvfb-run -a node scripts/eval.mjs
+  xvfb-run -a node scripts/eval.mjs [--only name] [--runs 3]
 ```
 
 `--smoke` runs only the `public-aws` scenario with the fake model. It proves the
-harness and scoring plumbing run; it is not a quality result. A real run exits
-non-zero when a must-pass check fails and writes
-`.amp/in/artifacts/eval-report.md` and `.json`. The report names the model and
-never includes the key.
+harness and scoring plumbing run; it is not a quality result and never fails
+the exit code. A real run exits non-zero when a must-pass check fails and
+writes `.amp/in/artifacts/eval-report.md` and `.json`. The report names the
+model and never includes the key.
 
 ## Packaging
 
@@ -137,7 +150,8 @@ tagged release builds all three platforms or publishes nothing.
 ## Release work
 
 1. Run the local gates you intend to claim: typecheck, lint, unit tests, build,
-   budget, E2E, audit E2E, shots/visual, and the relevant eval.
+   budget, contrast, E2E, audit E2E, shots/visual, and the relevant eval and
+   bench.
 2. Bump `package.json` and `package-lock.json`.
 3. Commit, tag the commit, and push the tag. Do not move a published tag.
 4. Watch the Release workflow. With `EVAL_API_KEY` it runs two model
@@ -159,10 +173,10 @@ tagged release builds all three platforms or publishes nothing.
   queries; short CJK queries use LIKE. It returns at most 20 hits.
 - The sidebar shows the 500 most recently updated tasks; Settings lists the 100
   most recent notes. Older rows remain in SQLite but are not shown.
-- Removing an account deletes its provider/bucket notes; `issue_events` keep
-  their historical rows with the Issue. See [data-model.md](data-model.md).
-- Access analysis is evidence with coverage, not a complete IAM authorization
-  proof.
+- Removing an account deletes its account and bucket notes. See
+  [data-model.md](data-model.md).
+- The tools return what the APIs answer; no test proves the agent's judgement
+  of them. The eval scores answers against fake storage, not real accounts.
 - There is no import from an earlier version of the app.
 - The E2E axe gate covers serious and critical violations; `scripts/contrast.mjs`
   guards the secondary-text token pairs. It is not a full contrast certification.

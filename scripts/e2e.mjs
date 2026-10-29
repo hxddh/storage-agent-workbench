@@ -183,7 +183,7 @@ try {
   if (!(await lastText()).includes('anonymous read')) await fail('the follow-up answer is missing')
   console.log('FOLLOW-UP OK')
 
-  // @ points at a remembered bucket without typing its name.
+  // @ points at a bucket the account lists, without typing its name.
   await page.locator('.composer textarea').fill('@web')
   await page.waitForSelector('.ref-picker .ref-row', { timeout: 5_000 })
   await page.locator('.ref-row', { hasText: 'web-assets' }).first().click()

@@ -30,9 +30,10 @@ commit from a green `main`; do not use the tag workflow as a substitute for CI.
    model. If it does not exist, it runs `scripts/eval.mjs --smoke` and
    `scripts/bench.mjs --smoke`. A smoke
    report proves the harness and conversation plumbing run; it is not a
-   model-quality score. The bench scores the conversation the agent produced
-   (calls, citations, clarify, steer, resume, follow-ups, risk acceptance, model
-   choice) and what it said.
+   model-quality score. The eval scores the agent's answer against the fake
+   storage's known truth; the bench scores the conversation the agent produced
+   (calls, citations, clarify, steer, resume, follow-ups, a change for the user
+   to apply, model choice) and what it said.
 2. **Signing detection** — checks all seven signing secrets. Only when every one
    is present is the build marked signed.
 3. **Build** — macOS x64 and arm64 (`.dmg`, `.zip`), Windows NSIS `.exe`, Linux
@@ -63,10 +64,11 @@ application itself still has the read-only, scope and secret boundaries in
 
 Real-model evaluation is valuable but not guaranteed by the repository alone:
 it needs a provider key and model variables. The release records a smoke result
-when they are absent. The eval covers 29 storage scenarios; the bench covers 14
+when they are absent. The eval covers 28 storage scenarios, each scored on what
+the agent said against what the fake storage holds; the bench covers 13
 agent-behavior scenarios and scores the conversation, including a retry after a
-steer, a follow-up in the same thread and accepting a risk only after the
-user's click. The bench gate: every must-pass check
+steer, a follow-up in the same thread and a fix written as text without a
+claimed write. The bench gate: every must-pass check
 passes in every run and at least 90% of soft checks pass. A smoke bench uses the
 same gate (the fake model is deterministic, so a failure is a plumbing
 regression). Reports are attached and named after the model, never the key. A
@@ -114,11 +116,15 @@ The latest release is **36.0.0** (2026-10-29). Earlier release notes
 may describe retired behavior; they are history. Keep `README.md`,
 `CHANGELOG.md` and this paragraph in step with the next tag, and refresh
 `docs/screenshot.png` if the surface changed. 36.0 makes the window a
-conversation: each task is one thread of the user's messages and the agent's
-steps and text, projected by `shared/conversation.ts`; every read goes through
-the agent, so `Check account` and scheduled checks need a model; accepting a
-risk is asked with `accept_risk` and done only by the user's click. The
+conversation and the agent the only reader: each task is one thread of the
+user's messages and the agent's steps and text, projected by
+`shared/conversation.ts`, and every read goes through the agent. The tools are
+nine (`buckets`, `objects`, `object`, `config`, `account`, `probe`, `query`,
+`note`, `ask`) and return each API's answer as it came, scrubbed of account
+ids (`s3/raw.ts`). The rule engine and Issues, the `survey`, `estate`,
+`change_plan` and `accept_risk` tools, generated change plans, reading records
+and posture history, scheduled checks, **Check account**, demo storage, the
 scripted check and re-check, app-level answer validation, the scope line and
-the evidence strips were removed. Issues still change only in
-`estate/assess.ts`, loop guards still derive from durable entries, and the
-schema head stays at 15; 35.x tasks open as conversations.
+the evidence strips were removed. The runaway ceiling still derives from
+durable entries. Schema head 16 drops the rule engine's tables and the
+providers' schedule and account columns; 35.x tasks open as conversations.

@@ -20,25 +20,6 @@ export function redact(text: string): string {
   return out
 }
 
-const SECRET_KEYS = /^(secret|token|password|authorization|credential|signature|api[_-]?key)/i
-
-/** Deep-redact a JSON value; also caps strings so a hostile object cannot bloat a view. */
-export function redactDeep(value: unknown, depth = 0): unknown {
-  if (depth > 6) return null
-  if (typeof value === 'string') return redact(value.slice(0, 4000))
-  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
-  if (Array.isArray(value)) return value.slice(0, 200).map((v) => redactDeep(v, depth + 1))
-  if (typeof value === 'object') {
-    const out: Record<string, unknown> = {}
-    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
-      if (SECRET_KEYS.test(key)) continue
-      out[key] = redactDeep(v, depth + 1)
-    }
-    return out
-  }
-  return null
-}
-
 /** Walk a tool view and redact every string without dropping rows or columns. */
 export function redactView(value: unknown, depth = 0): unknown {
   if (depth > 64) return null

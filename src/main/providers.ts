@@ -14,7 +14,8 @@ import { STSClient } from '@aws-sdk/client-sts'
 import { fromIni } from '@aws-sdk/credential-provider-ini'
 import type { Account, AccountInput } from '@shared/contract'
 import type { AppDb, ProviderRow } from './db'
-import { capabilitiesOf, detectProviderKind, type ProviderCapabilities } from './s3/capabilities'
+import { detectProviderKind } from './s3/capabilities'
+import { scrub } from './s3/raw'
 import { maskKey } from './security/redact'
 import type { Vault } from './security/vault'
 
@@ -26,7 +27,6 @@ export interface ProviderConfig {
   id: string
   name: string
   kind: import('./s3/capabilities').ProviderKind
-  caps: ProviderCapabilities
   endpoint: string
   region: string
   forcePathStyle: boolean
@@ -122,7 +122,6 @@ export class Providers {
       id: row.id,
       name: row.name,
       kind: (row.kind || detectProviderKind(row.endpoint)) as Account['kind'],
-      caps: capabilitiesOf(row.kind || detectProviderKind(row.endpoint)),
       endpoint: row.endpoint,
       region: row.region,
       forcePathStyle: row.force_path_style === 1,
@@ -366,7 +365,6 @@ export class Providers {
       id: row.id,
       name: row.name,
       kind: (row.kind || detectProviderKind(row.endpoint)) as Account['kind'],
-      caps: capabilitiesOf(row.kind || detectProviderKind(row.endpoint)),
       endpoint: row.endpoint,
       region: row.region,
       forcePathStyle: row.force_path_style === 1,
@@ -384,7 +382,12 @@ export class Providers {
   }
 }
 
+/** A provider error as one line; the account id it may name becomes `<account>`. */
 export function describe(error: unknown): string {
+  return scrub(describeRaw(error)) as string
+}
+
+function describeRaw(error: unknown): string {
   if (error instanceof Error) {
     const named = error as Error & { $metadata?: { httpStatusCode?: number }; name?: string }
     const status = named.$metadata?.httpStatusCode

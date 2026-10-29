@@ -87,11 +87,16 @@ export function createAgent(deps: ToolDeps, context: AgentContext, tools?: ToolR
  * What every turn knows without asking: the accounts it can read (their ids
  * are tool arguments) and the notes the agent wrote down, the first 12 of N.
  */
-export async function buildDigest(deps: ToolDeps): Promise<string> {
+export async function buildDigest(deps: ToolDeps, noteTtlDays = 0): Promise<string> {
   try {
     const accounts = await deps.providers.list()
-    const notes = await deps.db.listNotes({ limit: 12 })
-    const noteTotal = await deps.db.countNotes()
+    // A note past the user's retention is gone for the agent too, as it is in Settings.
+    const cutoff = noteTtlDays > 0 ? Date.now() - noteTtlDays * 86_400_000 : null
+    const live = (await deps.db.listNotes({ limit: 1000 })).filter(
+      (note) => !cutoff || Date.parse(note.created_at) >= cutoff,
+    )
+    const notes = live.slice(0, 12)
+    const noteTotal = cutoff ? live.length : await deps.db.countNotes()
     const lines: string[] = []
     if (accounts.length === 0) {
       lines.push('No storage account is configured.')

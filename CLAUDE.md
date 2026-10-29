@@ -44,8 +44,8 @@ message and the agent's work on it.
    agent's text, provider reasoning as returned in full, and every tool call —
    blocked ones and calls to tools of earlier versions too — with its shaped
    result and exactly what the agent received. A tool's `model` text carries
-   what its view shows; the window never shows the user data the agent did not
-   get. The app never writes into the agent's answer, rewrites it, corrects it
+   what its view shows; when `bound()` cuts the agent's copy, the step says the
+   agent got part of the result. The app never writes into the agent's answer, rewrites it, corrects it
    or summarises it.
 8. Code mode runs in the QuickJS sandbox with no network, filesystem, process,
    timers or modules; its only capabilities are the scoped read-only primitives
@@ -130,8 +130,8 @@ pi rows, host task rows, datasets, audit rows and `tasks/<conversation>/`.
 `Sidebar · conversation · Composer`, plus a full-screen Settings sheet. The
 conversation (messages, inline steps, what each call returned, clarify,
 notices, Stop/Continue/Retry) and the keyboard map are specified in
-`docs/design.md`. A `config` or `account` read opens as its sections with their
-status and JSON. There are no evidence strips, scope line, earlier-runs fold or
+`docs/design.md`. A `config` read opens as its sections, each with its status
+and JSON; an `account` read opens as its one `{ status, value | error }`. There are no evidence strips, scope line, earlier-runs fold or
 "worked for" summary, and Home lists accounts without saying anything about
 them. Design tokens live in `src/renderer/styles.css`; never use a raw colour in
 a component. `npm run contrast` guards secondary text. English by default;

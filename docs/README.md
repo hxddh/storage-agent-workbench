@@ -5,11 +5,11 @@ roadmap and not a substitute for the code.
 
 | File | What it is |
 |---|---|
-| [product.md](product.md) | Tasks as conversations, Home, Check account, access evidence, memory and limits |
+| [product.md](product.md) | Tasks as conversations, Home, the reads, memory, Settings and limits |
 | [architecture.md](architecture.md) | Processes, runtime flow, modules and storage layout |
 | [data-model.md](data-model.md) | Host tables, pi tables, datasets and retention |
-| [tools.md](tools.md) | The twelve tools grouped by capability, citations, change_plan, code mode and limits |
-| [security.md](security.md) | Secrets, scope, redaction, evidence and the trust boundary |
+| [tools.md](tools.md) | The nine tools, citations, code mode and limits |
+| [security.md](security.md) | Secrets, scope, redaction, account ids and the trust boundary |
 | [iam.md](iam.md) | The read-only IAM actions and what each one enables |
 | [capabilities.md](capabilities.md) | Provider capability matrix |
 | [design.md](design.md) | Tokens, type, the conversation layout, motion and accessibility |
@@ -28,35 +28,30 @@ roadmap and not a substitute for the code.
 ## Vocabulary
 
 - **Task** — one conversation with the agent: the user's messages and, between
-  them, what the agent did and said, with its entries, memory and a composer.
+  them, what the agent did and said, with its entries and a composer.
 - **Turn** — one user message and the agent's work on it: thoughts, tool calls,
-  text, a question or a confirmation. A message sent while the agent works is a
-  steer; it joins the running turn.
+  text or a question. A message sent while the agent works is a steer; it joins
+  the running turn.
 - **Step** — one tool call or reasoning summary, shown as a compact line where it
-  happened. Opening it shows the call's shaped result.
+  happened. Opening it shows the call's shaped result and what the agent
+  received.
 - **Answer** — the agent's text, normal Markdown. A turn can hold several texts
   between tool calls. The agent may link a call as `[1](#ev-<id>)`; the link
   opens that step in place. The app never writes into it.
-- **Reading record** — the counts of one account survey in a turn, kept as the
-  agent's memory. It holds no verdict and is never shown in the window.
 - **Thought** — a provider-supplied reasoning summary, never a fabricated chain
   of thought. An omitted summary stays visibly omitted.
-- **Risk** — the user-facing problem proved by a reading. An **Issue** is its
-  durable database record; the word Issue is not shown in the window.
-- **Check** — **Check account** puts a message in the composer for the user to
-  send; a scheduled check sends a one-line message naming its account. Both are
-  turns like any other and need a model.
-- **Estate** — remembered bucket posture, Issues, notes, changes and reading
-  records.
-- **Reading** — one settled account survey with its coverage and whether it was
-  complete.
-- **Change plan** — deterministic, user-applied change text grouped into steps,
-  with baseline, manual blockers and residual risks.
-- **Blind spot** — a read that was denied, unsupported, failed or not attempted;
-  it never counts as clean.
-- **Grant** — an access statement or ACL entry. It is evidence, not a complete
-  authorization decision.
+- **Read** — one API answer as a tool returns it: `{ status, value }` or
+  `{ status, error }`. The status is `available`, `not_configured`,
+  `access_denied`, `provider_unsupported`, `missing`, `region_mismatch` or
+  `error`. A read is data; it carries no judgement.
+- **Note** — a fact the agent chose to remember. Notes are the agent's memory
+  between tasks; the user can forget them in Settings.
+- **Change** — text the agent writes (a CLI command, a policy) for the user to
+  apply. The app never runs it.
 
 The run page of 35.x (scope line, Findings and Not checked strips, earlier
-runs, the trace reducer) and the scripted, model-free check and re-check were
-removed in 36.0.
+runs) and the scripted check were removed in 36.0, and so were the rule engine
+and Issues, the `survey`, `estate`, `change_plan` and `accept_risk` tools,
+deterministic change plans, reading records and posture history, scheduled
+checks, **Check account** and demo storage. Older tasks still show their calls
+to those tools.

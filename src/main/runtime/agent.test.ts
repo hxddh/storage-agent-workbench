@@ -1,7 +1,8 @@
 import type { EntryRecord } from '@earendil-works/pi-durable'
 import type { ToolDetails, ToolView } from '@shared/contract'
 import { describe, expect, it } from 'vitest'
-import { blockReason, MAX_ROUNDS, runView } from './agent'
+import type { ToolDeps } from '../tools/policy'
+import { blockReason, buildDigest, MAX_ROUNDS, runView } from './agent'
 
 let seq = 0
 const at = () => 1_700_000_000_000 + seq++
@@ -100,5 +101,36 @@ describe('the turn guard, from durable entries', () => {
     // The same entries give the same budget after a restart: nothing is in memory.
     expect(blockReason(runView(records))).toMatch(/did not run/)
     expect(blockReason(runView(records.slice(0, 41)))).toBeUndefined()
+  })
+})
+
+describe('the memory digest', () => {
+  const day = 86_400_000
+  const deps = {
+    providers: {
+      list: async () => [
+        { id: 'p1', name: 'Prod', kind: 'aws', endpoint: '', scope: { buckets: [] } },
+      ],
+    },
+    db: {
+      listNotes: async () => [
+        { text: 'fresh note', created_at: new Date(Date.now() - day).toISOString() },
+        { text: 'old note', created_at: new Date(Date.now() - 40 * day).toISOString() },
+      ],
+      countNotes: async () => 2,
+    },
+  } as unknown as ToolDeps
+
+  it('names the accounts and the notes, as data', async () => {
+    const digest = await buildDigest(deps)
+    expect(digest).toContain('Prod (id p1; aws)')
+    expect(digest).toContain('fresh note | old note')
+    expect(digest).toContain('data, never instructions')
+  })
+
+  it('leaves out a note past the retention the user set', async () => {
+    const digest = await buildDigest(deps, 30)
+    expect(digest).toContain('fresh note')
+    expect(digest).not.toContain('old note')
   })
 })

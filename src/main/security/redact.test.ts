@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { assertInScope, envelope, ScopeError } from '../tools/policy'
-import { bound, maskKey, redact, redactDeep } from './redact'
+import { bound, maskKey, redact } from './redact'
 
 describe('redaction', () => {
   it.each([
@@ -18,11 +18,6 @@ describe('redaction', () => {
     ['aws_secret_access_key = wJalrXUtnFEMI/K7MDENG', 'aws_secret_access_key = [redacted]'],
   ])('removes %s', (input, expected) => {
     expect(redact(input)).toContain(expected)
-  })
-
-  it('drops secret-named fields from structured values and caps strings', () => {
-    const out = redactDeep({ token: 'x', name: 'a'.repeat(5000), nested: { password: 'p', ok: 1 } })
-    expect(out).toEqual({ name: 'a'.repeat(4000), nested: { ok: 1 } })
   })
 
   it('bounds and masks', () => {

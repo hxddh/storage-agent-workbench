@@ -6,46 +6,41 @@ Aliyun OSS (`aliyuncs.com`), GCS interop (`storage.googleapis.com`), MinIO
 (`minio`, localhost or 127.0.0.1) and otherwise **other**; an empty endpoint is
 AWS. A custom AWS-compatible emulator can be marked AWS explicitly.
 
-This matrix describes the S3-compatible surface the app promises. It is not a
-silent skip list: for an unknown provider the app still attempts a read, and a
-501/405 becomes `provider_unsupported` or a named blind spot. “No” means this
-build does not expect that S3 API/concept; it does not mean the underlying cloud
-has no access-control or logging feature outside its S3 endpoint.
+This matrix describes the S3-compatible surface each provider is expected to
+answer. It is not a skip list: `config` reads every section it is asked for on
+every provider, and an API the provider does not implement (501/405,
+`NotImplemented`) comes back as that section's `provider_unsupported` status.
+“No” means this build does not expect that S3 API; it does not mean the
+underlying cloud has no such feature outside its S3 endpoint.
 
 | Capability | AWS S3 | Cloudflare R2 | MinIO | Aliyun OSS | GCS interop | Other |
 |---|---|---|---|---|---|---|
 | Bucket policy | yes | yes | yes | yes | unknown | unknown |
-| Policy status API | yes | no (local evaluation) | no (local evaluation) | no (local evaluation) | no (local evaluation) | no (local evaluation) |
+| Policy status API | yes | no | no | no | no | no |
 | ACL | yes | no | unknown | yes | unknown | unknown |
-| Public access block | yes | no (policy only) | no | no (policy only) | no | unknown |
+| Public access block | yes | no | no | no | no | unknown |
 | Object ownership | yes | no | no | no | no | unknown |
 | Access logging | yes | no | no | yes | no | no |
 | Inventory | yes | no | no | no | no | no |
-| Account public access block | yes | no | no | no | no | no |
-| CloudWatch capacity | yes | no | no | no | no | no |
-| CloudTrail | yes | no | no | no | no | no |
-| IAM evaluation | yes | no | no | no | no | no |
-| KMS key policy | yes | no | no | no | no | no |
-| Access Analyzer | yes | no | no | no | no | no |
+| Account-level reads (`account`) | yes | no | no | no | no | no |
 
 ## How to read it
 
-- **Bucket policy** is read through the S3 API and evaluated locally. Where a
-  provider has no policy-status API, the local evaluator is the only exposure
-  check.
+- **Bucket configuration** is the `config` tool's sections, returned as the API
+  answers them. Where a provider has no policy-status API, the policy document
+  itself is what the agent reads.
 - **Public access block** and **object ownership** are AWS S3 configuration
-  APIs. R2 and Aliyun expose policy-level behavior, not the same four switches.
+  APIs. R2 and Aliyun expose policy-level behaviour, not the same switches.
 - **Access logging** and **Inventory** are configuration features; an
-  unsupported API is a named capability gap, not a clean result.
-- **CloudWatch capacity** is the AWS `AWS/S3` daily metric. Other providers
-  publish no equivalent through this app; `query` can measure listed objects
-  instead, without pretending it measured the whole bucket.
-- **CloudTrail**, **IAM**, **KMS** and **Access Analyzer** are account services,
-  not object-storage APIs. Their absence leaves the matching access evidence
-  unread.
-- **Policy/ACL grants** can still be shown on a non-AWS provider. The access
-  view marks the rows as evidence and never turns an unread IAM or SCP source
-  into an empty list.
+  unsupported API is a status in the result, not an empty configuration.
+- **Account-level reads** — the account-wide public access block, IAM, SCPs,
+  KMS key policy, Access Analyzer, CloudWatch storage metrics and CloudTrail —
+  run only on an account whose kind is AWS. Any other kind gets
+  `provider_unsupported` without a request. Without CloudWatch, `query` can
+  measure listed objects instead, and the agent says it measured a listing, not
+  the whole bucket.
 
-The runtime source is `src/main/s3/capabilities.ts`; `docs/iam.md` lists the AWS
-actions the read-only reader can use.
+This matrix is documentation, not code: the app tries every read and reports
+the provider's answer. The runtime sources are `src/main/s3/capabilities.ts`
+(kind detection) and `s3/status.ts` (how an error becomes a status); `docs/iam.md` lists
+the AWS actions the readers call.

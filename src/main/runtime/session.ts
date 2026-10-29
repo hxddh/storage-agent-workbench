@@ -136,7 +136,7 @@ export class Runtime {
   }
 
   async refreshDigest(): Promise<void> {
-    this.digest = await buildDigest(this.tools)
+    this.digest = await buildDigest(this.tools, this.deps.settings.get().noteTtlDays)
   }
 
   async conversation(id: string): Promise<Conversation | null> {

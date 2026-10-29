@@ -1,11 +1,10 @@
 # Storage Agent
 
 A local, read-only agent for S3-compatible object storage. You talk with the
-agent; it reads the account with read-only tools, remembers what it saw, and
-answers in its own words. A **task** is one conversation: your messages and,
-between them, every tool call the agent made and what it said. The **estate** is
-the agent's memory. Nothing is written, deleted or changed in storage, and the
-app never applies a change plan.
+agent; it reads the account with read-only tools and answers in its own words.
+A **task** is one conversation: your messages and, between them, every tool
+call the agent made and what it said. Nothing is written, deleted or changed in
+storage. The agent may write a change for you to apply; the app never runs it.
 
 Version in this tree: **36.0.0**.
 
@@ -13,64 +12,47 @@ Version in this tree: **36.0.0**.
 
 ## What it does
 
-- **Survey an account.** Reads bucket policy, ACL, public access block, TLS
-  policy, ownership, CORS, logging, encryption and lifecycle, plus the
-  account-wide public access block and, on AWS, CloudWatch capacity. A survey
-  reads up to 5,000 buckets, longest-unread first, and stops before its 300-second
-  timeout rather than pretending it finished. Twelve deterministic rules turn
-  those readings into current risks; a blind read leaves its rule undecided.
-- **Check account.** Home's **Check account** puts `Check my storage accounts.`
-  in the composer for you to edit and send; the app never sends a message for
-  you. It is a turn like any other and needs a model. On a first run, demo
-  storage is an explicit **Try with demo storage** choice; the app never adds
-  it silently. Without a model the demo button only adds the account.
-- **Read access evidence.** Bucket policy and ACL grants are read locally; IAM
-  users, groups, managed and inline policies, permission boundaries and role
-  trust are read with paginated account authorization details; SCPs, KMS key
-  policy and Access Analyzer are read when available. Identity grants are
-  intersected with bucket-policy Denies and, where present, SCPs and
-  permission boundaries. Policy and ACL rows are still grant evidence, not one
-  merged authorization decision; conditions, unread sources and truncation are
-  shown in the call's coverage line.
-- **Explain changes.** A survey compares the reading with the last remembered
-  posture. On AWS it asks CloudTrail who changed the bucket over a stated
-  90-day window. A denied lookup leaves the actor unknown, never "nobody".
-- **Ask what happened.** `estate(history: true)` reads remembered risk events
-  and posture changes, optionally narrowed by bucket, rule or date. It is the
-  same `estate` tool; the history table opens under its step.
-- **Answer open questions with code mode.** `query` runs a short read-only
+- **Reads what the storage APIs return.** `config` reads one bucket's
+  configuration section by section — location, policy, policy status, public
+  access block, ACL, ownership, encryption, versioning, object lock, lifecycle,
+  replication, CORS, website, logging, notification, inventory, tagging — each
+  as `{ status, value }` or `{ status, error }`. On AWS, `account` reads the
+  account-wide public access block, IAM authorization details, SCPs, a KMS key
+  policy, Access Analyzer findings, CloudWatch storage metrics and CloudTrail
+  events, the same way. The tools return data, not judgements: what is public,
+  risky or missing is the agent's to decide and say.
+- **Browses and checks.** `buckets`, `objects` (keys, versions or incomplete
+  uploads, a page at a time) and `object` (metadata, tags, ACL, a bounded text
+  preview). `probe` checks an endpoint's reach, TLS, latency, bucket region and
+  addressing.
+- **Answers open questions with code mode.** `query` runs a short read-only
   script in a QuickJS sandbox for questions over many objects or buckets:
-  largest prefixes, data untouched for two years, versions piling up. There is
-  no network, filesystem, process, timer or model access. The rows and the
-  script open under the query's step.
-- **Import logs and inventories.** Attach an access log or S3 Inventory, then
-  use `dataset`, `aggregate`, `inventory` or `principal`. A full Inventory can
-  be imported into a local dataset; the agent reads it with `aggregate`, or
-  page by page with `rows` (redacted, client IPs masked).
-- **Turn risks into one change plan.** `change_plan` produces AWS CLI, Terraform
-  and API document text with an impact preview built from what the estate
-  remembers. A batch plan merges lifecycle rules per bucket, checks the current
-  policy/lifecycle before replacing it, states its baseline, marks manual
-  merges and blockers, and lists what it does not cover. There is no Apply
-  button.
-- **Re-read after a fix.** Tell the agent you applied a change; it re-reads the
-  bucket, the rules decide again, and the survey step says how many Issues the
-  read resolved. Only a later read shows that a step was applied.
-- **Accept a risk in the conversation.** Ask the agent to accept a risk; it
-  calls `accept_risk` with the bucket and rule code, and the window shows a
-  confirmation card. Only your click on **Accept risk** (or **Reopen**) changes
-  the Issue.
-- **See what the agent did.** The task is a thread. Each tool call is a step
-  where it happened: a state mark, what it read, a note and its time; opening it
-  shows the shaped result. Provider reasoning appears as `Thought` only when the
-  provider returns it. The agent may link a call as `[1](#ev-<id>)`; the link
-  opens that step in place. The app adds no report, verdict or coverage summary
-  of its own. Save Markdown, copy a task link, export JSON and save PDF live in
-  one overflow menu. Tables copy as CSV.
-- **Use the model you have.** Pick OpenAI, Anthropic or an OpenAI-compatible
+  largest prefixes, data untouched for a year, versions piling up. It has no
+  network, filesystem, process, timer or model access. The rows and the script
+  open under the query's step.
+- **Reads logs and inventories.** Inside `query`, `inventory` reads a bucket's
+  latest S3 Inventory manifest, or imports every manifest file into a local
+  dataset; `dataset` imports an attached access log or inventory; `aggregate`
+  and `rows` read it (redacted, client IPs masked). There is no SQL.
+- **Remembers in notes.** The agent writes `note`s; they are shown to it at the
+  start of every turn, and you can forget them in Settings.
+- **Asks when it must.** `ask` puts a question in the conversation, with up to
+  six options as buttons.
+- **Writes changes as text.** Asked for a fix, the agent writes the command or
+  policy in its own Markdown. There is no Apply button, and the agent never
+  says a change was made; only a later read shows it.
+- **Shows what the agent did.** Each tool call is a step where it happened: a
+  state mark, what it read, a note and its time. Opening it shows the shaped
+  result and exactly what the agent received. A `config` read opens as its
+  sections with their status and JSON. Provider reasoning appears as `Thought`
+  only when the provider returns it. The agent may link a call as
+  `[1](#ev-<id>)`; the link opens that step in place. The app adds no report,
+  verdict or summary of its own. Save Markdown, copy a task link, export JSON
+  and save PDF live in one overflow menu. Tables copy as CSV.
+- **Uses the model you have.** OpenAI, Anthropic or an OpenAI-compatible
   endpoint; paste a key and the provider's models are fetched. Context window
-  and reasoning effort are inferred. Models already running in Ollama or LM
-  Studio are one click away.
+  and reasoning are inferred. Models already running in Ollama or LM Studio are
+  one click away.
 
 ## Shape
 
@@ -83,12 +65,9 @@ Settings holds the model, accounts, memory, language, theme and notifications.
 │ renderer (React, sandboxed)        main                          │
 │ tasks · conversation ·      ⇄ IPC ⇄  pi-durable harness          │
 │ composer                                ├ 7 read tools           │
+│                                         ├ note                   │
 │                                         ├ ask                    │
-│                                         ├ estate / note /        │
-│                                         │  accept_risk           │
-│                                         ├ change_plan            │
-│                                         ├ rules (issues)         │
-│                                         ├ s3 (readers/access)    │
+│                                         ├ s3/raw (readers)       │
 │                                         └ pi-ai → model          │
 │                              one SQLite: pi_* + host tables      │
 │                              tasks/<id>/uploads + datasets       │
@@ -118,55 +97,54 @@ npm run lint
 npm test
 npm run build
 npm run budget           # first-paint renderer bundle under 500 KiB
+npm run contrast         # secondary-text contrast
 xvfb-run -a npm run perf # cold start to composer
 npm run audit
 npm run sbom
 npm run dist:dir         # unpacked app under release/
 ```
 
-End-to-end, first-run, screenshot and real-model evaluation:
+End-to-end, first-run, screenshot and model evaluation:
 
 ```bash
 xvfb-run -a node scripts/e2e.mjs
 xvfb-run -a node scripts/e2e-audit.mjs
 xvfb-run -a node scripts/shots.mjs && node scripts/visual.mjs
 xvfb-run -a node scripts/eval.mjs --smoke
+xvfb-run -a node scripts/bench.mjs --smoke
 EVAL_PROVIDER=anthropic EVAL_MODEL=… EVAL_API_KEY=… \
   xvfb-run -a node scripts/eval.mjs
 ```
 
-The normal E2E uses a fake S3 endpoint and a fake OpenAI-compatible model. The
-smoke eval proves the harness runs; it is not a model-quality score. See
-[docs/release.md](docs/release.md) for the release path and its signed/smoke
-fallbacks.
+The E2E uses a fake S3 endpoint and a fake OpenAI-compatible model. The smoke
+runs prove the harness runs; they are not a model-quality score. See
+[docs/development.md](docs/development.md) and [docs/release.md](docs/release.md).
 
 ## Safety and honest limits
 
-- No storage put, delete or mutate call exists. Change-plan commands are text
-  for the user to apply.
+- No storage put, delete or mutate call exists. A change the agent writes is
+  text for the user to apply.
 - Secrets are sealed with Electron `safeStorage`, or a local AES-256-GCM file
   when no OS keyring exists. Profile accounts store a profile name, never a key.
   The renderer receives masked metadata, never a credential.
+- Account ids never reach the model, the window, a log or SQLite: reads that
+  carry them pass through `scrub()`, which replaces each 12-digit number with
+  `<account>`, and `redact()` masks the account in any ARN.
 - Tool output reaches the model inside `<untrusted-data>` and is bounded and
   redacted. Tool status comes from `details.status`, never from result text.
-- A denied or unsupported read is a blind spot. It is never converted into a
-  clean result: the call stays in the conversation as a failed step, the agent
-  receives what it could not read, and saying so is the agent's. The app adds
-  no coverage summary or verdict of its own.
-- Access analysis is evidence, not a complete authorization decision. Policy
-  and ACL grants are not merged with every identity, SCP and condition into a
-  single yes/no; service principals, federated identities and some external
-  policies remain out of scope. Coverage is stated instead of implied.
-- A survey is capped at 5,000 buckets and its time budget. CloudTrail covers 90
-  days and attributes at most six changed buckets per survey. Inventory
-  full imports are bounded by files, bytes and 2,000,000 rows. `query` has
-  explicit call, listing, time, memory and row budgets.
+- A denied or unsupported read comes back as that status with the provider's
+  error. The call stays in the conversation; saying what could not be read is
+  the agent's. The app adds no coverage summary or verdict.
+- Every read goes through the agent. Without a model the window says so and
+  asks for one; without an account it asks for one.
+- `query` runs under call, listing, time and memory budgets. Inventory full
+  imports are bounded by files, bytes and 2,000,000 rows.
 - Release installers are signed and notarized only when all signing secrets are
   configured. Without a real `EVAL_API_KEY`, the release notes carry a smoke
   result rather than a model-quality claim.
-- The scripted, model-free account check and re-check, the scope line, the
-  Findings and Not checked strips and app-level answer validation were removed
-  in 36.0.
+- The rule engine and Issues, the survey, estate, change-plan and accept-risk
+  tools, generated change plans, reading records, scheduled checks, **Check
+  account** and demo storage were removed in 36.0.
 
 The exact current behavior, limits and IAM actions are in [docs/](docs/README.md);
 the changelog and release notes are history, not current documentation.

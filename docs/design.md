@@ -91,23 +91,23 @@ fields, not a sequence of panels.
 
 ## Home
 
-A 30–36px heading (`What should I check?`), the accounts the agent can read —
-one hairline row each, name and provider kind, nothing more — and **Check
-account** when a model is set. Home shows no risk counts, coverage or "clear":
-what an account holds is for the agent to read and say in a conversation. With
-no account, the choices are **Try with demo
-storage** and **Add an account**; before a model exists **Set up a model** is a
-secondary text action and the lede says the agent needs a model to read
-storage. A configured account with no model offers **Add an account** and **Set
-up a model**, with the hint `Set up a model to ask a question.`; there is no
-Check account. **Check account** puts `Check my storage accounts.` in the
-composer and focuses it; nothing is sent until the user sends it. Local models appear as quiet one-click chips, not a dashboard.
-On desktop the sidebar owns the task list, so Home does not repeat recent
-tasks; below 860px, where the sidebar is an overlay, Home shows at most five
-one-line recent tasks.
+A 30–36px heading (`What should I check?`), then the accounts the agent can
+read — one hairline row each, name and provider kind, nothing more. Home shows
+no risk counts, coverage or "clear": what an account holds is for the agent to
+read and say in a conversation. With no account, one lede line takes the
+list's place (`No account yet. Add one, then ask.`, or, before a model exists,
+`The agent needs a model to read your storage. Set one up and add an
+account.`). **Add an account** is the primary button when there is no account
+and a quiet text action once there is one. Before a model exists **Set up a
+model** sits beside it as a secondary text action; with an account but no
+model, the hint `Set up a model to ask a question.` follows. Local models
+appear as quiet one-click chips (`Use <model>`) under `Running on this
+machine`, not a dashboard. On desktop the sidebar owns the task list, so Home
+does not repeat recent tasks; below 860px, where the sidebar is an overlay,
+Home shows at most five one-line recent tasks.
 
-No cards, charts, suggestion pills, follow-up prompts or large illustration.
-The composer is inert until a model exists.
+No cards, charts, canned prompts, suggestion pills or large illustration.
+Nothing on Home sends a message. The composer is inert until a model exists.
 
 ## The conversation
 
@@ -130,8 +130,8 @@ removed in 36.0.
   list with a hairline on its left. Each step is one line: a state mark (a
   spinning loader while running, a `--ok` check when done, a small circle when
   stopped, a `--danger` triangle for failed, refused or timed out), the tool's
-  label (`Read account`, `Reviewed configuration`, `Ran a read-only query`,
-  …), the target in mono, the note, a status word when it did not finish
+  label (`Listed buckets`, `Read configuration`, `Read account settings`,
+  `Ran a read-only query`, …), the target in mono, the note, a status word when it did not finish
   (`Running`, `Failed`, `Stopped`, `Timed out`, `Outside scope`), the duration
   and a chevron. A running step is open and counts its elapsed time; a settled
   step folds to its line and opens on click. Open, it shows the argument summary
@@ -152,17 +152,12 @@ removed in 36.0.
 - **Clarifying question** — an `ask` call is an agent message, not a step: the
   question, its note, and while it waits one button per option. A click sends
   that option as the next message.
-- **Risk confirmation** — an `accept_risk` call is an agent message: `Accept the
-  risk “…” on …? It stays recorded as accepted until a reading proves it fixed.`
-  (or `Reopen the accepted risk “…” on …?`) and one primary **Accept risk** or
-  **Reopen** button. After the click the card says `Accepted.` or `Reopened.`;
-  when a later reading proved the risk fixed it says `A later reading proved
-  this fixed.` Only this click accepts.
 - **Notices** — one line with a dot (`--danger` for an error): `Stopped. What
   was read is kept.` with **Continue**; `The agent hit an error.` or `The agent
   stopped without replying.` with **Retry**, followed by the provider's error
   text when there is one; `The turn reached 100 rounds of tool calls and
-  stopped calling tools.`
+  stopped calling tools.`; `The reply reached the model’s output limit and is
+  cut off here.`
 - **Dividers** — `Continued this task` where a stopped turn was resumed, and
   `Earlier steps were compacted` where pi compacted the context; quiet centred
   lines.
@@ -174,20 +169,23 @@ The view follows the thread as it grows unless the user scrolled up to read.
 When the task is empty and nothing is running it says `The agent has not
 composed an answer yet.`
 
-A survey step whose reading changed Issues says so in its note
-(`4 buckets · 1 new issue · 2 resolved`); the rules did that, not the model.
-Estate history stays inside the `estate` step's typed result: the remembered
-bucket table, then the history table. It is not a second panel or a timeline.
+A `config` read opens as its sections, one hairline row each: the section
+name in mono, its status in `--ink-3` (`--danger` for `access denied` and
+`error`), then the value as JSON or the provider's error. The bucket's region
+heads the list. An `account` read and any other unsectioned value open as one
+JSON block. Nothing is summarised, coloured as risky or marked clean.
 
-A change plan is one hairline list, not a stack of cards. Its summary names the
-baseline, steps, buckets, manual merges and residual risks; the baseline is one
-quiet line; a step row carries a severity dot, bucket, title and ready/manual
-status. Only the selected step opens the exact tabs, code and impact. A manual
-step shows its blocker above the code. The `Markdown` chunk is lazy; while it
-loads, backticks are stripped rather than flashing raw syntax.
+A change the agent writes is part of its text: a fenced code block in its
+Markdown, with no tabs, Apply button or applied state. The `Markdown` chunk is
+lazy; while it loads, link targets, bold marks and backticks are stripped
+rather than flashing raw syntax.
 
-A code-mode result shows its rows, chart, script and output under the query's
-step. Byte columns render as human sizes; CSV keeps raw numbers.
+Calls to tools of earlier versions (`survey`, `estate`, `change_plan`,
+`accept_risk`) keep their labels in older tasks; opened, they show their note
+and what the agent received, not their old typed view.
+
+A code-mode result shows its chart, rows (eight at first, then `N more`),
+script and output under the query's step. Byte columns render as human sizes; CSV keeps raw numbers.
 
 Printing (Save PDF) opens every step and hides the sidebar, composer, overflow
 menu and copy buttons.
@@ -216,8 +214,7 @@ steer button, and **Stop** sits beside it. A stopped turn keeps its steps;
 - `⌘.` stops the running turn.
 - `Escape` closes Settings and the compact sidebar.
 
-There is no `⌘⇧R` re-check and no risk navigation with `j` / `k` / `a`; they
-went with the run page in 36.0.
+There is no `⌘⇧R` re-check and no risk navigation with `j` / `k` / `a`.
 
 Dropping a file anywhere shows a dashed accent border and one centred line on
 the composer (`Drop to attach`); nothing else moves. `@` opens one quiet picker
@@ -230,12 +227,10 @@ Four panes: Model, Storage accounts, Memory and Appearance. The active pane is
 the top-bar title and the selected rail row. Model configuration is one form:
 provider, model, base URL, key, Save and Test. Local models are one-click
 chips. Accounts list read-only credentials and open one inline form for add or
-edit; the key fields are never pre-filled. Each account has an opt-in
-off/daily/weekly scheduled check, sent to the agent as a message while the app
-is open and a model is set.
+edit; the key fields are never pre-filled. There is no schedule setting.
 
-Memory holds the note-age setting and lists the 100 most recent forgettable notes; the
-store itself is capped at 500.
+Memory holds the note-age setting and lists the 100 most recent notes, each
+with **Forget**.
 Appearance holds language, theme and the background-notification switch.
 
 Inputs and selects are styled consistently with visible focus rings; selects use
@@ -273,4 +268,4 @@ or critical violations. This is a floor, not a certification.
 English and Chinese are written separately, not translated word for word. The
 agent writes its own prose; the interface adds no heading, table or summary to
 it. The interface never says "Let me know if…", "Here is what I found:" or
-"Next steps". A change plan is text; there is no Apply button.
+"Next steps". A change is the agent's text; there is no Apply button.

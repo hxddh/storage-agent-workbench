@@ -2,8 +2,8 @@
  * The task list and the open task.
  *
  * A task is a pi conversation plus a title row. This keeps the sidebar, the one
- * watched task, the search index and the user's own acts on memory (accept a
- * risk, delete a note). Runs belong to the engine.
+ * watched task, the search index and the user's own acts on memory (deleting a
+ * note). Runs belong to the engine.
  */
 import { rm } from 'node:fs/promises'
 import type { ConversationView, TaskGraph, WatchHandle } from '@earendil-works/pi-durable'
