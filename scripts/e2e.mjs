@@ -80,6 +80,18 @@ const openTool = async (label) => {
   return row
 }
 
+/**
+ * A re-check is its own run: wait for it to start and settle, then for its
+ * trace, which opens by itself. Toggling the trace header before the run lands
+ * would race the page's own open.
+ */
+const waitRecheck = async () => {
+  await page.waitForSelector('.run-tag:has-text("Re-check")', { timeout: 30_000 })
+  await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
+  await openTrace()
+  await page.waitForSelector('.activity-item.reverify', { timeout: 30_000 })
+}
+
 /** A model run is settled when the composer is no longer in its stop state. */
 const waitSettled = async () => {
   await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
@@ -205,8 +217,7 @@ try {
   // Re-verify is model-free: it re-reads the buckets this task touched.
   await page.getByRole('button', { name: 'More actions' }).click()
   await page.getByRole('menuitem', { name: 'Re-check' }).click()
-  await openTrace()
-  await page.waitForSelector('.activity-item.reverify', { timeout: 30_000 })
+  await waitRecheck()
   await page.locator('.activity-item.reverify .activity-line').click()
   await page.waitForSelector('.activity-reverify', { timeout: 5_000 })
   const reverify = await page.locator('.activity-reverify').innerText()
@@ -280,8 +291,7 @@ try {
   // Re-verify compares the account with the plan; it does not assume the user applied it.
   await page.getByRole('button', { name: 'More actions' }).click()
   await page.getByRole('menuitem', { name: 'Re-check' }).click()
-  await openTrace()
-  await page.waitForSelector('.activity-item.reverify', { timeout: 30_000 })
+  await waitRecheck()
   await page.locator('.activity-item.reverify .activity-line').click()
   await page.waitForSelector('.activity-reverify', { timeout: 5_000 })
   const planReverify = await page.locator('.activity-reverify').innerText()
