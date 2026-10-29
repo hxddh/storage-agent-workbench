@@ -225,15 +225,3 @@ export function preview(path: string, kind: DatasetKind, limit = 5): Table {
     db.close()
   }
 }
-
-export function countRows(path: string, kind: DatasetKind): number {
-  const db = new DatabaseSync(path, { readOnly: true })
-  try {
-    const row = db.prepare(`SELECT count(*) AS n FROM ${TABLES[kind]}`).get() as
-      | { n: number }
-      | undefined
-    return row?.n ?? 0
-  } finally {
-    db.close()
-  }
-}

@@ -258,7 +258,7 @@ async function readTrace() {
     const line = changeRow.locator('.step-line')
     if ((await line.getAttribute('aria-expanded')) === 'false') await line.click()
     await page.waitForTimeout(120)
-    data.change = await page.locator('.step-detail .plan, .step-detail .tabs').count()
+    data.change = await page.locator('.step-detail .change-plan, .step-detail .tabs').count()
   }
   return data
 }

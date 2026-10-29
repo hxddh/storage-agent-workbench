@@ -43,7 +43,7 @@ export function App() {
   const [fatal, setFatal] = useState(false)
   const [searchSignal, setSearchSignal] = useState(0)
   // Only while a check is being started; the run itself shows its progress.
-  const [starting, setStarting] = useState(false)
+  const [seed, setSeed] = useState<{ text: string; at: number } | null>(null)
   const [checkError, setCheckError] = useState<string | null>(null)
   const restored = useRef(false)
 
@@ -221,31 +221,18 @@ export function App() {
   }
 
   /** "Check account" is a message to the agent, in a new task. */
-  const check = async () => {
-    setCheckError(null)
-    setStarting(true)
-    try {
-      setView(null)
-      const created = await window.agent.createTask(dict(lang).checkAccountPrompt, [], [])
-      setView(created)
-      setFocusId(null)
-      setSidebarOpen(false)
-      void refresh()
-    } catch (error) {
-      setCheckError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setStarting(false)
-    }
+  // Check account puts a message in the composer; the user edits it and sends it.
+  const check = () => {
+    setView(null)
+    setSidebarOpen(false)
+    setSeed({ text: dict(lang).checkAccountPrompt, at: Date.now() })
   }
 
   const startDemo = async () => {
-    if (starting) return
     setCheckError(null)
     try {
       await window.agent.addDemoAccount()
       await refresh()
-      // With a model, the agent looks at the demo straight away; without one there is nobody to ask.
-      if (boot?.model) await check()
     } catch (error) {
       setCheckError(error instanceof Error ? error.message : String(error))
     }
@@ -338,8 +325,7 @@ export function App() {
             onAddAccount={() => openSettings('accounts')}
             onUseLocal={startLocal}
             onDemo={() => void startDemo()}
-            onAudit={() => void check()}
-            auditing={starting}
+            onAudit={check}
             tasks={tasks}
             onOpenTask={(id) => void openTask(id)}
           />
@@ -356,6 +342,7 @@ export function App() {
           key={view?.task.id ?? 'new'}
           onOpenSettings={() => openSettings('model')}
           draftKey={view?.task.id ?? 'new'}
+          seed={view ? null : seed}
         />
       </main>
       {settingsOpen && boot && (

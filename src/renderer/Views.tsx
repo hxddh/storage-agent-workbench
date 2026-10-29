@@ -172,9 +172,6 @@ export function AccessChain({
   return (
     <div className="access-chain">
       {showCoverage && coverage && <p className="view-sub">{coverageText}</p>}
-      {paths.some((item) => item.source === 'policy' || item.source === 'acl') && (
-        <p className="view-sub">{t.accessEvidence}</p>
-      )}
       {paths.map((item, index) => (
         <div className="access-row" key={`${item.source}:${item.principal}:${index}`}>
           <span className={`access-source ${item.source}`}>
@@ -348,9 +345,9 @@ export function ChangePlanView({ plan, t }: { plan: ChangePlan; t: Dict }) {
   const [selected, setSelected] = useState(Math.max(first, 0))
   const step = plan.steps[selected]
   return (
-    <div className="plan">
-      <div className="plan-head">
-        <p className="plan-summary">{planSummary(plan, t)}</p>
+    <div className="change-plan">
+      <div className="change-plan-head">
+        <p className="change-plan-summary">{planSummary(plan, t)}</p>
         <p className="quiet">
           {plan.baseline
             ? fill(t.planBaseline, {
@@ -361,19 +358,19 @@ export function ChangePlanView({ plan, t }: { plan: ChangePlan; t: Dict }) {
             : t.planNoBaseline}
         </p>
       </div>
-      <div className="plan-steps">
+      <div className="change-plan-steps">
         {plan.steps.map((item, index) => {
           const open = index === selected
           const status = item.status === 'ready' ? t.planStatusReady : t.planStatusManual
           return (
-            <div className={`plan-step ${open ? 'open' : ''}`} key={item.id}>
+            <div className={`change-plan-step ${open ? 'open' : ''}`} key={item.id}>
               <button
                 type="button"
-                className="plan-row"
+                className="change-plan-row"
                 aria-expanded={open}
                 onClick={() => setSelected(open ? -1 : index)}
               >
-                <span className={`plan-dot ${item.severity}`} title={item.severity}>
+                <span className={`change-plan-dot ${item.severity}`} title={item.severity}>
                   <span className="visually-hidden">
                     {item.severity === 'high'
                       ? t.severityHigh
@@ -382,17 +379,17 @@ export function ChangePlanView({ plan, t }: { plan: ChangePlan; t: Dict }) {
                         : t.severityLow}
                   </span>
                 </span>
-                <span className="plan-label">
-                  <span className="plan-bucket mono">{item.bucket || t.accountWide}</span>
-                  <span className="plan-title">{item.title}</span>
+                <span className="change-plan-label">
+                  <span className="change-plan-bucket mono">{item.bucket || t.accountWide}</span>
+                  <span className="change-plan-title">{item.title}</span>
                 </span>
-                <span className={`plan-status ${item.status}`}>{status}</span>
+                <span className={`change-plan-status ${item.status}`}>{status}</span>
                 <ChevronRight size={13} className={`chev ${open ? 'open' : ''}`} />
               </button>
               {open && (
-                <div className="plan-body">
+                <div className="change-plan-body">
                   {item.blockers.map((blocker) => (
-                    <p className="plan-blocker" key={blocker}>
+                    <p className="change-plan-blocker" key={blocker}>
                       <TriangleAlert size={13} />
                       {blocker}
                     </p>
@@ -405,10 +402,10 @@ export function ChangePlanView({ plan, t }: { plan: ChangePlan; t: Dict }) {
         })}
       </div>
       {plan.residual.length > 0 && (
-        <div className="plan-residual">
-          <p className="plan-residual-title">{t.planResidual}</p>
+        <div className="change-plan-residual">
+          <p className="change-plan-residual-title">{t.planResidual}</p>
           {plan.residual.map((item) => (
-            <p className="plan-residual-row" key={`${item.bucket}:${item.code}`}>
+            <p className="change-plan-residual-row" key={`${item.bucket}:${item.code}`}>
               <span className="mono">{item.bucket || t.accountWide}</span> · {item.title}
             </p>
           ))}

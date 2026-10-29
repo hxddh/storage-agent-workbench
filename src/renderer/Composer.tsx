@@ -13,6 +13,7 @@ export function Composer({
   onStop,
   onOpenSettings,
   draftKey,
+  seed,
 }: {
   lang: 'en' | 'zh'
   hasModel: boolean
@@ -23,6 +24,8 @@ export function Composer({
   onStop: () => void
   onOpenSettings: () => void
   draftKey: string
+  /** Text a Home action put in the composer for the user to edit and send. */
+  seed?: { text: string; at: number } | null
 }) {
   const t = dict(lang)
   const [text, setText] = useState(() => window.localStorage.getItem(`sa.draft:${draftKey}`) ?? '')
@@ -37,6 +40,12 @@ export function Composer({
   const [now, setNow] = useState(Date.now())
   const ref = useRef<HTMLTextAreaElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!seed) return
+    setText(seed.text)
+    ref.current?.focus()
+  }, [seed])
 
   useEffect(() => {
     const key = `sa.draft:${draftKey}`

@@ -357,7 +357,7 @@ async function readBrief(page) {
       verdict: text(answers.at(-1)),
       findings,
       resolvedFold: surveys.some((row) => / resolved/.test(text(row.querySelector('.step-note')))),
-      fixShown: document.querySelectorAll('.step-detail .plan, .step-detail .tabs').length > 0,
+      fixShown: document.querySelectorAll('.step-detail .change-plan, .step-detail .tabs').length > 0,
       receipt: `${document.querySelectorAll('.step.tool').length} calls`,
     }
   })

@@ -19,6 +19,7 @@ import { decide } from './estate/rules'
 import { Providers } from './providers'
 import { readBucket } from './s3/facts'
 import type { Vault } from './security/vault'
+import { bucketTools } from './tools/browse'
 import { configTool } from './tools/config'
 import { estateTools } from './tools/estate'
 import type { ToolDeps } from './tools/policy'
@@ -350,6 +351,20 @@ describe('tools over the estate', () => {
     expect(plan.steps.every((step) => step.codes.length > 0 && step.formats.length > 0)).toBe(true)
     const lifecycle = plan.steps.filter((step) => step.id.startsWith('lifecycle:'))
     expect(new Set(lifecycle.map((step) => step.bucket)).size).toBe(lifecycle.length)
+  })
+
+  it('pages a listing with the token it returns, and sends the agent every row it shows', async () => {
+    const [, objects] = bucketTools(deps)
+    const bucket = Object.keys(fake.buckets)[0]!
+    const first = await run(objects as Executable, { bucket, limit: 1 })
+    if (first.details.view?.kind !== 'objects') throw new Error('expected a listing')
+    const key = String(first.details.view.rows.rows[0]?.[0])
+    expect(first.text).toContain(key)
+    const token = /next: (\S+)/.exec(first.text)?.[1]
+    if (!token) throw new Error(`expected a next token: ${first.text}`)
+    const second = await run(objects as Executable, { bucket, limit: 1, token })
+    if (second.details.view?.kind !== 'objects') throw new Error('expected a listing')
+    expect(second.details.view.rows.rows[0]?.[0]).not.toBe(key)
   })
 
   it('plans a change the agent names for a bucket even when no Issue is open', async () => {

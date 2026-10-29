@@ -6,8 +6,8 @@ function details(view: ToolDetails['view'], target: string, note: string | null)
   return { target, note, view, ms: 0, status: 'done' }
 }
 
-function text(value: unknown, max: number): string {
-  return typeof value === 'string' ? value.trim().slice(0, max) : ''
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 export function askTool() {
@@ -16,17 +16,16 @@ export function askTool() {
     description:
       'Ask the user a question and end your turn until they answer. Options, when given, are shown as buttons; the user can also reply in their own words.',
     parameters: Type.Object({
-      question: Type.String({ minLength: 1, maxLength: 300 }),
+      question: Type.String({ minLength: 1 }),
       options: Type.Optional(Type.Array(Type.String({ maxLength: 100 }), { maxItems: 6 })),
-      note: Type.Optional(Type.String({ maxLength: 200 })),
+      note: Type.Optional(Type.String()),
     }),
     execute: async (args) => {
-      const question = text(args.question, 300)
+      const question = text(args.question)
       const options = ((args.options as unknown[] | undefined) ?? [])
-        .map((option) => text(option, 100))
+        .map((option) => text(option))
         .filter(Boolean)
-        .slice(0, 6)
-      const note = text(args.note, 200) || undefined
+      const note = text(args.note) || undefined
       return {
         output: [
           {

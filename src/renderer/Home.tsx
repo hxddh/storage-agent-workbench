@@ -23,7 +23,6 @@ export function Home({
   onUseLocal,
   onDemo,
   onAudit,
-  auditing,
   tasks,
   onOpenTask,
 }: {
@@ -33,7 +32,6 @@ export function Home({
   onUseLocal: (model: LocalModel) => Promise<void>
   onDemo: () => void
   onAudit: () => void
-  auditing: boolean
   tasks: TaskSummary[]
   onOpenTask: (id: string) => void
 }) {
@@ -93,13 +91,8 @@ export function Home({
             </ul>
             <div className="home-actions">
               {hasModel && (
-                <button
-                  className="btn primary home-audit"
-                  type="button"
-                  disabled={auditing}
-                  onClick={onAudit}
-                >
-                  {auditing ? t.checkingAccount : t.checkAccount}
+                <button className="btn primary home-audit" type="button" onClick={onAudit}>
+                  {t.checkAccount}
                 </button>
               )}
               <button className="home-link" type="button" onClick={onAddAccount}>
@@ -117,8 +110,8 @@ export function Home({
           <>
             <p className="home-lede">{hasModel ? t.homeNoEstate : t.homeNoModel}</p>
             <div className="home-actions">
-              <button className="btn primary" type="button" onClick={onDemo} disabled={auditing}>
-                {auditing ? t.checkingAccount : t.tryDemo}
+              <button className="btn primary" type="button" onClick={onDemo}>
+                {t.tryDemo}
               </button>
               <button className="btn" type="button" onClick={onAddAccount}>
                 {t.addAccount}

@@ -14,9 +14,7 @@ const en = {
   steer: 'Add to the request',
   setModel: 'Set up a model',
   checkAccount: 'Check account',
-  checkingAccount: 'Checking account…',
-  checkAccountPrompt:
-    'Check my storage accounts: read every bucket, tell me which risks are open, and say what you could not read.',
+  checkAccountPrompt: 'Check my storage accounts.',
   confirmAccept:
     'Accept the risk “{title}” on {bucket}? It stays recorded as accepted until a reading proves it fixed.',
   confirmReopen: 'Reopen the accepted risk “{title}” on {bucket}?',
@@ -101,8 +99,6 @@ const en = {
   noteTtlHint: 'Older notes stay in the local database but leave this list. 0 keeps every note.',
   exportEvidence: 'Export sources',
   savePdf: 'Save PDF',
-  accessEvidence:
-    'Policy and ACL rows are grants; identity and SCP results are shown separately, not merged into one verdict.',
   accessCoverage: (evaluated: number, total: number, undecided: number, truncated: boolean) =>
     `${evaluated}/${total} IAM users and roles evaluated${undecided ? ` · ${undecided} undecided` : ''}${truncated ? ' · truncated' : ''}`,
   bucketsExamined: '{examined}/{total} remembered buckets examined',
@@ -217,7 +213,7 @@ const en = {
   noticeStopped: 'Stopped. What was read is kept.',
   noticeNoAnswer: 'The agent stopped without replying.',
   noticeFailed: 'The agent hit an error.',
-  noticeBudget: 'The step budget ran out.',
+  noticeBudget: 'The turn reached 100 rounds of tool calls and stopped calling tools.',
   remembered: 'remembered',
   acceptRisk: 'Accept risk',
   reopen: 'Reopen',
@@ -286,9 +282,7 @@ const zh: typeof en = {
   steer: '追加到当前请求',
   setModel: '配置模型',
   checkAccount: '检查账号',
-  checkingAccount: '正在检查账号…',
-  checkAccountPrompt:
-    '检查我的存储账号：读取所有存储桶，告诉我有哪些未解决的风险，以及哪些内容没能读到。',
+  checkAccountPrompt: '检查我的存储账号。',
   confirmAccept: '接受 {bucket} 上的风险“{title}”？在读取证明它已修复之前，它会一直记为已接受。',
   confirmReopen: '重新打开 {bucket} 上已接受的风险“{title}”？',
   confirmAccepted: '已接受。',
@@ -367,7 +361,6 @@ const zh: typeof en = {
   noteTtlHint: '更早的笔记仍保存在本地数据库，但不再显示。0 表示保留全部笔记。',
   exportEvidence: '导出来源',
   savePdf: '保存 PDF',
-  accessEvidence: '策略和 ACL 是授权证据；身份策略与 SCP 的结果单独列出，不合并成一个判定。',
   accessCoverage: (evaluated: number, total: number, undecided: number, truncated: boolean) =>
     `已判定 ${evaluated}/${total} 个 IAM 用户和角色${undecided ? ` · ${undecided} 个未确定` : ''}${truncated ? ' · 已截断' : ''}`,
   bucketsExamined: '已检查 {examined}/{total} 个记忆中的桶',
@@ -480,7 +473,7 @@ const zh: typeof en = {
   noticeStopped: '已停止。已读取的内容会保留。',
   noticeNoAnswer: 'Agent 停下了，没有回复。',
   noticeFailed: 'Agent 出错了。',
-  noticeBudget: '步骤预算已用完。',
+  noticeBudget: '本轮已进行 100 轮工具调用，之后的调用不再执行。',
   remembered: '记忆',
   acceptRisk: '接受风险',
   reopen: '重新打开',

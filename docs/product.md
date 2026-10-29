@@ -40,26 +40,23 @@ With no account, the choices are **Try with demo storage** and **Add an
 account**, plus **Set up a model** before a model exists. With an account but no
 model, Home offers **Add an account** and **Set up a model** and says a model is
 needed to ask a question; there is no Check account. Demo storage is in-process
-and never added on its own. Without a model, **Try with demo storage** only adds
-the demo account; with one, it adds the account and starts Check account. Local
+and never added on its own. **Try with demo storage** only adds the demo
+account; it starts nothing. Local
 models already running in Ollama or LM Studio can be chosen from Home or
 Settings.
 
 ## Check account
 
-**Check account** is a message to the agent, in a new task:
-
-> Check my storage accounts: read every bucket, tell me which risks are open,
-> and say what you could not read.
-
-It is a turn like any other: the agent decides what to read, its calls appear as
-steps, and it answers in its own words. The task title comes from the message.
+**Check account** puts a message in the composer — `Check my storage
+accounts.` — for the user to edit and send. Nothing is sent on the user's
+behalf. Once sent, it is a turn like any other: the agent decides what to read
+and how far to go, its calls appear as steps, and it answers in its own words.
 It needs a model.
 
 An account can opt into a daily or weekly scheduled check in Settings. While the
 app is open and a model is set, a due account gets a new task titled
-`Scheduled check · <account> · <time>` with the same kind of message, focused on
-that account. It never writes storage. It is a snapshot, not a monitor; a closed
+`Scheduled check · <account> · <time>` whose message is `Check the storage
+account <name>.`, focused on that account; how to check is the agent's. It never writes storage. It is a snapshot, not a monitor; a closed
 app performs no work. The account's latest reading row decides when the next
 one is due.
 
@@ -88,7 +85,7 @@ The scripted, model-free check and re-check of 35.x were removed in 36.0.
   `Continued this task` divider, without a new question.
 - A turn that fails or ends without an answer becomes one notice with
   **Retry**; Retry sends the last user message again with its files and focus.
-  A turn that ran out of rounds says `The step budget ran out.`
+  A turn that made 100 rounds of tool calls says so; its next call does not run.
 - A follow-up is the next message in the same thread.
 - Long tasks survive a restart; pi resumes interrupted work.
 - A turn that finishes while the window is in the background sends one system
@@ -222,9 +219,8 @@ fallback for short CJK queries, and returns at most 20 hits.
 
 The provider reports the model list in Settings. The context window is inferred
 (unknown models fall back to 128k), and reasoning is on at medium for known
-reasoning models, off otherwise. Context below 64k is a small model, below 200k
-mid, otherwise large. Small gets a 14-round budget, mid 24 and large 32. The
-answer format does not change.
+reasoning models, off otherwise. Every model gets the same tools, prompt and
+100-round runaway ceiling; nothing is tuned down for a smaller one.
 
 ## Settings
 
@@ -251,8 +247,7 @@ answer format does not change.
 - A change plan covers the selected open risks (at most 500) and reports any
   residual rule that has no generated change. A merged lifecycle omits Terraform
   when existing rules contain fields the renderer cannot reproduce.
-- A code-mode script is bounded to 6,000 characters and the budgets above.
-- Notes are capped at 500; each note is at most 1,000 characters.
+- A code-mode script runs under the call, listing, time and memory budgets above.
 - Attachments are limited to ten files and 4 GiB each.
 - There is no automatic background watch, dashboard, second window or import
   from an earlier app version.

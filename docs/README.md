@@ -43,8 +43,9 @@ roadmap and not a substitute for the code.
   of thought. An omitted summary stays visibly omitted.
 - **Risk** — the user-facing problem proved by a reading. An **Issue** is its
   durable database record; the word Issue is not shown in the window.
-- **Check** — **Check account** and a scheduled check send the agent a message
-  in a new task. They are turns like any other and need a model.
+- **Check** — **Check account** puts a message in the composer for the user to
+  send; a scheduled check sends a one-line message naming its account. Both are
+  turns like any other and need a model.
 - **Estate** — remembered bucket posture, Issues, notes, changes and reading
   records.
 - **Reading** — one settled account survey with its coverage and whether it was

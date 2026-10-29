@@ -151,8 +151,13 @@ try {
   console.log('HOME OVERVIEW OK')
   await checkA11y('home')
 
-  // "Check account" is a message to the agent; the agent reads with its tools.
+  // "Check account" puts a message in the composer; nothing is sent until the user sends it.
   await page.getByRole('button', { name: 'Check account' }).click()
+  await page.waitForTimeout(300)
+  if ((await page.locator('.composer textarea').inputValue()) !== 'Check my storage accounts.')
+    await fail('Check account did not put its message in the composer')
+  if (await page.locator('.msg.user').count()) await fail('Check account sent a message for the user')
+  await page.keyboard.press('Enter')
   await page.waitForSelector('.msg.user', { timeout: 10_000 })
   await page.waitForSelector('.step.tool', { timeout: 30_000 })
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-running.png') })
@@ -222,7 +227,7 @@ try {
   await page.getByRole('button', { name: 'New task' }).click()
   await say('Show the change plan for demo-private')
   const change = await openTool('Prepared a change plan')
-  await change.locator('.plan').first().waitFor({ timeout: 10_000 })
+  await change.locator('.change-plan').first().waitFor({ timeout: 10_000 })
   await page.waitForSelector('text=AWS CLI', { timeout: 10_000 })
   console.log('CHANGE OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-change.png') })

@@ -100,7 +100,8 @@ storage** and **Add an account**; before a model exists **Set up a model** is a
 secondary text action and the lede says the agent needs a model to read
 storage. A configured account with no model offers **Add an account** and **Set
 up a model**, with the hint `Set up a model to ask a question.`; there is no
-Check account. Local models appear as quiet one-click chips, not a dashboard.
+Check account. **Check account** puts `Check my storage accounts.` in the
+composer and focuses it; nothing is sent until the user sends it. Local models appear as quiet one-click chips, not a dashboard.
 On desktop the sidebar owns the task list, so Home does not repeat recent
 tasks; below 860px, where the sidebar is an overlay, Home shows at most five
 one-line recent tasks.
@@ -136,8 +137,8 @@ removed in 36.0.
   step folds to its line and opens on click. Open, it shows the argument summary
   and the typed result in a scroll area at most 420px high, then a folded
   `What the agent received` with the exact text the model got; a running step
-  without a result says `Waiting for the first result.` A call the round budget
-  blocked is a failed step with the note `Did not run`.
+  without a result says `Waiting for the first result.` A call the runaway
+  ceiling blocked is a failed step with the note `Did not run`.
 - **Thought** — a provider reasoning summary is a `Thought` step, `Thinking`
   while it streams. It opens to the summary as returned, in full; when the
   provider returned none it says `This model did not return a reasoning summary.` No
@@ -159,8 +160,9 @@ removed in 36.0.
   this fixed.` Only this click accepts.
 - **Notices** — one line with a dot (`--danger` for an error): `Stopped. What
   was read is kept.` with **Continue**; `The agent hit an error.` or `The agent
-  stopped without replying.` with **Retry**, followed by the provider's error text when
-  there is one; `The step budget ran out.`
+  stopped without replying.` with **Retry**, followed by the provider's error
+  text when there is one; `The turn reached 100 rounds of tool calls and
+  stopped calling tools.`
 - **Dividers** — `Continued this task` where a stopped turn was resumed, and
   `Earlier steps were compacted` where pi compacted the context; quiet centred
   lines.

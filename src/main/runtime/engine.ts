@@ -9,7 +9,7 @@
 import { configure } from '@earendil-works/pi-durable'
 import type { AttachmentRef, ContextRef, NoticeCode } from '@shared/contract'
 import { escapeTags } from '../security/redact'
-import { maxRounds, runView } from './agent'
+import { MAX_ROUNDS, runView } from './agent'
 import { installModel } from './model'
 import type { RunData } from './project'
 import { turnSurveys } from './readings'
@@ -176,8 +176,7 @@ export class Engine {
       if (outcome === 'failed') this.runtime.failed.add(taskId)
       const records = await this.runtime.records(taskId)
       const view = records ? runView(records) : null
-      if (view && view.rounds > maxRounds(await this.runtime.tier(taskId)))
-        await this.notice(conversation, 'budget', 'warn')
+      if (view && view.rounds > MAX_ROUNDS) await this.notice(conversation, 'budget', 'warn')
       await this.deps.db.touchTask(taskId)
       await this.tasks.index(taskId).catch(() => undefined)
       if (outcome !== 'failed') await this.recordReadings(taskId).catch(() => undefined)

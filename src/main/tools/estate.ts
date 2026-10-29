@@ -158,7 +158,7 @@ export function estateTools(deps: ToolDeps) {
     agentTool(deps, {
       name: 'estate',
       description:
-        'Read what the agent remembers: recorded bucket posture, open and accepted Issues, notes, and — with history — what happened to those Issues and the posture over time. Use it before asking the user to repeat anything.',
+        'Read what the agent remembers: recorded bucket posture, open and accepted Issues, notes, and — with history — what happened to those Issues and the posture over time. This is memory with the date each item was read, not a fresh read.',
       parameters: Type.Object({
         provider_id: providerParam,
         bucket: Type.Optional(
@@ -669,9 +669,9 @@ export function estateTools(deps: ToolDeps) {
     agentTool(deps, {
       name: 'note',
       description:
-        'Remember one short fact about the estate, an account or a bucket — a deliberate setting, an owner, an accepted risk. Do not use it for transient observations.',
+        'Remember a fact about the estate, an account or a bucket. Notes are shown to you at the start of every turn.',
       parameters: Type.Object({
-        text: Type.String({ description: 'The note, at most 1000 characters.' }),
+        text: Type.String({ description: 'The note.' }),
         scope: Type.Optional(
           Type.Union([Type.Literal('estate'), Type.Literal('provider'), Type.Literal('bucket')], {
             description: 'Where the note belongs; default estate.',
@@ -683,8 +683,8 @@ export function estateTools(deps: ToolDeps) {
       timeoutMs: 10_000,
       target: () => 'note',
       run: async (args) => {
-        const text = redact(args.text).trim().slice(0, 1000)
-        if (text.length < 3) throw new Error('The note is empty.')
+        const text = redact(args.text).trim()
+        if (!text) throw new Error('The note is empty.')
         const scope = args.scope ?? 'estate'
         let ref: string | null = null
         if (scope !== 'estate') {
@@ -693,9 +693,6 @@ export function estateTools(deps: ToolDeps) {
           if (scope === 'bucket' && !args.bucket)
             throw new Error('A bucket note needs a bucket name.')
         }
-        const total = await deps.db.countNotes()
-        if (total >= 500)
-          throw new Error('Memory is full (500 notes). Remove a note before adding another.')
         const note = await deps.db.insertNote({ scope, ref, text, author: 'agent' })
         return {
           model: `Remembered (${scope}): ${text}`,
@@ -708,7 +705,7 @@ export function estateTools(deps: ToolDeps) {
     agentTool(deps, {
       name: 'accept_risk',
       description:
-        'Ask the user to accept (or reopen) one risk they told you to accept. It changes nothing by itself: the window shows a confirmation, and only the user accepts. Name the risk by its bucket and rule code from `estate`.',
+        'Ask the user to accept (or reopen) one risk, named by its bucket and rule code as `estate` lists them. It changes nothing by itself: the window shows the user a confirmation, and only their click accepts it.',
       parameters: Type.Object({
         provider_id: providerParam,
         bucket: Type.String({

@@ -37,7 +37,7 @@ and the window renders them through one projection.
                          durable entries in pi_entries
                                      │
         runtime/agent.ts, readings.ts       shared/conversation.ts
-         (round budget; survey counts)       (the thread: messages, text,
+        (runaway ceiling; survey counts)     (the thread: messages, text,
                                               thoughts, steps, notices, live)
                      │                                  │
           the budget hook, memory            the window, search, export
@@ -46,9 +46,10 @@ and the window renders them through one projection.
 - **One driver.** The model reads with its tools, calls them in parallel where
   it can, may ask the user a question or ask them to accept a risk, and writes
   its text. There is no plan tool and no method tool: the agent says its plan
-  in its own words, and the tool descriptions carry what the methods said. There is no scripted run: `Check account` and a
-  scheduled check are user messages (`src/main/app.ts`,
-  `src/renderer/App.tsx`).
+  in its own words, and the tool descriptions carry what the methods said.
+  There is no scripted run: `Check account` puts a message in the composer for
+  the user to send, and a scheduled check is a one-line message naming its
+  account (`src/renderer/App.tsx`, `src/main/app.ts`).
 - **One settlement.** Every turn settles in `Engine.settle()`: the budget
   notice, the search index, reading records, the estate digest and the shell
   notification.
@@ -58,12 +59,13 @@ and the trace reducer (`shared/trace.ts`) were removed in 36.0.
 
 ## What the harness decides
 
-One thing: the round budget. `runtime/agent.ts` counts the turn's assistant
-entries that called a tool (`runView()`), so a restart or a resumed turn has the
-same budget as an uninterrupted one, and past the model tier's budget (14
-small, 24 mid, 32 large) `beforeTool` blocks the call with "Step budget
-reached. Answer now…". The blocked call stays in the conversation as a step
-that did not run, with that text as what the agent received. Which calls to
+One thing: a runaway ceiling. `runtime/agent.ts` counts the turn's assistant
+entries that called a tool (`runView()`), so a restart or a resumed turn counts
+the same as an uninterrupted one, and past `MAX_ROUNDS` (100) `beforeTool`
+blocks the call with "This turn has made 100 rounds of tool calls; this call
+did not run." The blocked call stays in the conversation as a step that did not
+run, with that text as what the agent received. The ceiling is the same for
+every model; there are no per-model tiers (removed in 36.0). Which calls to
 make, and whether to make one again, is the agent's; there is no repeated-read
 block (removed in 36.0).
 
@@ -75,14 +77,16 @@ shown in the window.
 
 There is no answer check. The app does not look for ungrounded names,
 unresolved citations or uncited paragraphs, and never asks the model to rewrite
-its text. The prompt describes the tools and the hard rules, not a workflow;
-`COMPOSE` says the window adds no coverage summary or verdict, so what a read
-could not reach is the agent's to say.
+its text. The prompt states the hard rules and the ceiling; it does not list the
+tools (each tool's description, sent with its schema, does that once) or
+prescribe a workflow. `COMPOSE` says the window adds no coverage summary or
+verdict, so what a read could not reach is the agent's to say. The estate
+digest names the accounts and the notes; Issues and history are the agent's to
+read with `estate`.
 
-The tier comes from the model the conversation runs with (a task's own model or
-the one in Settings), never from a global. Each model configuration is its own
-provider in the shared pi-ai collection (`providerIdFor()`), so one task's model
-never replaces another task's mid-turn.
+Each model configuration is its own provider in the shared pi-ai collection
+(`providerIdFor()`), so one task's model never replaces another task's
+mid-turn.
 
 ## Runtime flow
 
@@ -99,7 +103,7 @@ never replaces another task's mid-turn.
    an `sa.steer` input that joins a running turn; with no turn going it is a new
    message. Retry resubmits the last user message with its files and focus,
    never a steer. Continue is an `sa.resume` input: a divider in the thread, with
-   a fresh round budget.
+   a fresh round count.
 4. A running call is projected from `pi.live.tools`. When it settles, the result
    is a `pi.tool-result` entry whose `details` carry target, note, shaped
    progress, argument summary, view, duration, status and evidence id; the
@@ -128,10 +132,10 @@ never replaces another task's mid-turn.
     (`trigger: 'task'`). Readings carry counts only: no request, answer, policy,
     account id or secret.
 
-`Check account` creates a new task whose first message asks the agent to read
-every bucket, say which risks are open and say what it could not read. An
-account with a daily or weekly schedule gets the same kind of message, focused
-on that account, while the app is open and a model is set. Neither path runs
+`Check account` puts `Check my storage accounts.` in the composer; the user
+sends it. An account with a daily or weekly schedule gets a new task whose
+message is `Check the storage account <name>.`, focused on that account, while
+the app is open and a model is set. Neither path runs
 without a model or writes storage.
 
 Memory history is a read of host rows: `AppDb.listIssueEvents` joins
@@ -169,10 +173,10 @@ Coverage, unread sources and truncation stay in the view.
 
 | Module | Responsibility |
 |---|---|
-| `main/runtime/session.ts` | pi harness, the one extension, tool registry, durable reads, tier, digest |
+| `main/runtime/session.ts` | pi harness, the one extension, tool registry, durable reads, the task's model, digest |
 | `main/runtime/engine.ts` | submit, steer, stop, retry, continue; settlement, readings |
 | `main/runtime/tasks.ts` | task list, open task watch, task graph, search index, memory acts |
-| `main/runtime/agent.ts` | prompt sections, hooks over the derived turn view, estate digest |
+| `main/runtime/agent.ts` | prompt sections, the runaway ceiling, estate digest |
 | `main/runtime/project.ts` | entries → `UiEntry`, live state, sanitized reasoning, usage, rounds |
 | `main/runtime/model.ts` | pi-ai providers (one per model configuration), saved and draft test |
 | `main/runtime/schedule.ts` | when an opt-in scheduled check is due |
@@ -182,7 +186,7 @@ Coverage, unread sources and truncation stay in the view.
 | `main/estate/rules.ts` | twelve rules over facts, Security Hub controls, review findings |
 | `main/estate/changes.ts` | change formats and impact preview |
 | `main/tools/policy.ts` | `agentTool()`: scope, timeout, audit, envelope, status, details, key, evidence id, assessor |
-| `main/tools/registry.ts` | the capability manifest and generated prompt section |
+| `main/tools/registry.ts` | the tool names |
 | `main/tools/control.ts` | `ask` |
 | `main/tools/estate.ts` | `estate`, `note`, `change_plan` and `accept_risk` |
 | `main/tools/query.ts` | code mode: read-only primitives, datasets, inventory, budgets |

@@ -25,8 +25,7 @@ export function bucketTools(deps: ToolDeps) {
   return [
     agentTool(deps, {
       name: 'buckets',
-      description:
-        'List the buckets this account can see, with creation dates. Cheap; use it before a full survey.',
+      description: 'List the buckets this account can see, with creation dates.',
       parameters: Type.Object({ provider_id: providerParam }),
       timeoutMs: 30_000,
       target: () => 'account',
@@ -53,7 +52,7 @@ export function bucketTools(deps: ToolDeps) {
     agentTool(deps, {
       name: 'objects',
       description:
-        'List object keys, object versions, or incomplete multipart uploads in one bucket. Read-only and bounded.',
+        'List object keys, object versions, or incomplete multipart uploads in one bucket, one page at a time (up to 1000 rows); pass the returned `next` token to read the following page.',
       parameters: Type.Object({
         provider_id: providerParam,
         bucket: bucketParam,
@@ -63,18 +62,40 @@ export function bucketTools(deps: ToolDeps) {
             description: 'keys (default), versions, or uploads.',
           }),
         ),
-        limit: limitParam(200),
+        limit: limitParam(1000),
+        token: Type.Optional(
+          Type.String({
+            description: 'The `next` token a previous page returned, to read the page after it.',
+          }),
+        ),
       }),
       timeoutMs: 60_000,
       target: (args) => args.bucket,
       run: async (args, run) => {
         const { config, client } = await run.provider(args.provider_id)
         assertInScope(config, args.bucket)
-        const limit = Math.max(1, Math.min(args.limit ?? 50, 200))
+        const limit = Math.max(1, Math.min(args.limit ?? 100, 1000))
         const prefix = args.prefix || undefined
+        // One opaque token per listing kind: S3's own markers, carried as JSON.
+        const marker = (() => {
+          try {
+            return args.token ? (JSON.parse(args.token) as Record<string, string>) : {}
+          } catch {
+            throw new Error('The token is not one this tool returned.')
+          }
+        })()
+        const next = (value: Record<string, string | undefined> | null) =>
+          value && Object.values(value).some(Boolean) ? JSON.stringify(value) : null
+        const more = (token: string | null) => (token ? `\nnext: ${token}` : '')
         if (args.kind === 'versions') {
           const response = await client.send(
-            new ListObjectVersionsCommand({ Bucket: args.bucket, Prefix: prefix, MaxKeys: limit }),
+            new ListObjectVersionsCommand({
+              Bucket: args.bucket,
+              Prefix: prefix,
+              MaxKeys: limit,
+              KeyMarker: marker.key,
+              VersionIdMarker: marker.version,
+            }),
             { abortSignal: run.signal },
           )
           const rows = (response.Versions ?? []).map((v) => [
@@ -84,10 +105,13 @@ export function bucketTools(deps: ToolDeps) {
             formatBytes(v.Size),
             shortDate(v.LastModified),
           ])
+          const token = response.IsTruncated
+            ? next({ key: response.NextKeyMarker, version: response.NextVersionIdMarker })
+            : null
           return {
             model: `${rows.length} version(s) in ${args.bucket}${prefix ? ` under ${prefix}` : ''}${
-              response.IsTruncated ? ' (more exist; listing stopped at the limit)' : ''
-            }:\n${tableText(['Key', 'Version', 'Latest', 'Size', 'Modified'], rows)}`,
+              response.IsTruncated ? ' (more exist)' : ''
+            }:\n${tableText(['Key', 'Version', 'Latest', 'Size', 'Modified'], rows)}${more(token)}`,
             note: `${rows.length} version${rows.length === 1 ? '' : 's'}`,
             view: {
               kind: 'objects' as const,
@@ -105,6 +129,8 @@ export function bucketTools(deps: ToolDeps) {
               Bucket: args.bucket,
               Prefix: prefix,
               MaxUploads: limit,
+              KeyMarker: marker.key,
+              UploadIdMarker: marker.upload,
             }),
             { abortSignal: run.signal },
           )
@@ -114,10 +140,13 @@ export function bucketTools(deps: ToolDeps) {
             u.StorageClass ?? '',
             iso(u.Initiated),
           ])
+          const token = response.IsTruncated
+            ? next({ key: response.NextKeyMarker, upload: response.NextUploadIdMarker })
+            : null
           return {
             model: `${rows.length} incomplete upload(s) in ${args.bucket}${
-              response.IsTruncated ? ' (more exist; listing stopped at the limit)' : ''
-            }:\n${tableText(['Key', 'Upload', 'Class', 'Initiated'], rows)}`,
+              response.IsTruncated ? ' (more exist)' : ''
+            }:\n${tableText(['Key', 'Upload', 'Class', 'Initiated'], rows)}${more(token)}`,
             note: `${rows.length} upload${rows.length === 1 ? '' : 's'}`,
             view: {
               kind: 'objects' as const,
@@ -134,9 +163,13 @@ export function bucketTools(deps: ToolDeps) {
             Bucket: args.bucket,
             Prefix: prefix,
             MaxKeys: limit,
+            ContinuationToken: marker.continuation,
           }),
           { abortSignal: run.signal },
         )
+        const token = response.IsTruncated
+          ? next({ continuation: response.NextContinuationToken })
+          : null
         const rows = (response.Contents ?? []).map((object) => [
           object.Key ?? '',
           formatBytes(object.Size),
@@ -145,8 +178,8 @@ export function bucketTools(deps: ToolDeps) {
         ])
         return {
           model: `${rows.length} object(s) in ${args.bucket}${prefix ? ` under ${prefix}` : ''}${
-            response.IsTruncated ? ' (more exist; listing stopped at the limit)' : ''
-          }:\n${tableText(['Key', 'Size', 'Class', 'Modified'], rows)}`,
+            response.IsTruncated ? ' (more exist)' : ''
+          }:\n${tableText(['Key', 'Size', 'Class', 'Modified'], rows)}${more(token)}`,
           note: `${rows.length} object${rows.length === 1 ? '' : 's'}`,
           view: {
             kind: 'objects' as const,

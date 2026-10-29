@@ -85,7 +85,7 @@ export function configTool(deps: ToolDeps) {
         return {
           model: lines.join('\n'),
           note: `${access.paths.length} access path${access.paths.length === 1 ? '' : 's'}${
-            access.blind.length ? ' · partly blind' : ''
+            access.blind.length ? ` · ${access.blind.length} unread` : ''
           }${access.coverage.undecided ? ` · ${access.coverage.undecided} undecided` : ''}`,
           view: {
             kind: 'config' as const,
@@ -140,11 +140,9 @@ export function configTool(deps: ToolDeps) {
         )
       return {
         model: lines.join('\n'),
-        note: problems.length
-          ? `${problems.length} finding${problems.length === 1 ? '' : 's'}`
-          : blind.length
-            ? 'partly blind'
-            : 'no findings',
+        note: `${problems.length} finding${problems.length === 1 ? '' : 's'}${
+          blind.length ? ` · ${blind.length} unread` : ''
+        }`,
         view: {
           kind: 'config' as const,
           bucket: args.bucket,

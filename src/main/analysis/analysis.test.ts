@@ -1,10 +1,22 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { aggregate, countRows, preview } from './aggregate'
+import { aggregate, preview } from './aggregate'
 import { maskIp, normalizeTimestamp } from './formats'
 import { importDataset, importInventoryFiles } from './import'
+
+/** Rows a dataset holds, read straight from its file. */
+function countRows(path: string, kind: 'access_log' | 'inventory'): number {
+  const db = new DatabaseSync(path, { readOnly: true })
+  try {
+    const table = kind === 'inventory' ? 'inventory_objects' : 'access_logs'
+    return (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
+  } finally {
+    db.close()
+  }
+}
 
 function temp(): string {
   return mkdtempSync(join(tmpdir(), 'sa-test-'))

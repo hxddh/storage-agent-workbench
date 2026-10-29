@@ -160,7 +160,7 @@ await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout:
 await page.getByRole('button', { name: 'New task' }).click()
 await say('Show the change plan for demo-private')
 await openStep('Prepared a change plan')
-await page.locator('.plan').first().scrollIntoViewIfNeeded()
+await page.locator('.change-plan').first().scrollIntoViewIfNeeded()
 await page.waitForTimeout(350)
 await page.screenshot({ path: join(out, '14-plan-light.png') })
 

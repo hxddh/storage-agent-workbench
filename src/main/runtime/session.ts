@@ -3,8 +3,8 @@
  *
  * pi owns the durable loop: storage, resume, steering, abort, compaction and
  * tool tasks. This opens it once, installs the one extension, and answers the
- * questions both sides ask: which conversation, which entries, which model
- * tier. Nothing that decides a run's behaviour is kept here in memory; the
+ * questions both sides ask: which conversation, which entries, which model.
+ * Nothing that decides a run's behaviour is kept here in memory; the
  * extension rebuilds what it needs from the entries.
  */
 import { join } from 'node:path'
@@ -28,7 +28,7 @@ import type { Vault } from '../security/vault'
 import type { Settings } from '../settings'
 import { createTools } from '../tools'
 import type { ToolDeps } from '../tools/policy'
-import { buildDigest, createAgent, type ModelTier, tierFor } from './agent'
+import { buildDigest, createAgent } from './agent'
 import { mapEntries } from './project'
 
 export const CONTEXT = BACKGROUND_CONTEXT
@@ -117,7 +117,6 @@ export class Runtime {
         tools,
         {
           records: (id) => runtime?.records(id) ?? Promise.resolve(null),
-          tier: (id) => runtime?.tier(id) ?? Promise.resolve('mid'),
           digest: () => runtime?.digest ?? '',
           language: () => deps.settings.get().language,
         },
@@ -178,20 +177,6 @@ export class Runtime {
   /** The model this task runs with: its own choice, or the one in Settings. */
   async taskModel(id: string): Promise<TaskModel | null> {
     return parseTaskModel((await this.deps.db.getTaskMeta(id))?.model_json)
-  }
-
-  /** The tier of the model this conversation runs with, never a global setting. */
-  async tier(id: string): Promise<ModelTier> {
-    const stored = this.deps.settings.get().model
-    const chosen = await this.taskModel(id)
-    if (
-      chosen &&
-      !(stored && chosen.provider === stored.provider && chosen.modelId === stored.modelId)
-    )
-      return tierFor(contextFor(chosen.modelId))
-    // An unset window (0) is unknown, as in `installModel`: infer it from the id.
-    if (!stored) return tierFor(null)
-    return tierFor(stored.contextWindow > 0 ? stored.contextWindow : contextFor(stored.modelId))
   }
 
   /** Append an entry the model does not answer: a notice. */

@@ -278,7 +278,7 @@ describe('entry projection', () => {
             content: [
               {
                 type: 'text',
-                text: 'Step budget reached. Answer now with the evidence you already have.',
+                text: 'This turn has made 100 rounds of tool calls; this call did not run.',
               },
             ],
             timestamp: 1,
@@ -291,7 +291,7 @@ describe('entry projection', () => {
       kind: 'tool',
       status: 'failed',
       note: 'Did not run',
-      output: 'Step budget reached. Answer now with the evidence you already have.',
+      output: 'This turn has made 100 rounds of tool calls; this call did not run.',
     })
   })
 })

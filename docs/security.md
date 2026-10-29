@@ -36,8 +36,9 @@
 7. **Audit.** Every executed tool call writes
    `audit(tool, target, outcome, conversation)`. A refused scope call is
    `refused`, a user-stopped call is `stopped`, and other failures are `error`.
-   Every read goes through the agent; `Check account` and a scheduled check are
-   messages to it and are audited the same way.
+   Every read goes through the agent; a message the user sends from Check
+   account and a scheduled check are turns like any other and are audited the
+   same way.
 8. **Status is structured.** A call's status is written by `agentTool()` into
    `details`; nothing parses result text, which a bucket name or an error body
    could forge.

@@ -19,9 +19,9 @@ Version in this tree: **36.0.0**.
   reads up to 5,000 buckets, longest-unread first, and stops before its 300-second
   timeout rather than pretending it finished. Twelve deterministic rules turn
   those readings into current risks; a blind read leaves its rule undecided.
-- **Check account.** Home's **Check account** sends the agent a message in a
-  new task: read every bucket, say which risks are open and what could not be
-  read. It is a turn like any other and needs a model. On a first run, demo
+- **Check account.** Home's **Check account** puts `Check my storage accounts.`
+  in the composer for you to edit and send; the app never sends a message for
+  you. It is a turn like any other and needs a model. On a first run, demo
   storage is an explicit **Try with demo storage** choice; the app never adds
   it silently. Without a model the demo button only adds the account.
 - **Read access evidence.** Bucket policy and ACL grants are read locally; IAM

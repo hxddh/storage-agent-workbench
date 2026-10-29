@@ -59,7 +59,7 @@ export function surveyTool(deps: ToolDeps) {
       provider_id: providerParam,
       buckets: Type.Optional(
         Type.Array(Type.String(), {
-          maxItems: 50,
+          maxItems: HARD_MAX_BUCKETS,
           description: 'Re-read only these buckets instead of the whole account.',
         }),
       ),

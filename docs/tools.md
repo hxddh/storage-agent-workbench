@@ -1,8 +1,9 @@
 # Tools
 
 Twelve tools in one pi extension (`runtime/agent.ts`), grouped by capability
-in `tools/registry.ts`: **read**, **query**, **memory**, **change_plan** and
-**ask**. Every tool except `ask` goes through `agentTool()`, which applies
+in this page as **read**, **query**, **memory**, **change_plan** and **ask**
+(`tools/registry.ts` lists the names; each tool's description, sent with its
+schema, is the only place the model learns what it does). Every tool except `ask` goes through `agentTool()`, which applies
 account scope, a timeout, an audit row, redaction and the untrusted-data envelope, and attaches a typed `view`, a
 `status` (`done`, `failed`, `refused`, `timeout`, `stopped`) and an
 `evidenceId`.
@@ -16,18 +17,18 @@ nothing itself.
 
 | Group | Tool | Input | Model output | View |
 |---|---|---|---|---|
-| read | `survey` | `provider_id?`, `buckets?` (≤50), `limit?` (≤5000) | buckets read, the bucket table, open Issues, public, account block, capacity and largest buckets, undecided rules, Issue delta, what was not read | bucket table with capacity, open and accepted Issues, resolutions, account block, coverage |
+| read | `survey` | `provider_id?`, `buckets?` (≤5000), `limit?` (≤5000) | buckets read, the bucket table, open Issues, public, account block, capacity and largest buckets, undecided rules, Issue delta, what was not read | bucket table with capacity, open and accepted Issues, resolutions, account block, coverage |
 | read | `buckets` | `provider_id?` | name + created table | name + created |
-| read | `objects` | `provider_id?`, `bucket`, `prefix?`, `kind?` (`keys`/`versions`/`uploads`), `limit?` (≤200; default 50) | the page as a table, and whether more exist | key table with truncation |
+| read | `objects` | `provider_id?`, `bucket`, `prefix?`, `kind?` (`keys`/`versions`/`uploads`), `limit?` (≤1000, S3's page; default 100), `token?` | the page as a table and a `next` token when more exist | key table with truncation |
 | read | `object` | `provider_id?`, `bucket`, `key`, `aspects?` (`head`/`tags`/`acl`/`preview`) | facts (metadata names only, never values) and the text preview | fact list, bounded text preview |
 | read | `config` | `provider_id?`, `bucket`, `aspect?` (`security`/`lifecycle`/`observability`/`access`) | findings, blind spots, rules not triggered, exposure, missing permissions, the bucket's Issues; for `access`, every grant, blind source, missing permission and coverage | finding list, observations, access chain and coverage |
 | read | `probe` | `provider_id?`, `bucket?`, `check?` (`reach`/`tls`/`latency`/`location`/`addressing`) | check outcomes | check list |
-| read | `query` | `provider_id?`, `title`, `code` (≤6,000 chars) | every row on the page (up to 500), call/listing counts, script output | table, bar chart, script, buckets read |
+| read | `query` | `provider_id?`, `title?`, `code` | every row on the page (up to 500), call/listing counts, script output | table, bar chart, script, buckets read |
 | memory | `estate` | `provider_id?`, `bucket?`, `code?`, `history?`, `since?`, `notes?` | the remembered bucket table with age, every Issue (each line has `· rule <code>`), notes; with `history`, Issue events, posture changes and reading counts | bucket table, Issues, notes, optional history table |
-| memory | `note` | `text` (≤1,000 chars), `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
+| memory | `note` | `text`, `scope?` (`estate`/`provider`/`bucket`), `bucket?`, `provider_id?` | confirmation | note text |
 | memory | `accept_risk` | `provider_id?`, `bucket` (empty for the account rule), `code` (the rule code as `estate` lists it), `accept?` (default true; false reopens) | the window asks the user; it is not accepted until they confirm | confirmation card with **Accept risk** or **Reopen** |
 | change_plan | `change_plan` | `provider_id?`, `bucket?`, `code?` (omit for every open Issue; both plan that change for that bucket, Issue or not) | one change plan: baseline (latest account survey, as counts), merged steps, manual blockers, residual, impact (scans up to 500) | plan rows; each step opens CLI/Terraform/API tabs and impact |
-| ask | `ask` | `question` (≤300), `options?` (≤6), `note?` | the question; the turn ends until the user answers | the question as an agent message, with a button per option, if any, while it waits |
+| ask | `ask` | `question`, `options?`, `note?` | the question; the turn ends until the user answers | the question as an agent message, with a button per option, if any, while it waits |
 
 ## Answer and citations
 
@@ -73,9 +74,9 @@ account:
 | `dataset({file, kind?})` | import one attached access log or inventory into a local SQLite dataset |
 | `aggregate({file, metric, groupBy?, filters?, limit?})` | whitelisted aggregate over an imported dataset |
 
-Budget per script: 2,000 calls, 500,000 listed items, 120 seconds, 256 MiB and
-6,000 characters of code. The returned rows (at most 500 on the page, 40 to the
-model) are redacted; the script and buckets it read stay in the view as evidence.
+Budget per script: 2,000 calls, 500,000 listed items, 120 seconds and 256 MiB;
+the script's length is not limited. The returned rows (at most 500 on the page,
+all of them sent to the model) are redacted; the script and buckets it read stay in the view as evidence.
 
 `inventory` without `full` reads one page of the latest manifest (default 100
 rows, max 1,000). A CSV page up to 32 MiB or a Parquet page up to 16 MiB is
@@ -111,15 +112,15 @@ the risk fixed, it says so instead of offering the button.
   are batched in GetMetricData calls; the storage estimate is a list-price
   estimate, not a bill. An S3-compatible endpoint has neither, and the rules
   that need them stay undecided.
-- The harness blocks a call only past the model tier's round budget (**14
-  small, 24 mid, 32 large**). It never refuses a repeated call; repeating one is
-  the agent's decision.
+- The harness blocks a call only past a runaway ceiling of **100** rounds of
+  tool calls in one turn. There are no per-model budgets, and it never refuses
+  a repeated call; how much to read is the agent's decision.
 - `object.preview` reads at most 8 KiB and only for text-like content types under
   1 MiB; the body of a large object is never downloaded.
 - `dataset` imports at most 2,000,000 rows and `aggregate` answers only
   whitelisted metrics and dimensions; it never accepts SQL.
-- `note` is capped at 1,000 characters and 500 notes; it is redacted and
-  recorded as `author=agent`.
+- `note` is redacted and recorded as `author=agent`; its length and the number
+  of notes are not capped.
 - `survey` opens and resolves Issues through `estate`, never through prose.
 - `estate(history: true)` reads at most 80 Issue events and 200 posture
   changes, merges and orders them newest first, and keeps at most 60 rows in

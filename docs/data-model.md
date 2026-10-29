@@ -90,7 +90,7 @@ shown. A `pi.user` entry (35.x's answer correction) is not shown either. 36
 writes none of these.
 
 35.x results may still carry `details.key` and `details.assessed`; 36 neither
-writes nor reads them. A call the round budget blocked has no `details`: it
+writes nor reads them. A call the runaway ceiling blocked has no `details`: it
 shows as a step that did not run, with the block text as what the agent
 received. An `accept_risk` result carries an `accept` view (`{ issue, accept }`);
 it records a request, not an acceptance.

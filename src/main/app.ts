@@ -111,9 +111,10 @@ export class App {
         // A scheduled check is a message to the agent; without a model there is no check.
         if (!this.settings.get().model) continue
         const zh = this.settings.get().language === 'zh'
+        // The schedule the user set is the request; how to check is the agent's.
         const text = zh
-          ? `检查存储账号 ${account.name}：读取所有存储桶，说明有哪些风险，以及哪些内容没能读到。`
-          : `Check the storage account ${account.name}: read every bucket, tell me which risks are open, and what you could not read.`
+          ? `检查存储账号 ${account.name}。`
+          : `Check the storage account ${account.name}.`
         const taskId = await this.tasks.newTask(title)
         await this.engine.submit(
           taskId,

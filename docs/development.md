@@ -40,7 +40,7 @@ storage, generated change plans and impact, log normalization and IP masking,
 CSV/Parquet import and the aggregate whitelist, the search index, entry → UI
 projection (including 35.x entries and budget-blocked calls), the conversation
 projection (order, steers, the live slot, citations, what each call returned, Markdown),
-the round budget rebuilt from durable entries, migrations 15 and 16, redaction,
+the runaway ceiling rebuilt from durable entries, migrations 15 and 16, redaction,
 provider capabilities, posture diffs, permission diagnosis, model windows,
 access evaluation and reading records. `Conversation.test.tsx` and
 `Composer.test.tsx` run in jsdom; the rest use Node.
@@ -67,7 +67,7 @@ access evaluation and reading records. `Conversation.test.tsx` and
 - `scripts/e2e.mjs` builds the app and drives the real Electron window against
   `scripts/fake-s3.mjs` (delayed so a running check is observable) and
   `scripts/fake-model.mjs` and drives it as a conversation. It covers model
-  setup and test, Check account as a message (and that the 35.x scaffolding
+  setup and test, Check account filling the composer without sending (and that the 35.x scaffolding
   `Earlier in this task`, `Not checked` and `Worked for` is gone), a follow-up
   in the same thread, a citation opening its call, axe (serious/critical
   violations fail), `@` focus, a clarifying question answered by an option,

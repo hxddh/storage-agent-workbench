@@ -7,7 +7,7 @@ export function probeTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'probe',
     description:
-      'Probe an S3-compatible endpoint read-only: reachability, TLS, latency, bucket region, and path-style addressing. Use it when a connection or signature fails.',
+      'Probe an S3-compatible endpoint read-only: reachability, TLS, latency, bucket region, and path-style addressing.',
     parameters: Type.Object({
       provider_id: providerParam,
       bucket: Type.Optional(

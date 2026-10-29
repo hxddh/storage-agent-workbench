@@ -14,7 +14,7 @@ The normal CI workflow runs on `main` and pull requests:
 - the no-model first-run E2E;
 - the smoke eval, the behavior bench smoke, cold-start performance, screenshots
   and visual comparison;
-- on `main`, the real-model bench for a small-tier and a large-tier model
+- on `main`, the real-model bench for a small and a large model
   (three runs per scenario) when `EVAL_API_KEY` and the model variables exist;
   without them the job says it did not run;
 - the moto compatibility suite.

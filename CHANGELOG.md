@@ -57,6 +57,21 @@ into report sections. 35.x tasks open as conversations.
   fit says so in its step. Reasoning is shown in full. An `@` bucket the estate has not read yet is no
   longer dropped. Tool views no longer say "No problems found" or "clean".
 
+- **No unreasonable limits on the agent.** The 14/24/32 per-model round
+  budget and the model tiers behind it are gone: one 100-round runaway ceiling
+  remains, the same for every model. `objects` reads S3's full 1,000-key page
+  and pages on with a `next` token; `survey` re-reads any number of named
+  buckets; `query` scripts, `ask` questions and notes have no length caps and
+  notes no count cap. The sandbox's call, listing, time and memory budgets stay.
+- **The prompt no longer repeats the tools or pushes memory.** The generated
+  capability list (with cost and coverage labels) is gone — each tool's own
+  description says what it does, without "use it before/when" — and the digest
+  names the accounts and notes only; Issues and history are read with `estate`.
+- **The app does not speak for you.** Check account fills the composer with
+  `Check my storage accounts.` for you to send; adding the demo starts nothing;
+  a scheduled check's message only names its account. Step notes are counts
+  ("2 findings · 1 unread", "3 of 4 ok"), not verdicts like "partly blind".
+
 ### Removed
 
 - The scripted account check and re-check (`Engine.check()`,

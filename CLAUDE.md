@@ -57,12 +57,19 @@ message and the agent's work on it. The agent remembers what it read in an
 11. Demo storage is an explicit user choice. Nothing adds it on its own.
 12. Every read goes through the agent. There is no scripted run and no
     model-free check: without a model the window says so and asks for one.
-13. The harness overrides the agent in one place only: the round budget, rebuilt
-    from the turn's entries. Which calls to make, and whether to repeat one, is
-    the agent's decision. The prompt describes the tools and the hard rules; it
-    does not prescribe a workflow.
+13. The harness overrides the agent in one place only: a runaway ceiling of
+    **100** rounds of tool calls per turn, rebuilt from the turn's entries. No
+    per-model tiers, no working budget. Which calls to make, whether to repeat
+    one, how much to read and how long to work are the agent's. The prompt
+    states the hard rules; it does not list the tools again, prescribe a
+    workflow, or push Issues and history the agent did not ask for. Limits on a tool's
+    input exist only where they protect the user's machine or storage (the
+    sandbox budgets, S3's own page size), never to make the agent work less.
 14. The app composes no verdict of its own — not in the window, not in memory.
     A reading record holds a survey's counts; there is no "complete" or "clean".
+15. The app does not speak for the user. A Home action puts its message in the
+    composer for the user to send; a scheduled check states its account and
+    nothing more; Continue sends `Continue.`
 
 ## Architecture
 
@@ -73,12 +80,12 @@ One engine, one log, one projection (`docs/architecture.md`).
   (`sa.resume`); each turn settles in one place (`settle`): budget notice,
   index, readings, digest.
 - **Session** (`runtime/session.ts`): opens pi once with the one extension and
-  the tool registry; durable reads; per-conversation model tier; digest.
+  the tool registry; durable reads; the per-task model; digest.
 - **Tasks** (`runtime/tasks.ts`): task list, the one watched task, task graph,
   search index, the user's acts on memory.
-- **Agent** (`runtime/agent.ts`): prompt sections and one hook, the round
-  budget (**14 small, 24 mid, 32 large**, counted from the turn's assistant
-  entries by `runView`). A blocked call stays in the conversation as a step
+- **Agent** (`runtime/agent.ts`): prompt sections and one hook, the runaway
+  ceiling (`MAX_ROUNDS`, counted from the turn's assistant entries by
+  `runView`). A blocked call stays in the conversation as a step
   that did not run.
 - **Readings** (`runtime/readings.ts`): the counts of each account survey in a
   turn, recorded at settle as the agent's memory (`estate` history, a change
@@ -94,18 +101,19 @@ second queue, no SSE, no HTTP server. `viewState()`/`watch()` are the stream.
 
 ## Agent
 
-One extension, twelve tools (`tools/registry.ts` generates the capability
-section). Seven reads (`survey`, `buckets`, `objects`, `object`, `config`,
+One extension, twelve tools (`tools/registry.ts` lists their names; each
+tool's own description, sent with its schema, says what it does). Seven reads (`survey`, `buckets`, `objects`, `object`, `config`,
 `probe`, `query`), memory (`estate`, `note`, `accept_risk`), `change_plan`, and
 `ask`. The agent's text is the answer; there is no answer tool, no report
 protocol, no plan tool and no method tool — the agent says its plan in its own
-words, and a tool's description carries how to use it. `query` exists because questions over
-many objects or buckets cannot go through a fixed tool without flooding context;
+words, and a tool's description carries what it does. `query` exists because
+questions over many objects or buckets cannot go through a fixed tool without flooding context;
 adding a storage tool requires saying why `query` cannot do the job.
 
-Prompt sections: identity, time, policy (with the turn's tier), capabilities,
-compose, estate digest, language. The digest lists the first 12 of N open Issues
-and notes and says so. The model may link a call as `[1](#ev-<id>)`; a link
+Prompt sections: identity, time, policy (the hard rules and the ceiling),
+compose, estate digest, language. The digest names the accounts (their ids are
+tool arguments) and the first 12 of N notes; Issues and history are read with
+`estate` when the agent wants them. The model may link a call as `[1](#ev-<id>)`; a link
 opens that call in place. It never authors an Issue transition. Provider
 reasoning is shown in full, as returned.
 
@@ -115,8 +123,9 @@ current policy was read and holds no account id, anything else a manual step
 with a blocker; it names its baseline (the latest account survey, as counts),
 residual risks and unreadable dependencies.
 
-`Check account` and a scheduled check send the agent a message; they are turns
-like any other, and need a model.
+`Check account` puts `Check my storage accounts.` in the composer; a scheduled
+check sends `Check the storage account <name>.` Both are turns like any other,
+and need a model.
 
 ## Data
 

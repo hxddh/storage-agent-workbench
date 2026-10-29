@@ -1,7 +1,7 @@
 import type { EntryRecord } from '@earendil-works/pi-durable'
 import type { ToolDetails, ToolView } from '@shared/contract'
 import { describe, expect, it } from 'vitest'
-import { blockReason, maxRounds, runView, tierFor } from './agent'
+import { blockReason, MAX_ROUNDS, runView } from './agent'
 
 let seq = 0
 const at = () => 1_700_000_000_000 + seq++
@@ -70,17 +70,6 @@ const config = (bucket: string): ToolView => ({
   findings: [],
 })
 
-describe('model tiers', () => {
-  it('gives a small context model fewer rounds and a large one more', () => {
-    expect(tierFor(32_000)).toBe('small')
-    expect(tierFor(128_000)).toBe('mid')
-    expect(tierFor(400_000)).toBe('large')
-    expect(maxRounds('small')).toBe(14)
-    expect(maxRounds('mid')).toBe(24)
-    expect(maxRounds('large')).toBe(32)
-  })
-})
-
 describe('the turn guard, from durable entries', () => {
   it('leaves repeating a call to the agent', () => {
     const args = { bucket: 'demo', aspect: 'security' }
@@ -91,7 +80,7 @@ describe('the turn guard, from durable entries', () => {
       call('c2', 'config', args),
       result('c2', 'config', args, null, 'failed'),
     ])
-    expect(blockReason(view, 'mid')).toBeUndefined()
+    expect(blockReason(view)).toBeUndefined()
   })
 
   it('starts every turn with a fresh budget', () => {
@@ -105,14 +94,14 @@ describe('the turn guard, from durable entries', () => {
     expect(view.rounds).toBe(0)
   })
 
-  it('tells the agent to answer past the round budget, counted from the entries', () => {
+  it('stops a runaway turn past the round ceiling, counted from the entries', () => {
     const records: EntryRecord[] = [request()]
-    for (let index = 0; index < 15; index += 1) {
+    for (let index = 0; index <= MAX_ROUNDS; index += 1) {
       const args = { bucket: `b${index}` }
       records.push(call(`c${index}`, 'objects', args), result(`c${index}`, 'objects', args, null))
     }
     // The same entries give the same budget after a restart: nothing is in memory.
-    expect(blockReason(runView(records), 'small')).toMatch(/Step budget/)
-    expect(blockReason(runView(records), 'mid')).toBeUndefined()
+    expect(blockReason(runView(records))).toMatch(/did not run/)
+    expect(blockReason(runView(records.slice(0, 41)))).toBeUndefined()
   })
 })
