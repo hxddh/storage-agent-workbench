@@ -310,6 +310,18 @@ async function runScenario(scenario) {
     await page.getByRole('button', { name: 'Stop' }).click()
     await page.waitForSelector('text=Stopped.', { timeout: 10_000 })
     await page.getByRole('button', { name: 'Continue' }).click()
+    // The resumed turn must land before "not running" means anything: wait for
+    // its divider and an agent reply after it, then for the turn to settle.
+    await page.waitForSelector('.conversation-divider', { timeout: 30_000 })
+    await page.waitForFunction(
+      () => {
+        const items = [...document.querySelectorAll('.conversation > *')]
+        const divider = items.findLastIndex((item) => item.matches('.conversation-divider'))
+        return divider >= 0 && items.slice(divider + 1).some((item) => item.matches('.msg.agent.text') || item.querySelector('.msg.agent.text'))
+      },
+      null,
+      { timeout: 180_000 },
+    )
     await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 180_000 })
     trace = await readTrace()
   } else if (scenario.flow === 'steer') {

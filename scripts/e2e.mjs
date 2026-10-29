@@ -241,8 +241,17 @@ try {
   console.log('STOP OK')
   await page.getByRole('button', { name: 'Continue' }).click()
   await page.waitForSelector('.conversation-divider', { timeout: 10_000 })
+  // The reply must come after the divider: the resumed turn, not the stopped one.
+  await page.waitForFunction(
+    () => {
+      const items = [...document.querySelectorAll('.conversation > *')]
+      const divider = items.findLastIndex((item) => item.matches('.conversation-divider'))
+      return divider >= 0 && items.slice(divider + 1).some((item) => item.matches('.msg.agent.text') || item.querySelector('.msg.agent.text'))
+    },
+    null,
+    { timeout: 60_000 },
+  )
   await page.waitForSelector('.composer .send.stop', { state: 'detached', timeout: 60_000 })
-  await page.waitForSelector('.msg.agent.text', { timeout: 60_000 })
   console.log('CONTINUE OK')
 
   await page.getByRole('button', { name: 'New task' }).click()
