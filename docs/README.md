@@ -1,14 +1,14 @@
 # Documentation
 
-These pages describe the **37.0.0** tree. They are not a roadmap and not a
+These pages describe the **38.0.0** tree. They are not a roadmap and not a
 substitute for the code.
 
 | File | What it is |
 |---|---|
-| [product.md](product.md) | Tasks as conversations, Home, the reads, memory, Settings and limits |
+| [product.md](product.md) | Tasks as conversations, Home, reads, memory, methods, views and Settings |
 | [architecture.md](architecture.md) | Processes, runtime flow, modules and storage layout |
 | [data-model.md](data-model.md) | Host tables, pi entries, datasets and retention |
-| [tools.md](tools.md) | The six tools, results, citations and code mode |
+| [tools.md](tools.md) | The ten tools, results, citations, memory and code mode |
 | [security.md](security.md) | Secrets, scope, redaction, account ids and the trust boundary |
 | [iam.md](iam.md) | Read-only IAM permissions and where each read goes |
 | [capabilities.md](capabilities.md) | How S3-compatible endpoints are handled |
@@ -39,6 +39,13 @@ substitute for the code.
 - **Read**: one `call`: the service's response as JSON, or its error code,
   HTTP status and message. A 404 such as `NoSuchBucketPolicy` is an answer like
   any other.
-- **Note**: a fact the agent chose to remember between tasks.
+- **Memory document**: arbitrary JSON the agent chose to remember, with a key,
+  optional text and tags, and a task or user scope.
+- **Method**: a reusable tool the agent wrote for itself: a JSON Schema and a
+  read-only JavaScript body.
+- **View**: a declarative document the agent composed with `render`. The app
+  renders the blocks; the document is never HTML or code.
+- **Child agent**: a `delegate` run with the same read-only tools, scope and
+  memory. Its answer returns as the parent step's result.
 - **Change**: text the agent writes (a CLI command, a policy) for the user to
   apply. The app never runs it.

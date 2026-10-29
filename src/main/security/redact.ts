@@ -7,7 +7,7 @@ const PATTERNS: [RegExp, string][] = [
     /("(?:SecretAccessKey|SessionToken|AccessKeyId|secretAccessKey|sessionToken|accessKeyId|api_key|apiKey|password|token)"\s*:\s*)"[^"]*"/g,
     '$1"[redacted]"',
   ],
-  [/arn:(aws|aws-cn|aws-us-gov):([^:\s]+):[^:\s]*:(\d{12}):/g, 'arn:$1:$2:[account]:'],
+  [/arn:(aws|aws-cn|aws-us-gov):([^:\s]+):([^:\s]*):(\d{12}):/g, 'arn:$1:$2:$3:[account]:'],
   [/\b(sig|signature)=[A-Za-z0-9%+/=]{16,}/gi, '$1=[redacted]'],
   [/\b(sk-(?:ant-|proj-)?)[A-Za-z0-9_-]{16,}/g, '$1[redacted]'],
   [/((?:aws_secret_access_key|aws_session_token)\s*=\s*)\S+/gi, '$1[redacted]'],

@@ -34,4 +34,4 @@ listing.
 `probe` shows how the endpoint itself answers: addresses, status, headers and
 TLS certificate.
 
-See [iam.md](iam.md) for AWS permissions and [tools.md](tools.md) for `call`.
+See [iam.md](iam.md) for AWS permissions and [tools.md](tools.md) for `call` and `discover`.

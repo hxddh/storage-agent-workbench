@@ -44,6 +44,7 @@ export type ThreadItem =
       args: string | null
       ms: number | null
       evidenceId: string | null
+      provider?: string
       view: ToolView | null
       /** What the agent received; null while live. */
       output: string | null
@@ -109,6 +110,7 @@ export function thread(entries: readonly UiEntry[], live: Live | null = null): T
           args: entry.args ?? null,
           ms: entry.ms,
           evidenceId: entry.evidenceId ?? entry.callId ?? null,
+          ...(entry.provider ? { provider: entry.provider } : {}),
           view: entry.view,
           output: entry.output ?? null,
         })
@@ -155,6 +157,7 @@ export function thread(entries: readonly UiEntry[], live: Live | null = null): T
       args: tool.args ?? null,
       ms: null,
       evidenceId: tool.callId || null,
+      ...(tool.provider ? { provider: tool.provider } : {}),
       view: null,
       output: null,
     })

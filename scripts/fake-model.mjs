@@ -75,13 +75,76 @@ function plan(body) {
       : null
   const first = (result) => (reasoning ? { reasoning, ...result } : result)
 
-  // Memory is the notes in the prompt; the agent answers from them.
+  // Memory is a tool, not prompt content; the agent asks for it.
   if (ask.includes('last time') || ask.includes('what did you find')) {
-    const note = [...system.matchAll(/^- \[[^\]]+\] (.*)$/gm)]
-      .map((match) => match[1])
-      .find((text) => text.includes('public'))
-      ?.replace(/\.+$/, '')
-    return { text: note ? `I noted earlier: ${note}.` : 'I have no notes from an earlier check.' }
+    const memory = made('memory').at(-1)
+    if (!memory) return next('memory', { action: 'get', key: 'survey/last' })
+    const open = memory.text.indexOf('>')
+    const close = memory.text.lastIndexOf('</untrusted-data>')
+    const raw = (open >= 0 && close > open ? memory.text.slice(open + 1, close) : memory.text).trim()
+    let value = {}
+    try {
+      value = JSON.parse(raw)
+    } catch {}
+    const publicName = Array.isArray(value.public) ? value.public[0] : value.public
+    return {
+      text: publicName
+        ? `I noted earlier: \`${publicName}\` was public at the last check.${cite(memory)}`
+        : 'I have no notes from an earlier check.',
+    }
+  }
+
+  // A view the agent composed itself.
+  if (ask.includes('show') && (ask.includes('view') || ask.includes('table'))) {
+    const listing = reads('ListBuckets')[0]
+    if (!listing) return first(s3('ListBuckets'))
+    const names = [...listing.text.matchAll(/"Name": "([^"]+)"/g)].map((match) => match[1])
+    const view = made('render')[0]
+    if (!view)
+      return next('render', {
+        title: 'Buckets',
+        doc: {
+          version: 1,
+          blocks: [
+            {
+              type: 'section',
+              title: 'Buckets',
+              blocks: [
+                {
+                  type: 'table',
+                  columns: [{ key: 'name', label: 'Bucket' }],
+                  rows: names.map((name) => ({ name })),
+                },
+              ],
+            },
+          ],
+        },
+      })
+    return { text: `I rendered the buckets I read.${cite(view)}` }
+  }
+
+  // A method the agent writes and reuses.
+  if (ask.includes('method') || ask.includes('reuse')) {
+    const save = made('tool').find((item) => item.args.action === 'save')
+    if (!save)
+      return next('tool', {
+        action: 'save',
+        name: 'bucket_names',
+        description: 'List the buckets this account can see.',
+        schema: { type: 'object', additionalProperties: false },
+        code: 'const p = await tools.call({ service: "s3", operation: "ListBuckets" }); return (p.Buckets ?? []).map((b) => ({ name: b.Name }))',
+        scope: 'user',
+      })
+    const run = made('tool').find((item) => item.args.action === 'run')
+    if (!run) return next('tool', { action: 'run', name: 'bucket_names', args: {} })
+    return { text: `The method returned the buckets I read.${cite(run)}` }
+  }
+
+  // A child agent for an independent investigation.
+  if (ask.includes('delegate')) {
+    const child = made('delegate')[0]
+    if (!child) return next('delegate', { task: 'Survey my account.', title: 'Bucket survey' })
+    return { text: `The child agent answered.${cite(child)}` }
   }
 
   const bucketArg = /`?([a-z0-9][a-z0-9.-]*-[a-z0-9.-]+)`?/.exec(ask.replace(/^.*?(for|on|of|read|in|check) /, ''))?.[1]
@@ -154,8 +217,14 @@ function plan(body) {
   const deniedText = denied.length
     ? ` I could not read every part of ${denied.map((name) => `\`${name}\``).join(', ')} (access denied), so that bucket is not fully checked.`
     : ''
-  if (open.length && !made('note').length && (ask.includes('survey') || ask.includes('check')))
-    return next('note', { text: `${open.join(', ')} public at last check.` })
+  if (open.length && !made('memory').length && (ask.includes('survey') || ask.includes('check')))
+    return next('memory', {
+      action: 'put',
+      key: 'survey/last',
+      value: { public: open, checkedAt: new Date().toISOString() },
+      text: `${open.join(', ')} public at last check.`,
+      tags: ['survey'],
+    })
   return { text: `${publicText}${deniedText}` }
 }
 

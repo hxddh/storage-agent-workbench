@@ -7,17 +7,39 @@
  * `<account>`, and returns the response with every account id scrubbed.
  * Nothing here decides what a response means.
  */
+import { randomUUID } from 'node:crypto'
+import { mkdir, open, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import * as accessanalyzer from '@aws-sdk/client-accessanalyzer'
+import * as backup from '@aws-sdk/client-backup'
+import * as cloudfront from '@aws-sdk/client-cloudfront'
 import * as cloudtrail from '@aws-sdk/client-cloudtrail'
 import * as cloudwatch from '@aws-sdk/client-cloudwatch'
+import * as config from '@aws-sdk/client-config-service'
+import * as costexplorer from '@aws-sdk/client-cost-explorer'
+import * as dynamodb from '@aws-sdk/client-dynamodb'
+import * as ec2 from '@aws-sdk/client-ec2'
+import * as ecr from '@aws-sdk/client-ecr'
+import * as guardduty from '@aws-sdk/client-guardduty'
 import * as iam from '@aws-sdk/client-iam'
 import * as kms from '@aws-sdk/client-kms'
+import * as lambda from '@aws-sdk/client-lambda'
 import * as organizations from '@aws-sdk/client-organizations'
+import * as rds from '@aws-sdk/client-rds'
+import * as route53 from '@aws-sdk/client-route-53'
 import * as s3 from '@aws-sdk/client-s3'
 import * as s3control from '@aws-sdk/client-s3-control'
+import * as secretsmanager from '@aws-sdk/client-secrets-manager'
+import * as securityhub from '@aws-sdk/client-securityhub'
+import * as servicequotas from '@aws-sdk/client-service-quotas'
+import * as sns from '@aws-sdk/client-sns'
+import * as sqs from '@aws-sdk/client-sqs'
+import * as ssm from '@aws-sdk/client-ssm'
 import * as sts from '@aws-sdk/client-sts'
 import { GetCallerIdentityCommand } from '@aws-sdk/client-sts'
+import * as support from '@aws-sdk/client-support'
 import type { ProviderConfig, Providers } from '../providers'
+import { redact } from '../security/redact'
 import { ScopeError } from '../security/scope'
 
 /** The service modules the app bundles; each exports `<Operation>Command` classes. */
@@ -31,12 +53,30 @@ const MODULES: Record<string, Record<string, unknown>> = {
   accessanalyzer,
   cloudwatch,
   cloudtrail,
+  ec2,
+  lambda,
+  dynamodb,
+  rds,
+  cloudfront,
+  route53,
+  config,
+  securityhub,
+  guardduty,
+  ecr,
+  sns,
+  sqs,
+  secretsmanager,
+  ssm,
+  servicequotas,
+  support,
+  backup,
+  costexplorer,
 }
 
 export const SERVICES = Object.keys(MODULES)
 
 /** Operations whose names say they read. */
-const READ = /^(Get|List|Head|Describe|Lookup|Search|Select|Simulate)[A-Z]/
+const READ = /^(Get|List|Head|Describe|Lookup|Search|Select|Simulate|BatchGet|Query|Scan)[A-Z]/
 
 /**
  * Reads that hand out credentials or start state on the service side. They
@@ -47,6 +87,13 @@ const NEVER = new Set([
   'sts:GetFederationToken',
   'sts:GetWebIdentityToken',
   'kms:GetParametersForImport',
+  // Secret stores: their read operations return the secret itself.
+  'secretsmanager:GetSecretValue',
+  'secretsmanager:BatchGetSecretValue',
+  'ssm:GetParameter',
+  'ssm:GetParameters',
+  'ssm:GetParametersByPath',
+  'ssm:GetParameterHistory',
 ])
 
 /** Every operation a service offers, for the error that names a wrong one. */
@@ -58,24 +105,47 @@ export function operationsOf(service: string): string[] {
     .sort()
 }
 
-/** Every 12-digit number in a value becomes `<account>`, keys included. */
-export function scrub(value: unknown): unknown {
-  if (typeof value === 'string') return value.replace(/\b\d{12}\b/g, '<account>')
-  if (Array.isArray(value)) return value.map(scrub)
+/**
+ * Replace the account's exact id, not every 12-digit number. A timestamp, an
+ * object key or a policy condition is data; only the id this account actually
+ * has is removed. ARNs are handled by `redact`.
+ */
+export function scrub(value: unknown, accountIds: readonly string[] = [], field = ''): unknown {
+  const ids = accountIds.filter((id) => /^\d{12}$/.test(id))
+  if (typeof value === 'string') {
+    let text = redact(value).replaceAll('[account]', '<account>')
+    for (const id of ids) text = text.replaceAll(id, '<account>')
+    // A policy principal can name another account without an ARN. Account
+    // fields are identifiers, not arbitrary numbers, so only those fields are
+    // rewritten; timestamps and object keys stay intact.
+    if (
+      /^(principal|aws|accountid|account|ownerid|owner|sourceaccount|targetaccount)$/i.test(field)
+    )
+      text = text.replace(/\b\d{12}\b/g, '<account>')
+    return text
+  }
+  if (Array.isArray(value)) return value.map((item) => scrub(item, ids, field))
   if (value instanceof Date) return value.toISOString()
   if (value instanceof Uint8Array) return { base64: Buffer.from(value).toString('base64') }
   if (value && typeof value === 'object')
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .filter(([key]) => key !== '$metadata')
-        .map(([key, item]) => [scrub(key) as string, scrub(item)]),
+        .map(([key, item]) => [key, scrub(item, ids, key)]),
     )
   return value
 }
 
-/** A policy document arrives as a JSON string, IAM's URL-encoded: parse what parses. */
-function documents(value: unknown): unknown {
+const POLICY_KEY = /(policy|document|statement|assumerole)/i
+
+/**
+ * A policy document arrives as a JSON string, IAM's URL-encoded. Parse only a
+ * field whose name says it is a policy; an object body that happens to be JSON
+ * stays text.
+ */
+function documents(value: unknown, key = ''): unknown {
   if (typeof value === 'string') {
+    if (!POLICY_KEY.test(key)) return value
     const text = /^%7B/i.test(value) ? safeDecode(value) : value
     if (/^\s*[{[]/.test(text))
       try {
@@ -85,7 +155,7 @@ function documents(value: unknown): unknown {
       }
     return value
   }
-  if (Array.isArray(value)) return value.map(documents)
+  if (Array.isArray(value)) return value.map((item) => documents(item, key))
   if (
     value &&
     typeof value === 'object' &&
@@ -93,7 +163,10 @@ function documents(value: unknown): unknown {
     !(value instanceof Uint8Array)
   )
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, documents(item)]),
+      Object.entries(value as Record<string, unknown>).map(([name, item]) => [
+        name,
+        documents(item, name),
+      ]),
     )
   return value
 }
@@ -124,36 +197,98 @@ function mentionsAccount(value: unknown): boolean {
   return JSON.stringify(value ?? null).includes('<account>')
 }
 
-/** What a body read keeps unless the agent asks for more: the app's memory, not the agent's reach. */
-export const DEFAULT_BODY_BYTES = 1024 * 1024
-
-/** A streamed body, read up to `maxBytes`: text when it is text, base64 when it is not. */
+/** A body is streamed to the task folder, never held whole in memory. */
 async function readBody(
   body: AsyncIterable<Uint8Array> & { destroy?: () => void },
   maxBytes: number,
-): Promise<{ bytesRead: number; text?: string; base64?: string; more?: boolean }> {
-  const chunks: Uint8Array[] = []
+  bodyDir?: string,
+  full = false,
+): Promise<{
+  ref?: string
+  bytesRead: number
+  text?: string
+  base64?: string
+  more?: boolean
+}> {
+  if (!bodyDir) {
+    const chunks: Uint8Array[] = []
+    let size = 0
+    let more = false
+    for await (const chunk of body) {
+      const room = maxBytes - size
+      if (chunk.length > room) {
+        if (room > 0) chunks.push(chunk.subarray(0, room))
+        size += Math.max(0, room)
+        more = true
+        body.destroy?.()
+        break
+      }
+      chunks.push(chunk)
+      size += chunk.length
+    }
+    const bytes = Buffer.concat(chunks)
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+    const binary =
+      text.includes('\u0000') ||
+      (text.match(/\uFFFD/g)?.length ?? 0) > Math.max(4, text.length / 50)
+    return {
+      bytesRead: bytes.length,
+      ...(binary ? { base64: bytes.toString('base64') } : { text }),
+      ...(more ? { more: true } : {}),
+    }
+  }
+
+  const folder = join(bodyDir, 'objects')
+  await mkdir(folder, { recursive: true })
+  const ref = `objects/${randomUUID()}.bin`
+  const path = join(bodyDir, ref)
+  const handle = await open(path, 'w')
+  const previewLimit = 64 * 1024
+  let preview = Buffer.alloc(0)
   let size = 0
   let more = false
-  for await (const chunk of body) {
-    const room = maxBytes - size
-    if (chunk.length > room) {
-      if (room > 0) chunks.push(chunk.subarray(0, room))
-      size += Math.max(0, room)
-      more = true
-      break
+  try {
+    for await (const chunk of body) {
+      const room = maxBytes - size
+      if (chunk.length > room) {
+        const take = chunk.subarray(0, Math.max(0, room))
+        if (take.length) {
+          await handle.write(take)
+          if (preview.length < previewLimit)
+            preview = Buffer.concat([preview, take.subarray(0, previewLimit - preview.length)])
+        }
+        size += take.length
+        more = true
+        body.destroy?.()
+        break
+      }
+      await handle.write(chunk)
+      size += chunk.length
+      if (preview.length < previewLimit)
+        preview = Buffer.concat([preview, chunk.subarray(0, previewLimit - preview.length)])
     }
-    chunks.push(chunk)
-    size += chunk.length
+  } finally {
+    await handle.close()
   }
-  if (more) body.destroy?.()
-  const bytes = Buffer.concat(chunks)
-  const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+  if (full) {
+    const bytes = await readFile(path)
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+    const binary =
+      text.includes('\u0000') ||
+      (text.match(/\uFFFD/g)?.length ?? 0) > Math.max(4, text.length / 50)
+    return {
+      ref,
+      bytesRead: bytes.length,
+      ...(binary ? { base64: bytes.toString('base64') } : { text }),
+    }
+  }
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(preview)
   const binary =
     text.includes('\u0000') || (text.match(/\uFFFD/g)?.length ?? 0) > Math.max(4, text.length / 50)
   return {
-    bytesRead: bytes.length,
-    ...(binary ? { base64: bytes.toString('base64') } : { text }),
+    ref,
+    bytesRead: size,
+    ...(binary ? { base64: preview.toString('base64') } : { text }),
     ...(more ? { more: true } : {}),
   }
 }
@@ -195,14 +330,18 @@ export interface CallInput {
   operation: string
   input?: Record<string, unknown>
   region?: string
-  /** For a streamed body (GetObject): read at most this many bytes (default 1 MiB). */
+  /** For a streamed body (GetObject): read at most this many bytes; default: the whole body. */
   maxBytes?: number
+  /** Internal: read the whole body for an inventory manifest. */
+  fullBody?: boolean
 }
 
 export interface CallDeps {
   providers: Providers
   config: ProviderConfig
   signal?: AbortSignal
+  /** The task folder for streamed object bodies. */
+  bodyDir?: string
 }
 
 /** Check a call before anything is sent. Throws with the reason a call does not run. */
@@ -212,7 +351,7 @@ export function checkCall(config: ProviderConfig, call: CallInput): void {
   const operation = String(call.operation ?? '')
   if (!READ.test(operation) || NEVER.has(`${service}:${operation}`))
     throw new ScopeError(
-      `${service}:${operation} is not a read. This app only reads: operations named Get, List, Head, Describe, Lookup, Search, Select or Simulate.`,
+      `${service}:${operation} is not a read this app runs. This app only reads: operations named Get, List, Head, Describe, Lookup, Search, Select, Simulate, BatchGet, Query or Scan, except secret-store and credential reads.`,
     )
   if (typeof MODULES[service]?.[`${operation}Command`] !== 'function')
     throw new Error(
@@ -262,11 +401,16 @@ export async function callApi(deps: CallDeps, call: CallInput): Promise<unknown>
   const out: Record<string, unknown> = { ...response }
   const body = out.Body as (AsyncIterable<Uint8Array> & { destroy?: () => void }) | undefined
   if (body && typeof body[Symbol.asyncIterator] === 'function')
-    out.Body = await readBody(body, call.maxBytes ?? DEFAULT_BODY_BYTES)
+    out.Body = await readBody(
+      body,
+      call.maxBytes ?? Number.POSITIVE_INFINITY,
+      deps.bodyDir,
+      call.fullBody,
+    )
   // SelectObjectContent answers with an event stream: the records as text, the rest as events.
   const events = out.Payload as AsyncIterable<Record<string, unknown>> | undefined
   if (events && typeof events[Symbol.asyncIterator] === 'function')
-    out.Payload = await readEvents(events, call.maxBytes ?? DEFAULT_BODY_BYTES)
+    out.Payload = await readEvents(events, call.maxBytes ?? Number.POSITIVE_INFINITY)
   // An S3 listing shows only the buckets this account may read.
   if (service === 's3' && call.operation === 'ListBuckets' && Array.isArray(out.Buckets)) {
     const scope = config.scope.buckets
@@ -275,7 +419,8 @@ export async function callApi(deps: CallDeps, call: CallInput): Promise<unknown>
         (item) => item.Name && scope.includes(item.Name),
       )
   }
-  return scrub(documents(out))
+  const accountId = await providers.accountId(config).catch(() => null)
+  return scrub(documents(out), accountId ? [accountId] : [])
 }
 
 /**

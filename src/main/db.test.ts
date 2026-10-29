@@ -69,6 +69,7 @@ describe('schema', () => {
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'search_docs_fts_%' ORDER BY name",
     )
     expect(tables.map((t) => t.name)).toEqual([
+      'agent_tools',
       'audit',
       'datasets',
       'notes',
@@ -79,6 +80,24 @@ describe('schema', () => {
     ])
     // Opening it again changes nothing.
     expect((await AppDb.open(raw)).resetTasks).toBe(false)
+  })
+
+  it('migrates a v17 database in place and adds agent tools', async () => {
+    const raw = await openNodeSqliteDatabase(
+      join(mkdtempSync(join(tmpdir(), 'sa-v17-')), 'db.sqlite'),
+    )
+    await raw.exec(`
+      CREATE TABLE providers (id TEXT PRIMARY KEY, name TEXT);
+      PRAGMA user_version = 17;
+    `)
+    const db = await AppDb.open(raw)
+    expect(db.resetTasks).toBe(false)
+    const tables = await raw.all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_tools'",
+    )
+    expect(tables).toHaveLength(1)
+    const version = await raw.get<{ user_version: number }>('PRAGMA user_version')
+    expect(version?.user_version).toBe(HOST_SCHEMA_VERSION)
   })
 
   it('starts over from a database of any other layout, pi tables included', async () => {
@@ -102,6 +121,57 @@ describe('schema', () => {
     const columns = await raw.all<{ name: string }>('PRAGMA table_info(providers)')
     expect(columns.map((c) => c.name)).not.toContain('kind')
   })
+})
+
+it('purges a delegated child conversation and its task rows', async () => {
+  const db = await open()
+  await db.raw.exec(`
+      CREATE TABLE pi_conversations (id INTEGER PRIMARY KEY, owner_conversation_id INTEGER, owner_task_id INTEGER, record TEXT NOT NULL);
+      CREATE TABLE pi_tasks (id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, abort_requested INTEGER NOT NULL, background INTEGER NOT NULL, record TEXT NOT NULL);
+      CREATE TABLE pi_entries (id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL, head INTEGER, commit_seq INTEGER NOT NULL, record TEXT NOT NULL);
+      CREATE TABLE pi_submissions (id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL, request_id TEXT, status TEXT NOT NULL, record TEXT NOT NULL);
+      CREATE TABLE pi_documents (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, family INTEGER NOT NULL, key_value TEXT NOT NULL, scope_kind TEXT NOT NULL, owner_id INTEGER NOT NULL, created_at INTEGER NOT NULL, retired_at INTEGER, record TEXT NOT NULL);
+      CREATE TABLE pi_document_revisions (document_id INTEGER NOT NULL, seq INTEGER NOT NULL, kind TEXT NOT NULL, version INTEGER NOT NULL, content TEXT NOT NULL, PRIMARY KEY (document_id, seq));
+      INSERT INTO pi_conversations (id, owner_conversation_id, owner_task_id, record)
+        VALUES (1, NULL, NULL, '{}'), (2, NULL, 10, '{}');
+      INSERT INTO pi_tasks (id, conversation_id, kind, status, abort_requested, background, record)
+        VALUES (10, 1, 'run', 'terminal', 0, 0, '{}'), (20, 2, 'run', 'terminal', 0, 0, '{}');
+      INSERT INTO pi_entries (id, conversation_id, head, commit_seq, record)
+        VALUES (100, 1, NULL, 1, '{}'), (200, 2, NULL, 2, '{}');
+      INSERT INTO pi_submissions (id, conversation_id, request_id, status, record)
+        VALUES (30, 1, 'a', 'done', '{}'), (31, 2, 'b', 'done', '{}');
+      INSERT INTO pi_documents (id, kind, family, key_value, scope_kind, owner_id, created_at, retired_at, record)
+        VALUES (40, 'x', 0, '"a"', 'conversation', 1, 1, NULL, '{}'),
+               (41, 'x', 0, '"b"', 'task', 10, 1, NULL, '{}'),
+               (42, 'x', 0, '"c"', 'conversation', 2, 1, NULL, '{}');
+      INSERT INTO pi_document_revisions (document_id, seq, kind, version, content)
+        VALUES (40, 1, 'base', 1, '{}'), (41, 1, 'base', 1, '{}'), (42, 1, 'base', 1, '{}');
+      INSERT INTO task_meta (conversation_id, title, created_at, updated_at)
+        VALUES ('1', 'parent', '', ''), ('2', 'child', '', '');
+      INSERT INTO search_docs (conversation_id, entry_id, kind, text, at)
+        VALUES ('1', 'a', 'user', 'parent', ''), ('2', 'b', 'user', 'child', '');
+      INSERT INTO search_docs_fts (conversation_id, entry_id, kind, text, at)
+        VALUES ('1', 'a', 'user', 'parent', ''), ('2', 'b', 'user', 'child', '');
+      INSERT INTO agent_tools (id, scope, conversation_id, name, description, schema_json, code, created_at, updated_at)
+        VALUES ('t1', 'task', '1', 'parent_tool', '', '{}', 'return 1', '', ''),
+               ('t2', 'task', '2', 'child_tool', '', '{}', 'return 2', '', '');
+    `)
+  expect(await db.purgeTask('1')).toEqual(['1', '2'])
+  for (const table of [
+    'pi_conversations',
+    'pi_tasks',
+    'pi_entries',
+    'pi_submissions',
+    'pi_documents',
+    'pi_document_revisions',
+    'task_meta',
+    'search_docs',
+    'search_docs_fts',
+    'agent_tools',
+  ]) {
+    const rows = await db.raw.all<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)
+    expect(rows[0]?.n, table).toBe(0)
+  }
 })
 
 describe('notes', () => {

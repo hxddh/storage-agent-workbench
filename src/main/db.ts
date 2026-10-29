@@ -1,10 +1,23 @@
 import { randomUUID } from 'node:crypto'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 /**
- * The schema this version writes. A database at any other version is cleared
- * and created again: the app carries nothing from an earlier layout.
+ * The schema this version writes.
+ *
+ * 17 → 18 is an in-place migration (agent tools). A database from an older,
+ * incompatible layout is backed up by the shell and then cleared; it is never
+ * silently discarded.
  */
-export const HOST_SCHEMA_VERSION = 17
+export const HOST_SCHEMA_VERSION = 18
+
+/** Whether opening this database would clear an older, incompatible layout. */
+export async function schemaNeedsReset(raw: NodeSqliteDatabase): Promise<boolean> {
+  const row = await raw.get<{ user_version: number }>('PRAGMA user_version')
+  const tables = await raw.all<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
+  )
+  const version = row?.user_version ?? 0
+  return tables.length > 0 && (version < 17 || version > HOST_SCHEMA_VERSION)
+}
 
 export interface ProviderRow {
   id: string
@@ -35,6 +48,18 @@ export interface DatasetRecord {
   rows: number
   bytes: number
   created_at: string
+}
+
+export interface AgentToolRecord {
+  id: string
+  scope: 'task' | 'user'
+  conversation_id: string | null
+  name: string
+  description: string
+  schema_json: string
+  code: string
+  created_at: string
+  updated_at: string
 }
 
 const SCHEMA = `
@@ -87,8 +112,22 @@ CREATE TABLE IF NOT EXISTS datasets (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS agent_tools (
+  id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL,
+  conversation_id TEXT,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  schema_json TEXT NOT NULL,
+  code TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(scope, conversation_id, name)
+);
+
 CREATE INDEX IF NOT EXISTS notes_created ON notes (created_at);
 CREATE INDEX IF NOT EXISTS datasets_conversation ON datasets (conversation_id);
+CREATE INDEX IF NOT EXISTS agent_tools_name ON agent_tools (name);
 
 CREATE TABLE IF NOT EXISTS search_docs (
   conversation_id TEXT NOT NULL,
@@ -123,7 +162,10 @@ export class AppDb {
     const tables = await raw.all<{ name: string; type: string }>(
       "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
     )
-    const reset = tables.length > 0 && (row?.user_version ?? 0) !== HOST_SCHEMA_VERSION
+    const version = row?.user_version ?? 0
+    // 17 is the only layout this version migrates in place. Older layouts are
+    // incompatible; the shell backs them up before this class clears them.
+    const reset = tables.length > 0 && (version < 17 || version > HOST_SCHEMA_VERSION)
     if (reset) {
       await raw.exec('PRAGMA foreign_keys = OFF')
       // Shadow tables of an FTS table go with it; drop the virtual tables first.
@@ -182,10 +224,6 @@ export class AppDb {
     await this.raw.run('DELETE FROM providers WHERE id = ?', id)
   }
 
-  async deleteNote(id: string): Promise<void> {
-    await this.raw.run('DELETE FROM notes WHERE id = ?', id)
-  }
-
   // -- notes ----------------------------------------------------------------
 
   async insertNote(note: Omit<NoteRecord, 'id' | 'created_at'>): Promise<NoteRecord> {
@@ -206,6 +244,102 @@ export class AppDb {
   /** Every note, newest first. */
   async listNotes(): Promise<NoteRecord[]> {
     return this.raw.all<NoteRecord>('SELECT * FROM notes ORDER BY created_at DESC')
+  }
+
+  async clearNotes(): Promise<void> {
+    await this.raw.run('DELETE FROM notes')
+  }
+
+  // -- agent-authored tools -------------------------------------------------
+
+  async listAgentTools(conversationId?: string): Promise<AgentToolRecord[]> {
+    return this.raw.all<AgentToolRecord>(
+      `SELECT * FROM agent_tools
+       WHERE scope = 'user' OR (scope = 'task' AND conversation_id = ?)
+       ORDER BY updated_at DESC`,
+      conversationId ?? '',
+    )
+  }
+
+  async getAgentTool(name: string, conversationId?: string): Promise<AgentToolRecord | undefined> {
+    return this.raw.get<AgentToolRecord>(
+      `SELECT * FROM agent_tools
+       WHERE name = ? AND (scope = 'user' OR (scope = 'task' AND conversation_id = ?))
+       ORDER BY scope = 'task' DESC LIMIT 1`,
+      name,
+      conversationId ?? '',
+    )
+  }
+
+  async upsertAgentTool(row: {
+    scope: 'task' | 'user'
+    conversationId: string | null
+    name: string
+    description: string
+    schemaJson: string
+    code: string
+  }): Promise<AgentToolRecord> {
+    const at = new Date().toISOString()
+    const existing = await this.raw.get<AgentToolRecord>(
+      `SELECT * FROM agent_tools WHERE scope = ? AND conversation_id IS ? AND name = ?`,
+      row.scope,
+      row.conversationId,
+      row.name,
+    )
+    if (existing) {
+      await this.raw.run(
+        `UPDATE agent_tools SET description = ?, schema_json = ?, code = ?, updated_at = ?
+         WHERE id = ?`,
+        row.description,
+        row.schemaJson,
+        row.code,
+        at,
+        existing.id,
+      )
+      return {
+        ...existing,
+        description: row.description,
+        schema_json: row.schemaJson,
+        code: row.code,
+        updated_at: at,
+      }
+    }
+    const record: AgentToolRecord = {
+      id: randomUUID(),
+      scope: row.scope,
+      conversation_id: row.conversationId,
+      name: row.name,
+      description: row.description,
+      schema_json: row.schemaJson,
+      code: row.code,
+      created_at: at,
+      updated_at: at,
+    }
+    await this.raw.run(
+      `INSERT INTO agent_tools (id, scope, conversation_id, name, description, schema_json, code, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      record.id,
+      record.scope,
+      record.conversation_id,
+      record.name,
+      record.description,
+      record.schema_json,
+      record.code,
+      record.created_at,
+      record.updated_at,
+    )
+    return record
+  }
+
+  async deleteAgentTool(id: string): Promise<void> {
+    await this.raw.run('DELETE FROM agent_tools WHERE id = ?', id)
+  }
+
+  async deleteAgentToolsForTask(conversationId: string): Promise<void> {
+    await this.raw.run(
+      "DELETE FROM agent_tools WHERE scope = 'task' AND conversation_id = ?",
+      conversationId,
+    )
   }
 
   // -- audit ----------------------------------------------------------------
@@ -310,38 +444,62 @@ export class AppDb {
   /**
    * Delete everything a task owns: its pi conversation, entries, tasks,
    * submissions, documents and revisions, plus analysis rows and audit events.
+   * A delegated child conversation is owned by one of this task's pi tasks, so
+   * it is removed too. Returns every conversation id whose task folder must go.
    * The host schema is append-only, so this is the one place that removes rows.
    */
-  async purgeTask(conversationId: string): Promise<void> {
-    if (!/^\d+$/.test(conversationId)) return
+  async purgeTask(conversationId: string): Promise<string[]> {
+    if (!/^\d+$/.test(conversationId)) return []
     const id = Number(conversationId)
+    const removed: string[] = []
     await this.raw.transaction(async (tx) => {
-      const tasks = await tx.all<{ id: number }>(
-        'SELECT id FROM pi_tasks WHERE conversation_id = ?',
-        id,
-      )
-      const taskIds = tasks.map((task) => task.id)
-      const docs = await tx.all<{ id: number }>(
-        taskIds.length
-          ? `SELECT id FROM pi_documents WHERE (scope_kind = 'conversation' AND owner_id = ?)
-             OR (scope_kind = 'task' AND owner_id IN (${taskIds.map(() => '?').join(',')}))`
-          : `SELECT id FROM pi_documents WHERE scope_kind = 'conversation' AND owner_id = ?`,
-        id,
-        ...taskIds,
-      )
-      const docIds = docs.map((doc) => doc.id)
-      if (docIds.length) {
-        const marks = docIds.map(() => '?').join(',')
-        await tx.run(`DELETE FROM pi_document_revisions WHERE document_id IN (${marks})`, ...docIds)
-        await tx.run(`DELETE FROM pi_documents WHERE id IN (${marks})`, ...docIds)
+      const purge = async (current: number): Promise<void> => {
+        const key = String(current)
+        if (removed.includes(key)) return
+        removed.push(key)
+        const tasks = await tx.all<{ id: number }>(
+          'SELECT id FROM pi_tasks WHERE conversation_id = ?',
+          current,
+        )
+        const taskIds = tasks.map((task) => task.id)
+        const children = taskIds.length
+          ? await tx.all<{ id: number }>(
+              `SELECT id FROM pi_conversations WHERE owner_task_id IN (${taskIds.map(() => '?').join(',')})`,
+              ...taskIds,
+            )
+          : []
+        for (const child of children) await purge(child.id)
+        const docs = await tx.all<{ id: number }>(
+          taskIds.length
+            ? `SELECT id FROM pi_documents WHERE (scope_kind = 'conversation' AND owner_id = ?)
+               OR (scope_kind = 'task' AND owner_id IN (${taskIds.map(() => '?').join(',')}))`
+            : `SELECT id FROM pi_documents WHERE scope_kind = 'conversation' AND owner_id = ?`,
+          current,
+          ...taskIds,
+        )
+        const docIds = docs.map((doc) => doc.id)
+        if (docIds.length) {
+          const marks = docIds.map(() => '?').join(',')
+          await tx.run(
+            `DELETE FROM pi_document_revisions WHERE document_id IN (${marks})`,
+            ...docIds,
+          )
+          await tx.run(`DELETE FROM pi_documents WHERE id IN (${marks})`, ...docIds)
+        }
+        await tx.run('DELETE FROM pi_tasks WHERE conversation_id = ?', current)
+        await tx.run('DELETE FROM pi_submissions WHERE conversation_id = ?', current)
+        await tx.run('DELETE FROM pi_entries WHERE conversation_id = ?', current)
+        await tx.run('DELETE FROM pi_conversations WHERE id = ?', current)
+        await tx.run('DELETE FROM datasets WHERE conversation_id = ?', current)
+        await tx.run('DELETE FROM audit WHERE conversation_id = ?', current)
+        await tx.run('DELETE FROM search_docs WHERE conversation_id = ?', key)
+        await tx.run('DELETE FROM search_docs_fts WHERE conversation_id = ?', key)
+        await tx.run('DELETE FROM task_meta WHERE conversation_id = ?', key)
+        await tx.run("DELETE FROM agent_tools WHERE scope = 'task' AND conversation_id = ?", key)
       }
-      await tx.run('DELETE FROM pi_tasks WHERE conversation_id = ?', id)
-      await tx.run('DELETE FROM pi_submissions WHERE conversation_id = ?', id)
-      await tx.run('DELETE FROM pi_entries WHERE conversation_id = ?', id)
-      await tx.run('DELETE FROM pi_conversations WHERE id = ?', id)
-      await tx.run('DELETE FROM datasets WHERE conversation_id = ?', id)
-      await tx.run('DELETE FROM audit WHERE conversation_id = ?', id)
+      await purge(id)
     })
+    return removed
   }
 
   // -- search ---------------------------------------------------------------

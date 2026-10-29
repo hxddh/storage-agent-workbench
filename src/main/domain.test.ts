@@ -11,12 +11,13 @@ import type { ToolDetails } from '@shared/contract'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { type FakeBucket, startFakeS3 } from '../../scripts/fake-s3.mjs'
 import { AppDb } from './db'
+import { MemoryStore } from './memory'
 import { Providers } from './providers'
 import { checkCall, operationsOf, scrub } from './s3/api'
 import type { Vault } from './security/vault'
 import { callTool } from './tools/call'
+import { memoryTool } from './tools/memory'
 import { moreTool } from './tools/more'
-import { noteTool } from './tools/note'
 import { PIECE, type ToolDeps } from './tools/policy'
 
 const BUCKETS: Record<string, FakeBucket> = {
@@ -86,6 +87,7 @@ beforeAll(async () => {
   deps = {
     db,
     providers,
+    memory: MemoryStore.open(join(taskDir, 'memory.sqlite')),
     taskDir: () => taskDir,
     datasetsDir: () => tmpdir(),
     uploadsDir: () => tmpdir(),
@@ -158,6 +160,22 @@ describe('one read-only call', () => {
     expect(JSON.parse(sent(part.text)).Body).toMatchObject({ text: 'hello', more: true })
   })
 
+  it('streams a body to the task folder and reads it back with more', async () => {
+    const all = await call({
+      service: 's3',
+      operation: 'GetObject',
+      input: { Bucket: 'cors-open', Key: 'notes.txt' },
+    })
+    const body = JSON.parse(sent(all.text)) as { Body: { ref?: string; text?: string } }
+    expect(body.Body.text).toBe('hello from the fake bucket')
+    expect(body.Body.ref).toMatch(/^objects\//)
+    const next = await run(moreTool(deps), { evidence: body.Body.ref!, offset: 0 })
+    expect(next.details.status).toBe('done')
+    expect(sent(next.text)).toContain('hello from the fake bucket')
+    const fromSix = await run(moreTool(deps), { evidence: body.Body.ref!, offset: 6 })
+    expect(sent(fromSix.text)).toMatch(/^from the fake bucket/)
+  })
+
   it('refuses anything that is not a read, before any request', () => {
     const config = { scope: { buckets: [] } } as never
     expect(() => checkCall(config, { service: 's3', operation: 'PutObject' })).toThrow(/not a read/)
@@ -165,6 +183,12 @@ describe('one read-only call', () => {
       /not a read/,
     )
     expect(() => checkCall(config, { service: 'sts', operation: 'GetSessionToken' })).toThrow(
+      /not a read/,
+    )
+    expect(() =>
+      checkCall(config, { service: 'secretsmanager', operation: 'GetSecretValue' }),
+    ).toThrow(/not a read/)
+    expect(() => checkCall(config, { service: 'ssm', operation: 'GetParameter' })).toThrow(
       /not a read/,
     )
     expect(() => checkCall(config, { service: 's3', operation: 'GetNothing' })).toThrow(
@@ -228,6 +252,20 @@ describe('one read-only call', () => {
     ).toEqual({ Owner: 'arn:aws:iam::<account>:root' })
   })
 
+  it('keeps a 12-digit object key or value that is not the account id', () => {
+    expect(scrub({ key: '123456789012', body: 'at 202610291234' })).toEqual({
+      key: '123456789012',
+      body: 'at 202610291234',
+    })
+  })
+
+  it('removes an account id named as a policy principal', () => {
+    expect(scrub({ Principal: { AWS: '999999999999' }, key: '999999999999' })).toEqual({
+      Principal: { AWS: '<account>' },
+      key: '999999999999',
+    })
+  })
+
   it('reports a stopped call as stopped, not failed', async () => {
     const controller = new AbortController()
     controller.abort()
@@ -256,18 +294,21 @@ describe('a result longer than one piece', () => {
 })
 
 describe('memory', () => {
-  it('remembers a note without its secrets, and forgets one by id', async () => {
-    const { details } = await run(noteTool(deps), {
-      text: 'Logs land in cors-open. key AKIAABCDEFGHIJKLMNOP',
+  it('remembers JSON without its secrets, lists it, and forgets it', async () => {
+    const { details } = await run(memoryTool(deps), {
+      action: 'put',
+      key: 'logs',
+      value: { bucket: 'cors-open', key: 'AKIA1234567890123456' },
+      text: 'Logs land in cors-open. key AKIA1234567890123456',
     })
-    if (details.view?.kind !== 'note') throw new Error('expected a note view')
-    expect(details.view.text).not.toContain('AKIAABCDEFGHIJKLMNOP')
-    const mine = (await deps.db.listNotes()).find((note) => note.text.startsWith('Logs land'))
-    await deps.db.insertNote({ text: 'kept' })
-    const missing = await run(noteTool(deps), { forget: 'no-such-note' })
-    expect(missing.details.status).toBe('failed')
-    const forgot = await run(noteTool(deps), { forget: mine?.id })
+    expect(details.status).toBe('done')
+    const mine = deps.memory?.get('logs')
+    expect(mine?.value).toMatchObject({ bucket: 'cors-open' })
+    expect(JSON.stringify(mine?.value)).not.toContain('AKIA1234567890123456')
+    const list = await run(memoryTool(deps), { action: 'list' })
+    expect(list.details.status).toBe('done')
+    const forgot = await run(memoryTool(deps), { action: 'delete', key: 'logs' })
     expect(forgot.details.status).toBe('done')
-    expect((await deps.db.listNotes()).map((note) => note.text)).toEqual(['kept'])
+    expect(deps.memory?.get('logs')).toBeNull()
   })
 })

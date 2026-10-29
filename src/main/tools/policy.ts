@@ -4,8 +4,9 @@ import type { S3Client } from '@aws-sdk/client-s3'
 import type { Context } from '@earendil-works/chord'
 import { type Static, type TSchema, Type } from '@earendil-works/pi-ai'
 import { defineTool, type ToolRegistration } from '@earendil-works/pi-durable'
-import type { ToolDetails, ToolName, ToolView } from '@shared/contract'
+import type { ToolDetails, ToolName, ToolView, UiEntry } from '@shared/contract'
 import type { AppDb } from '../db'
+import type { MemoryStore } from '../memory'
 import type { ProviderConfig, Providers } from '../providers'
 import { describeError } from '../s3/api'
 import { bound, escapeTags, redact, redactView } from '../security/redact'
@@ -18,6 +19,9 @@ export interface ToolDeps {
   taskDir: (conversationId: string) => string
   datasetsDir: (conversationId: string) => string
   uploadsDir: (conversationId: string) => string
+  memory?: MemoryStore
+  /** The projected entries of a conversation, for a delegate's child answer. */
+  entries?: (conversationId: string) => Promise<UiEntry[]>
   lang: () => string
 }
 
@@ -37,7 +41,9 @@ export interface ToolRun {
 function argsSummary(args: unknown): string | null {
   try {
     const text = JSON.stringify(args)
-    return text && text !== '{}' ? redact(text) : null
+    if (!text || text === '{}') return null
+    const redacted = redact(text)
+    return redacted.length > 4_000 ? `${redacted.slice(0, 4_000)}…` : redacted
   } catch {
     return null
   }
@@ -110,6 +116,7 @@ export function agentTool<T extends TSchema>(
       const conversationId = String(api.conversationId)
       const callArgs = argsSummary(args)
       let regional: ((region: string) => S3Client) | undefined
+      let providerName: string | undefined
       let progressNote: string | null = null
       let detailsWrite = Promise.resolve()
       const writeDetails = (value: ToolDetails) => {
@@ -148,6 +155,7 @@ export function agentTool<T extends TSchema>(
           },
           provider: async (id?: string) => {
             const config = await deps.providers.resolve(id)
+            providerName = config.name
             regional = deps.providers.regional(config)
             return { config, client: deps.providers.client(config) }
           },
@@ -174,6 +182,7 @@ export function agentTool<T extends TSchema>(
           ms: Date.now() - started,
           status: 'done',
           ...(evidenceId ? { evidenceId } : {}),
+          ...(providerName ? { provider: providerName } : {}),
         }
         // Let every queued progress write land before the final shaped result.
         await detailsWrite
@@ -216,6 +225,7 @@ export function agentTool<T extends TSchema>(
           ms: Date.now() - started,
           status,
           ...(evidenceId ? { evidenceId } : {}),
+          ...(providerName ? { provider: providerName } : {}),
         }
         await detailsWrite
         return {

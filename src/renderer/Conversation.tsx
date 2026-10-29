@@ -23,14 +23,14 @@ import {
   Paperclip,
   TriangleAlert,
 } from 'lucide-react'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Blocks } from './Blocks'
 import { type Dict, dict, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
+import Markdown from './Markdown'
 import { noticeText } from './notice'
 import { duration } from './time'
 import { ChartView, TableView, ToolViewBody } from './Views'
-
-const Markdown = lazy(() => import('./Markdown'))
 
 type Tool = Extract<ThreadItem, { kind: 'tool' }>
 
@@ -79,6 +79,10 @@ function ToolStep({
   now: number
 }) {
   const running = item.status === 'running'
+  // The step line already names the action and target. Raw JSON is useful for
+  // a storage read's input; for a method, view or child agent it is noise.
+  const showArgs =
+    item.args && !['render', 'delegate', 'memory', 'tool', 'discover', 'ask'].includes(item.name)
   const elapsed =
     item.ms !== null
       ? duration(item.ms)
@@ -104,7 +108,7 @@ function ToolStep({
       </button>
       {open && (
         <div className="step-detail">
-          {item.args && <p className="step-args mono">{item.args}</p>}
+          {showArgs && <p className="step-args mono">{item.args}</p>}
           {item.view?.kind === 'query' && (
             <>
               {item.view.chart && <ChartView chart={item.view.chart} />}
@@ -117,11 +121,32 @@ function ToolStep({
               />
             </>
           )}
-          {item.view ? (
+          {item.view?.kind === 'render' && <Blocks doc={item.view.doc} t={t} />}
+          {item.view?.kind === 'delegate' && (
+            <div className="delegate-view">
+              <p className="delegate-answer">{plain(item.view.answer) || t.runNoAnswer}</p>
+              <p className="quiet">
+                {item.view.status} · {item.view.calls ?? 0} call(s)
+              </p>
+            </div>
+          )}
+          {item.view?.kind === 'memory' && (
+            <TableView
+              table={item.view.table}
+              name={item.view.title}
+              empty={t.noRows}
+              t={t}
+              limit={8}
+            />
+          )}
+          {item.view &&
+          item.view.kind !== 'render' &&
+          item.view.kind !== 'delegate' &&
+          item.view.kind !== 'memory' ? (
             <ToolViewBody view={item.view} t={t} />
           ) : running ? (
             <p className="quiet">{t.runWorkWaiting}</p>
-          ) : item.note ? (
+          ) : !item.view && item.note ? (
             <p className="step-detail-note">{item.note}</p>
           ) : null}
           <Received output={item.output} t={t} />
@@ -329,9 +354,7 @@ function AgentText({
   return (
     <div className={`msg agent text ${streaming ? 'streaming' : ''}`}>
       <div className="prose">
-        <Suspense fallback={<p>{plain(text)}</p>}>
-          <Markdown text={text} components={components} />
-        </Suspense>
+        <Markdown text={text} components={components} />
       </div>
       {!streaming && (
         <button
@@ -382,6 +405,14 @@ export function Conversation({
   const t = dict(lang)
   const items = useMemo(() => thread(view.entries, view.live), [view.entries, view.live])
   const pending = useMemo(() => (view.live ? null : pendingQuestion(items)), [items, view.live])
+  const providers = useMemo(
+    () => [
+      ...new Set(
+        items.flatMap((item) => (item.kind === 'tool' && item.provider ? [item.provider] : [])),
+      ),
+    ],
+    [items],
+  )
   const [opened, setOpened] = useState<Set<string>>(new Set())
   const [printing, setPrinting] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
@@ -462,6 +493,13 @@ export function Conversation({
     >
       <article className="conversation" data-task-id={view.task.id}>
         <h1 className="visually-hidden">{view.task.title}</h1>
+        {providers.length > 0 && (
+          <div className="conversation-meta">
+            {providers.map((provider) => (
+              <span key={provider}>{provider}</span>
+            ))}
+          </div>
+        )}
         <Menu view={view} items={items} t={t} />
         {view.hasOlder && (
           <button

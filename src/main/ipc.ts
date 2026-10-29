@@ -216,9 +216,13 @@ export function registerIpc(app: App): void {
     if (patch.theme) nativeTheme.themeSource = patch.theme
   })
 
-  ipcMain.handle('agent:notes', () => app.tasks.notes())
+  ipcMain.handle('agent:memory', () => app.tasks.memoryRows())
 
-  ipcMain.handle('agent:deleteNote', (_event, id: string) => app.tasks.deleteNote(id))
+  ipcMain.handle('agent:deleteMemory', (_event, id: string) => app.tasks.deleteMemory(id))
+
+  ipcMain.handle('agent:agentTools', () => app.tasks.agentTools())
+
+  ipcMain.handle('agent:deleteAgentTool', (_event, id: string) => app.tasks.deleteAgentTool(id))
 
   ipcMain.handle('agent:openExternal', (_event, url: string) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url)

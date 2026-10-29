@@ -275,6 +275,7 @@ export function App() {
           >
             <Menu size={16} />
           </button>
+          {view && <span className="mobile-title">{view.task.title}</span>}
         </div>
         {view ? (
           <Suspense fallback={null}>
