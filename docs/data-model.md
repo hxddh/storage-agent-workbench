@@ -2,7 +2,7 @@
 
 ## Application tables (`storage-agent.db`)
 
-`user_version` is the schema version (head **14**). Migrations are append-only
+`user_version` is the schema version (head **15**). Migrations are append-only
 in `main/db.ts`; the schema is created with `CREATE TABLE IF NOT EXISTS`, then
 old databases are brought forward by version checks. There is no separate
 migration tool.
@@ -17,7 +17,7 @@ migration tool.
 | `audit` | `id`, `conversation_id`, `tool`, `target`, `outcome`, `at` |
 | `task_meta` | `conversation_id`, `title`, `created_at`, `updated_at`, `pinned`, `model_json` |
 | `posture_changes` | `id`, `provider_id`, `bucket`, `at`, `changes_json` |
-| `readings` | `id`, `conversation_id`, `provider_id`, `at`, `trigger` (`check`/`task`/`reverify`), `complete`, `visible`, `processed`, `pending`, `denied`, `unknown`, `truncated`, `open_high`, `open_total` |
+| `readings` | `id`, `conversation_id`, `provider_id`, `at`, `trigger` (`task`; older rows may hold `check`/`reverify`), `complete`, `visible`, `processed`, `pending`, `denied`, `unknown`, `truncated`, `open_high`, `open_total` |
 | `datasets` | `id`, `conversation_id`, `kind`, `path`, `rows`, `bytes`, `created_at` |
 | `search_docs` | `conversation_id`, `entry_id`, `kind`, `text`, `at` — derived index |
 | `search_docs_fts` | FTS5 trigram mirror of `search_docs`; short queries fall back to LIKE |
@@ -41,28 +41,30 @@ clears the mark. `recurred` counts reopenings of a resolved Issue.
 `AppDb.listIssueEvents` joins `issue_events` to `issues` for `estate` history;
 it is a read of these rows, not a second store.
 
-`readings` is the compact history of settled account reads. It stores counts and
-booleans, the triggering path and the current open Issue totals, never a request,
-answer, policy document, account id or secret. `complete = 1` only for an
-unscoped, closed survey; re-verification is always partial. Home selects each
+`readings` is the compact history of settled account reads: one row per account
+a settled turn surveyed account-wide (a survey narrowed to named buckets adds no
+row of its own). It stores counts and booleans, the triggering path and the
+current open Issue totals, never a request, answer, policy document, account id
+or secret. `complete = 1` only when the turn left nothing open for that account:
+no pending, truncated, denied or unknown bucket, no permission gap, blind spot,
+failed read, access gap or undecided rule (`readState()` in `shared/ledger.ts`).
+Every row 36 writes has `trigger = 'task'`; `estate` history shows older `check`
+and `reverify` rows as `checked` and `rechecked`. Home selects each
 account's latest complete row and the newest complete row overall; `estate`
 history includes up to 30 reading rows in an unfiltered view.
 
 `task_meta.model_json` is a per-task model override (`provider`, `modelId`,
 `baseUrl`, `thinking`); null means the model in Settings. The provider key is
-never stored here. A harness correction is a `pi.user` entry in the durable log;
-the window projects it as a `validation` trace event, not a host table.
+never stored here.
 
-`search_docs` is rebuilt per conversation when a run settles and backfilled
-at startup; its FTS5 trigram mirror is rebuilt with it. It stores every request,
-every run's answer (`entry_id = 'answer:<answer entry>'`, so a hit on an earlier
-run opens that run) and one row per risk seen by any run of the task
-(`entry_id = 'f:<source entry>:<finding key>'`). The source entry id lets a
-search hit load the evidence even when it is outside the window's initial page.
-Title search reads `task_meta` directly.
+`search_docs` is rebuilt per conversation when a turn settles and backfilled
+at startup; its FTS5 trigram mirror is rebuilt with it. It stores one row per
+user message, steers included (`kind = 'user'`), and one per agent text
+(`kind = 'answer'`), each keyed by its entry id, so a hit opens the task and
+scrolls to that message. Title search reads `task_meta` directly.
 
 `audit` records executed tool calls: tool, redacted target, outcome and
-conversation, for model and scripted runs alike.
+conversation.
 
 ## pi tables
 
@@ -75,32 +77,37 @@ Entry kinds the window understands:
 
 | Kind | Meaning |
 |---|---|
-| `sa.run` | starts a run; data `{ trigger: 'user', text, attachments, context? }` for a request (an input the model answers), `{ trigger: 'check' \| 'recheck', at }` for a scripted run (a write) |
-| `sa.steer` | an input that joins a running run; data like a request |
-| `sa.resume` | the user continued a stopped run; a row in the run, not a request |
-| `sa.call` | one scripted call; data `{ name, at, details }`, details exactly as `agentTool()` returns them |
-| `sa.answer` | a scripted run's answer; data `{ text, at }`; its `model` carries the run's enveloped results so a later model run in the task can read and cite them |
-| `sa.reverify` | a re-check's comparison; data `ReverifyReport`, including plan-step status when the task has a change plan |
-| `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window |
-| `pi.user` | the harness's one correction to the model; shown as a validation row |
-| `pi.assistant` | model output; the text is projected, `model` is not sent to the window |
-| `pi.tool-result` | a model's tool result; `details` is `{ target, note, progress, args, view, ms, status, evidenceId, key, assessed? }` |
+| `sa.run` | a user message; data `{ trigger: 'user', text, attachments, context? }`. It starts a turn |
+| `sa.steer` | a message sent while the agent works; data like `sa.run`. It joins the running turn |
+| `sa.resume` | the user continued a stopped turn; shown as a divider, not a message |
+| `sa.notice` | an app notice; data `{ code, text, tone, action? }`, worded by the window. Codes: `stopped`, `no_answer`, `failed`, `budget`, `model_missing` |
+| `pi.assistant` | model output; its text and reasoning summary are projected, `model` is not sent to the window |
+| `pi.tool-result` | a tool result; `details` is `{ target, note, progress, args, view, ms, status, evidenceId, key, assessed? }` |
 | `pi.compaction` | compaction divider |
 
-`details.key` is a hash of the call's exact arguments; the run ledger blocks a
+Entries 35.x wrote still open: an `sa.call` reads as a tool step and an
+`sa.answer` as agent text; the `sa.run` that started a 35.x scripted check
+(`trigger: 'check'` or `'recheck'`) and an `sa.reverify` comparison are not
+shown. A `pi.user` entry (35.x's answer correction) is not shown either. 36
+writes none of these.
+
+`details.key` is a hash of the call's exact arguments; the turn ledger blocks a
 repeated read by it. `details.assessed` is what the rules did with the reading
-(Issues opened, resolved, recurred), written by `estate/assess.ts`.
+(Issues opened, resolved, recurred), written by `estate/assess.ts`. An
+`accept_risk` result carries an `accept` view (`{ issue, accept }`); it records
+a request, not an acceptance.
 
-The run's state (rounds, calls, names, evidence, coverage) is never stored
-separately: `shared/ledger.ts` derives it from these entries, so a restarted
-process rebuilds the same guards.
+The turn's state (rounds, calls, coverage) is never stored separately:
+`shared/ledger.ts` derives it from these entries, so a restarted process
+rebuilds the same guards.
 
-pi's `pi.usage` document supplies the task's token/cost receipt. A scripted
-run has no model usage; its receipt still shows the calls and time.
+pi's `pi.usage` document supplies the task's token and cost totals; the
+overflow menu's JSON export includes them.
 
 ## Migration 15
 
-Schema head **15**. Tasks written before 35.0 use entry kinds 35 does not read,
+Schema head **15**; 36.0 adds no migration. Tasks written before 35.0 use entry
+kinds 35 does not read,
 so migration 15 starts the task history over: it drops the `pi_*` tables and
 clears `task_meta`, `search_docs`, `datasets` and `audit`, and the shell clears
 `tasks/` on disk. Accounts, remembered posture, Issues and their events, notes

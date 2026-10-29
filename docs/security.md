@@ -36,9 +36,8 @@
 7. **Audit.** Every executed tool call writes
    `audit(tool, target, outcome, conversation)`. A refused scope call is
    `refused`, a user-stopped call is `stopped`, and other failures are `error`.
-   A scripted check or re-check calls the same tools through the same
-   `agentTool()`, so it is audited the same way; it never asks the model and
-   never writes storage.
+   Every read goes through the agent; `Check account` and a scheduled check are
+   messages to it and are audited the same way.
 8. **Status is structured.** A call's status is written by `agentTool()` into
    `details`; nothing parses result text, which a bucket name or an error body
    could forge.
@@ -58,9 +57,12 @@
     to another account is marked as an unread external identity policy. A denied
     read is a blind spot, and coverage is shown. Scope is checked before an
     inventory destination bucket is read.
-11. **Evidence.** The JSON pack contains redacted views, finding controls,
-    coverage and read timestamps; it is written only through the user's save
-    dialog. PDF uses the same redacted page. Re-check never calls a write API.
+11. **Export.** The JSON export holds the task, the projected conversation
+    (messages, agent text, steps with their redacted views) and usage; it is
+    written only through the user's save dialog. The Markdown export holds the
+    messages, the agent's text and one line per call; PDF prints the window
+    with every step open. None of them holds a secret or an unredacted provider
+    document.
 12. **Account id.** The account-wide block needs the account id (STS); it is
     passed to S3 Control and SCP lookup and dropped. It is never stored, shown,
     sent to the model or put in a change plan. Change plans use
@@ -90,9 +92,6 @@ answer:
   external account's identity policy are not enumerated.
 - Display is capped at 120 paths; IAM pagination, SCP pages, Access Analyzer
   pages and role trust have their own bounds. Truncation is reported.
-- A model-free account check reads access paths for up to 24 buckets per
-  account. When that is fewer than the account has, the run states
-  `examined / total`.
 - A missing permission is a named blind spot, not an empty grant list.
 
 The user can therefore say "these grants are visible and this is what stayed
@@ -116,14 +115,14 @@ unread", not "this is the complete set of principals who can reach the bucket".
   never receives a credential, a raw provider message or a filesystem handle.
 - **The model is untrusted**: it can propose a change plan, never apply one; it
   cannot open, resolve or accept Issues, and its prose is never parsed as
-  product state. A name in the answer that no tool returned is marked on the
-  page, and the answer gets one structural correction per run (an ungrounded
-  name, an unresolved citation, or a paragraph naming a read bucket without
-  citing it). Whether the account was fully checked is never read from the
-  prose: the scope line (`Not fully checked` or `open questions`), computed
-  from the readings, is authoritative. Tool output is wrapped as untrusted data before the model sees
-  it. Links in model prose open in the system browser; the trusted window never
-  navigates to one.
+  product state. `accept_risk` only asks: the window shows a confirmation card,
+  and only the user's click calls `AppDb.setAccepted`. The app does not check or
+  correct the agent's text; the prompt tells it to say what it could not read,
+  and every call it made, failed ones included, stays visible as a step where it
+  happened. A citation link only opens a step the task holds; one that matches
+  no call does nothing. Tool output is wrapped as untrusted data before the
+  model sees it. Links in model prose open in the system browser; the trusted
+  window never navigates to one.
 - **The vault fallback is local**: without an OS keyring, the AES key file and
   the database both live under the user profile. Copying the database without
   the key file protects the ciphertext; copying both does not. Settings does not
@@ -136,17 +135,19 @@ unread", not "this is the complete set of principals who can reach the bucket".
   limitation, not a runtime secret boundary.
 - **Keychain prompts follow the app signature**: macOS `safeStorage` protects
   the vault key with the app's code identity. The app opens the model key only
-  when a model run starts, never while the window is opening or during a
-  model-free check. An unsigned or ad-hoc build does not have a stable trusted
+  when a turn starts, never while the window is opening. An unsigned or ad-hoc build does not have a stable trusted
   identity, so macOS may still ask for Keychain access on first use or after an
   update. Signing and notarizing the app is the durable fix; "Always Allow"
   cannot be guaranteed for ad-hoc builds.
 
 ## Not claimed
 
-- Change plans are text. Re-verification observes the account after the user
-  applies a plan and can confirm that the planned codes are now clear; it cannot
-  prove which command was run, and it never applies one.
+- Change plans are text. A later read, asked of the agent after the user applies
+  a plan, can show that the planned codes are now clear; it cannot prove which
+  command was run, and nothing applies one.
+- The app does not verify the agent's answer. Grounding checks, citation
+  validation and the scope line were removed in 36.0; the evidence is the steps
+  in the conversation.
 - The access view is not a complete IAM authorization proof. Conditions,
   service principals, federated identities and external identity policies can
   remain unread or undecided.
