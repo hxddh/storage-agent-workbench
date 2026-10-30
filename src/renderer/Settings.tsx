@@ -758,6 +758,12 @@ export function Settings({
                           <span className="method-name mono">{doc.key}</span>
                           <span className="hint">{doc.scope}</span>
                         </div>
+                        {doc.origin && (
+                          <span className="hint">
+                            {t.memoryFrom} {doc.originTitle ?? t.memoryGoneTask} ·{' '}
+                            {doc.updatedAt.slice(0, 10)}
+                          </span>
+                        )}
                         <span className="memory-text">
                           {doc.text.length > 1200 ? `${doc.text.slice(0, 1200)}…` : doc.text}
                         </span>

@@ -50,6 +50,18 @@ const NOW = Date.UTC(2026, 9, 1)
 /** The bucket's objects, sorted by key, generated once and cached on the profile. */
 export function objectsOf(config) {
   if (config.__objects) return config.__objects
+  // Objects with fixed bodies: an inventory report, its manifest, a log.
+  if (config.files) {
+    config.__objects = Object.entries(config.files)
+      .map(([key, body]) => ({
+        key,
+        size: Buffer.byteLength(body),
+        modified: new Date(NOW).toISOString(),
+        storageClass: 'STANDARD',
+      }))
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+    return config.__objects
+  }
   const spec = config.objects ?? { count: 2, prefixes: ['reports/'] }
   const out = []
   for (let i = 0; i < spec.count; i++) {
@@ -156,6 +168,7 @@ export function respond(buckets, request) {
         body: '',
       }
     }
+    if (config.files?.[key] !== undefined) return reply(200, config.files[key], 'text/plain')
     // A body larger than one default read.
     if (key === 'large.txt') return reply(200, 'x'.repeat(3 * 1024 * 1024), 'text/plain')
     return reply(200, 'hello from the fake bucket', 'text/plain')
@@ -250,7 +263,9 @@ export function respond(buckets, request) {
     return reply(
       200,
       xml(
-        '<ListInventoryConfigurationsResult><InventoryConfigurationList/></ListInventoryConfigurationsResult>',
+        config.inventoryTo
+          ? `<ListInventoryConfigurationsResult><InventoryConfiguration><Id>all</Id><IsEnabled>true</IsEnabled><Destination><S3BucketDestination><Bucket>arn:aws:s3:::${esc(config.inventoryTo)}</Bucket><Format>CSV</Format><Prefix>inv</Prefix></S3BucketDestination></Destination></InventoryConfiguration><IsTruncated>false</IsTruncated></ListInventoryConfigurationsResult>`
+          : '<ListInventoryConfigurationsResult><InventoryConfigurationList/></ListInventoryConfigurationsResult>',
       ),
     )
   if (query.has('cors')) {

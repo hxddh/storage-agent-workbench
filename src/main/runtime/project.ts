@@ -266,6 +266,7 @@ export class LiveTracker {
         status,
         startedAt: since,
         ...(details?.provider ? { provider: details.provider } : {}),
+        ...(details?.view?.kind === 'delegate' ? { view: details.view } : {}),
       })
     }
     const message = live.generation?.message

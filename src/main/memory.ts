@@ -267,6 +267,11 @@ export class MemoryStore {
       .run(conversationId)
   }
 
+  /** Every task-scoped document: their tasks are gone. */
+  forgetTasks(): void {
+    this.db.prepare("DELETE FROM docs WHERE scope = 'task'").run()
+  }
+
   deleteByKey(key: string, scope: 'task' | 'user' = 'user', conversationId?: string | null): void {
     this.db
       .prepare(`DELETE FROM docs WHERE scope = ? AND conversation_id IS ? AND key = ?`)
@@ -279,13 +284,16 @@ export class MemoryStore {
   }
 
   /** The window's list: every document, newest first. */
-  rows(): MemoryRow[] {
+  rows(titles: ReadonlyMap<string, string> = new Map()): MemoryRow[] {
     return this.list().map((item) => ({
       id: item.id,
       key: item.key,
       scope: item.scope,
       text: item.text,
       createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      origin: item.origin,
+      originTitle: item.origin ? (titles.get(item.origin) ?? null) : null,
     }))
   }
 

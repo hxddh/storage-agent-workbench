@@ -284,16 +284,93 @@ function node(value: unknown): TreeNode | null {
   }
 }
 
-/** Validate and shape a render document; null when it is not one. */
-export function viewDoc(value: unknown): ViewDoc | null {
-  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.blocks)) return null
-  if (value.blocks.length > VIEW_LIMITS.blocks) return null
-  if (JSON.stringify(value).length > VIEW_LIMITS.bytes) return null
+/** Why a block is not drawn, or what of it is not; nested blocks are checked too. */
+function issues(value: unknown, path: string, depth: number, out: string[]): void {
+  if (!isRecord(value)) {
+    out.push(`${path} is not an object`)
+    return
+  }
+  if (depth > VIEW_LIMITS.depth) {
+    out.push(`${path} is nested deeper than ${VIEW_LIMITS.depth}`)
+    return
+  }
+  const type = text(value.type)
+  if (!type || !BLOCK_TYPES.has(type)) {
+    out.push(`${path}.type "${String(value.type)}" is not one of ${[...BLOCK_TYPES].join(', ')}`)
+    return
+  }
+  const need = (field: string) => {
+    if (text(value[field]) === null) out.push(`${path} (${type}) needs a string "${field}"`)
+  }
+  if (type === 'markdown' || type === 'code' || type === 'callout') need('text')
+  if (type === 'diff') {
+    need('before')
+    need('after')
+  }
+  if (type === 'link') {
+    need('text')
+    if (!/^https?:\/\//i.test(text(value.href) ?? '')) out.push(`${path}.href must be http(s)`)
+  }
+  if (type === 'section' || type === 'stack' || type === 'row') {
+    if (!Array.isArray(value.blocks)) out.push(`${path} (${type}) needs "blocks"`)
+    else
+      for (const [i, item] of value.blocks.entries())
+        issues(item, `${path}.blocks[${i}]`, depth + 1, out)
+  }
+  if (type === 'table') {
+    const keys = Array.isArray(value.columns)
+      ? value.columns.filter((c) => isRecord(c) && text(c.key))
+      : []
+    if (!keys.length) out.push(`${path} (table) needs "columns" with a "key" each`)
+    if (Array.isArray(value.rows) && value.rows.length > VIEW_LIMITS.rows)
+      out.push(
+        `${path} (table) has ${value.rows.length} rows; the window draws the first ${VIEW_LIMITS.rows}`,
+      )
+  }
+  if (type === 'chart') {
+    const spec = isRecord(value.spec) ? value.spec : null
+    if (!spec) out.push(`${path} (chart) needs "spec"`)
+    else {
+      if (!['bar', 'line', 'area', 'point'].includes(String(spec.mark)))
+        out.push(`${path}.spec.mark must be bar, line, area or point`)
+      if (!text(spec.x) || !text(spec.y)) out.push(`${path}.spec needs "x" and "y" field names`)
+      if (!Array.isArray(spec.data)) out.push(`${path}.spec needs a "data" array`)
+    }
+  }
+}
+
+/**
+ * Validate and shape a render document, saying what is wrong: the agent reads
+ * the errors and corrects its view. `doc` is null when nothing can be drawn.
+ */
+export function checkViewDoc(value: unknown): { doc: ViewDoc | null; errors: string[] } {
+  const errors: string[] = []
+  if (!isRecord(value)) return { doc: null, errors: ['the view must be an object'] }
+  if (value.version !== 1) errors.push('version must be 1')
+  if (!Array.isArray(value.blocks)) errors.push('"blocks" must be an array')
+  if (errors.length) return { doc: null, errors }
+  const blocks = value.blocks as unknown[]
+  if (blocks.length > VIEW_LIMITS.blocks)
+    return { doc: null, errors: [`${blocks.length} blocks; at most ${VIEW_LIMITS.blocks}`] }
+  const size = JSON.stringify(value).length
+  if (size > VIEW_LIMITS.bytes)
+    return {
+      doc: null,
+      errors: [
+        `the view is ${size} characters; at most ${VIEW_LIMITS.bytes} (draw fewer rows and say the rest in text)`,
+      ],
+    }
+  for (const [i, item] of blocks.entries()) issues(item, `blocks[${i}]`, 0, errors)
   const count = { n: 0 }
-  const blocks = value.blocks
+  const shaped = blocks
     .map((item) => block(item, 0, count))
     .filter((item): item is ViewBlock => item !== null)
-  return blocks.length ? { version: 1, blocks } : null
+  return { doc: shaped.length ? { version: 1, blocks: shaped } : null, errors }
+}
+
+/** Validate and shape a render document; null when it is not one. */
+export function viewDoc(value: unknown): ViewDoc | null {
+  return checkViewDoc(value).doc
 }
 
 /** Plain text of a view, for search and Markdown export. */

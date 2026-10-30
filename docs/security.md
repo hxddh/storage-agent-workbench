@@ -54,13 +54,16 @@
    `<untrusted-data source="storage" evidence="…">…</untrusted-data>`, with
    `<`, `>` and `&` escaped first, so no tag, policy, metadata value or error
    message can close the envelope. A result longer than 24,000 characters
-   reaches the model one piece at a time; the rest is kept in
+   reaches the model one piece at a time; every result is kept in
    `tasks/<conversation>/results/` for `more`. Bucket names, object keys,
    bodies and log lines are data, not instructions.
-7. **Attached data.** Logs and inventories are parsed into a local SQLite file
-   with client IPs masked at import. The agent reads it with `sql()`: one
-   `SELECT` (or `WITH … SELECT`) on a read-only connection, no second
-   statement and no `load_extension`.
+7. **Attached and imported data.** A dataset keeps every column of its source;
+   client addresses, user agents and request lines are kept as they are, so
+   the agent can follow one address or request. Strings are scrubbed before
+   they are stored (account ids, credential-shaped text). The agent reads a
+   dataset with `sql()`: one `SELECT` (or `WITH … SELECT`) on a read-only
+   connection, no second statement and no `load_extension`. An attached image
+   is sent to the model as an image; its bytes are not redacted.
 8. **Memory is a separate database.** `memory.sqlite` holds only the agent's
    documents. A `memory` query runs on a read-only connection with one
    `SELECT`; it cannot see `storage-agent.db`, accounts, task metadata or vault
@@ -89,8 +92,9 @@
 14. **Code mode.** `query` scripts run in a QuickJS VM with no network,
     filesystem, process, timers or modules, and no model access. Its
     primitives are `call()` (the same read check, scope and scrubbing as the
-    tool), `discover()`, `memory()`, `render()`, `dataset()`, `inventory()` and
-    `sql()`. A script runs until it returns or the user stops it; its memory is
+    tool), `read()`, `dataset()` (scope checked for an object or prefix),
+    `inventory()`, `sql()`, `datasets()`, `history()`, `discover()`,
+    `memory()` and `render()`. A script runs until it returns or the user stops it; its memory is
     1,024 MB unless the agent sets `memory_mb`.
 15. **Tools return data.** `call` returns the service's response or its
     error; `probe` returns what the endpoint answered. The app computes no
@@ -132,8 +136,11 @@
   document reaches the model inside `<untrusted-data>` with the task that
   wrote it and when, and Settings lists every document so the user can forget
   one.
-- **`probe`** sends one unsigned request, without credentials, only to the
-  account's endpoint host or a host under it (on AWS, an S3 host).
+- **`probe`** sends one unsigned HEAD, GET or OPTIONS, only to the account's
+  endpoint host or a host under it (on AWS, an S3 host). The agent chooses its
+  headers; one that would carry a credential (`Authorization`, `Cookie`,
+  `X-Amz-Security-Token`, `X-Amz-Credential`, `X-Amz-Signature` and the like)
+  is refused and nothing is sent.
 - **The renderer is sandboxed**: `contextIsolation`, sandbox, no
   `nodeIntegration`, a CJS preload and a CSP that forbids remote scripts. It
   never receives a credential, a raw provider message or a filesystem handle.

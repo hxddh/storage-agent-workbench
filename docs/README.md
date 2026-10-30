@@ -1,6 +1,6 @@
 # Documentation
 
-These pages describe the **39.0.0** tree. They are not a roadmap and not a
+These pages describe the **40.0.0** tree. They are not a roadmap and not a
 substitute for the code.
 
 | File | What it is |

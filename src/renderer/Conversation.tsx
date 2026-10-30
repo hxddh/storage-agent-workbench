@@ -119,6 +119,7 @@ function ToolStep({
               <ChildThread
                 conversationId={item.view.conversationId}
                 task={item.view.task}
+                working={item.status === 'running'}
                 t={t}
                 lang={lang}
                 now={now}
@@ -164,36 +165,59 @@ const CHILD_LINKS = {
 }
 
 /** A child agent's conversation where the delegate step happened: its request, steps and text. */
+/** Child steps drawn at first; earlier ones open on request. */
+const CHILD_PAGE = 50
+
 function ChildThread({
   conversationId,
   task,
+  working,
   t,
   lang,
   now,
 }: {
   conversationId: string
   task: string
+  /** While the child works its steps are read again each second. */
+  working: boolean
   t: Dict
   lang: Lang
   now: number
 }) {
   const [items, setItems] = useState<ThreadItem[] | null>(null)
   const [opened, setOpened] = useState<Set<string>>(new Set())
+  const [shown, setShown] = useState(CHILD_PAGE)
   useEffect(() => {
     let live = true
-    void window.agent
-      .childEntries(conversationId)
-      .then((entries) => live && setItems(thread(entries)))
-      .catch(() => live && setItems([]))
+    const load = () =>
+      void window.agent
+        .childEntries(conversationId)
+        .then((entries) => live && setItems(thread(entries)))
+        .catch(() => live && setItems((current) => current ?? []))
+    load()
+    const timer = working ? setInterval(load, 1000) : undefined
     return () => {
       live = false
+      if (timer) clearInterval(timer)
     }
-  }, [conversationId])
+  }, [conversationId, working])
   if (!items) return <p className="quiet">{t.runWorkWaiting}</p>
+  const hidden = Math.max(0, items.length - shown)
   return (
     <ol className="steps child-steps" aria-label={t.childSteps}>
       <li className="child-request">{task}</li>
-      {items.map((item) =>
+      {hidden > 0 && (
+        <li className="child-earlier">
+          <button
+            className="conversation-older"
+            type="button"
+            onClick={() => setShown((count) => count + CHILD_PAGE)}
+          >
+            {t.runLoadEarlier}
+          </button>
+        </li>
+      )}
+      {items.slice(hidden).map((item) =>
         item.kind === 'thought' ? (
           <Thought key={item.id} item={item} t={t} />
         ) : item.kind === 'tool' ? (

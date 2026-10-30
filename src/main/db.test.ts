@@ -104,6 +104,22 @@ describe('schema', () => {
   })
 })
 
+it('finds the task a delegated child works for, through every level', async () => {
+  const db = await open()
+  expect(await db.rootConversation('1')).toBe('1')
+  await db.raw.exec(`
+      CREATE TABLE pi_conversations (id INTEGER PRIMARY KEY, owner_conversation_id INTEGER, owner_task_id INTEGER, record TEXT NOT NULL);
+      CREATE TABLE pi_tasks (id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, abort_requested INTEGER NOT NULL, background INTEGER NOT NULL, record TEXT NOT NULL);
+      INSERT INTO pi_conversations (id, owner_conversation_id, owner_task_id, record)
+        VALUES (1, NULL, NULL, '{}'), (2, NULL, 10, '{}'), (3, NULL, 20, '{}');
+      INSERT INTO pi_tasks (id, conversation_id, kind, status, abort_requested, background, record)
+        VALUES (10, 1, 'tool', 'running', 0, 0, '{}'), (20, 2, 'tool', 'running', 0, 0, '{}');
+  `)
+  expect(await db.rootConversation('1')).toBe('1')
+  expect(await db.rootConversation('2')).toBe('1')
+  expect(await db.rootConversation('3')).toBe('1')
+})
+
 it('purges a delegated child conversation and its task rows', async () => {
   const db = await open()
   await db.raw.exec(`

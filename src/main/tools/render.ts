@@ -1,4 +1,4 @@
-import { viewDoc, viewText } from '@shared/view'
+import { checkViewDoc, viewText } from '@shared/view'
 import { agentTool, type ToolDeps, Type } from './policy'
 
 /**
@@ -20,10 +20,11 @@ export function renderTool(deps: ToolDeps) {
     }),
     target: (args) => args.title ?? 'view',
     run: async (args) => {
-      const doc = viewDoc(args.doc)
-      if (!doc) throw new Error('render doc is not a valid ViewDoc.')
+      const { doc, errors } = checkViewDoc(args.doc)
+      if (!doc) throw new Error(`The view was not drawn: ${errors.join('; ')}.`)
       return {
-        model: viewText(doc),
+        // What was drawn, and what of the view was not and why, so the agent can correct it.
+        model: `${viewText(doc)}${errors.length ? `\n\nNot drawn as given: ${errors.join('; ')}.` : ''}`,
         note: `${doc.blocks.length} block${doc.blocks.length === 1 ? '' : 's'}`,
         view: { kind: 'render' as const, title: args.title ?? 'View', doc },
       }

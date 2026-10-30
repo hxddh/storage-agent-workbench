@@ -2713,6 +2713,9 @@ sup.cite.missing {
   margin: 0 0 6px;
   white-space: pre-wrap;
 }
+.child-earlier {
+  list-style: none;
+}
 .child-text {
   list-style: none;
   margin: 6px 0 0;

@@ -74,11 +74,13 @@ async function fitPiece(
   evidenceId: string | undefined,
   text: string,
 ): Promise<string> {
-  if (text.length <= PIECE) return text
   if (!evidenceId) return bound(text, PIECE)
+  // Every result is kept, so `more` can read any call again after the
+  // conversation was compacted, not only one that was cut.
   const path = resultPath(deps, conversationId, evidenceId)
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, text, 'utf8')
+  if (text.length <= PIECE) return text
   return `${text.slice(0, PIECE)}\n… ${text.length - PIECE} more characters. Read them with \`more\` (evidence "${evidenceId}", offset ${PIECE}).`
 }
 
@@ -94,7 +96,14 @@ export interface ToolDefinition<T extends TSchema> {
   run: (
     args: Static<T>,
     run: ToolRun,
-  ) => Promise<{ model: string; view: ToolView; note?: string; target?: string }>
+  ) => Promise<{
+    model: string
+    view: ToolView
+    note?: string
+    target?: string
+    /** Images the model sees with the text, when its provider takes them. */
+    images?: { data: string; mimeType: string }[]
+  }>
 }
 
 export function agentTool<T extends TSchema>(
@@ -115,7 +124,16 @@ export function agentTool<T extends TSchema>(
       }
       // Stop is the only end a call has besides its own answer.
       const signal = context.abortSignal ?? new AbortController().signal
-      const conversationId = String(api.conversationId)
+      // A delegated child works in the task it was given: the same folder,
+      // attachments, datasets and task memory. Its evidence ids carry its own
+      // conversation, so they never collide with the parent's.
+      const own = String(api.conversationId)
+      const conversationId = await deps.db.rootConversation(own)
+      const evidenceId = api.callId
+        ? own === conversationId
+          ? String(api.callId)
+          : `${own}.${String(api.callId)}`
+        : undefined
       const callArgs = argsSummary(args)
       let regional: ((region: string) => S3Client) | undefined
       let providerName: string | undefined
@@ -171,7 +189,6 @@ export function agentTool<T extends TSchema>(
           target: result.view.kind === 'note' ? null : target,
           outcome: 'ok',
         })
-        const evidenceId = api.callId ? String(api.callId) : undefined
         const sent = await fitPiece(deps, conversationId, evidenceId, result.model)
         // When the result was cut for the model, the step says so: the rest waits for `more`.
         const cut = sent !== result.model ? 'the agent got the first part; the rest is kept' : null
@@ -189,7 +206,10 @@ export function agentTool<T extends TSchema>(
         // Let every queued progress write land before the final shaped result.
         await detailsWrite
         return {
-          output: [{ type: 'text' as const, text: envelope(sent, evidenceId) }],
+          output: [
+            { type: 'text' as const, text: envelope(sent, evidenceId) },
+            ...(result.images ?? []).map((image) => ({ type: 'image' as const, ...image })),
+          ],
           details: details as never,
         }
       } catch (error) {
@@ -213,7 +233,6 @@ export function agentTool<T extends TSchema>(
             : status === 'stopped'
               ? 'Stopped by the user before this call finished.'
               : `Error: ${message}`
-        const evidenceId = api.callId ? String(api.callId) : undefined
         const details: ToolDetails = {
           target,
           note:

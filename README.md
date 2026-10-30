@@ -7,7 +7,7 @@ every tool call the agent made and what it returned. Nothing in storage is
 written, deleted or changed. The agent may write a change for you to apply; the
 app never runs it.
 
-Version in this tree: **39.0.0**.
+Version in this tree: **40.0.0**.
 
 ![A conversation in Storage Agent](docs/screenshot.png)
 
@@ -21,26 +21,37 @@ Version in this tree: **39.0.0**.
   runs. The response is JSON, or the service's error code, HTTP status
   and message.
 - **Answers questions over many objects.** `query` runs a read-only JavaScript
-  script in a QuickJS sandbox. Its primitives include `call()`, `dataset()`,
-  `inventory()`, `memory()`, `render()` and `sql()`. It has no network,
-  filesystem, process, timer or model access.
+  script in a QuickJS sandbox. Its primitives include `call()` (object bodies
+  come back whole), `read()`, `dataset()`, `inventory()`, `sql()`,
+  `history()`, `memory()` and `render()`. It has no network, filesystem,
+  process, timer or model access.
+- **Analyzes data as it is.** `dataset()` imports an attached file, an object,
+  or every object under a prefix (S3 server access logs, CSV, TSV, JSON lines,
+  JSON, Parquet, plain lines) into a local SQLite table with every source
+  column; `inventory()` imports an S3 Inventory report with the schema its
+  manifest names. Nothing is dropped, masked or cut; the agent queries with
+  SQL.
 - **Extends its own tools.** `tool` saves a reusable method: a JSON Schema and a
   JavaScript body that runs in the same read-only sandbox. A method can be
   task-scoped or user-scoped, listed, run and deleted.
-- **Remembers in JSON.** `memory` stores arbitrary JSON documents across tasks,
-  with keys, tags, search, read-only SQL and task or user scope. The agent
-  recalls; the app does not inject memory content into the prompt.
+- **Remembers in JSON.** `memory` stores arbitrary JSON documents across tasks
+  and app versions, with keys, tags, search, read-only SQL and task or user
+  scope; each records the task that wrote it. The agent recalls; the app does
+  not inject memory content into the prompt. `history()` reads what earlier
+  tasks said.
 - **Composes views.** `render` builds a declarative block tree: Markdown,
   tables, charts, trees, timelines, diffs, callouts, key-value rows and code.
   The document is data, never HTML or executable code.
 - **Delegates.** `delegate` gives a self-contained investigation to a child
-  agent with the same read-only tools, account scope and memory, and returns its
-  answer in the parent conversation.
+  agent with the same read-only tools, account scope, memory and task files;
+  its steps show live in the parent's step, several run at once, and a
+  question it would ask comes back to the parent.
 - **Discovers the environment.** `discover` lists the bundled services and their
   read operations, the tools available, and their contracts.
-- **Reads long results whole.** A result longer than 24,000 characters reaches
-  the agent in pieces; `more` reads the rest. An object body streams to the
-  task folder and is previewed; `more` can read any offset of the stored body.
+- **Reads anything it was given, again.** Every result is kept; `more` reads
+  any stretch of a result, an object body or an attached file, even after the
+  conversation was compacted. An attached image is shown to a model that takes
+  images.
 - **Asks when it must.** `ask` puts a question in the conversation, with up to
   six options as buttons.
 - **Shows what the agent did.** Each tool call is a step where it happened.
@@ -146,7 +157,10 @@ prove the harness runs; they are not a model-quality score. See
   stopping a task stops its child agents.
 - An object body streams to the task folder, up to `max_bytes` (default 1 MiB,
   the agent's to raise; a `Range` reads any part). A 64 KiB preview is
-  returned with a `ref`, and `more` reads any offset.
+  returned with a `ref`, and `more` reads any offset; a script gets the body
+  whole.
+- `probe` sends HEAD, GET or OPTIONS with any headers but credentials, so a
+  CORS preflight can be tried; it never signs.
 - Installers are signed and notarized only when every signing secret is
   configured. Without a model key, release notes carry a smoke result, not a
   model-quality claim.

@@ -158,7 +158,7 @@ export function thread(entries: readonly UiEntry[], live: Live | null = null): T
       ms: null,
       evidenceId: tool.callId || null,
       ...(tool.provider ? { provider: tool.provider } : {}),
-      view: null,
+      view: tool.view ?? null,
       output: null,
     })
   }

@@ -2,7 +2,7 @@
  * The tools end to end: the real AWS SDK against a fake S3 over HTTP, the real
  * tools through `agentTool()`, a real SQLite file. No model and no window.
  */
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import type { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,6 +19,7 @@ import { callTool } from './tools/call'
 import { memoryTool } from './tools/memory'
 import { moreTool } from './tools/more'
 import { PIECE, type ToolDeps } from './tools/policy'
+import { probeTool } from './tools/probe'
 
 const BUCKETS: Record<string, FakeBucket> = {
   'aws-public': { public: true },
@@ -67,6 +68,8 @@ async function run(tool: Executable, args: Record<string, unknown>, signal?: Abo
   }
 }
 
+const uploads = mkdtempSync(join(tmpdir(), 'sa-uploads-'))
+
 beforeAll(async () => {
   fake = await startFakeS3({ buckets: structuredClone(BUCKETS) })
   const db = await AppDb.open(
@@ -90,7 +93,7 @@ beforeAll(async () => {
     memory: MemoryStore.open(join(taskDir, 'memory.sqlite')),
     taskDir: () => taskDir,
     datasetsDir: () => tmpdir(),
-    uploadsDir: () => tmpdir(),
+    uploadsDir: () => uploads,
     lang: () => 'en',
   }
 })
@@ -105,6 +108,54 @@ const call = (args: Record<string, unknown>, signal?: AbortSignal) =>
 /** What the agent received, out of its envelope. */
 const sent = (text: string) =>
   /<untrusted-data[^>]*>\n?([\s\S]*?)\n?<\/untrusted-data>/.exec(text)?.[1] ?? ''
+
+describe('what the task holds', () => {
+  it('reads an attachment at any offset and length, and shows an image', async () => {
+    writeFileSync(join(uploads, 'policy.json'), '{"Version":"2012-10-17","Statement":[]}')
+    const part = await run(moreTool(deps), {
+      evidence: 'attachment:policy.json',
+      offset: 2,
+      length: 7,
+    })
+    expect(sent(part.text)).toMatch(/^Version\n… 30 more bytes \(offset 9\)/)
+    writeFileSync(join(uploads, 'shot.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2]))
+    const result = await moreTool(deps).execute(
+      { evidence: 'attachment:shot.png' } as never,
+      {
+        conversationId: 'c1',
+        callId: 'img-1',
+        output: () => undefined,
+        details: async () => undefined,
+      } as never,
+      { abortSignal: new AbortController().signal } as never,
+    )
+    const image = result.output?.find((item) => item.type === 'image') as
+      | { mimeType: string; data: string }
+      | undefined
+    expect(image?.mimeType).toBe('image/png')
+    expect(Buffer.from(image?.data ?? '', 'base64')).toHaveLength(7)
+  })
+
+  it('keeps every result, so a call can be read again by its evidence id', async () => {
+    const listed = await call({ service: 's3', operation: 'ListBuckets' })
+    const again = await run(moreTool(deps), { evidence: listed.details.evidenceId! })
+    expect(sent(again.text)).toContain('Buckets')
+  })
+})
+
+describe('probe', () => {
+  it('sends a CORS preflight with the headers given, and never a credential', async () => {
+    const preflight = await run(probeTool(deps), {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://example.com', 'Access-Control-Request-Method': 'GET' },
+    })
+    expect(preflight.details.status).toBe('done')
+    expect(sent(preflight.text)).toMatch(/"status": \d{3}/)
+    const refused = await run(probeTool(deps), { headers: { Authorization: 'AWS4 x' } })
+    expect(refused.details.status).toBe('failed')
+    expect(sent(refused.text)).toMatch(/no credentials/)
+  })
+})
 
 describe('one read-only call', () => {
   it('runs any read a service offers and returns what it answered', async () => {

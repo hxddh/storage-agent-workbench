@@ -61,6 +61,10 @@ export interface MemoryRow {
   id: string
   text: string
   createdAt: string
+  updatedAt: string
+  /** The task that wrote it last, and its title; null when the task is gone or none did. */
+  origin: string | null
+  originTitle: string | null
   key: string
   scope: 'task' | 'user'
 }
@@ -100,7 +104,7 @@ export type ToolView =
       task: string
       conversationId: string
       answer: string
-      status: 'done' | 'failed' | 'stopped'
+      status: 'running' | 'done' | 'failed' | 'stopped' | 'asked'
       calls?: number
     }
   /** Rows from agent memory. */
@@ -137,6 +141,8 @@ export interface LiveTool {
   status: ToolStatus
   startedAt: string
   provider?: string
+  /** A running call's view so far: a delegate's child conversation, open while it works. */
+  view?: ToolView | null
 }
 
 /**

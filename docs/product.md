@@ -71,8 +71,8 @@ ask.
 
 ## What the agent can do
 
-The agent decides which tools to use; the prompt names them but prescribes no
-workflow. The full contracts are in [tools.md](tools.md).
+The agent decides which tools to use; the prompt does not list them or
+prescribe a workflow, and each tool describes itself. The full contracts are in [tools.md](tools.md).
 
 - **`call`**: one read-only operation of a bundled AWS SDK client, with its
   input as the SDK names it. The result is the response as JSON, or the error
@@ -82,27 +82,32 @@ workflow. The full contracts are in [tools.md](tools.md).
   to raise).
 - **`query`**: a read-only JavaScript script for questions that span more than
   one call: every object in a bucket, every bucket, an inventory, an attached
-  log. Its primitives include `call()`, `discover()`, `dataset()`,
-  `inventory()`, `memory()`, `render()` and `sql()`. It has no network,
-  filesystem, process, timer or model access.
-- **`probe`**: one unsigned HEAD or GET to the account's endpoint or a host
-  under it: addresses, status, headers, TLS certificate and timing.
-- **`more`**: a result longer than 24,000 characters reaches the agent as its
-  first piece; `more` reads on from any offset. It also reads a stored object
-  body.
+  log, every log under a prefix. Its primitives include `call()` (bodies
+  whole), `read()`, `dataset()` and `inventory()` (every column of the
+  source), `sql()`, `datasets()`, `history()` (earlier tasks), `discover()`,
+  `memory()` and `render()`. It returns rows, a view or any JSON. It has no
+  network, filesystem, process, timer or model access.
+- **`probe`**: one unsigned HEAD, GET or OPTIONS, with any headers but
+  credentials, to the account's endpoint or a host under it: addresses,
+  status, headers, TLS certificate and timing. A CORS preflight is one probe.
+- **`more`**: every result is kept; `more` reads any stretch of one again, of
+  an object body or of an attached file. An attached image is shown to a
+  model that takes images.
 - **`discover`**: the services and read operations available, the tools, and
   their contracts.
 - **`render`**: a declarative view document (Markdown, table, chart, tree,
   timeline, diff, callout, key-value, code). The app renders it; the document
   is never HTML or code.
 - **`memory`**: arbitrary JSON documents with keys, tags, task or user scope,
-  list/get/query/delete. The agent decides when to recall; content is not
-  injected into the prompt.
+  put/get/list/search/query/delete, each with the task that wrote it. It
+  outlives tasks and app versions. The agent decides when to recall; content
+  is not injected into the prompt.
 - **`tool`**: save, list, run and delete a reusable method: a JSON Schema and a
   read-only JavaScript body. A method can be task- or user-scoped.
 - **`delegate`**: give a self-contained investigation to a child agent with the
-  same read-only tools, scope and memory. Its steps show inside the delegate
-  step; stopping the task stops it.
+  same read-only tools, scope, memory and task files. Its steps show live
+  inside the delegate step; several run at once; stopping the task stops
+  them; a question it would ask comes back to the parent.
 - **`ask`**: a question with up to six options. The turn ends until the user
   answers.
 
@@ -122,8 +127,9 @@ change was made; only a later read shows it.
 
 The agent's memory is its own `memory.sqlite`: JSON documents it chooses to
 write, with a key, optional text and tags, and task or user scope. It can read,
-list, query with one read-only SELECT, and forget. Settings lists every
-document with its key and scope and can forget any of them. Memory is not
+list, search, query with one read-only SELECT, and forget. Each document
+records the task that wrote it. Settings lists every document with its key,
+scope and that task, and can forget any of them. Memory outlives app versions. Memory is not
 injected into the prompt; the digest says how many documents exist.
 
 A method is a tool the agent wrote for itself: a JSON Schema and a read-only
@@ -149,8 +155,9 @@ including CJK substrings, use `LIKE`.
 
 ## Model fit
 
-Settings fetches the provider's model list. The context window is inferred
-from the model id (unknown models get 128k), and reasoning is on at medium for
+Settings fetches the provider's model list. The context window is what the
+list states for the model, else the catalog's figure for its id (unknown
+models get 128k), and reasoning is on at medium for
 known reasoning models and off otherwise. The output budget is the model's
 own maximum, learned from its provider on the first run. Every model gets the same
 tools and prompt.

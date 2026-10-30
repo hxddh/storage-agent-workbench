@@ -77,7 +77,9 @@ export function installModel(
     baseUrl,
     api,
     reasoning,
-    input: ['text'],
+    // Anthropic's and OpenAI's own APIs take images; an OpenAI-compatible
+    // endpoint may not, and pi tells such a model an image was attached instead.
+    input: stored.provider === 'compatible' ? ['text'] : ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow,
     maxTokens,
@@ -101,8 +103,10 @@ const learned = new Map<string, number>()
 
 /**
  * The most output tokens this model's provider accepts in one reply. Asked
- * once per model per launch: a one-word request that offers the whole context
- * window; a provider that refuses names its maximum, which becomes the limit.
+ * once per model per launch with a one-word request: first offering the whole
+ * context window; a refusal that names its maximum gives the limit; a refusal
+ * about tokens that names none is asked again with half as much, until the
+ * provider accepts. Nothing is guessed: the limit is one the provider took.
  */
 export async function learnOutputLimit(
   models: ReturnType<typeof createModels>,
@@ -113,13 +117,11 @@ export async function learnOutputLimit(
   const known = learned.get(key)
   if (known) return known
   const window = stored.contextWindow > 0 ? stored.contextWindow : 128_000
-  let limit = window
-  // A limit is kept only when the provider answered about it: accepted, or named its maximum.
-  let confirmed = false
-  try {
-    const ref = installModel(models, stored, vault, undefined, `${PROVIDER_ID}-limit`, window)
-    const model = models.getModel(ref.provider, ref.modelId)
-    if (model) {
+  const ask = async (maxTokens: number): Promise<string | null> => {
+    try {
+      const ref = installModel(models, stored, vault, undefined, `${PROVIDER_ID}-limit`, maxTokens)
+      const model = models.getModel(ref.provider, ref.modelId)
+      if (!model) return 'no model'
       const response = await models.complete(
         model,
         {
@@ -127,32 +129,27 @@ export async function learnOutputLimit(
           messages: [{ role: 'user', content: 'Reply with: ok', timestamp: Date.now() }],
           tools: [],
         },
-        { maxTokens: window },
+        { maxTokens },
       )
-      if (response.stopReason !== 'error') confirmed = true
-      else ({ limit, confirmed } = fromRefusal(response.errorMessage, window))
+      return response.stopReason === 'error' ? (response.errorMessage ?? 'error') : null
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
     }
-  } catch (error) {
-    ;({ limit, confirmed } = fromRefusal(
-      error instanceof Error ? error.message : String(error),
-      window,
-    ))
   }
-  if (confirmed) learned.set(key, limit)
-  return limit
-}
-
-/**
- * What a refusal says about the limit. A named maximum is the limit. A refusal
- * about tokens that names none leaves the size every supported model accepts,
- * for this run only; any other error is not about the limit at all.
- */
-function fromRefusal(message: string | undefined, window: number) {
-  const stated = statedMaximum(message, window)
-  if (stated < window) return { limit: stated, confirmed: true }
-  if (message && /max(imum)?[_ ]?(output[_ ]?)?tokens|max_completion_tokens/i.test(message))
-    return { limit: Math.min(32_000, Math.floor(window / 4)), confirmed: false }
-  return { limit: window, confirmed: false }
+  let asked = window
+  while (asked >= 1) {
+    const refusal = await ask(asked)
+    if (refusal === null) {
+      learned.set(key, asked)
+      return asked
+    }
+    const stated = statedMaximum(refusal, asked)
+    if (stated < asked) asked = stated
+    else if (/token/i.test(refusal)) asked = Math.floor(asked / 2)
+    // Any other error is not about the limit: the run goes ahead and says what failed.
+    else return window
+  }
+  return window
 }
 
 /** The maximum a provider's refusal names: the largest number in it below what was asked. */

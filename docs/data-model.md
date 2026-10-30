@@ -2,18 +2,19 @@
 
 ## Host tables (`storage-agent.db`)
 
-`main/db.ts` holds one schema, `HOST_SCHEMA_VERSION` **19**, stored in
+`main/db.ts` holds one schema, `HOST_SCHEMA_VERSION` **20**, stored in
 `PRAGMA user_version`. A new database is created at that version. A database at
 any other version is cleared and created again: every table goes, pi's
-included, and the shell deletes `tasks/` and `memory.sqlite` on disk. Nothing
-is migrated, imported or backed up.
+included, the shell deletes `tasks/` on disk, and task-scoped memory documents
+are forgotten. The user's memory stays. Nothing is migrated, imported or
+backed up.
 
 | Table | Columns |
 |---|---|
 | `providers` | `id`, `name`, `endpoint`, `region`, `force_path_style`, `access_key_id`, `secret_ref`, `session_ref`, `scope_json`, `created_at`, `auth` (`keys`/`profile`), `profile` |
 | `audit` | `id`, `conversation_id`, `tool`, `target`, `outcome`, `at` |
 | `task_meta` | `conversation_id`, `title`, `created_at`, `updated_at`, `pinned`, `model_json` |
-| `datasets` | `id`, `conversation_id`, `kind`, `path`, `rows`, `bytes`, `created_at` |
+| `datasets` | `id`, `conversation_id`, `name`, `format`, `source`, `path`, `rows`, `bytes`, `created_at` |
 | `agent_tools` | `id`, `scope`, `conversation_id`, `name`, `description`, `schema_json`, `code`, `created_at`, `updated_at` |
 | `search_docs` | `conversation_id`, `entry_id`, `kind`, `text`, `at`: a derived index |
 | `search_docs_fts` | FTS5 trigram mirror of `search_docs` |
@@ -56,13 +57,15 @@ lists now, cached in memory for a minute.
 
 A separate SQLite file, so a memory query can never reach host tables that
 hold accounts, task metadata or sealed secret references. `MemoryStore` owns
-it.
+it, at its own `user_version` **1**; a file of any other layout starts over.
+It outlives tasks and app versions.
 
 | Column | Meaning |
 |---|---|
 | `id` | UUID |
 | `scope` | `task` or `user` |
 | `conversation_id` | the task for task scope; null for user scope |
+| `origin` | the task that wrote it last |
 | `key` | the document key, unique within scope and conversation |
 | `value_json` | arbitrary JSON |
 | `text` | searchable text, defaulting to the JSON rendering of the value |
@@ -71,8 +74,9 @@ it.
 
 The agent reads and writes it through `memory` or `query`'s `memory()`
 primitive. `query` SQL runs on a read-only connection and must be one
-`SELECT`. The window lists every document with its key and scope and can
-forget one. The prompt says only how many documents exist; content is not
+`SELECT`. A recall carries the document's `origin` and `updatedAt`. The
+window lists every document with its key, scope and the task that wrote it,
+and can forget one. The prompt says only how many documents exist; content is not
 injected.
 
 ## pi tables
@@ -98,10 +102,12 @@ Entry kinds the window shows:
 a method save or delete), `query`, `question`, `render`, `delegate` and
 `memory` (rows from a memory list or query).
 
-A result longer than one piece (24,000 characters) is not stored whole in the
-entry: the entry holds the first piece, exactly what the model received, and
-the whole text is a file at `tasks/<conversation>/results/<evidence>.txt` that
-`more` reads. A streamed object body is a file at
+Every result is kept whole at `tasks/<conversation>/results/<evidence>.txt`,
+which `more` and `read()` read at any offset; the entry holds exactly what the
+model received, the first piece when the result is longer than one (24,000
+characters). A delegated child writes into its task's folder, its evidence ids
+prefixed with its own conversation id. Attachments are files at
+`tasks/<conversation>/uploads/`, read as `attachment:<name>`. A streamed object body is a file at
 `tasks/<conversation>/objects/<id>.bin`; the entry holds a 64 KiB preview and
 the ref.
 
@@ -111,19 +117,35 @@ export includes them.
 ## Datasets
 
 One SQLite file per import at `tasks/<conversation>/datasets/<id>.sqlite`,
-with a row in `datasets`. Two kinds exist: `access_log` (table `access_logs`)
-and `inventory` (table `inventory_objects`), both normalized and redacted, with
-client IPs masked at import. `query`'s `dataset()` imports an attached file
-(log lines in common log format, JSON lines, CSV, TSV or Parquet; gzip is read
-as it streams) and `inventory()` imports every file of a bucket's latest S3
-Inventory manifest. `sql()` reads them: one `SELECT` over a `rows` view of the
-dataset's table, on a read-only connection. Imports have no row cap. Dataset
-files never enter model context; only rows a script returns do.
+with a row in `datasets` (`name`, `format`, `source`, `path`, `rows`,
+`bytes`); a name is unique in its task and a new import of it replaces the
+old. The file holds one table, `rows`, with the source's own columns plus
+`_source` (the file or `s3://` URL a row came from):
+
+| Format | Columns |
+|---|---|
+| `csv`, `tsv` | the header row, or the names given (an inventory manifest's `fileSchema`) |
+| `jsonl`, `json` | every top-level key; nested values as JSON text; a line that is not JSON in `_line` |
+| `parquet` | the file's schema |
+| `s3_access_log` | every field AWS documents (`bucket_owner` … `acl_required`, extras as `field_N`), `time_iso`, and the `raw` line |
+| `lines` | `line_no`, `line` |
+
+Nothing is dropped, masked or cut. A numeric string that reads back the same
+is stored as a number (a 12-digit one only in a column that holds quantities,
+such as a size); every other string is scrubbed: account ids become
+`<account>` and credential-shaped text is redacted. `query`'s `dataset()`
+imports an attachment, an object body, one object or every object under a
+prefix; `inventory()` imports every file of a bucket's latest S3 Inventory
+manifest with the manifest's schema. `sql()` reads a dataset by name, from any
+script of the task: one `SELECT` on a read-only connection. Imports have no
+row cap. Dataset files never enter model context; only what a script returns
+does.
 
 ## Retention
 
 Tasks, entries, user memory documents and user methods persist until the user
-deletes them.
+deletes them. Memory outlives app versions: a schema reset clears tasks and
+their task-scoped documents, not the user's memory.
 
 Deleting a task removes its `task_meta` and `search_docs` rows, its pi rows
 (`pi_conversations`, `pi_entries`, `pi_tasks`, `pi_submissions`,

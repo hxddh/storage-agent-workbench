@@ -4,7 +4,7 @@ import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
  * The one schema this version writes. A database at any other version is
  * cleared and created again, pi's tables and `tasks/` with it.
  */
-export const HOST_SCHEMA_VERSION = 19
+export const HOST_SCHEMA_VERSION = 20
 
 export interface ProviderRow {
   id: string
@@ -24,7 +24,11 @@ export interface ProviderRow {
 export interface DatasetRecord {
   id: string
   conversation_id: string
-  kind: string
+  /** The name a script reads it by in `sql()`; unique within the task. */
+  name: string
+  format: string
+  /** Where the rows came from: a file name, an object ref or an `s3://` URL. */
+  source: string
   path: string
   rows: number
   bytes: number
@@ -80,11 +84,14 @@ CREATE TABLE IF NOT EXISTS task_meta (
 CREATE TABLE IF NOT EXISTS datasets (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,
-  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  format TEXT NOT NULL,
+  source TEXT NOT NULL,
   path TEXT NOT NULL,
   rows INTEGER NOT NULL,
   bytes INTEGER NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  UNIQUE(conversation_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS agent_tools (
@@ -458,7 +465,7 @@ export class AppDb {
       await tx.run('DELETE FROM search_docs WHERE conversation_id = ?', conversationId)
       await tx.run('DELETE FROM search_docs_fts WHERE conversation_id = ?', conversationId)
       for (const doc of docs) {
-        const text = doc.text.slice(0, 20_000)
+        const text = doc.text
         await tx.run(
           'INSERT INTO search_docs (conversation_id, entry_id, kind, text, at) VALUES (?, ?, ?, ?, ?)',
           conversationId,
@@ -479,13 +486,14 @@ export class AppDb {
     })
   }
 
+  /** Matching messages and answers, best first; every match unless a limit is given. */
   async searchDocs(
     query: string,
-    limit = 200,
+    limit?: number,
   ): Promise<
     { conversation_id: string; entry_id: string; kind: string; text: string; at: string }[]
   > {
-    const cap = Math.max(1, Math.min(limit, 500))
+    const cap = limit && limit > 0 ? limit : -1
     const trimmed = query.trim()
     // Trigram requires at least three characters. Short CJK queries keep the
     // substring path; longer queries are ranked by BM25 with kind weighting.
@@ -512,6 +520,16 @@ export class AppDb {
     )
   }
 
+  /** A task's messages and answers, in order. */
+  async taskDocs(
+    conversationId: string,
+  ): Promise<{ entry_id: string; kind: string; text: string; at: string }[]> {
+    return this.raw.all(
+      'SELECT entry_id, kind, text, at FROM search_docs WHERE conversation_id = ? ORDER BY at',
+      conversationId,
+    )
+  }
+
   async deleteSearchDocs(conversationId: string): Promise<void> {
     await this.raw.run('DELETE FROM search_docs WHERE conversation_id = ?', conversationId)
     await this.raw.run('DELETE FROM search_docs_fts WHERE conversation_id = ?', conversationId)
@@ -527,21 +545,69 @@ export class AppDb {
     return rows.map((row) => row.conversation_id)
   }
 
+  /**
+   * The task a conversation belongs to: itself, or for a delegated child the
+   * conversation of the task that owns it, followed up to the top. A child
+   * reads and writes the same task folder, datasets and task memory as the
+   * task it works for.
+   */
+  async rootConversation(conversationId: string): Promise<string> {
+    let current = conversationId
+    const seen = new Set<string>()
+    try {
+      while (!seen.has(current)) {
+        seen.add(current)
+        if (!/^\d+$/.test(current)) return current
+        const row = await this.raw.get<{ owner_task_id: number | null }>(
+          'SELECT owner_task_id FROM pi_conversations WHERE id = ?',
+          Number(current),
+        )
+        if (!row?.owner_task_id) return current
+        const owner = await this.raw.get<{ conversation_id: number }>(
+          'SELECT conversation_id FROM pi_tasks WHERE id = ?',
+          row.owner_task_id,
+        )
+        if (!owner) return current
+        current = String(owner.conversation_id)
+      }
+    } catch {
+      // pi's tables are not there (a bare host database): the conversation is its own task.
+    }
+    return current
+  }
+
   // -- datasets -------------------------------------------------------------
 
-  async insertDataset(row: Omit<DatasetRecord, 'created_at'>): Promise<DatasetRecord> {
+  /** Record a dataset; one of the same name in the task is replaced. */
+  async upsertDataset(row: Omit<DatasetRecord, 'created_at'>): Promise<DatasetRecord> {
     const record: DatasetRecord = { ...row, created_at: new Date().toISOString() }
     await this.raw.run(
-      'INSERT OR REPLACE INTO datasets (id, conversation_id, kind, path, rows, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'DELETE FROM datasets WHERE conversation_id = ? AND name = ?',
+      record.conversation_id,
+      record.name,
+    )
+    await this.raw.run(
+      `INSERT INTO datasets (id, conversation_id, name, format, source, path, rows, bytes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       record.id,
       record.conversation_id,
-      record.kind,
+      record.name,
+      record.format,
+      record.source,
       record.path,
       record.rows,
       record.bytes,
       record.created_at,
     )
     return record
+  }
+
+  async datasetByName(conversationId: string, name: string): Promise<DatasetRecord | undefined> {
+    return this.raw.get<DatasetRecord>(
+      'SELECT * FROM datasets WHERE conversation_id = ? AND name = ?',
+      conversationId,
+      name,
+    )
   }
 
   async listDatasets(conversationId: string): Promise<DatasetRecord[]> {

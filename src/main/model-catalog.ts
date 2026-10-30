@@ -28,6 +28,28 @@ const KNOWN: Record<string, number> = {
   'o4-mini': 200_000,
 }
 
+/**
+ * The context window a provider's model list states for a model, under the
+ * names providers use (Anthropic, OpenRouter, LM Studio, vLLM, others); null
+ * when it says nothing. What the provider says wins over the catalog guess.
+ */
+export function statedContext(item: Record<string, unknown>): number | null {
+  for (const key of [
+    'max_input_tokens',
+    'context_length',
+    'context_window',
+    'max_context_length',
+    'max_model_len',
+    'input_token_limit',
+  ]) {
+    const value = Number(item[key])
+    if (Number.isFinite(value) && value > 0) return Math.round(value)
+  }
+  const top = item.top_provider as Record<string, unknown> | undefined
+  const nested = Number(top?.context_length)
+  return Number.isFinite(nested) && nested > 0 ? Math.round(nested) : null
+}
+
 export function contextFor(modelId: string): number {
   const clean = modelId.trim().toLowerCase()
   if (KNOWN[clean]) return KNOWN[clean]
@@ -79,21 +101,24 @@ export async function listModels(input: {
   if (input.provider === 'anthropic') {
     const body = (await json(`${root}/v1/models?limit=100`, {
       headers: { 'x-api-key': key ?? '', 'anthropic-version': '2023-06-01' },
-    })) as { data?: { id?: string }[] }
+    })) as { data?: ({ id?: string } & Record<string, unknown>)[] }
     return {
       models: (body.data ?? [])
-        .filter((item): item is { id: string } => Boolean(item.id))
-        .map((item) => ({ id: item.id, contextWindow: contextFor(item.id) })),
+        .filter((item): item is { id: string } & Record<string, unknown> => Boolean(item.id))
+        .map((item) => ({
+          id: item.id,
+          contextWindow: statedContext(item) ?? contextFor(item.id),
+        })),
       detail: 'Anthropic',
     }
   }
   const body = (await json(`${root}/models`, {
     headers: key ? { authorization: `Bearer ${key}` } : {},
-  })) as { data?: { id?: string }[] }
+  })) as { data?: ({ id?: string } & Record<string, unknown>)[] }
   return {
     models: (body.data ?? [])
-      .filter((item): item is { id: string } => Boolean(item.id))
-      .map((item) => ({ id: item.id, contextWindow: contextFor(item.id) }))
+      .filter((item): item is { id: string } & Record<string, unknown> => Boolean(item.id))
+      .map((item) => ({ id: item.id, contextWindow: statedContext(item) ?? contextFor(item.id) }))
       .sort((a, b) => a.id.localeCompare(b.id)),
     detail: input.provider === 'openai' ? 'OpenAI' : 'Compatible endpoint',
   }
