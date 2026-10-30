@@ -269,6 +269,7 @@ async function readBody(
       ref,
       bytesRead: bytes.length,
       ...(binary ? { base64: bytes.toString('base64') } : { text }),
+      ...(more ? { more: true } : {}),
     }
   }
   const text = new TextDecoder('utf-8', { fatal: false }).decode(preview)
@@ -321,8 +322,8 @@ export interface CallInput {
   region?: string
   /** For a streamed body (GetObject): read at most this many bytes (default 1 MiB). */
   maxBytes?: number
-  /** Internal: read the whole body for an inventory manifest. */
-  fullBody?: boolean
+  /** Give the body read whole in the response (up to maxBytes), not a preview; a script's reads do. */
+  inlineBody?: boolean
 }
 
 export interface CallDeps {
@@ -392,9 +393,9 @@ export async function callApi(deps: CallDeps, call: CallInput): Promise<unknown>
   if (body && typeof body[Symbol.asyncIterator] === 'function')
     out.Body = await readBody(
       body,
-      call.fullBody ? Number.POSITIVE_INFINITY : (call.maxBytes ?? DEFAULT_BODY_BYTES),
+      call.maxBytes ?? DEFAULT_BODY_BYTES,
       deps.bodyDir,
-      call.fullBody,
+      call.inlineBody,
     )
   // SelectObjectContent answers with an event stream: the records as text, the rest as events.
   const events = out.Payload as AsyncIterable<Record<string, unknown>> | undefined

@@ -2,10 +2,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { gzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { preview } from './dataset'
-import { maskIp, normalizeTimestamp } from './formats'
-import { importDataset, importInventoryFiles } from './import'
+import { columnsOf, importDataset, logTime, s3AccessFields, storedValue } from './import'
 
 /** One read-only query over a dataset's file, as a script's sql() runs it. */
 function sql<T>(path: string, query: string): T[] {
@@ -17,112 +16,132 @@ function sql<T>(path: string, query: string): T[] {
   }
 }
 
-/** Rows a dataset holds, read straight from its file. */
-function countRows(path: string, kind: 'access_log' | 'inventory'): number {
-  const db = new DatabaseSync(path, { readOnly: true })
-  try {
-    const table = kind === 'inventory' ? 'inventory_objects' : 'access_logs'
-    return (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
-  } finally {
-    db.close()
-  }
-}
-
 function temp(): string {
   return mkdtempSync(join(tmpdir(), 'sa-test-'))
 }
 
-describe('log formats', () => {
-  it('normalizes epochs and CLF stamps to UTC', () => {
-    expect(normalizeTimestamp(1_700_000_000)).toBe('2023-11-14T22:13:20Z')
-    expect(normalizeTimestamp('14/Nov/2023:22:13:20 +0000')).toBe('2023-11-14T22:13:20Z')
-    expect(normalizeTimestamp('14/Nov/2023:23:13:20 +0100')).toBe('2023-11-14T22:13:20Z')
-  })
+const S3_LINE =
+  '79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be awsexamplebucket1 [06/Feb/2019:00:00:38 +0000] 192.0.2.3 arn:aws:iam::123456789012:user/alice 3E57427F3EXAMPLE REST.GET.VERSIONING - "GET /awsexamplebucket1?versioning HTTP/1.1" 200 - 113 - 7 - "-" "S3Console/0.4" - s9lzHYrFp76ZVxRcpX9+5cjAnEH2ROuNkd2BHfIa6UkFVdtjf5mKR3/eTPFvsiP/XV/VLi31234= SigV4 ECDHE-RSA-AES128-GCM-SHA256 AuthHeader awsexamplebucket1.s3.us-west-1.amazonaws.com TLSV1.2 - -'
 
-  it('masks the host part of an address', () => {
-    expect(maskIp('203.0.113.42')).toBe('203.0.113.0')
-    expect(maskIp('2001:db8:1:2:3:4:5:6')).toBe('2001:db8:1:2::')
-  })
-})
-
-describe('inventory import and aggregation', () => {
-  it('sums bytes per storage class', async () => {
+describe('lossless datasets', () => {
+  it('keeps every column of a CSV, typed where the text reads back the same', async () => {
     const dir = temp()
     const csv = join(dir, 'inventory.csv')
     writeFileSync(
       csv,
       [
-        '"bucket","key","size","storage_class","last_modified_date"',
-        '"logs","a.bin",100,"STANDARD","2026-01-01T00:00:00Z"',
-        '"logs","b.bin",200,"STANDARD","2026-01-02T00:00:00Z"',
-        '"logs","c.bin",100,"GLACIER","2026-01-03T00:00:00Z"',
+        'Bucket,Key,Size,StorageClass,EncryptionStatus,ETag,ZipCode',
+        'logs,a.bin,100,STANDARD,SSE-S3,"abc",01234',
+        'logs,b.bin,200,STANDARD,NOT-SSE,"def",02134',
+        'logs,c.bin,123456789012,GLACIER,SSE-KMS,"ghi",30000',
       ].join('\n'),
     )
     const db = join(dir, 'data.sqlite')
-    const result = await importDataset({ filePath: csv, destPath: db, kind: 'inventory' })
+    const result = await importDataset([{ path: csv, label: 'inventory.csv' }], db)
+    expect(result.format).toBe('csv')
     expect(result.rows).toBe(3)
-    expect(countRows(db, 'inventory')).toBe(3)
-
-    const byClass = sql<{ storage_class: string; total: number }>(
+    expect(result.columns).toEqual([
+      '_source',
+      'Bucket',
+      'Key',
+      'Size',
+      'StorageClass',
+      'EncryptionStatus',
+      'ETag',
+      'ZipCode',
+    ])
+    const byClass = sql<{ StorageClass: string; total: number }>(
       db,
-      'SELECT storage_class, sum(size) AS total FROM inventory_objects GROUP BY storage_class',
+      'SELECT StorageClass, sum(Size) AS total FROM rows GROUP BY StorageClass ORDER BY StorageClass',
     )
-    const totals = Object.fromEntries(byClass.map((row) => [row.storage_class, row.total]))
-    expect(totals.STANDARD).toBe(300)
-    expect(totals.GLACIER).toBe(100)
-    expect(preview(db, 'inventory', 2).rows).toHaveLength(2)
+    // A 12-digit size is a quantity, not an account id.
+    expect(byClass).toEqual([
+      { StorageClass: 'GLACIER', total: 123456789012 },
+      { StorageClass: 'STANDARD', total: 300 },
+    ])
+    const plain = sql<{ EncryptionStatus: string; ZipCode: string }>(
+      db,
+      "SELECT EncryptionStatus, ZipCode FROM rows WHERE Key = 'b.bin'",
+    )
+    expect(plain).toEqual([{ EncryptionStatus: 'NOT-SSE', ZipCode: '02134' }])
   })
 
-  it('imports every file of one inventory report into one dataset', async () => {
+  it('names a header-less CSV by the columns given, as an inventory manifest does', async () => {
     const dir = temp()
-    const first = join(dir, 'part-1.csv')
-    const second = join(dir, 'part-2.csv')
-    const header = '"bucket","key","size","storage_class","last_modified_date"\n'
-    writeFileSync(first, `${header}"logs","a.bin",100,"STANDARD","2026-01-01"\n`)
-    writeFileSync(second, `${header}"logs","b.bin",200,"GLACIER","2026-01-02"\n`)
-    const db = join(dir, 'all.sqlite')
-    const result = await importInventoryFiles({
-      files: [first, second],
-      destPath: db,
-      fallbackBucket: 'logs',
+    const csv = join(dir, 'part.csv.gz')
+    writeFileSync(csv, gzipSync('"logs","a.bin","100","true"\n"logs","b.bin","5","false"\n'))
+    const db = join(dir, 'inv.sqlite')
+    const result = await importDataset([{ path: csv, label: 's3://dest/part.csv.gz' }], db, {
+      format: 'csv',
+      columns: ['Bucket', 'Key', 'Size', 'IsLatest'],
+      header: false,
     })
     expect(result.rows).toBe(2)
-    expect(countRows(db, 'inventory')).toBe(2)
+    expect(sql(db, 'SELECT Key, Size, IsLatest, _source FROM rows ORDER BY Key')).toEqual([
+      { Key: 'a.bin', Size: 100, IsLatest: 'true', _source: 's3://dest/part.csv.gz' },
+      { Key: 'b.bin', Size: 5, IsLatest: 'false', _source: 's3://dest/part.csv.gz' },
+    ])
   })
 
-  it('counts requests by status from a CSV log', async () => {
+  it('splits every field of an S3 server access log, with the account scrubbed', async () => {
+    expect(s3AccessFields(S3_LINE)?.[6]).toBe('REST.GET.VERSIONING')
+    expect(logTime('06/Feb/2019:00:00:38 +0000')).toBe('2019-02-06T00:00:38Z')
     const dir = temp()
-    const csv = join(dir, 'access.csv')
-    writeFileSync(
-      csv,
-      [
-        'timestamp,method,path,status,bytes,latency_ms,remote_ip',
-        '2026-02-01T10:00:00Z,GET,/a,200,10,5,203.0.113.9',
-        '2026-02-01T10:00:01Z,GET,/b,200,20,7,203.0.113.9',
-        '2026-02-01T10:00:02Z,PUT,/c,403,0,9,198.51.100.7',
-        '2026-02-01T10:00:03Z,GET,/d,404,0,11,198.51.100.7',
-      ].join('\n'),
-    )
-    const db = join(dir, 'logs.sqlite')
-    const result = await importDataset({ filePath: csv, destPath: db, kind: 'access_log' })
-    expect(result.rows).toBe(4)
-
-    const byStatus = sql<{ status_code: number; n: number }>(
-      db,
-      'SELECT status_code, count(*) AS n FROM access_logs GROUP BY status_code',
-    )
-    const counts = Object.fromEntries(byStatus.map((row) => [String(row.status_code), row.n]))
-    expect(counts['200']).toBe(2)
-    expect(counts['403']).toBe(1)
-    expect(counts['404']).toBe(1)
+    const log = join(dir, '2019-02-06-00-00-38-ABC')
+    writeFileSync(log, `${S3_LINE}\n`)
+    const db = join(dir, 'log.sqlite')
+    const result = await importDataset([{ path: log, label: 'log' }], db)
+    expect(result.format).toBe('s3_access_log')
+    const [row] = sql<Record<string, unknown>>(db, 'SELECT * FROM rows')
+    expect(row).toMatchObject({
+      bucket: 'awsexamplebucket1',
+      remote_ip: '192.0.2.3',
+      requester: 'arn:aws:iam::<account>:user/alice',
+      operation: 'REST.GET.VERSIONING',
+      request_uri: 'GET /awsexamplebucket1?versioning HTTP/1.1',
+      http_status: 200,
+      bytes_sent: 113,
+      total_time: 7,
+      user_agent: 'S3Console/0.4',
+      signature_version: 'SigV4',
+      tls_version: 'TLSV1.2',
+      time_iso: '2019-02-06T00:00:38Z',
+    })
+    expect(String(row?.raw)).toContain('REST.GET.VERSIONING')
+    expect(String(row?.raw)).not.toContain('123456789012')
   })
 
-  it('rejects an inventory disguised as access logs', async () => {
+  it('takes every key of JSON lines, nested values as JSON, and keeps a bad line', async () => {
     const dir = temp()
-    const csv = join(dir, 'inventory.csv')
-    writeFileSync(csv, '"key","size","storage_class"\n"a",1,"STANDARD"\n')
-    await expect(
-      importDataset({ filePath: csv, destPath: join(dir, 'x.sqlite'), kind: 'access_log' }),
-    ).rejects.toThrow(/inventory/i)
+    const file = join(dir, 'events.jsonl')
+    writeFileSync(file, ['{"a":1,"b":{"c":2}}', '{"a":2,"d":"new"}', 'not json'].join('\n'))
+    const db = join(dir, 'j.sqlite')
+    const result = await importDataset([{ path: file, label: 'events.jsonl' }], db)
+    expect(result.rows).toBe(3)
+    expect(columnsOf(db)).toEqual(['_source', 'a', 'b', 'd', '_line'])
+    expect(sql(db, 'SELECT a, b, d, _line FROM rows')).toEqual([
+      { a: 1, b: '{"c":2}', d: null, _line: null },
+      { a: 2, b: null, d: 'new', _line: null },
+      { a: null, b: null, d: null, _line: 'not json' },
+    ])
+  })
+
+  it('reads anything else as lines', async () => {
+    const dir = temp()
+    const file = join(dir, 'notes.txt')
+    writeFileSync(file, 'first line\nsecond line\n')
+    const db = join(dir, 'l.sqlite')
+    const result = await importDataset([{ path: file, label: 'notes.txt' }], db)
+    expect(result.format).toBe('lines')
+    expect(sql(db, 'SELECT line_no, line FROM rows')).toEqual([
+      { line_no: 1, line: 'first line' },
+      { line_no: 2, line: 'second line' },
+    ])
+  })
+
+  it('never stores an account id as text', () => {
+    expect(storedValue('Owner', '123456789012')).toBe('<account>')
+    expect(storedValue('Size', '123456789012')).toBe(123456789012)
+    expect(storedValue('Note', 'AKIAABCDEFGHIJKLMNOP')).toBe('AKIA[redacted]')
   })
 })

@@ -1,3 +1,45 @@
+## 40.0.0 — 2026-10-30
+
+The agent reaches all of what it was given, and is told enough to correct
+itself.
+
+- **Datasets keep every column.** `dataset()` imports an attachment, an
+  object body, one object or every object under a prefix into a `rows` table
+  with the source's own columns: a CSV's header, every JSON key, a Parquet
+  schema, every field of an S3 server access log plus the raw line, or plain
+  lines. `inventory()` imports a report with the schema its manifest names
+  (encryption, replication, Object Lock, versions and the rest). Nothing is
+  dropped, masked or cut: client addresses are kept. Strings are scrubbed as
+  every read is. `sql()` finds a dataset by name from any script of the task;
+  `datasets()` lists them. v39's two fixed schemas, IP masking and 500-character
+  cuts are gone.
+- **Scripts read object contents.** A script's `call()` gets a body whole up to
+  `maxBytes` (default 1 MiB), not a 64 KiB preview; `read()` reads any stretch
+  of a kept result, an object body or an attachment. A script may return any
+  JSON value.
+- **Attachments are readable.** A message names its files as
+  `attachment:<name>`; `more` reads any stretch of them, and an attached image
+  is shown to a model that takes images.
+- **Child agents work in the task.** A delegated child uses its task's folder,
+  attachments, results, datasets and task memory; its steps show live in the
+  parent's step, fifty at a time; a question it would ask comes back to the
+  parent instead of "(no answer)".
+- **Every result is kept.** `more` reads any call again by its evidence id,
+  after a compaction too, with a `length` the agent chooses.
+- **Tools say why.** `render` names each invalid block and what was not drawn;
+  `probe` names a refused header.
+- **`probe` sends OPTIONS and headers**, so a CORS preflight is one probe; a
+  credential header is refused.
+- **`history()`** reads what earlier tasks asked and answered.
+- **Memory outlives versions.** A schema reset clears tasks and task-scoped
+  documents, not the user's memory. `memory` gains `search`; a list returns
+  every match (yours and this task's without a scope); each document records
+  the task that wrote it, shown in Settings.
+- **Model limits are the provider's.** The output limit is halved until the
+  provider accepts when its refusal names no number (no 32k guess); the
+  context window is what the provider's model list states.
+- **Schema 20.** `datasets` gains `name`, `format` and `source`.
+
 ## 39.0.0 — 2026-10-29
 
 v38's tools stay; the limits, history and gaps it brought back are gone.

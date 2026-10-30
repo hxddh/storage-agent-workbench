@@ -91,16 +91,20 @@ only capabilities are the read-only primitives below, called as
 
 | Primitive | Does |
 |---|---|
-| `call({service, operation, input?, region?, maxBytes?})` | any read the `call` tool makes, under the same rules |
-| `discover({kind?, service?, operation?})` | services and read operations, or the tool names available |
-| `dataset({file, kind?})` | imports one attached access log or inventory into a local SQLite dataset |
-| `inventory({bucket})` | finds the bucket's enabled S3 Inventory, reads its newest manifest and imports every file it lists, each streamed to disk; source and destination bucket must be in scope |
+| `call({service, operation, input?, region?, maxBytes?})` | any read the `call` tool makes, under the same rules; an object `Body` comes back whole up to `maxBytes` (default 1 MiB) as `{text` or `base64, bytesRead, ref, more?}` |
+| `read({name, offset?, length?})` | any stretch of a call's kept result (evidence id), an object body (`objects/…`) or an attachment (`attachment:<name>`) |
+| `dataset({file? \| ref? \| bucket+key? \| bucket+prefix?, name?, format?, columns?, header?})` | imports an attachment, an object body, one object, or every object under a prefix (scope checked) into a dataset with every source column; `format` is `csv`, `tsv`, `jsonl`, `json`, `parquet`, `s3_access_log` or `lines`, detected when omitted; `columns` names a header-less CSV |
+| `inventory({bucket, name?})` | finds the bucket's enabled S3 Inventory, reads its newest manifest and imports every file it lists with the manifest's `fileSchema`, each streamed to disk; source and destination bucket must be in scope |
+| `sql({name, sql, params?})` | one `SELECT` (or `WITH … SELECT`) over a dataset's `rows` table, on a read-only connection; no second statement, no `load_extension`. A dataset imported by an earlier script of the task is found by name |
+| `datasets()` | the task's datasets: name, format, source, rows and columns |
+| `history({query?, task?})` | messages and answers of every task matching `query`, every task's title with neither, or one task's whole conversation |
+| `discover({kind?, service?, operation?})` | services, read operations with their input and output members, or the tool names available |
 | `memory({action, ...})` | the same memory actions as the `memory` tool |
-| `render({doc})` | validates a view document and returns it as the script's value |
-| `sql({file, sql, params?})` | one `SELECT` (or `WITH … SELECT`) over the dataset's `rows` view, on a read-only connection; no second statement, no `load_extension` |
+| `render({doc})` | validates a view document and returns it as the script's value; an invalid one fails with what is wrong |
 
-A script returns an array of flat rows, a view document, or
-`{rows, chart: {label, value}}`; `text("…")` adds a line of output. There is no
+A script returns an array of flat rows, `{rows, chart: {label, value}}`, a view
+document, or any other JSON value, which reaches the model as JSON;
+`text("…")` adds a line of output. There is no
 call budget and no time limit: a script runs until it returns or the user
 stops it. Sandbox memory defaults to 1,024 MB; the agent sets it with
 `memory_mb`. Every returned row reaches the model, in pieces past `PIECE`. The
@@ -117,7 +121,10 @@ point; an optional `series` column splits the data), `code`, `callout`, `kv`,
 `shared/view.ts` validates and sanitises the tree; the window owns rendering
 and accessibility. A view is data, never HTML or executable code. Limits are
 2 MiB, depth 12, 2,000 blocks, 20,000 table/chart rows and 10,000 tree nodes.
-The same document can be returned by `query` or an agent-authored method.
+A view that cannot be drawn fails with every reason (`blocks[2].spec.mark must
+be bar, line, area or point`); a block that is not drawn as given is named in
+the result, so the agent can correct it. The same document can be returned by
+`query` or an agent-authored method.
 
 ## `memory`
 
@@ -126,15 +133,18 @@ A separate `memory.sqlite` file stores arbitrary JSON documents:
 | Action | Input | Result |
 |---|---|---|
 | `put` | `key`, `value?`, `text?`, `tags?`, `scope?` | writes or replaces one document |
-| `get` | `key`, `scope?` | the document's JSON value |
-| `list` | `scope?`, `prefix?`, `tag?` | up to 100 documents, newest first |
+| `get` | `key`, `scope?` | the document's value, key, `origin` and `updatedAt` |
+| `list` | `scope?`, `prefix?`, `tag?` | every matching document, newest first; without `scope`, the user's and this task's |
+| `search` | `query` | every document whose key or text contains it |
 | `query` | `sql`, `params?` | rows from one read-only SELECT over `docs` |
 | `delete` | `id` or `key` (+ `scope?`) | forgets one document |
 
-`scope` is `task` (the current conversation) or `user` (the default). Memory
-content is not injected into the prompt; the digest says only how many
-documents exist. The agent decides when to recall. Settings lists every
-document with its key and scope, and the user can forget one.
+`scope` is `task` (the current task; a delegated child shares it) or `user`
+(the default). Each document records the task that wrote it (`origin`).
+Memory outlives tasks and app versions. Memory content is not injected into
+the prompt; the digest says only how many documents exist. The agent decides
+when to recall. Settings lists every document with its key, scope and the task
+that wrote it, and the user can forget one.
 
 ## `tool`
 
@@ -146,17 +156,21 @@ QuickJS sandbox as `query`; the body reads the validated arguments as `args`.
 Task methods are deleted with the task. The body has the read-only primitives,
 no network, filesystem, process, timers or modules. `memory_mb` sets the
 sandbox memory. A method that returns a view document renders as a view; an
-array of rows renders as a table.
+array of rows renders as a table; any other value reaches the model as JSON.
 
 ## `delegate`
 
 `delegate` takes a self-contained `task` and an optional `title`. It creates a
 child conversation with the same read-only tools, account scope and memory,
-waits for it to settle, and returns its answer and call count as a delegate
-step. The child cannot write. Delegation is foreground: the parent waits for
-the child's answer, and stopping the parent stops the child. The window shows
-the child's request, every step and its text inside the delegate step. The
-child's conversation is owned by the task and is purged with it.
+working in the same task: its folder, attachments, kept results, datasets,
+task memory and methods. It waits for the child to settle and returns its
+answer and call count. A child that ends its turn on `ask` returns its
+question and options instead, for the parent to ask the user or to answer from
+what it knows. The child cannot write. Delegation is foreground: the parent
+waits; several `delegate` calls in one turn run at the same time; stopping the
+parent stops the child. The window shows the child's request, every step and
+its text inside the delegate step, live while it works, fifty steps at a time.
+The child's conversation is owned by the task and is purged with it.
 
 ## `discover`
 
@@ -169,19 +183,26 @@ schema and scope.
 
 ## `more`
 
-The model gets at most one piece (`PIECE`, 24,000 characters) of a result at a
-time. A longer result is written whole to
-`tasks/<conversation>/results/<evidence>.txt`; the model's copy ends with the
+Every result is written whole to
+`tasks/<conversation>/results/<evidence>.txt`. The model gets at most one piece
+(`PIECE`, 24,000 characters) at a time; a longer result's copy ends with the
 number of characters left and the offset to read from, and the step note says
-`the agent got the first part; the rest is kept`. `more` reads 24,000
-characters from any character offset of a kept result. It also reads a stored
-object body by its `objects/<id>.bin` ref, at a byte offset, without loading the
-whole body into memory. The view in the window holds the whole result.
+`the agent got the first part; the rest is kept`. `more` takes `evidence`,
+`offset` and `length` (default one piece) and reads any stretch of a kept
+result, again after a compaction too; a stored object body by its
+`objects/<id>.bin` ref; or an attachment as `attachment:<name>`, at a byte
+offset, without loading the whole file into memory. An attached image (PNG,
+JPEG, GIF, WebP) comes back as an image to a model that takes images. The view
+in the window holds the whole result.
 
 ## `probe`
 
-One unsigned `HEAD` (default) or `GET` to the account's endpoint or a host
-under it, such as a virtual-hosted bucket. An AWS account's endpoint is
+One unsigned `HEAD` (default), `GET` or `OPTIONS` to the account's endpoint or
+a host under it, such as a virtual-hosted bucket, with any `headers` the agent
+chooses: an `Origin` and `Access-Control-Request-Method` for a CORS preflight,
+a `Range`, a `Host`. A header that would carry a credential (`Authorization`,
+`Cookie`, `X-Amz-Security-Token`, `X-Amz-Credential`, `X-Amz-Signature`,
+`X-Amz-Date`, `X-Amz-Content-Sha256`) is refused and nothing is sent. An AWS account's endpoint is
 `https://s3.<region>.amazonaws.com`, and any S3 host under `amazonaws.com` is
 allowed. Any other host is refused. It returns the resolved addresses, HTTP
 status, headers, the TLS certificate (protocol, subject, issuer, names,
@@ -206,6 +227,6 @@ app does not check names or rewrite the answer.
 ## Not available
 
 No write, delete, copy, move, ACL change, policy put, bucket creation,
-credential minting, shell, SQL that writes or generic HTTP. Dataset import
-reads only files attached to the task and S3 Inventory. A change the agent
+credential minting, shell, SQL that writes, signed HTTP or HTTP to any host
+but the account's endpoint. A change the agent
 writes is text for the user; the app never runs it.

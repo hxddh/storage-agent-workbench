@@ -68,15 +68,27 @@ much to read, whether to delegate, what to remember and how long to work are
 the agent's. **Stop** is the user's control.
 
 Each model's output maximum is learned once per launch (`learnOutputLimit` in
-`runtime/model.ts`): a one-word request offers the whole context window, and a
-provider that refuses names its maximum, which becomes the limit. A reply that
-stops at the limit gets a `cut` notice.
+`runtime/model.ts`): a one-word request offers the whole context window; a
+provider that refuses names its maximum, which becomes the limit, and one that
+refuses without a number is asked again with half as much until it accepts.
+Nothing is guessed. A reply that stops at the limit gets a `cut` notice. The
+context window is what the provider's model list states (`statedContext`),
+else the catalog's figure, else 128k; Settings can set it.
 
-A result longer than one piece (24,000 characters) is kept whole in the task
-folder for `more`. An object body streams to the task folder up to
-`max_bytes` (default 1 MiB, which protects the disk; the agent raises it or
-reads a `Range`), with a 64 KiB preview in the result. The agent reads any
-offset with `more`.
+Every result is kept whole in the task folder under its evidence id; the model
+gets one piece (24,000 characters) at a time and `more` reads any stretch
+again, after a compaction too. An object body streams to the task folder up
+to `max_bytes` (default 1 MiB, which protects the disk; the agent raises it or
+reads a `Range`), with a 64 KiB preview in the result; a script's `call()`
+gets it whole. `more` and `read()` also read attachments
+(`attachment:<name>`); an image comes back as an image to a model that takes
+images (Anthropic and OpenAI models; an OpenAI-compatible model is told an
+image was attached).
+
+A delegated child works in the task it was given: `rootConversation()`
+follows the child's owner up to the task, and every tool uses that task's
+folder, attachments, results, datasets and task memory. A child's evidence
+ids carry its own conversation id, so they never collide with the parent's.
 
 There is no answer check. The app does not look for ungrounded names or ask
 the model to rewrite its text. A citation link that resolves opens its call; a
@@ -98,9 +110,10 @@ Each model configuration is its own provider in the shared pi-ai collection
    `Settings`, `Vault`, `Providers`, `Staging`, `MemoryStore`, then `Runtime`
    (pi, one extension, the tool registry), `Tasks` and `Engine`, registers IPC
    and creates the window. The vault is not opened at launch.
-2. A database at any `user_version` but 19 is cleared and created again;
-   `tasks/` and `memory.sqlite` are deleted with it. Nothing is migrated,
-   imported or backed up.
+2. A database at any `user_version` but 20 is cleared and created again;
+   `tasks/` is deleted with it and task-scoped memory documents are forgotten.
+   The rest of `memory.sqlite` stays: the agent's memory outlives versions.
+   Nothing is migrated, imported or backed up.
 3. `Tasks.newTask()` creates one pi conversation per task and writes
    `task_meta` with a title from the first message.
 4. `Engine.submit()` installs the task's model for this turn, configures the

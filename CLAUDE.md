@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 39.0.0**. Read
+> Implementation contract for **Storage Agent 40.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md`,
 > `docs/data-model.md` and `docs/tools.md` before changing product structure.
 > The code and its tests are authoritative; release notes and the changelog
@@ -32,9 +32,11 @@ said. A **turn** is one user message and the agent's work on it.
    scoped listing shows only the scoped buckets. `@` focus is not authorization.
 4. Tool output reaches the model inside `<untrusted-data>`, through `redact()`;
    `details` reaching the window are already shaped. Status comes from
-   `details.status`, never from result text. A result longer than one piece
-   (`PIECE`, 24,000 characters) is kept whole in the task folder and the model
-   reads on with `more`; nothing a tool returned is out of the agent's reach.
+   `details.status`, never from result text. Every result is kept whole in the
+   task folder under its evidence id; the model gets one piece (`PIECE`, 24,000
+   characters) at a time and reads any stretch again with `more`, after a
+   compaction too. Attachments and object bodies are read the same way: nothing
+   a tool returned or the user attached is out of the agent's reach.
 5. Tools return data, not judgements. `call` returns the service's response,
    or its error code, HTTP status and message (`s3/api.ts`); `probe` returns
    what the endpoint answered. What is public, risky or missing is the agent's
@@ -61,17 +63,22 @@ said. A **turn** is one user message and the agent's work on it.
    agent's text, provider reasoning as returned, and every tool call — failed
    and refused ones, and calls to a tool that does not exist — with its shaped
    result and exactly what the agent received. A delegated child's calls are
-   shown inside the `delegate` step, in the same way. A tool's `model` text carries
+   shown inside the `delegate` step, in the same way, while it works. A tool's `model` text carries
    what its view shows; when the agent got only the first piece, the step says
    so. The app never writes into the agent's answer, rewrites it, corrects it,
    validates its claims or summarises it. A citation that resolves opens its
    call; one that does not is plain text with a quiet tooltip.
 9. Code mode runs in the QuickJS sandbox with no network, filesystem, process,
    timers or modules. Its only capabilities are the scoped read-only
-   primitives in `tools/query.ts`: `call()`, `discover()`, `memory()`,
-   `render()`, `dataset()`, `inventory()` and `sql()`. A script runs until it
-   returns or the user stops it. `models` stays off. Agent-authored methods
-   run in the same sandbox, with their arguments checked against their schema.
+   primitives in `tools/query.ts`: `call()` (a body comes back whole up to
+   `maxBytes`), `read()`, `dataset()`, `inventory()`, `sql()`, `datasets()`,
+   `history()`, `discover()`, `memory()` and `render()`. A dataset keeps every
+   column of its source — an attachment, an object, every object under a
+   prefix, an inventory report with its manifest's schema — unmasked and
+   uncut; strings are scrubbed like every read. A script returns rows, a view
+   or any JSON value. It runs until it returns or the user stops it. `models`
+   stays off. Agent-authored methods run in the same sandbox, with their
+   arguments checked against their schema.
 10. Every read goes through the agent. There is no scripted run, model-free
     check, scheduled check or demo storage: without a model the window says so
     and asks for one; without an account it asks for one.
@@ -84,7 +91,10 @@ said. A **turn** is one user message and the agent's work on it.
     A default exists only where it protects the user's machine, and the agent
     can change it: the sandbox's memory (`memory_mb`) and how much of a body
     one read holds (`max_bytes`, default 1 MiB). Stopping the parent stops a
-    delegated child.
+    delegated child. A tool that refuses or cannot do what was asked says
+    exactly why (a view's invalid block, a header the probe will not send), so
+    the agent can correct itself. Each model's context window is what its
+    provider's model list states, when it states one.
 12. The app does not speak for the user. Home has no canned prompts; Continue
     sends `Continue.`
 
@@ -141,7 +151,11 @@ digest, language. The tools describe themselves; `discover` lists them from
 the registry. The digest names the accounts (their ids are
 tool arguments) and how many memory documents exist; it does not inject their
 content. A memory document records the task that wrote it, and reaches the
-model with it, inside `<untrusted-data>`. The model may link a call as `[1](#ev-<id>)`; a link opens that call
+model with it, inside `<untrusted-data>`. A user message names its attached
+files as `attachment:<name>`; `more` reads them (an image is shown to a model
+that takes images) and `dataset()` imports them. A delegated child works in
+its task: the same folder, attachments, results, datasets and task memory; a
+question it would ask comes back to the parent as its result. The model may link a call as `[1](#ev-<id>)`; a link opens that call
 in place. Provider reasoning is shown in full, as returned. Delegation is a
 foreground child conversation with the same tools and scope; it is not a
 second queue.
@@ -150,12 +164,12 @@ second queue.
 
 Host tables in `storage-agent.db`: `providers`, `audit`, `task_meta`,
 `datasets`, `agent_tools`, `search_docs` (+ FTS5 trigram). pi's tables are
-prefixed `pi_`. `db.ts` holds one schema at `user_version` **19**. A database
-at any other version is cleared and created again, pi's tables, `tasks/` and
-`memory.sqlite` with it: the app carries nothing from an earlier layout, keeps
-no backup, and no code reads one. The agent's memory is `memory.sqlite`
-(`docs` table, its own `user_version` **1**); task-scoped documents are purged
-with the task.
+prefixed `pi_`. `db.ts` holds one schema at `user_version` **20**. A database
+at any other version is cleared and created again, pi's tables and `tasks/`
+with it: the app carries no task from an earlier layout, keeps no backup, and
+no code reads one. The agent's memory is `memory.sqlite` (`docs` table, its
+own `user_version` **1**): it outlives tasks and app versions; task-scoped
+documents are purged with their task, and all of them when tasks are reset.
 
 Entry kinds and payloads are in `docs/data-model.md` (`sa.run`, `sa.steer`,
 `sa.resume`, `sa.notice`). Deleting a task purges its pi rows, host task rows,
@@ -169,7 +183,8 @@ conversation (messages, inline steps, what each call returned, clarify,
 notices, Stop/Continue/Retry) and the keyboard map are specified in
 `docs/design.md`. A `call` or `probe` step opens as the response's JSON; a
 `render` step draws its view; a `delegate` step shows the child's request,
-steps and text. A view's link shows its host, and its URL on hover.
+steps and text, live while it works. A view's link shows its host, and its URL
+on hover. Settings' Memory pane shows which task wrote each document.
 Settings has five panes: Model, Storage accounts, Memory, Methods and
 Appearance; its close control is an X at the top-left. Design tokens live in
 `src/renderer/styles.css`; never use a raw colour in a component.

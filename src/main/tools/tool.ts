@@ -2,9 +2,10 @@ import { CodemodeSandbox } from '@earendil-works/pi-codemode'
 import type { Chart } from '@shared/contract'
 import { viewDoc, viewText } from '@shared/view'
 import Ajv from 'ajv'
+import { scrub } from '../s3/api'
 import { redact } from '../security/redact'
 import { agentTool, providerParam, type ToolDeps, Type } from './policy'
-import { sandboxPrimitives, toTable } from './query'
+import { isRows, sandboxPrimitives, toTable } from './query'
 
 const NAME = /^[a-z][a-z0-9_]{1,48}$/
 
@@ -150,6 +151,18 @@ export function toolTool(deps: ToolDeps) {
           note: `${rendered.blocks.length} view block(s)`,
           view: { kind: 'render' as const, title: name, doc: rendered },
         }
+      if (!isRows(result.value)) {
+        const value = scrub(result.value ?? null)
+        return {
+          model: [
+            `${name}: value from ${calls.count} read-only call(s).`,
+            JSON.stringify(value, null, 1),
+            ...(output ? [`Output:\n${output}`] : []),
+          ].join('\n'),
+          note: `${calls.count} call${calls.count === 1 ? '' : 's'}`,
+          view: { kind: 'raw' as const, title: name, value },
+        }
+      }
       const { table: rows, chart } = toTable(result.value)
       const text = [
         rows.columns.join('\t'),

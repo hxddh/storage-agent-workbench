@@ -54,16 +54,15 @@ export class App {
     if (this.db.resetTasks) {
       await rm(join(dataDir, 'tasks'), { recursive: true, force: true })
       await mkdir(join(dataDir, 'tasks'), { recursive: true })
-      // The memory of an earlier layout goes with it.
-      for (const suffix of ['', '-wal', '-shm'])
-        await rm(join(dataDir, `memory.sqlite${suffix}`), { force: true })
       this.settings.setLastTask(null)
     }
     this.vault = new Vault(dataDir)
     this.providers = new Providers(this.db, this.vault)
     this.staging = new Staging(join(dataDir, 'staging'))
     await this.staging.clear()
+    // Memory outlives tasks and app versions; documents of tasks a reset cleared go with them.
     this.memory = MemoryStore.open(join(dataDir, 'memory.sqlite'))
+    if (this.db.resetTasks) this.memory.forgetTasks()
 
     this.runtime = await Runtime.open(this.database, {
       db: this.db,

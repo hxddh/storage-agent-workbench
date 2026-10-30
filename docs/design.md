@@ -195,7 +195,9 @@ Every block is data and follows the same typography and tokens as the rest of
 the page. A `render` link shows its host after its text, and its whole URL on
 hover. A `memory` result is a table of documents, each with the task that
 wrote it. A `delegate` result is the child's conversation in place: its
-request, its steps (each opens like any other step) and its text.
+request, its steps (each opens like any other step) and its text. While the
+child works the step is open and its steps appear as they happen; past fifty,
+earlier steps open with **Load earlier**.
 
 The step's argument summary is shown for a storage read where its input helps
 (`call`, `query`, `probe`, `more`). For `render`, `memory`, `tool`, `delegate`,
@@ -243,8 +245,8 @@ chips. Accounts list read-only credentials and open one inline form for add or
 edit (name, endpoint, region, path-style, access keys or AWS profile, bucket
 scope); the key fields are never pre-filled.
 
-Memory lists every document the agent wrote, with its key, scope and text, and
-**Forget**. Methods lists every agent-authored method, with its scope,
+Memory lists every document the agent wrote, with its key, scope, text, the
+task that wrote it and when, and **Forget**. Methods lists every agent-authored method, with its scope,
 description, code under **Raw**, and Delete. Appearance holds language, theme
 and the background-notification switch.
 

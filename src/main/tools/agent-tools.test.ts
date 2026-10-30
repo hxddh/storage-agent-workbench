@@ -142,6 +142,19 @@ describe('render and memory', () => {
     expect(ok.details.status).toBe('done')
     const bad = await run(renderTool(deps), { doc: { version: 1, blocks: [{ type: 'html' }] } })
     expect(bad.details.status).toBe('failed')
+    // The agent is told why, so it can correct the view.
+    expect(bad.text).toContain('blocks[0].type')
+    const partly = await run(renderTool(deps), {
+      doc: {
+        version: 1,
+        blocks: [
+          { type: 'markdown', text: 'kept' },
+          { type: 'chart', spec: { mark: 'pie', x: 'a', y: 'b', data: [] } },
+        ],
+      },
+    })
+    expect(partly.details.status).toBe('done')
+    expect(partly.text).toContain('Not drawn as given: blocks[1].spec.mark')
   })
 
   it('stores JSON and queries it with read-only SQL', async () => {
@@ -193,6 +206,36 @@ describe('delegate', () => {
       .join('')
     expect(text).toContain('&lt;/untrusted-data&gt;')
     expect(text).not.toContain('</untrusted-data><script>')
+  })
+})
+
+describe('delegate ask', () => {
+  it("returns the child's question to the parent instead of no answer", async () => {
+    deps.entries = async () => [
+      {
+        kind: 'tool',
+        name: 'ask',
+        view: { kind: 'question', question: 'Which account?', options: ['Prod', 'Dev'] },
+      } as never,
+    ]
+    const result = (await delegateTool(deps).execute(
+      { task: 'survey' } as never,
+      {
+        taskId: 't1',
+        conversationId: 'c1',
+        callId: 'call-ask',
+        commit: async (fn: (tx: unknown) => Promise<string>) =>
+          fn({ createConversation: async () => ({ id: 'child' }) }),
+        conversation: async () => ({
+          submit: async () => ({ wait: async () => ({ status: 'done' }) }),
+          abort: async () => undefined,
+        }),
+      } as never,
+      { abortSignal: new AbortController().signal } as never,
+    )) as unknown as { output: { text: string }[]; details: { view: { status: string } } }
+    expect(result.output[0]?.text).toContain('The child agent asks: Which account?')
+    expect(result.output[0]?.text).toContain('Prod | Dev')
+    expect(result.details.view.status).toBe('asked')
   })
 })
 

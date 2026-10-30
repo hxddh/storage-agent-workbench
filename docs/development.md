@@ -39,22 +39,35 @@ Script aliases: `npm run e2e`, `npm run e2e:audit`, `npm run eval`,
   read up to the bytes asked for, anything not a read and any bucket outside
   scope refused before a request, account ids scrubbed, a stopped call
   reported as stopped;
-- a long result sent as its first piece and read on with `more`;
+- a long result sent as its first piece and read on with `more`; every result
+  kept and read again; an attachment read at any offset and length; an
+  attached image returned as an image;
+- `probe`: a CORS preflight with the headers given, a credential header
+  refused;
 - memory documents written without secrets, task and user scope, read-only
   SQL over the separate memory file, and forgetting one;
 - agent-authored methods: schema validation, sandbox limits, task and user
   scope, a method returning rows or a view, and deletion;
 - `render` documents: valid blocks, nesting, limits and rejection of invalid
   or oversized input;
-- `delegate`: a child gets the same scope, returns its answer, and is purged
-  with the task;
+- `delegate`: a child gets the same scope and task, returns its answer or its
+  question, stops with the parent, and is purged with the task; the root task
+  of a child at any depth;
 - `discover`, `ask` with and without options;
 - code mode: the sandbox has no network, filesystem or process, a script
   pages through every object, scope holds inside a script, a script runs until
-  stopped, SQL over an attached log only reads;
-- log normalization, IP masking, CSV and Parquet import, inventory import;
+  stopped, SQL over an attached log only reads, an object body read whole and
+  imported as a dataset, a dataset found by name in a later script, an S3
+  Inventory imported with its manifest's schema, earlier tasks read with
+  `history()`, a non-row value returned as JSON;
+- lossless datasets: every CSV column (a 12-digit size kept, an account id
+  scrubbed), a header-less CSV named by the columns given, every field of an
+  S3 server access log, every JSON-lines key, plain lines;
+- the output limit learned from a refusal that names a number or halved until
+  the provider accepts;
 - the schema: created on a new file, and started over from any other version
-  with pi tables included; the memory file likewise;
+  with pi tables included; the memory file at its own version, keeping every
+  match in a list or search and recording the task that wrote it;
 - the search index (CJK substrings, FTS ranking, `%` and `_` as text);
 - the entry projection, the live projection and the conversation thread
   (order, steers, the live slot, citations, what each call returned, the

@@ -132,8 +132,9 @@ export class Tasks {
     return searchTasks(this.deps.db, query)
   }
 
-  memoryRows() {
-    return this.deps.memory.rows()
+  async memoryRows() {
+    const tasks = await this.deps.db.listTaskMeta()
+    return this.deps.memory.rows(new Map(tasks.map((task) => [task.conversation_id, task.title])))
   }
 
   async deleteMemory(id: string): Promise<void> {
