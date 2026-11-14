@@ -15,16 +15,17 @@
    DynamoDB items) is not bundled at all. A refused call sends nothing. There is no shell, raw HTTP proxy, write
    endpoint or apply action. A change the agent writes is text for the user;
    the app never runs it.
-2. **Scope.** An account may name a bucket allow-list. On a scoped account,
-   `checkCall()` refuses an S3 or S3 Control call whose `Bucket` is outside it,
-   from the `call` tool and from `query`'s `call()` alike. A plain bucket ARN
-   is checked by its name; any other ARN (an access point, an outpost) is
-   refused. `inventory()` checks its bucket and the inventory's destination
-   bucket with `assertInScope()`. `s3 ListBuckets` is filtered to the scope.
-   Scope is a bucket list: reads of other services (IAM, CloudTrail, Access
-   Analyzer, …) are not filtered and may name buckets outside it. An empty
-   list means every bucket the credentials can see. Composer focus is not
-   scope.
+2. **Scope is authorization.** An account may name a bucket allow-list. On a
+   scoped account, `checkCall()` (`s3/api.ts`) lets a call run only if it
+   names an in-scope bucket in `Bucket` (S3 or S3 Control), or is a listing
+   filtered to the scope (`s3 ListBuckets`, `s3 ListDirectoryBuckets`), or
+   reveals no bucket (`sts GetCallerIdentity`, `s3control
+   GetPublicAccessBlock`). Every other service (IAM, CloudTrail, Config,
+   CloudWatch, Access Analyzer…) sees across the account and is refused, as is
+   an S3 Control call by access point name or an access point / outpost ARN.
+   The same check covers `query`'s `call()`; `inventory()` and `dataset()`
+   check their buckets with `assertInScope()`. An empty list means every
+   bucket the credentials can see. Composer focus is not scope.
 3. **Secrets.** Cloud keys and the model key are sealed with Electron
    `safeStorage`; without an OS keyring, with AES-256-GCM under a locally
    generated 0600 key file. SQLite stores only sealed references. The window
@@ -32,35 +33,37 @@
    profile account stores only the profile name; the AWS SDK resolves it from
    the user's `~/.aws` files at call time, and the app reads those files only
    for profile names.
-4. **Account ids.** `scrub()` (`s3/api.ts`) replaces every 12-digit number,
-   keys included, with `<account>`, whichever account it names: the caller's,
-   an organization member's, a cross-account principal's, one inside a
-   CloudTrail event string. `redact()` masks the account in ARNs. A 12-digit
-   object key or timestamp is masked too; that is the price of never letting
-   an id through. Every `call` response, every `probe`
-   answer and every value a `query` script returns is scrubbed, and
-   `describeError()` scrubs every tool's error text. Where the agent writes
-   `<account>` in an input, and for S3 Control's `AccountId`, `call` puts in
-   the id STS `GetCallerIdentity` returns; it is used for that call only and
-   never returned.
-5. **Redaction.** `security/redact.ts` masks access-key ids, `X-Amz-*`
-   signatures and credentials, authorization and API-key headers, bearer
-   tokens, secret JSON fields, the account in any ARN, signature query
-   parameters, model API keys (`sk-…`) and shared-credentials lines. It runs
-   before a value is stored, shown or sent to the model, including targets,
-   argument summaries, progress lines, memory text, method code and error
-   text. Every string in a tool view is redacted.
+4. **Identifiers are data.** Account ids, access key ids, ARNs, canonical
+   user ids, bucket names and object keys reach the agent, the window and the
+   task folder exactly as the service returned them. They are not secrets
+   (AWS says so of account ids and key ids), and the agent cannot judge
+   cross-account access, find a stale key or call with a key it was shown if
+   they are masked. `<account>` in an input is a convenience the agent may
+   use for the caller's id; S3 Control's `AccountId` is filled in when left
+   out.
+5. **Secrets are redacted.** `security/redact.ts` masks `X-Amz-*` signatures
+   and credentials, authorization and API-key headers, bearer tokens, secret
+   JSON fields (`SecretAccessKey`, `SessionToken`, `password`, `token`…),
+   signature query parameters, model API keys (`sk-…`) and shared-credentials
+   lines; `shape()` (`s3/api.ts`) also replaces the value of any response field
+   named like a secret (`SecretAccessKey`, `SessionToken`, `Password`,
+   `PrivateKey`, `Plaintext`, `SecretString`…). Redaction runs before a value
+   is stored, shown or sent to the model, including targets, argument
+   summaries, progress lines, memory text, method code and error text.
 6. **Envelope.** Every tool result the model sees is wrapped in
-   `<untrusted-data source="storage" evidence="…">…</untrusted-data>`, with
-   `<`, `>` and `&` escaped first, so no tag, policy, metadata value or error
-   message can close the envelope. A result longer than 24,000 characters
-   reaches the model one piece at a time; every result is kept in
-   `tasks/<conversation>/results/` for `more`. Bucket names, object keys,
-   bodies and log lines are data, not instructions.
+   `<untrusted-data-<boundary> source="…" evidence="…">…</untrusted-data-<boundary>>`,
+   where the boundary is 48 random bits drawn for that result. The content is
+   not rewritten — a key spelled `a&b <x>.csv` reaches the agent so — and no
+   tag, policy, metadata value or error message can close the block, because
+   it cannot know the boundary. A result longer than one piece (24,000
+   characters, less for a model with a small window) reaches the model a
+   piece at a time; every result is kept in `tasks/<conversation>/results/`
+   for `more`. Bucket names, object keys, bodies and log lines are data, not
+   instructions.
 7. **Attached and imported data.** A dataset keeps every column of its source;
    client addresses, user agents and request lines are kept as they are, so
-   the agent can follow one address or request. Strings are scrubbed before
-   they are stored (account ids, credential-shaped text). The agent reads a
+   the agent can follow one address or request. Credential-shaped text is
+   redacted before a string is stored; identifiers are kept. The agent reads a
    dataset with `sql()`: one `SELECT` (or `WITH … SELECT`) on a read-only
    connection, no second statement and no `load_extension`. A dataset the
    agent keeps with `scope: 'user'` is stored at `datasets/<id>.sqlite` under
@@ -95,7 +98,7 @@
     could forge.
 14. **Code mode.** `query` scripts run in a QuickJS VM with no network,
     filesystem, process, timers or modules, and no model access. Its
-    primitives are `call()` (the same read check, scope and scrubbing as the
+    primitives are `call()` (the same read check, scope and redaction as the
     tool), `read()`, `dataset()` (scope checked for an object or prefix),
     `inventory()`, `sql()`, `datasets()`, `history()`, `discover()`,
     `memory()` and `render()`. A script runs until it returns or the user stops it; its memory is
@@ -109,7 +112,7 @@
     usage. The Markdown export holds the messages, the agent's text and
     reasoning, and each call with what the agent received. PDF prints the
     window with every step open. All of them are written only through the
-    user's save dialog, from values already redacted and scrubbed.
+    user's save dialog, from values already redacted.
 17. **Dropped files.** The preload turns a dropped or pasted `File` into a path
     with `webUtils.getPathForFile`, which yields nothing for a file the page
     constructed. The main process accepts only absolute paths to regular files
@@ -121,8 +124,8 @@
 ## Threat notes
 
 - **A hostile S3-compatible endpoint** can return huge XML, hostile names or
-  error text. Responses are read through the AWS SDK's typed shapes, escaped
-  inside the envelope, given to the model a piece at a time, and redacted in
+  error text. Responses are read through the AWS SDK's typed shapes, wrapped
+  in a block they cannot close, given to the model a piece at a time, and redacted in
   views. A custom-endpoint account sends every service, IAM and STS included,
   to its own endpoint; its credentials never go to AWS.
 - **A hostile attached file or inventory** can be enormous or malformed.
@@ -137,14 +140,25 @@
   code runs only in the QuickJS sandbox with read-only primitives. Neither can
   reach the host filesystem, network, process or vault. Untrusted tool output
   can still persuade the agent to remember something false; a recalled
-  document reaches the model inside `<untrusted-data>` with the task that
+  document reaches the model inside an `<untrusted-data-…>` block with the task that
   wrote it and when, and Settings lists every document so the user can forget
   one.
-- **`probe`** sends one unsigned HEAD, GET or OPTIONS, only to the account's
-  endpoint host or a host under it (on AWS, an S3 host). The agent chooses its
-  headers; one that would carry a credential (`Authorization`, `Cookie`,
-  `X-Amz-Security-Token`, `X-Amz-Credential`, `X-Amz-Signature` and the like)
+- **`probe`** sends one unsigned HEAD, GET or OPTIONS — what an anonymous
+  internet user gets — to any public host: the account endpoint, a bucket's
+  virtual host or website endpoint, a CloudFront or custom domain. Every
+  address the host resolves to must be public (not loopback, private, link-
+  local, CGNAT, ULA or multicast) unless the host is the account's own custom
+  endpoint (a local MinIO); the connection is pinned to the checked address,
+  so a second DNS answer cannot redirect it, and redirects are not followed.
+  A GET returns the first 4 KiB of the body. A header that would carry a
+  credential (`Authorization`, `Cookie`, `X-Amz-Security-Token`,
+  `X-Amz-Credential`, `X-Amz-Signature` and the like) or a `user:pass@` URL
   is refused and nothing is sent.
+- **Skills** are Markdown the agent reads with `skill`; bundled ones ship in
+  `main/skills/`, the user's live in `<data>/skills/`. They are advice in the
+  prompt's index and in a tool result, never executed. The agent can write a
+  user skill, so untrusted tool output could persuade it to save a false one;
+  Settings lists every skill with its source and the user can delete theirs.
 - **The renderer is sandboxed**: `contextIsolation`, sandbox, no
   `nodeIntegration`, a CJS preload and a CSP that forbids remote scripts. It
   never receives a credential, a raw provider message or a filesystem handle.

@@ -18,7 +18,19 @@ export interface StoredSettings {
   theme: Theme
   notify: boolean
   model: StoredModel | null
+  /** Every model saved, each with its own key; the default is one of them. */
+  models: StoredModel[]
   lastTaskId: string | null
+}
+
+/** Two configurations name the same model when provider, endpoint and id match. */
+export function sameModel(
+  a: Pick<StoredModel, 'provider' | 'modelId' | 'baseUrl'>,
+  b: { provider: string; modelId: string; baseUrl?: string | null },
+): boolean {
+  return (
+    a.provider === b.provider && a.modelId === b.modelId && (a.baseUrl || '') === (b.baseUrl || '')
+  )
 }
 
 const DEFAULTS: StoredSettings = {
@@ -26,6 +38,7 @@ const DEFAULTS: StoredSettings = {
   theme: 'system',
   notify: true,
   model: null,
+  models: [],
   lastTaskId: null,
 }
 
@@ -66,29 +79,47 @@ export class Settings {
     this.save()
   }
 
+  /** Make a model the default; it is kept among the saved models with its key. */
   setModel(model: StoredModel | null): void {
+    if (model) {
+      this.value.models = [...this.value.models.filter((item) => !sameModel(item, model)), model]
+    } else if (this.value.model) {
+      const current = this.value.model
+      this.value.models = this.value.models.filter((item) => !sameModel(item, current))
+    }
     this.value.model = model
     this.save()
+  }
+
+  /** The saved configuration for a model, with its key reference. */
+  saved(ref: { provider: string; modelId: string; baseUrl?: string | null }): StoredModel | null {
+    return this.value.models.find((item) => sameModel(item, ref)) ?? null
   }
 
   private load(): StoredSettings {
     try {
       if (!existsSync(this.path)) return { ...DEFAULTS }
       const raw = JSON.parse(readFileSync(this.path, 'utf8')) as Partial<StoredSettings>
-      const model = raw.model
-        ? {
-            ...raw.model,
-            provider: (['openai', 'anthropic', 'compatible'] as const).includes(raw.model.provider)
-              ? raw.model.provider
-              : 'compatible',
-            thinking: THINKING.has(raw.model.thinking) ? raw.model.thinking : 'off',
-          }
-        : null
+      const clean = (item: StoredModel): StoredModel => ({
+        ...item,
+        provider: (['openai', 'anthropic', 'compatible'] as const).includes(item.provider)
+          ? item.provider
+          : 'compatible',
+        thinking: THINKING.has(item.thinking) ? item.thinking : 'off',
+      })
+      const model = raw.model ? clean(raw.model) : null
+      const models = (Array.isArray(raw.models) ? raw.models : [])
+        .filter(
+          (item) => item && typeof item.modelId === 'string' && typeof item.keyRef === 'string',
+        )
+        .map(clean)
+      if (model && !models.some((item) => sameModel(item, model))) models.push(model)
       return {
         language: raw.language === 'zh' ? 'zh' : 'en',
         theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
         notify: raw.notify !== false,
         model,
+        models,
         lastTaskId: typeof raw.lastTaskId === 'string' ? raw.lastTaskId : null,
       }
     } catch {

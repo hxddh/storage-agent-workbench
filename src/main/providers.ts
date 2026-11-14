@@ -21,7 +21,7 @@ import { STSClient } from '@aws-sdk/client-sts'
 import { fromIni } from '@aws-sdk/credential-provider-ini'
 import type { Account, AccountInput } from '@shared/contract'
 import type { AppDb, ProviderRow } from './db'
-import { scrub } from './s3/api'
+import { shape } from './s3/api'
 import { maskKey } from './security/redact'
 import type { Vault } from './security/vault'
 
@@ -349,9 +349,9 @@ export class Providers {
   }
 }
 
-/** A provider error as one line; the account id it may name becomes `<account>`. */
+/** A provider error as one line, credential-shaped text redacted. */
 export function describe(error: unknown): string {
-  return scrub(describeRaw(error)) as string
+  return shape(describeRaw(error)) as string
 }
 
 function describeRaw(error: unknown): string {

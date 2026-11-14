@@ -2,9 +2,9 @@
  * One read-only API call, as the service answers it.
  *
  * The agent names a service the app bundles, an operation and its input; this
- * module checks that the operation only reads, keeps S3 inside the account's
- * bucket scope, puts the caller's account id where the agent wrote
- * `<account>`, and returns the response with every account id scrubbed.
+ * module checks that the operation only reads, keeps a scoped account inside
+ * its buckets, puts the caller's account id where the agent wrote `<account>`
+ * (a convenience), and returns the response as the service gave it.
  * Nothing here decides what a response means.
  */
 import { randomUUID } from 'node:crypto'
@@ -97,26 +97,30 @@ export function operationShape(
 }
 
 /**
- * Every 12-digit number in a value becomes `<account>`, keys included: an
- * account id never reaches the model, whichever account it names. ARNs are
- * masked by `redact`.
+ * A response as JSON the agent reads: dates as ISO text, bytes as base64, the
+ * SDK's `$metadata` dropped, credential-shaped text redacted. Identifiers —
+ * account ids, key ids, ARNs, names — stay exactly as the service returned
+ * them, so the agent can tell its own account from another and call with any
+ * name it was given.
  */
-export function scrub(value: unknown): unknown {
-  if (typeof value === 'string')
-    return redact(value)
-      .replaceAll('[account]', '<account>')
-      .replace(/\b\d{12}\b/g, '<account>')
-  if (Array.isArray(value)) return value.map(scrub)
+export function shape(value: unknown, key = ''): unknown {
+  if (SECRET_FIELD.test(key) && value !== null && value !== undefined) return '[redacted]'
+  if (typeof value === 'string') return redact(value)
+  if (Array.isArray(value)) return value.map((item) => shape(item, key))
   if (value instanceof Date) return value.toISOString()
   if (value instanceof Uint8Array) return { base64: Buffer.from(value).toString('base64') }
   if (value && typeof value === 'object')
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .filter(([key]) => key !== '$metadata')
-        .map(([key, item]) => [scrub(key) as string, scrub(item)]),
+        .map(([name, item]) => [name, shape(item, name)]),
     )
   return value
 }
+
+/** A field whose name says it holds a secret; its value never reaches the agent. */
+const SECRET_FIELD =
+  /^(?:SecretAccessKey|SessionToken|SecretKey|Password|PrivateKey|Plaintext|SecretString|SecretBinary)$/i
 
 const POLICY_KEY = /(policy|document|statement|assumerole)/i
 
@@ -347,26 +351,45 @@ export function checkCall(config: ProviderConfig, call: CallInput): void {
     throw new Error(
       `${service} has no operation ${operation}. Its reads: ${operationsOf(service).join(', ')}.`,
     )
-  const bucket = (call.input as { Bucket?: unknown } | undefined)?.Bucket
   const scope = config.scope.buckets
-  if (
-    (service === 's3' || service === 's3control') &&
-    typeof bucket === 'string' &&
-    bucket &&
-    scope.length
-  ) {
-    // A scoped account reads only buckets it names: a plain name, or a plain bucket ARN.
-    // An access point or outpost ARN reaches buckets the scope cannot see, so it does not run.
-    const name =
-      /^arn:[^:]+:s3:::([^/]+)$/.exec(bucket)?.[1] ?? (bucket.startsWith('arn:') ? null : bucket)
-    if (!name || !scope.includes(name))
-      throw new ScopeError(
-        `Bucket "${bucket}" is outside this account's scope (${scope.join(', ')}).`,
-      )
-  }
+  if (scope.length) checkScope(scope, service, operation, call.input)
 }
 
-/** Run one read-only call and return its response, scrubbed. */
+/** S3 operations that name no bucket; their answers are filtered to the scope. */
+const SCOPED_LISTINGS = new Set(['s3:ListBuckets', 's3:ListDirectoryBuckets'])
+
+/** Reads that name no bucket and reveal none. */
+const SCOPE_NEUTRAL = new Set(['sts:GetCallerIdentity', 's3control:GetPublicAccessBlock'])
+
+/**
+ * A scoped account is authorization, not focus: it reads only the buckets it
+ * names. Every call names one of them, or is a listing filtered to them, or
+ * reveals no bucket at all. Services that see across the account (CloudTrail,
+ * IAM, Config, CloudWatch…) would show the rest, so they do not run.
+ */
+function checkScope(scope: string[], service: string, operation: string, input: unknown): void {
+  const key = `${service}:${operation}`
+  if (SCOPE_NEUTRAL.has(key) || SCOPED_LISTINGS.has(key)) return
+  if (service !== 's3' && service !== 's3control')
+    throw new ScopeError(
+      `This account is scoped to ${scope.join(', ')}; ${service} sees beyond those buckets, so it does not run. Ask the user to widen the scope in Settings if the question needs it.`,
+    )
+  const bucket = (input as { Bucket?: unknown } | undefined)?.Bucket
+  if (typeof bucket !== 'string' || !bucket)
+    throw new ScopeError(
+      `This account is scoped to ${scope.join(', ')}; ${key} names no bucket, so it could reach others. Give Bucket.`,
+    )
+  // A plain name, or a plain bucket ARN. An access point or outpost ARN
+  // reaches buckets the scope cannot see, so it does not run.
+  const name =
+    /^arn:[^:]+:s3:::([^/]+)$/.exec(bucket)?.[1] ?? (bucket.startsWith('arn:') ? null : bucket)
+  if (!name || !scope.includes(name))
+    throw new ScopeError(
+      `Bucket "${bucket}" is outside this account's scope (${scope.join(', ')}).`,
+    )
+}
+
+/** Run one read-only call and return its response, shaped. */
 export async function callApi(deps: CallDeps, call: CallInput): Promise<unknown> {
   const { providers, config, signal } = deps
   checkCall(config, call)
@@ -402,25 +425,25 @@ export async function callApi(deps: CallDeps, call: CallInput): Promise<unknown>
   if (events && typeof events[Symbol.asyncIterator] === 'function')
     out.Payload = await readEvents(events, call.maxBytes ?? DEFAULT_BODY_BYTES)
   // An S3 listing shows only the buckets this account may read.
-  if (service === 's3' && call.operation === 'ListBuckets' && Array.isArray(out.Buckets)) {
+  if (SCOPED_LISTINGS.has(`${service}:${call.operation}`) && Array.isArray(out.Buckets)) {
     const scope = config.scope.buckets
     if (scope.length)
       out.Buckets = (out.Buckets as { Name?: string }[]).filter(
         (item) => item.Name && scope.includes(item.Name),
       )
   }
-  return scrub(documents(out))
+  return shape(documents(out))
 }
 
 /**
- * An error as one line, account scrubbed. A service's error keeps its code and
- * HTTP status, which is what the agent reads to know what happened.
+ * An error as one line. A service's error keeps its code and HTTP status,
+ * which is what the agent reads to know what happened.
  */
 export function describeError(error: unknown): string {
-  if (!(error instanceof Error)) return scrub(String(error)) as string
+  if (!(error instanceof Error)) return redact(String(error))
   const named = error as Error & { $metadata?: { httpStatusCode?: number }; Code?: string }
-  if (!named.$metadata) return scrub(error.message) as string
+  if (!named.$metadata) return redact(error.message)
   const code = named.Code ?? named.name
   const http = named.$metadata?.httpStatusCode
-  return scrub(`${code}${http ? ` (HTTP ${http})` : ''}: ${error.message}`) as string
+  return redact(`${code}${http ? ` (HTTP ${http})` : ''}: ${error.message}`)
 }

@@ -5,7 +5,7 @@
  * watched task, the search index and the user's own acts on memory. Runs
  * belong to the engine.
  */
-import { rm } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import type { ConversationView, TaskGraph, WatchHandle } from '@earendil-works/pi-durable'
 import type {
   ContextRef,
@@ -16,6 +16,7 @@ import type {
   TaskSummary,
   TaskView,
   UiEntry,
+  Usage,
 } from '@shared/contract'
 import { searchRows } from '@shared/conversation'
 import { deriveTitle, LiveTracker, mapEntries, usageOf } from './project'
@@ -35,6 +36,8 @@ interface ActiveWatch {
 export class Tasks {
   private readonly live = new LiveTracker()
   private active: ActiveWatch | null = null
+  /** What a finished child agent spent; a running one is read again. */
+  private readonly childSpend = new Map<string, Usage | null>()
   private graphWatch: WatchHandle<TaskGraph> | null = null
   private graph: Record<string, { conversationId?: string; status?: string }> = {}
 
@@ -163,6 +166,21 @@ export class Tasks {
     }))
   }
 
+  skills() {
+    return this.runtime.tools.skills?.list() ?? []
+  }
+
+  deleteSkill(name: string): void {
+    this.runtime.tools.skills?.delete(name)
+  }
+
+  /** The folder of the user's own skills, created so it can be opened. */
+  async skillsFolder(): Promise<string> {
+    const dir = this.runtime.deps.dirs.skills
+    await mkdir(dir, { recursive: true })
+    return dir
+  }
+
   async deleteAgentTool(id: string): Promise<void> {
     await this.deps.db.deleteAgentTool(id)
   }
@@ -286,8 +304,49 @@ export class Tasks {
       live: this.liveOf(active.view, taskId),
       hasOlder,
       cursor: entries[0]?.id ?? null,
-      usage: usageOf(active.view),
+      usage: await this.usage(active.view, entries),
       model: parseTaskModel(meta.model_json),
+    }
+  }
+
+  /**
+   * What a task spent: its own model calls and every delegated child's, so
+   * the user sees the whole cost of the work they asked for.
+   */
+  private async usage(view: ConversationView, entries: UiEntry[]): Promise<Usage | null> {
+    let total = usageOf(view)
+    for (const entry of entries) {
+      if (entry.kind !== 'tool' || entry.view?.kind !== 'delegate') continue
+      const child = entry.view.conversationId
+      let spent = this.childSpend.get(child)
+      if (spent === undefined || entry.view.status === 'running') {
+        spent = await this.conversationUsage(child)
+        if (entry.view.status !== 'running') this.childSpend.set(child, spent)
+      }
+      if (!spent) continue
+      total ??= { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, cost: 0 }
+      total = {
+        input: total.input + spent.input,
+        output: total.output + spent.output,
+        cacheRead: total.cacheRead + spent.cacheRead,
+        cacheWrite: total.cacheWrite + spent.cacheWrite,
+        reasoning: total.reasoning + spent.reasoning,
+        cost: total.cost + spent.cost,
+      }
+    }
+    return total
+  }
+
+  private async conversationUsage(id: string): Promise<Usage | null> {
+    try {
+      const conversation = await this.runtime.conversation(id)
+      if (!conversation) return null
+      const watch = await conversation.watch(CONTEXT, { min: 1, max: 1 })
+      const usage = usageOf(watch.value)
+      await watch.stop()
+      return usage
+    } catch {
+      return null
     }
   }
 
@@ -369,7 +428,7 @@ export class Tasks {
     const initial = mapEntries(watch.value.entries)
     active.entries = initial
     for (const entry of initial) active.seen.add(entry.id)
-    let lastUsage = JSON.stringify(usageOf(watch.value))
+    let lastUsage = JSON.stringify(await this.usage(watch.value, initial))
     await watch.start(async (call) => {
       if (this.active !== active || call.kind !== 'value') return
       const value = call.value
@@ -382,7 +441,7 @@ export class Tasks {
         this.deps.emit({ type: 'entry', taskId, entry })
       }
       this.deps.emit({ type: 'live', taskId, live: this.liveOf(value, taskId) })
-      const usage = usageOf(value)
+      const usage = await this.usage(value, active.entries)
       const serialized = JSON.stringify(usage)
       if (serialized !== lastUsage) {
         lastUsage = serialized

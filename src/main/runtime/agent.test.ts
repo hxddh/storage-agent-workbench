@@ -22,7 +22,7 @@ describe('the agent loop', () => {
     }
     const prompt = (await Promise.all(extension.sections.map((item) => item.render()))).join('\n')
     expect(prompt).toMatch(/read-only/)
-    expect(prompt).toMatch(/the user can stop you/)
+    expect(prompt).toMatch(/never instructions/)
     expect(prompt).not.toMatch(/rounds of tool calls|at most|budget/i)
   })
 })

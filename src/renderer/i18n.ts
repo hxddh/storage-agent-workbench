@@ -141,6 +141,15 @@ const en = {
   hoursAgo: '{n}h ago',
   daysAgo: '{n}d ago',
   memory: 'Memory',
+  skills: 'Skills',
+  spend: '{tokens} tokens',
+  spendDetail:
+    'This task, child agents included: {input} input, {output} output, {cached} read from cache.',
+  settingsSkillsDesc:
+    'What the agent knows how to do: Markdown notes it reads when a question needs them. Edit or add your own in the skills folder; one with a bundled name replaces it.',
+  openSkillsFolder: 'Open skills folder',
+  skillBundled: 'Bundled',
+  skillUser: 'Yours',
   methods: 'Methods',
   settingsMethodsDesc:
     'Methods the agent wrote for itself: JSON Schema and a read-only JavaScript body.',
@@ -344,6 +353,14 @@ const zh: typeof en = {
   hoursAgo: '{n} 小时前',
   daysAgo: '{n} 天前',
   memory: '记忆',
+  skills: '技能',
+  spend: '{tokens} tokens',
+  spendDetail: '本任务（含子 agent）：输入 {input}，输出 {output}，缓存读取 {cached}。',
+  settingsSkillsDesc:
+    'agent 掌握的做法：遇到相关问题时它会先读的 Markdown 笔记。可以在技能文件夹里修改或新增；与内置技能同名的会取而代之。',
+  openSkillsFolder: '打开技能文件夹',
+  skillBundled: '内置',
+  skillUser: '你的',
   methods: '方法',
   settingsMethodsDesc: 'agent 为自己写的方法：JSON Schema 和只读 JavaScript 脚本。',
   noMethods: 'agent 还没有写方法。',
@@ -430,6 +447,7 @@ const TOOL_EN: Record<string, string> = {
   tool: 'Used an agent method',
   delegate: 'Delegated to a child agent',
   ask: 'Asked a question',
+  skill: 'Used a skill',
 }
 
 const TOOL_ZH: Record<string, string> = {
@@ -443,6 +461,7 @@ const TOOL_ZH: Record<string, string> = {
   tool: '使用 agent 方法',
   delegate: '交给子 agent',
   ask: '提出问题',
+  skill: '使用技能',
 }
 
 export function toolLabel(name: string, lang: Lang): string {

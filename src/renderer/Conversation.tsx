@@ -1,6 +1,7 @@
 import {
   type Lang,
   type LocalModel,
+  type SavedModel,
   TASK_LINK_PREFIX,
   type TaskModel,
   type TaskView,
@@ -25,7 +26,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Blocks } from './Blocks'
-import { type Dict, dict, toolLabel } from './i18n'
+import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
 import Markdown from './Markdown'
 import { noticeText } from './notice'
@@ -74,7 +75,8 @@ function ToolStep({
   // The step line already names the action and target. Raw JSON is useful for
   // a storage read's input; for a method, view or child agent it is noise.
   const showArgs =
-    item.args && !['render', 'delegate', 'memory', 'tool', 'discover', 'ask'].includes(item.name)
+    item.args &&
+    !['render', 'delegate', 'memory', 'tool', 'discover', 'ask', 'skill'].includes(item.name)
   const elapsed =
     item.ms !== null
       ? duration(item.ms)
@@ -498,6 +500,7 @@ export function Conversation({
   onAnswer,
   onOlder = async () => undefined,
   models = [],
+  saved = [],
   onModel,
 }: {
   view: TaskView
@@ -509,9 +512,12 @@ export function Conversation({
   onOlder?: () => Promise<void>
   /** Models this machine runs; a task may use one instead of the Settings model. */
   models?: LocalModel[]
+  /** Models saved in Settings, each with its own key. */
+  saved?: SavedModel[]
   onModel?: (model: TaskModel | null) => void
 }) {
   const t = dict(lang)
+  const choices = useMemo(() => modelChoices(saved, models), [saved, models])
   const items = useMemo(() => thread(view.entries, view.live), [view.entries, view.live])
   const pending = useMemo(() => (view.live ? null : pendingQuestion(items)), [items, view.live])
   const settledAnswer = useMemo(() => {
@@ -616,11 +622,32 @@ export function Conversation({
         <div className="visually-hidden" aria-live="polite" aria-atomic="true">
           {settledAnswer}
         </div>
-        {providers.length > 0 && (
+        {(providers.length > 0 || view.usage) && (
           <div className="conversation-meta">
             {providers.map((provider) => (
               <span key={provider}>{provider}</span>
             ))}
+            {view.usage && (
+              <span
+                className="conversation-spend"
+                title={fill(t.spendDetail, {
+                  input: view.usage.input.toLocaleString(lang),
+                  output: view.usage.output.toLocaleString(lang),
+                  cached: view.usage.cacheRead.toLocaleString(lang),
+                })}
+              >
+                {fill(t.spend, {
+                  tokens: compactCount(
+                    view.usage.input +
+                      view.usage.output +
+                      view.usage.cacheRead +
+                      view.usage.cacheWrite,
+                    lang,
+                  ),
+                })}
+                {view.usage.cost > 0 ? ` · $${view.usage.cost.toFixed(2)}` : ''}
+              </span>
+            )}
           </div>
         )}
         <Menu view={view} items={items} t={t} />
@@ -759,32 +786,36 @@ export function Conversation({
           </ol>
         )}
         {!view.live && items.length === 0 && <p className="quiet">{t.runNoAnswer}</p>}
-        {onModel && (models.length > 0 || view.model) && (
+        {onModel && (choices.length > 0 || view.model) && (
           <label className="conversation-model">
             <span>{t.model}</span>
             <select
-              value={view.model?.modelId ?? ''}
+              value={
+                view.model
+                  ? String(choices.findIndex((choice) => sameChoice(choice, view.model!)))
+                  : ''
+              }
               onChange={(event) => {
                 const value = event.target.value
-                const local = models.find((model) => model.modelId === value)
-                if (!value) onModel(null)
-                else if (local)
+                const choice = choices[Number(value)]
+                if (!value || !choice) onModel(null)
+                else
                   onModel({
-                    provider: 'compatible',
-                    modelId: local.modelId,
-                    baseUrl: local.baseUrl,
-                    thinking: 'off',
+                    provider: choice.provider,
+                    modelId: choice.modelId,
+                    baseUrl: choice.baseUrl,
+                    thinking: choice.thinking,
                   })
               }}
             >
               <option value="">{t.modelDefault}</option>
-              {models.map((model) => (
-                <option key={`${model.source}:${model.modelId}`} value={model.modelId}>
-                  {model.source} · {model.modelId}
+              {choices.map((choice, index) => (
+                <option key={`${choice.label}:${choice.modelId}`} value={String(index)}>
+                  {choice.label} · {choice.modelId}
                 </option>
               ))}
-              {view.model && !models.some((model) => model.modelId === view.model?.modelId) && (
-                <option value={view.model.modelId}>{view.model.modelId}</option>
+              {view.model && !choices.some((choice) => sameChoice(choice, view.model!)) && (
+                <option value="-1">{view.model.modelId}</option>
               )}
             </select>
           </label>
@@ -792,4 +823,51 @@ export function Conversation({
       </article>
     </div>
   )
+}
+
+interface ModelChoice {
+  label: string
+  provider: TaskModel['provider']
+  modelId: string
+  baseUrl: string | null
+  thinking: TaskModel['thinking']
+}
+
+/** Saved models first, then models running on this machine that are not saved. */
+function modelChoices(saved: SavedModel[], local: LocalModel[]): ModelChoice[] {
+  const out: ModelChoice[] = saved.map((item) => ({
+    label: item.provider === 'compatible' ? (item.baseUrl ?? 'compatible') : item.provider,
+    provider: item.provider,
+    modelId: item.modelId,
+    baseUrl: item.baseUrl,
+    thinking: item.thinking,
+  }))
+  for (const item of local) {
+    const choice: ModelChoice = {
+      label: item.source,
+      provider: 'compatible',
+      modelId: item.modelId,
+      baseUrl: item.baseUrl,
+      thinking: 'off',
+    }
+    if (!out.some((known) => sameChoice(known, choice))) out.push(choice)
+  }
+  return out
+}
+
+function sameChoice(
+  a: Pick<ModelChoice, 'provider' | 'modelId' | 'baseUrl'>,
+  b: TaskModel,
+): boolean {
+  return (
+    a.provider === b.provider && a.modelId === b.modelId && (a.baseUrl ?? '') === (b.baseUrl ?? '')
+  )
+}
+
+/** 1234 → 1.2K, 2_500_000 → 2.5M. */
+function compactCount(value: number, lang: Lang): string {
+  return new Intl.NumberFormat(lang === 'zh' ? 'zh-CN' : 'en', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(value)
 }

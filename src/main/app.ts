@@ -110,6 +110,13 @@ export class App {
             hasKey: true,
           }
         : null,
+      savedModels: this.settings.get().models.map((item) => ({
+        provider: item.provider,
+        modelId: item.modelId,
+        baseUrl: item.baseUrl || null,
+        contextWindow: item.contextWindow,
+        thinking: item.thinking,
+      })),
       settings: this.settings.public(),
       update: this.update,
       lastTaskId: lastTaskId && tasks.some((task) => task.id === lastTaskId) ? lastTaskId : null,

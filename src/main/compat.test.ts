@@ -77,7 +77,7 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     )
     const vault = { seal: (v: string) => v, open: (v: string) => v } as unknown as Vault
     const providers = new Providers(db, vault)
-    await providers.save({
+    const scoped = await providers.save({
       name: 'moto',
       endpoint: endpoint!,
       region: 'us-east-1',
@@ -87,6 +87,20 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
       secretAccessKey: credentials.secretAccessKey,
       scope: { buckets: ['c-public-policy', 'c-public-acl', 'c-narrowed', 'c-locked'] },
     })
+    scopedId = scoped.id
+    // The same credentials without a scope: account-wide reads run on this one.
+    wholeId = (
+      await providers.save({
+        name: 'moto-whole',
+        endpoint: endpoint!,
+        region: 'us-east-1',
+        forcePathStyle: true,
+        auth: 'keys',
+        accessKeyId: credentials.accessKeyId,
+        secretAccessKey: credentials.secretAccessKey,
+        scope: { buckets: [] },
+      })
+    ).id
     deps = {
       db,
       providers,
@@ -98,10 +112,13 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     }
   })
 
+  let scopedId = ''
+  let wholeId = ''
+
   /** One `call`, and what came back: the value the window shows and the text the agent got. */
-  const call = async (args: Record<string, unknown>) => {
+  const call = async (args: Record<string, unknown>, scoped = false) => {
     const result = await callTool(deps).execute(
-      args as never,
+      { provider_id: scoped ? scopedId : wholeId, ...args } as never,
       { conversationId: 'c', output: () => undefined, details: async () => undefined } as never,
       {} as never,
     )
@@ -115,7 +132,7 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     }
   }
   const bucketRead = (operation: string, Bucket: string) =>
-    call({ service: 's3', operation, input: { Bucket } })
+    call({ service: 's3', operation, input: { Bucket } }, true)
 
   it('returns what AWS decides about exposure, as AWS says it', async () => {
     const status = await bucketRead('GetBucketPolicyStatus', 'c-public-policy')
@@ -132,7 +149,7 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     })
   })
 
-  it('reads a KMS key policy and CloudTrail events, and never sends the account id', async () => {
+  it('reads a KMS key policy and CloudTrail events on an unscoped account, refused on a scoped one', async () => {
     const kms = new KMSClient({ region: 'us-east-1', endpoint, credentials })
     const created = await kms.send(new CreateKeyCommand({ Description: 'compat' }))
     const keyId = created.KeyMetadata?.KeyId
@@ -146,8 +163,14 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
       input: { KeyId: keyId, PolicyName: 'default' },
     })
     expect(key.status).toBe('done')
-    expect(JSON.stringify(key.value)).toContain('<account>')
-    expect(key.text).not.toContain(account)
+    // A scoped account does not reach KMS: it sees beyond its buckets.
+    const scopedKey = await call(
+      { service: 'kms', operation: 'GetKeyPolicy', input: { KeyId: keyId, PolicyName: 'default' } },
+      true,
+    )
+    expect(scopedKey.status).toBe('refused')
+    // The agent reads the account as the service names it.
+    expect(JSON.stringify(key.value)).toContain(account)
     const trail = await call({
       service: 'cloudtrail',
       operation: 'LookupEvents',
@@ -156,10 +179,9 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
       },
     })
     expect(['done', 'failed']).toContain(trail.status)
-    expect(trail.text).not.toContain(account)
   })
 
-  it('reads the account-wide block and account-level IAM, without ever sending the id', async () => {
+  it('reads the account-wide block and account-level IAM, the id filled in for S3 Control', async () => {
     const sts = new STSClient({ region: 'us-east-1', endpoint, credentials })
     const account = (await sts.send(new GetCallerIdentityCommand({}))).Account!
     const control = emulatorControl({ region: 'us-east-1', credentials }, endpoint!)
@@ -174,15 +196,12 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
         },
       }),
     )
-    // The agent never has the account id; S3 Control gets it filled in.
+    // S3 Control needs the id on every call; it is filled in when the agent leaves it out.
     const block = await call({ service: 's3control', operation: 'GetPublicAccessBlock' })
     expect(block.value).toMatchObject({ PublicAccessBlockConfiguration: { BlockPublicAcls: true } })
-    expect(block.text).not.toContain(account)
-    // An input that names <account> gets the caller's id in its place.
     const caller = await call({ service: 'sts', operation: 'GetCallerIdentity' })
-    expect(caller.value).toMatchObject({ Account: '<account>' })
+    expect(caller.value).toMatchObject({ Account: account })
     const iam = await call({ service: 'iam', operation: 'GetAccountAuthorizationDetails' })
     expect(iam.status).toBe('done')
-    expect(iam.text).not.toContain(account)
   })
 })

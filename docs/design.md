@@ -245,7 +245,7 @@ authorization.
 
 ## Settings
 
-Five panes: Model, Storage accounts, Memory, Methods and Appearance. The active
+Six panes: Model, Storage accounts, Skills, Memory, Methods and Appearance. The active
 pane is the top-bar title and the selected rail row. Model configuration is one
 form: provider, model, base URL, key, Save and Test. The key can be revealed
 without leaving the field; **Advanced** holds an explicit context window and

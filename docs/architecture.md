@@ -175,7 +175,8 @@ shows as a failed step.
 | `main/tools/delegate.ts` | `delegate` (child agent) |
 | `main/tools/control.ts` | `ask` |
 | `main/memory.ts` | `MemoryStore` over `memory.sqlite` |
-| `main/s3/api.ts` | `checkCall`, `callApi`, `scrub`, `describeError` |
+| `main/s3/api.ts` | `checkCall`, `callApi`, `shape`, `describeError` |
+| `main/skills.ts`, `main/skills/*.md` | bundled and user skills |
 | `main/security/scope.ts` | `assertInScope()`, `ScopeError` |
 | `main/security/redact.ts` | `redact()`, `bound()`, tag escaping |
 | `main/security/vault.ts` | sealing and opening secrets |

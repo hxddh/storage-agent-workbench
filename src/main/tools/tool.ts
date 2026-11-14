@@ -3,7 +3,7 @@ import { int, lit, obj, opt, str, union, unknown } from '@earendil-works/pi-sche
 import type { Chart } from '@shared/contract'
 import { viewDoc, viewText } from '@shared/view'
 import Ajv from 'ajv'
-import { scrub } from '../s3/api'
+import { shape } from '../s3/api'
 import { redact } from '../security/redact'
 import { agentTool, providerParam, type ToolDeps } from './policy'
 import { isRows, sandboxPrimitives, toTable } from './query'
@@ -38,9 +38,8 @@ export function toolTool(deps: ToolDeps) {
         const schema = args.schema ?? { type: 'object', additionalProperties: true }
         if (!schema || typeof schema !== 'object' || Array.isArray(schema))
           throw new Error('tool schema must be a JSON Schema object.')
-        // Credential-shaped text never reaches SQLite; an account in an ARN is
-        // stored as `<account>`, which `call` fills in when the method runs.
-        const stored = (text: string) => redact(text).replaceAll('[account]', '<account>')
+        // Credential-shaped text never reaches SQLite.
+        const stored = (text: string) => redact(text)
         const schemaJson = stored(JSON.stringify(schema))
         const scope = args.scope === 'task' ? 'task' : 'user'
         const row = await deps.db.upsertAgentTool({
@@ -146,7 +145,7 @@ export function toolTool(deps: ToolDeps) {
           view: { kind: 'render' as const, title: name, doc: rendered },
         }
       if (!isRows(result.value)) {
-        const value = scrub(result.value ?? null)
+        const value = shape(result.value ?? null)
         return {
           model: [
             `${name}: value from ${calls.count} read-only call(s).`,

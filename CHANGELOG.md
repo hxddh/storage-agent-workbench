@@ -1,3 +1,54 @@
+## 42.0.0 — 2026-11-14
+
+The agent sees what the services return, knows its trade, and runs on the
+model you have. Earlier releases protected the agent from its own data until
+it could not answer the questions the product exists for; this one stops.
+
+- **Faithful data.** Tool results are no longer entity-escaped: a key spelled
+  `a&b <x>.csv` reaches the agent so, and calling with it works. The envelope
+  is an `<untrusted-data-<boundary>>` block with a fresh random boundary per
+  result, which text inside cannot close.
+- **Identifiers are data.** Account ids, access key ids and ARNs are no longer
+  masked. The old `scrub()` turned every 12-digit number into `<account>`:
+  the caller and a third-party principal looked the same, so cross-account
+  access could not be judged; a key holding a 12-digit timestamp was mangled
+  and, when called, refilled with the caller's id — reading a different object
+  or none. Access key ids were all `AKIA[redacted]`, so `GetAccessKeyLastUsed`
+  could not be called. `shape()` now keeps identifiers and redacts secrets,
+  including any response field named like one (`SecretAccessKey`,
+  `SessionToken`, `Password`, `PrivateKey`, `Plaintext`…).
+- **Skills.** Nine bundled Markdown skills — public access, cross-account,
+  encryption, identities and keys, change history, cost and lifecycle, data at
+  scale, S3-compatible endpoints, proposing changes — carry the know-how a
+  bare prompt lacked: which reads settle a question and where the traps are.
+  The prompt lists them by name; the agent reads one with the new `skill`
+  tool when it decides to, and writes its own. Your skills live as plain files
+  in `<data>/skills/` and replace a bundled one with the same name; Settings
+  has a **Skills** pane. The prompt gains a short `work` section: principles,
+  not a workflow.
+- **Every saved model keeps its key.** A task model of another provider used
+  to fail with `Unknown secret reference`; now every model saved in Settings
+  keeps its own key and window, and the task's Model select offers all of
+  them plus local ones.
+- **Local models that work.** Ollama and LM Studio models used to be assumed
+  to have 128k tokens while their servers ran 4k and silently cut the system
+  prompt. The window is now what the server reports for a loaded model, else
+  4,096, and result pieces shrink to fit (`pieceFor`).
+- **Scope is authorization.** A scoped account reaches only its buckets: a
+  call names one, is a bucket listing filtered to the scope (now
+  `ListDirectoryBuckets` too), or reveals no bucket. CloudTrail, IAM, Config,
+  CloudWatch and S3 Control calls without a bucket used to show the rest; they
+  are refused with the reason.
+- **`probe` reaches the public internet.** Any public host — a CloudFront or
+  custom domain, a website endpoint — so exposure can be verified end to end.
+  Private addresses are refused unless they are the account's own endpoint;
+  the connection is pinned to the checked address; a GET returns the first
+  4 KiB of the body.
+- **Spend is visible.** The conversation header shows the tokens a task spent,
+  child agents included.
+- The host schema is version 22: tasks from 41.0.0, whose results hold the old
+  escaped and masked text, are cleared.
+
 ## 41.0.0 — 2026-11-14
 
 The workbench catches up to its runtime, and a dataset can outlive the task

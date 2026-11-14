@@ -26,8 +26,9 @@ import type { MemoryStore } from '../memory'
 import type { Providers } from '../providers'
 import type { Vault } from '../security/vault'
 import type { Settings } from '../settings'
+import { Skills } from '../skills'
 import { createTools } from '../tools'
-import type { ToolDeps } from '../tools/policy'
+import { pieceFor, type ToolDeps } from '../tools/policy'
 import { buildDigest, createAgent } from './agent'
 import { mapEntries } from './project'
 
@@ -38,6 +39,7 @@ export interface RuntimeDirs {
   datasets: (conversationId: string) => string
   userDatasets: string
   uploads: (conversationId: string) => string
+  skills: string
 }
 
 export type RunOutcome = 'answered' | 'failed' | 'stopped'
@@ -63,6 +65,7 @@ export function runtimeDirs(dataDir: string): RuntimeDirs {
     datasets: (conversationId) => join(dataDir, 'tasks', conversationId, 'datasets'),
     userDatasets: join(dataDir, 'datasets'),
     uploads: (conversationId) => join(dataDir, 'tasks', conversationId, 'uploads'),
+    skills: join(dataDir, 'skills'),
   }
 }
 
@@ -91,6 +94,8 @@ export function parseTaskModel(raw: string | null | undefined): TaskModel | null
 export class Runtime {
   /** Tasks whose last run failed; the sidebar marks them. */
   readonly failed = new Set<string>()
+  /** The context window, in tokens, of the model each task last ran with. */
+  readonly windows = new Map<string, number>()
   private digest = ''
 
   private constructor(
@@ -110,6 +115,9 @@ export class Runtime {
       userDatasetsDir: deps.dirs.userDatasets,
       uploadsDir: deps.dirs.uploads,
       memory: deps.memory,
+      skills: new Skills(deps.dirs.skills),
+      piece: (conversationId) =>
+        pieceFor(runtime?.windows.get(conversationId) ?? deps.settings.get().model?.contextWindow),
       lang: () => deps.settings.get().language,
     }
     const list = createTools(tools)

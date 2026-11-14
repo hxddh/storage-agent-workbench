@@ -385,6 +385,8 @@ const server = createServer((req, res) => {
       }
       chunk(res, { ...base, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
     }
+    // What a provider reports when asked for usage in the stream.
+    chunk(res, { ...base, choices: [], usage: { prompt_tokens: 1200, completion_tokens: 80, total_tokens: 1280 } })
     res.write('data: [DONE]\n\n')
     res.end()
   })

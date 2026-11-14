@@ -223,6 +223,7 @@ export function App() {
       modelId: model.modelId,
       baseUrl: model.baseUrl,
       apiKey: 'local',
+      contextWindow: model.contextWindow,
     })
     await refresh()
   }
@@ -307,6 +308,7 @@ export function App() {
               onAnswer={(text) => void submit(text, [])}
               onOlder={loadOlder}
               models={localModels}
+              saved={boot?.savedModels ?? []}
               onModel={(model) => void setModel(model)}
             />
           </Suspense>

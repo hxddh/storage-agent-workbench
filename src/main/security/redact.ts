@@ -1,13 +1,18 @@
+import { randomBytes } from 'node:crypto'
+
+/**
+ * Secrets only. Identifiers — account ids, access key ids, ARNs, bucket and
+ * key names — are what the agent reasons with and reach it as the service
+ * returned them.
+ */
 const PATTERNS: [RegExp, string][] = [
-  [/\b(AKIA|ASIA|AIDA|AROA)[0-9A-Z]{16}\b/g, '$1[redacted]'],
   [/(X-Amz-(?:Credential|Signature|Security-Token|SignedHeaders))=[^&\s"']+/gi, '$1=[redacted]'],
   [/((?:Authorization|X-Api-Key|x-api-key)\s*[:=]\s*)[^\s"',]+/gi, '$1[redacted]'],
   [/\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/g, '$1 [redacted]'],
   [
-    /("(?:SecretAccessKey|SessionToken|AccessKeyId|secretAccessKey|sessionToken|accessKeyId|api_key|apiKey|password|token)"\s*:\s*)"[^"]*"/g,
+    /("(?:SecretAccessKey|SessionToken|secretAccessKey|sessionToken|api_key|apiKey|password|token)"\s*:\s*)"[^"]*"/g,
     '$1"[redacted]"',
   ],
-  [/arn:(aws|aws-cn|aws-us-gov):([^:\s]+):([^:\s]*):(\d{12}):/g, 'arn:$1:$2:$3:[account]:'],
   [/\b(sig|signature)=[A-Za-z0-9%+/=]{16,}/gi, '$1=[redacted]'],
   [/\b(sk-(?:ant-|proj-)?)[A-Za-z0-9_-]{16,}/g, '$1[redacted]'],
   [/((?:aws_secret_access_key|aws_session_token)\s*=\s*)\S+/gi, '$1[redacted]'],
@@ -36,12 +41,25 @@ export function redactView(value: unknown, depth = 0): unknown {
 }
 
 /**
- * Make stored data safe inside an XML-like envelope. The tags around tool output
- * are the model's only structural boundary; a bucket tag or object metadata
- * value containing `</untrusted-data>` must not be able to close it.
+ * Data from outside — a service's response, an object body, a file, a child
+ * agent's text — inside a block whose closing tag carries a random boundary.
+ * Nothing inside is rewritten: a key spelled `a&b <1>.csv` reaches the agent
+ * so, and calling with it works. Text inside cannot close the block, because
+ * it cannot know the boundary.
  */
-export function escapeTags(text: string): string {
-  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+export function wrapUntrusted(source: string, text: string, evidenceId?: string): string {
+  const tag = `untrusted-data-${randomBytes(6).toString('hex')}`
+  const attrs = [`source="${attribute(source)}"`]
+  if (evidenceId) attrs.push(`evidence="${attribute(evidenceId)}"`)
+  return `<${tag} ${attrs.join(' ')}>\n${redact(text)}\n</${tag}>`
+}
+
+function attribute(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
 }
 
 /** Keep a tool result bounded for the model. */

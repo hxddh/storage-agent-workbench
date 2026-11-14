@@ -2,7 +2,7 @@ import { defineTool } from '@earendil-works/pi-durable'
 import { obj, opt, str } from '@earendil-works/pi-schema'
 import type { ToolDetails, ToolView } from '@shared/contract'
 import { describeError } from '../s3/api'
-import { escapeTags, redact } from '../security/redact'
+import { redact, wrapUntrusted } from '../security/redact'
 import type { ToolDeps } from './policy'
 
 /**
@@ -146,7 +146,7 @@ export function delegateTool(deps: ToolDeps) {
               type: 'text' as const,
               text:
                 status === 'done' || status === 'asked'
-                  ? `<untrusted-data source="delegate"${evidenceId ? ` evidence="${escapeTags(evidenceId).replaceAll('"', '&quot;')}"` : ''}>\n${escapeTags(redact(said))}\n</untrusted-data>`
+                  ? wrapUntrusted('delegate', said, evidenceId)
                   : `The child agent ${status}: ${note}`,
             },
           ],
@@ -172,7 +172,7 @@ export function delegateTool(deps: ToolDeps) {
           output: [
             {
               type: 'text' as const,
-              text: `<untrusted-data source="delegate"${evidenceId ? ` evidence="${escapeTags(evidenceId).replaceAll('"', '&quot;')}"` : ''}>\n${escapeTags(redact(text))}\n</untrusted-data>`,
+              text: wrapUntrusted('delegate', text, evidenceId),
             },
           ],
           isError: true,
