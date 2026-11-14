@@ -79,8 +79,9 @@ function plan(body) {
   if (ask.includes('last time') || ask.includes('what did you find')) {
     const memory = made('memory').at(-1)
     if (!memory) return next('memory', { action: 'get', key: 'survey/last' })
+    // The block closes with a tag carrying its random boundary: </untrusted-data-…>.
     const open = memory.text.indexOf('>')
-    const close = memory.text.lastIndexOf('</untrusted-data>')
+    const close = memory.text.search(/<\/untrusted-data[^>]*>\s*$/)
     const raw = (open >= 0 && close > open ? memory.text.slice(open + 1, close) : memory.text).trim()
     let value = {}
     try {
