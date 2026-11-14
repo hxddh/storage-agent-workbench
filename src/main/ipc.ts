@@ -172,9 +172,12 @@ export function registerIpc(app: App): void {
     if (!modelId) throw new Error('A model id is required.')
     const existing = app.settings.get().model
     const key = input.apiKey?.trim()
-    if (!key && existing && existing.provider !== input.provider)
+    // A model saved before keeps its own key; another model of the default's provider uses the default's.
+    const known = app.settings.saved({ ...input, modelId, baseUrl: input.baseUrl?.trim() ?? '' })
+    const sameProvider = existing && existing.provider === input.provider ? existing : null
+    if (!key && !known && !sameProvider)
       throw new Error('Enter an API key for this model provider.')
-    const keyRef = key ? app.vault.seal(key) : existing?.keyRef
+    const keyRef = key ? app.vault.seal(key) : (known?.keyRef ?? sameProvider?.keyRef)
     if (!keyRef) throw new Error('An API key is required.')
     app.settings.setModel({
       provider: input.provider,
@@ -235,6 +238,14 @@ export function registerIpc(app: App): void {
   ipcMain.handle('agent:agentTools', () => app.tasks.agentTools())
 
   ipcMain.handle('agent:deleteAgentTool', (_event, id: string) => app.tasks.deleteAgentTool(id))
+
+  ipcMain.handle('agent:skills', () => app.tasks.skills())
+
+  ipcMain.handle('agent:deleteSkill', (_event, name: string) => app.tasks.deleteSkill(String(name)))
+
+  ipcMain.handle('agent:openSkillsFolder', async () => {
+    await shell.openPath(await app.tasks.skillsFolder())
+  })
 
   ipcMain.handle('agent:openExternal', (_event, url: string) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url)

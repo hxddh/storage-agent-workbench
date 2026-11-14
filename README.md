@@ -7,7 +7,7 @@ every tool call the agent made and what it returned. Nothing in storage is
 written, deleted or changed. The agent may write a change for you to apply; the
 app never runs it.
 
-Version in this tree: **41.0.0**.
+Version in this tree: **42.0.0**.
 
 ![A conversation in Storage Agent](docs/screenshot.png)
 
@@ -142,13 +142,21 @@ prove the harness runs; they are not a model-quality score. See
 - Secrets are sealed with Electron `safeStorage`, or a local AES-256-GCM key
   file when no OS keyring exists. A profile account stores a profile name,
   never a key. The renderer never receives a credential.
-- Account ids never reach the model, the window, a log or SQLite. Every
-  response and error passes through `scrub()`, which replaces every 12-digit
-  number with `<account>`, whichever account it names, and redacts the account
-  in ARNs. The agent writes `<account>` where the caller's id belongs and
-  `call` fills it in.
-- Tool output reaches the model inside `<untrusted-data>`, redacted. Tool
-  status comes from structured details, never from result text.
+- Identifiers are data: account ids, access key ids, ARNs, bucket names and
+  object keys reach the agent exactly as the service returned them, so it can
+  tell its own account from another and call with any key it was shown.
+  Secrets (secret keys, session tokens, passwords, signatures) are redacted.
+- Tool output reaches the model unchanged inside an `<untrusted-data-…>`
+  block whose closing tag carries a random boundary, so nothing inside can
+  close it. Tool status comes from structured details, never from result text.
+- The agent knows its trade from **skills**: Markdown notes on public access,
+  cross-account access, encryption, identities and keys, change history, cost,
+  data at scale, S3-compatible endpoints and writing changes. It reads one
+  when a question needs it, writes new ones, and you can edit or add your own
+  in the skills folder (Settings → Skills).
+- Every model saved in Settings keeps its own key; a task can run with any of
+  them, or with a model on this machine, whose real context window is used.
+  The conversation shows the tokens a task spent, child agents included.
 - A denied or unsupported call comes back as the service's error. The call
   stays in the conversation; saying what could not be read is the agent's.
 - Every read goes through the agent. Without a model the window asks for one;

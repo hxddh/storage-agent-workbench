@@ -9,10 +9,23 @@ import type {
   LocalModel,
   MemoryRow,
   ModelProvider,
+  SkillRow,
   Theme,
   ThinkingLevel,
 } from '@shared/contract'
-import { Brain, Cloud, Copy, Cpu, Eye, EyeOff, Palette, Plus, Wrench, X } from 'lucide-react'
+import {
+  BookOpen,
+  Brain,
+  Cloud,
+  Copy,
+  Cpu,
+  Eye,
+  EyeOff,
+  Palette,
+  Plus,
+  Wrench,
+  X,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { type Dict, dict, fill } from './i18n'
 import { copyText } from './lib/export'
@@ -20,7 +33,7 @@ import { useFocusTrap } from './lib/focus'
 import { humanBytes } from './Views'
 
 type Provider = ModelProvider
-export type SettingsPane = 'model' | 'accounts' | 'memory' | 'methods' | 'appearance'
+export type SettingsPane = 'model' | 'accounts' | 'skills' | 'memory' | 'methods' | 'appearance'
 
 /** A loopback endpoint: the provider needs a key value, but the user does not. */
 function localEndpoint(baseUrl: string): boolean {
@@ -80,6 +93,7 @@ export function Settings({
   const panes = [
     { id: 'model' as const, label: t.model, icon: Cpu },
     { id: 'accounts' as const, label: t.accounts, icon: Cloud },
+    { id: 'skills' as const, label: t.skills, icon: BookOpen },
     { id: 'memory' as const, label: t.memory, icon: Brain },
     { id: 'methods' as const, label: t.methods, icon: Wrench },
     { id: 'appearance' as const, label: t.appearance, icon: Palette },
@@ -121,12 +135,14 @@ export function Settings({
   const [confirming, setConfirming] = useState<string | null>(null)
   const [datasets, setDatasets] = useState<KeptDatasetRow[]>([])
   const [methods, setMethods] = useState<AgentToolRow[]>([])
+  const [skills, setSkills] = useState<SkillRow[]>([])
   const trap = useFocusTrap<HTMLDivElement>(onClose, '[data-active-tab="true"]')
 
   useEffect(() => {
     void window.agent.memory().then(setMemory)
     void window.agent.datasets().then(setDatasets)
     void window.agent.agentTools().then(setMethods)
+    void window.agent.skills().then(setSkills)
     void window.agent.awsProfiles().then(setProfiles)
     void window.agent.localModels().then(setLocalModels)
   }, [])
@@ -137,7 +153,7 @@ export function Settings({
     setBaseUrl(model.baseUrl)
     setApiKey('local')
     setThinking('auto')
-    setContextWindow(null)
+    setContextWindow(model.contextWindow)
   }
 
   const confirmAction = (id: string, action: () => void) => {
@@ -158,6 +174,11 @@ export function Settings({
   const forgetMethod = async (id: string) => {
     await window.agent.deleteAgentTool(id)
     setMethods(await window.agent.agentTools())
+  }
+
+  const forgetSkill = async (name: string) => {
+    await window.agent.deleteSkill(name)
+    setSkills(await window.agent.skills())
   }
 
   const forgetDataset = async (id: string) => {
@@ -945,6 +966,49 @@ export function Settings({
                     ))}
                   </div>
                 )}
+              </section>
+
+              <section className="section" hidden={pane !== 'skills'}>
+                <p className="settings-desc">{t.settingsSkillsDesc}</p>
+                <button
+                  className="text-action"
+                  type="button"
+                  onClick={() =>
+                    void window.agent.openSkillsFolder().then(async () => {
+                      setSkills(await window.agent.skills())
+                    })
+                  }
+                >
+                  {t.openSkillsFolder}
+                </button>
+                <div className="memory-list">
+                  {skills.map((skill) => (
+                    <div className="method-row" key={skill.name}>
+                      <div className="method-head">
+                        <span className="method-name mono">{skill.name}</span>
+                        <span className="hint">
+                          {skill.source === 'user' ? t.skillUser : t.skillBundled}
+                        </span>
+                      </div>
+                      <span className="memory-text">{skill.description}</span>
+                      <details className="method-code">
+                        <summary>{t.raw}</summary>
+                        <pre className="mono">{skill.body}</pre>
+                      </details>
+                      {skill.source === 'user' && (
+                        <button
+                          className="text-action"
+                          type="button"
+                          onClick={() =>
+                            confirmAction(`skill:${skill.name}`, () => void forgetSkill(skill.name))
+                          }
+                        >
+                          {confirming === `skill:${skill.name}` ? `${t.delete}?` : t.delete}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </section>
 
               <section className="section" hidden={pane !== 'appearance'}>

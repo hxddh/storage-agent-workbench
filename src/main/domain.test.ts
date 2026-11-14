@@ -13,13 +13,13 @@ import { type FakeBucket, startFakeS3 } from '../../scripts/fake-s3.mjs'
 import { AppDb } from './db'
 import { MemoryStore } from './memory'
 import { Providers } from './providers'
-import { checkCall, operationsOf, scrub } from './s3/api'
+import { checkCall, operationsOf, shape } from './s3/api'
 import type { Vault } from './security/vault'
 import { callTool } from './tools/call'
 import { memoryTool } from './tools/memory'
 import { moreTool } from './tools/more'
 import { PIECE, type ToolDeps } from './tools/policy'
-import { probeTool } from './tools/probe'
+import { isPublicAddress, probeTool } from './tools/probe'
 
 const BUCKETS: Record<string, FakeBucket> = {
   'aws-public': { public: true },
@@ -108,7 +108,7 @@ const call = (args: Record<string, unknown>, signal?: AbortSignal) =>
 
 /** What the agent received, out of its envelope. */
 const sent = (text: string) =>
-  /<untrusted-data[^>]*>\n?([\s\S]*?)\n?<\/untrusted-data>/.exec(text)?.[1] ?? ''
+  /<untrusted-data[^>]*>\n?([\s\S]*?)\n?<\/untrusted-data[^>]*>/.exec(text)?.[1] ?? ''
 
 describe('what the task holds', () => {
   it('reads an attachment at any offset and length, and shows an image', async () => {
@@ -155,6 +155,33 @@ describe('probe', () => {
     const refused = await run(probeTool(deps), { headers: { Authorization: 'AWS4 x' } })
     expect(refused.details.status).toBe('failed')
     expect(sent(refused.text)).toMatch(/no credentials/)
+  })
+
+  it('reaches the account endpoint on this machine, and no other private address', async () => {
+    const own = await run(probeTool(deps), { method: 'GET' })
+    expect(own.details.status).toBe('done')
+    expect(sent(own.text)).toMatch(/"body": /)
+    const other = await run(probeTool(deps), { url: 'http://localhost:1/' })
+    expect(other.details.status).toBe('failed')
+    expect(sent(other.text)).toMatch(/not on the public internet/)
+  })
+
+  it('knows a public address from a private one', () => {
+    for (const address of [
+      '127.0.0.1',
+      '10.1.2.3',
+      '172.20.0.1',
+      '192.168.1.1',
+      '169.254.169.254',
+      '100.64.0.1',
+      '::1',
+      'fd00::1',
+      'fe80::1',
+      '::ffff:10.0.0.1',
+    ])
+      expect(isPublicAddress(address)).toBe(false)
+    for (const address of ['52.216.0.1', '13.32.0.1', '2600:9000::1'])
+      expect(isPublicAddress(address)).toBe(true)
   })
 })
 
@@ -288,6 +315,23 @@ describe('one read-only call', () => {
         input: { Bucket: 'arn:aws:s3:::logs' },
       }),
     ).not.toThrow()
+    // A scope is authorization: nothing that sees beyond its buckets runs.
+    for (const [service, operation, input] of [
+      ['cloudtrail', 'LookupEvents', {}],
+      ['iam', 'GetAccountAuthorizationDetails', {}],
+      ['s3control', 'ListAccessPoints', {}],
+      ['s3control', 'GetAccessPointPolicy', { Name: 'ap' }],
+      ['s3control', 'ListStorageLensConfigurations', {}],
+    ] as const)
+      expect(() => checkCall(scoped, { service, operation, input })).toThrow(/scoped to logs/)
+    for (const [service, operation, input] of [
+      ['s3', 'ListBuckets', {}],
+      ['s3', 'ListDirectoryBuckets', {}],
+      ['sts', 'GetCallerIdentity', {}],
+      ['s3control', 'GetPublicAccessBlock', {}],
+      ['s3control', 'ListAccessPoints', { Bucket: 'logs' }],
+    ] as const)
+      expect(() => checkCall(scoped, { service, operation, input })).not.toThrow()
     expect(operationsOf('s3')).toContain('GetBucketLifecycleConfiguration')
     expect(operationsOf('s3').every((name) => /^(Get|List|Head|Select)/.test(name))).toBe(true)
   })
@@ -325,18 +369,29 @@ describe('one read-only call', () => {
     })
   })
 
-  it('replaces account ids and drops SDK metadata', () => {
+  it('keeps identifiers exactly and drops SDK metadata', () => {
     expect(
-      scrub({ $metadata: { httpStatusCode: 200 }, Owner: 'arn:aws:iam::123456789012:root' }),
-    ).toEqual({ Owner: 'arn:aws:iam::<account>:root' })
+      shape({ $metadata: { httpStatusCode: 200 }, Owner: 'arn:aws:iam::123456789012:root' }),
+    ).toEqual({ Owner: 'arn:aws:iam::123456789012:root' })
   })
 
-  it('replaces every account id, whichever account it names, keys included', () => {
+  it('lets the agent tell one account from another and call with any key it was given', () => {
+    const policy = shape({
+      Statement: [
+        { Principal: { AWS: 'arn:aws:iam::111122223333:root' } },
+        { Principal: { AWS: 'arn:aws:iam::999988887777:role/vendor' } },
+      ],
+    })
+    expect(JSON.stringify(policy)).toContain('111122223333')
+    expect(JSON.stringify(policy)).toContain('999988887777')
     expect(
-      scrub({ Accounts: [{ Id: '999999999999' }], Principal: { AWS: '111111111111' } }),
-    ).toEqual({ Accounts: [{ Id: '<account>' }], Principal: { AWS: '<account>' } })
-    expect(scrub({ '222222222222': 'CloudTrailEvent recipientAccountId 333333333333' })).toEqual({
-      '<account>': 'CloudTrailEvent recipientAccountId <account>',
+      shape({ Key: 'logs/202410241530/a&b <x>.csv', AccessKeyId: 'AKIAABCDEFGHIJKLMNOP' }),
+    ).toEqual({
+      Key: 'logs/202410241530/a&b <x>.csv',
+      AccessKeyId: 'AKIAABCDEFGHIJKLMNOP',
+    })
+    expect(shape({ Credentials: { SecretAccessKey: 'wJalrXUtnFEMI' } })).toEqual({
+      Credentials: { SecretAccessKey: '[redacted]' },
     })
   })
 
@@ -372,13 +427,13 @@ describe('memory', () => {
     const { details } = await run(memoryTool(deps), {
       action: 'put',
       key: 'logs',
-      value: { bucket: 'cors-open', key: 'AKIA1234567890123456' },
-      text: 'Logs land in cors-open. key AKIA1234567890123456',
+      value: { bucket: 'cors-open', secret: 'aws_secret_access_key = wJalrXUtnFEMI' },
+      text: 'Logs land in cors-open. aws_secret_access_key = wJalrXUtnFEMI',
     })
     expect(details.status).toBe('done')
     const mine = deps.memory?.get('logs')
     expect(mine?.value).toMatchObject({ bucket: 'cors-open' })
-    expect(JSON.stringify(mine?.value)).not.toContain('AKIA1234567890123456')
+    expect(JSON.stringify(mine?.value)).not.toContain('wJalrXUtnFEMI')
     const list = await run(memoryTool(deps), { action: 'list' })
     expect(list.details.status).toBe('done')
     const forgot = await run(memoryTool(deps), { action: 'delete', key: 'logs' })

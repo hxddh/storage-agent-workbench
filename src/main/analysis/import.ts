@@ -6,7 +6,7 @@
  * own columns: a CSV's header (or the names the caller gives), a JSON object's
  * keys, a Parquet file's schema, every field of an S3 server access log line.
  * Nothing is dropped, masked or cut; what a column means is the agent's to
- * read. Strings pass through `scrub()` (account ids, credential-shaped text)
+ * read. Strings pass through `shape()` (credential-shaped text redacted)
  * before they are stored, as every other read does.
  */
 import { createReadStream, existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
@@ -18,7 +18,7 @@ import type { Readable } from 'node:stream'
 import { createGunzip } from 'node:zlib'
 import { parse } from 'csv-parse'
 import { asyncBufferFromFile, parquetReadObjects } from 'hyparquet'
-import { scrub } from '../s3/api'
+import { shape } from '../s3/api'
 
 export type DatasetFormat =
   | 'csv'
@@ -101,8 +101,8 @@ const QUANTITY = /size|bytes|length|count|time|total|sum|offset|duration|latency
 /**
  * One value as SQLite stores it. Numbers stay numbers; a numeric string becomes
  * a number when it reads back the same (a 12-digit one only in a column that
- * holds quantities, so an account id is never stored); every other string is
- * scrubbed; an object is its scrubbed JSON.
+ * holds quantities, so an account id stays text); every other string is kept
+ * with credential-shaped text redacted; an object is its JSON.
  */
 export function storedValue(column: string, value: unknown): string | number | null {
   if (value === null || value === undefined) return null
@@ -120,10 +120,10 @@ export function storedValue(column: string, value: unknown): string | number | n
       (!/^-?\d{12}$/.test(value) || QUANTITY.test(column))
     )
       return Number(value)
-    return scrub(value) as string
+    return shape(value) as string
   }
   if (value instanceof Uint8Array) return Buffer.from(value).toString('base64')
-  return JSON.stringify(scrub(value))
+  return JSON.stringify(shape(value))
 }
 
 /** Read through gzip when the file starts with its magic bytes. */

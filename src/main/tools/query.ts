@@ -32,7 +32,7 @@ import {
   importRows,
 } from '../analysis/import'
 import type { ProviderConfig } from '../providers'
-import { type CallInput, callApi, operationShape, operationsOf, SERVICES, scrub } from '../s3/api'
+import { type CallInput, callApi, operationShape, operationsOf, SERVICES, shape } from '../s3/api'
 import { redact, redactView } from '../security/redact'
 import { assertInScope } from '../security/scope'
 import { checkSql } from '../sql'
@@ -78,9 +78,9 @@ function cell(value: unknown): string | number | null {
   if (value === null || value === undefined) return null
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
   if (typeof value === 'bigint') return Number(value)
-  if (typeof value === 'string') return redact(scrub(value) as string)
+  if (typeof value === 'string') return redact(shape(value) as string)
   if (typeof value === 'boolean') return value ? 'true' : 'false'
-  return redact(JSON.stringify(scrub(value)))
+  return redact(JSON.stringify(shape(value)))
 }
 
 /** The script's value as a table and an optional bar chart. */
@@ -685,7 +685,7 @@ export function queryTool(deps: ToolDeps) {
         }
       // Rows are a table; any other value reaches the model as the JSON it is.
       if (!isRows(result.value)) {
-        const value = scrub(result.value ?? null)
+        const value = shape(result.value ?? null)
         return {
           model: [
             `${args.title ? `${args.title}: ` : ''}value from ${calls.count} read-only call(s).`,

@@ -49,21 +49,22 @@ client. The input is the operation's own, with the field names the SDK uses.
   `GetWebIdentityToken` and `GetDelegatedAccessToken`, and KMS
   `GetParametersForImport`. Anything else is refused. An unknown service or
   operation fails with the list of services or of that service's reads.
-- **Scope.** On a scoped account, an S3 or S3 Control input whose `Bucket` is
-  outside `scope.buckets` is refused. `Bucket` may be a name or a plain bucket
-  ARN (`arn:aws:s3:::name`); any other ARN, such as an access point or
-  outpost, is refused, because it reaches buckets the scope cannot see.
-  `s3 ListBuckets` returns only the buckets in scope. Reads of other services
-  are not filtered by bucket scope.
+- **Scope.** A scoped account is authorization. A call runs only if it names
+  an in-scope `Bucket` (S3 or S3 Control; a name or a plain bucket ARN), or is
+  a listing filtered to the scope (`s3 ListBuckets`, `s3
+  ListDirectoryBuckets`), or reveals no bucket (`sts GetCallerIdentity`,
+  `s3control GetPublicAccessBlock`). Other services see across the account
+  and are refused with the reason; so are access point and outpost ARNs and
+  S3 Control calls by access point name.
 - **Account id.** Where the input says `<account>`, the caller's id from STS
   `GetCallerIdentity` is put in; S3 Control's `AccountId` is filled in when the
-  input leaves it out. The id is used for that call only.
+  input leaves it out.
 - **Response.** `$metadata` is dropped, dates become ISO strings, binary
   values become base64, and a field whose name says it is a policy is parsed
   from JSON or URL-encoded JSON. An object body that happens to be JSON stays
-  text. `scrub()` replaces every 12-digit number, keys included, with
-  `<account>`, whichever account it names, and `redact()` masks the account in
-  ARNs.
+  text. `shape()` keeps every identifier as returned, redacts
+  credential-shaped text and replaces the value of a field named like a
+  secret.
 - **Bodies.** A streamed body (`GetObject`) is written to
   `tasks/<conversation>/objects/<id>.bin` and the result carries a 64 KiB
   preview and a `ref`. The stream stops at `max_bytes` (default 1 MiB, which
@@ -73,7 +74,7 @@ client. The input is the operation's own, with the field names the SDK uses.
   its record payloads as text up to `max_bytes` (default 1 MiB), and its other events as they
   came.
 - **Errors.** `describeError()` gives a service error as
-  `Code (HTTP n): message`, scrubbed. A denied read is the service's
+  `Code (HTTP n): message`, redacted. A denied read is the service's
   `AccessDenied`; an operation the endpoint does not implement is its own
   answer. Nothing is simulated.
 - **Region and endpoint.** The region is the one named, else the account's,
@@ -109,7 +110,7 @@ call budget and no time limit: a script runs until it returns or the user
 stops it. Sandbox memory defaults to 1,024 MB; the agent sets it with
 `memory_mb`. Every returned row reaches the model, in pieces past `PIECE`. The
 window's view keeps the first 10,000 rows and marks the table truncated.
-Returned strings are scrubbed and redacted.
+Returned strings are redacted of secrets; identifiers are kept.
 
 ## `render`
 
@@ -197,16 +198,18 @@ in the window holds the whole result.
 
 ## `probe`
 
-One unsigned `HEAD` (default), `GET` or `OPTIONS` to the account's endpoint or
-a host under it, such as a virtual-hosted bucket, with any `headers` the agent
-chooses: an `Origin` and `Access-Control-Request-Method` for a CORS preflight,
+One unsigned `HEAD` (default), `GET` or `OPTIONS` to any public host — the
+account's endpoint, a virtual-hosted bucket, a website endpoint, a CloudFront
+or custom domain — with any `headers` the agent chooses: an `Origin` and `Access-Control-Request-Method` for a CORS preflight,
 a `Range`, a `Host`. A header that would carry a credential (`Authorization`,
 `Cookie`, `X-Amz-Security-Token`, `X-Amz-Credential`, `X-Amz-Signature`,
-`X-Amz-Date`, `X-Amz-Content-Sha256`) is refused and nothing is sent. An AWS account's endpoint is
-`https://s3.<region>.amazonaws.com`, and any S3 host under `amazonaws.com` is
-allowed. Any other host is refused. It returns the resolved addresses, HTTP
-status, headers, the TLS certificate (protocol, subject, issuer, names,
-validity, whether it was trusted) and DNS and total time, scrubbed. It sends
+`X-Amz-Date`, `X-Amz-Content-Sha256`) is refused and nothing is sent. Every address the
+host resolves to must be public, unless it is the account's own custom
+endpoint (a local MinIO); the connection is pinned to the checked address and
+redirects are not followed. It returns the resolved addresses, HTTP status,
+headers, the TLS certificate (protocol, subject, issuer, names, validity,
+whether it was trusted), the first 4 KiB of a GET's body, and DNS and total
+time. It sends
 no credentials and reads nothing of the storage.
 
 ## `ask`
@@ -230,3 +233,13 @@ No write, delete, copy, move, ACL change, policy put, bucket creation,
 credential minting, shell, SQL that writes, signed HTTP or HTTP to any host
 but the account's endpoint. A change the agent
 writes is text for the user; the app never runs it.
+
+## `skill`
+
+`list`, `read`, `save` or `delete` a skill: a Markdown note on how to work a
+kind of storage question. Bundled skills live in `main/skills/*.md`; the
+user's own in `<data>/skills/*.md`, plain files with `name` and `description`
+front matter. A user skill with a bundled skill's name replaces it; a bundled
+skill cannot be deleted. The prompt's `skills` section lists every skill by
+name and description; the body is read with `skill read` when the agent
+decides it needs it. A skill is advice: the app never runs or checks one.

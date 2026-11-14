@@ -2,7 +2,7 @@
 
 ## Host tables (`storage-agent.db`)
 
-`main/db.ts` holds one schema, `HOST_SCHEMA_VERSION` **21**, stored in
+`main/db.ts` holds one schema, `HOST_SCHEMA_VERSION` **22**, stored in
 `PRAGMA user_version`. A new database is created at that version. A database at
 any other version is cleared and created again: every table goes, pi's
 included, the shell deletes `tasks/` and `datasets/` on disk, and task-scoped
@@ -143,8 +143,8 @@ with the source's own columns plus
 
 Nothing is dropped, masked or cut. A numeric string that reads back the same
 is stored as a number (a 12-digit one only in a column that holds quantities,
-such as a size); every other string is scrubbed: account ids become
-`<account>` and credential-shaped text is redacted. `query`'s `dataset()`
+such as a size, so an account id stays text); every other string is kept
+with credential-shaped text redacted. `query`'s `dataset()`
 imports an attachment, an object body, one object or every object under a
 prefix; `inventory()` imports every file of a bucket's latest S3 Inventory
 manifest with the manifest's schema. `dataset({rows, name, scope: 'user'})`

@@ -112,6 +112,7 @@ export async function learnOutputLimit(
   models: ReturnType<typeof createModels>,
   stored: StoredModel,
   vault: Vault | null,
+  directKey?: string,
 ): Promise<number> {
   const key = `${stored.provider}|${baseUrlOf(stored)}|${stored.modelId}`
   const known = learned.get(key)
@@ -123,7 +124,7 @@ export async function learnOutputLimit(
         models,
         stored,
         vault,
-        undefined,
+        directKey,
         `${providerIdFor(stored)}-limit`,
         maxTokens,
       )

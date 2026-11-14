@@ -15,7 +15,7 @@ verdict, no report and no next-step prompt.
    quit opens at launch.
 2. **Task**: one conversation, in order. The composer stays at the foot.
 3. **Settings**: a full-screen sheet, closed with the **X** at its top left,
-   for the model, storage accounts, memory, methods and appearance.
+   for the model, storage accounts, skills, memory, methods and appearance.
 
 The composer sits at the foot of Home and of a task. It sends a message, a
 steer while the agent works, or a follow-up in the same task. An unsent draft
@@ -65,7 +65,13 @@ ask.
   notification, unless Settings turns it off. The dock badge or taskbar
   progress shows work in flight.
 - A turn uses the task's model when one is chosen in the conversation's
-  **Model** select, otherwise the model in Settings.
+  **Model** select, otherwise the default model in Settings. The select offers
+  every model saved in Settings — each keeps its own key and context window —
+  and the models running on this machine, which need no key and run with the
+  window their server reports (4,096 tokens unless the model is loaded with
+  more). A model with a small window gets smaller result pieces.
+- The conversation's header shows the tokens the task has spent, its child
+  agents included; hovering shows input, output and cache reads.
 - A task with more than 200 entries opens at the latest and offers **Load
   earlier entries** at the top.
 
@@ -113,9 +119,16 @@ prescribe a workflow, and each tool describes itself. The full contracts are in 
   answers.
 
 Who can reach a bucket, whether it is public, what changed and who changed it
-are the agent's to work out from these reads. Account ids never reach the
-agent: the caller's id becomes `<account>`, and the agent writes `<account>`
-where the caller's id belongs.
+are the agent's to work out from these reads. Every identifier reaches it as
+the service returned it, so it can compare an account id in a policy with its
+own (`sts GetCallerIdentity`).
+
+- **`skill`**: read, write or delete a skill — a Markdown note on how to work
+  a kind of question (public access, cross-account access, encryption,
+  identities and keys, change history, cost, data at scale, S3-compatible
+  endpoints, writing changes). The prompt lists every skill by name and
+  description; the agent reads one when it decides to. Settings → **Skills**
+  lists them and opens the folder where the user's own live.
 
 ## Changes
 

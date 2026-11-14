@@ -14,10 +14,15 @@ with the agent: the user's messages, and between them what the agent did and
 said. A **turn** is one user message and the agent's work on it.
 
 > The agent reads, judges and says what it found; the application gives it
-> read-only tools that return what the services return, enforces the safety
-> boundaries and shows each call where it happened. The app decides nothing
-> about the storage: no rules, no findings, no verdict, no report, no
-> next-step prompt.
+> read-only tools that return what the services return — faithfully — the
+> know-how to use them (skills, as data), enforces the safety boundaries and
+> shows each call where it happened. The app decides nothing about the
+> storage: no rules, no findings, no verdict, no report, no next-step prompt.
+>
+> The test for every change: does it let a real user, on a real account, with
+> a real (possibly small, local) model, get a correct answer? Faithful data
+> beats masking; expertise the agent can read beats a bare prompt; a refusal
+> that says why beats a silent limit.
 
 ## Non-negotiables
 
@@ -27,13 +32,19 @@ said. A **turn** is one user message and the agent's work on it.
 2. Secrets never reach SQLite in the clear, a model prompt, a log or the
    window. `security/vault.ts` is the only place that opens one. A profile
    account stores a profile name, never a key.
-3. A provider's `scope.buckets` is enforced before any bucket call (`checkCall`
-   in `s3/api.ts`; `assertInScope` for the inventory a script imports); a
-   scoped listing shows only the scoped buckets. `@` focus is not authorization.
-4. Tool output reaches the model inside `<untrusted-data>`, through `redact()`;
-   `details` reaching the window are already shaped. Status comes from
-   `details.status`, never from result text. Every result is kept whole in the
-   task folder under its evidence id; the model gets one piece (`PIECE`, 24,000
+3. A provider's `scope.buckets` is authorization (`checkCall` in
+   `s3/api.ts`; `assertInScope` for what a script imports): on a scoped
+   account a call names an in-scope bucket, is a bucket listing filtered to
+   the scope, or reveals no bucket; services that see across the account do
+   not run. `@` focus is not authorization.
+4. Tool output reaches the model unchanged, inside an
+   `<untrusted-data-<boundary>>` block whose random boundary text inside
+   cannot know (`wrapUntrusted` in `security/redact.ts`); only secrets are
+   redacted. Nothing is entity-escaped: a key the agent was shown is a key it
+   can call with. `details` reaching the window are already shaped. Status
+   comes from `details.status`, never from result text. Every result is kept
+   whole in the task folder under its evidence id; the model gets one piece
+   (`pieceFor`: about a fifth of its context window, at most `PIECE`, 24,000
    characters) at a time and reads any stretch again with `more`, after a
    compaction too. Attachments and object bodies are read the same way: nothing
    a tool returned or the user attached is out of the agent's reach.
@@ -51,14 +62,16 @@ said. A **turn** is one user message and the agent's work on it.
    Secrets Manager, SSM, ECR, DynamoDB) is not bundled. `discover` lists the current services and operations.
    `tool` lets the agent write a reusable read-only method; `render` lets it
    compose a view; `memory` stores arbitrary JSON; `delegate` gives an
-   independent investigation to a child with the same tools and scope. No list
-   of checks or prescribed workflow stands between the agent and its work.
-7. Account ids never reach the model, the window, a log or SQLite. Every
-   response and every tool's error text pass through `scrub()`, which replaces
-   every 12-digit number with `<account>`, keys included, whichever account it
-   names; `redact()` masks the account in any ARN. The agent writes `<account>` where the caller's id
-   belongs and `call` fills it in (S3 Control's `AccountId` always); the id is
-   used for that call only.
+   independent investigation to a child with the same tools and scope;
+   `skill` reads and writes skills. No list of checks or prescribed workflow
+   stands between the agent and its work.
+7. Identifiers are data. Account ids, access key ids, ARNs, canonical ids,
+   bucket names and object keys reach the agent, the window and the task
+   folder exactly as the service returned them (`shape()` in `s3/api.ts`), so
+   the agent can tell its own account from another and call with what it was
+   shown. Secrets are not identifiers: `redact()` and `shape()`'s secret-field
+   rule remove them everywhere. `<account>` in an input is a convenience for
+   the caller's id; S3 Control's `AccountId` is filled in when left out.
 8. The conversation shows what happened, in order: the user's messages, the
    agent's text, provider reasoning as returned, and every tool call — failed
    and refused ones, and calls to a tool that does not exist — with its shaped
@@ -97,6 +110,19 @@ said. A **turn** is one user message and the agent's work on it.
     provider's model list states, when it states one.
 12. The app does not speak for the user. Home has no canned prompts; Continue
     sends `Continue.`
+13. Expertise is data, not code. Skills (`main/skills.ts`; bundled
+    `main/skills/*.md`, the user's own in `<data>/skills/`) are Markdown the
+    agent reads with `skill` when it decides a question needs one; the prompt
+    lists them by name and description only. A skill is advice: the app never
+    runs, checks or scores one, and a user skill replaces a bundled one with
+    the same name. Domain know-how goes into a skill, never into the prompt
+    or a tool.
+14. Models are the user's. Every model saved in Settings keeps its own key and
+    window (`Settings.models`); a task runs with any of them or with a model on
+    this machine (`resolveTaskModel` in `runtime/engine.ts`). A local model
+    runs with the window its server reports, 4,096 tokens unless loaded with
+    more (`local-models.ts`). The conversation shows what a task spent, its
+    child agents included.
 
 ## Architecture
 
@@ -133,10 +159,11 @@ second queue, no SSE, no HTTP server. `viewState()`/`watch()` are the stream.
 
 ## Agent
 
-One extension, ten tools (`tools/registry.ts` lists their names; each tool's
+One extension, eleven tools (`tools/registry.ts` lists their names; each tool's
 own description, sent with its schema, says what it does): `call` (any
-read-only operation), `query` (a read-only script over many calls, datasets,
-memory and views), `probe` (one unsigned request to the account's endpoint),
+read-only operation), `skill` (read and write skills), `query` (a read-only
+script over many calls, datasets, memory and views), `probe` (one unsigned
+request to any public host or the account's endpoint),
 `more` (the rest of a long result or an object body), `discover` (services,
 operations and tools), `render` (a view document), `memory` (durable JSON),
 `tool` (an agent-authored method), `delegate` (a child agent) and `ask`. The
@@ -146,12 +173,14 @@ plan and writes any change in its own words. A new storage tool must say why
 `call` or `query` cannot do the job; a new service is a new SDK client in
 `s3/api.ts`, not a new tool.
 
-Prompt sections: identity, time, policy (the hard rules), compose, memory
-digest, language. The tools describe themselves; `discover` lists them from
+Prompt sections: identity, time, policy (the hard rules), work (how an
+expert works: settle the question, read skills, errors are information,
+compare identifiers literally — principles, not a workflow), compose, skills
+(one line per skill), memory digest, language. The tools describe themselves; `discover` lists them from
 the registry. The digest names the accounts (their ids are
 tool arguments) and how many memory documents exist; it does not inject their
 content. A memory document records the task that wrote it, and reaches the
-model with it, inside `<untrusted-data>`. A user message names its attached
+model with it, inside an `<untrusted-data-…>` block. A user message names its attached
 files as `attachment:<name>`; `more` reads them (an image is shown to a model
 that takes images) and `dataset()` imports them. A delegated child works in
 its task: the same folder, attachments, results, datasets and task memory; a
@@ -164,7 +193,7 @@ second queue.
 
 Host tables in `storage-agent.db`: `providers`, `audit`, `task_meta`,
 `datasets`, `agent_tools`, `search_docs` (+ FTS5 trigram). pi's tables are
-prefixed `pi_`. `db.ts` holds one schema at `user_version` **21**. A database
+prefixed `pi_`. `db.ts` holds one schema at `user_version` **22**. A database
 at any other version is cleared and created again, pi's tables, `tasks/` and
 `datasets/` with it: the app carries no task from an earlier layout, keeps no
 backup, and no code reads one. A dataset is task-scoped by default
@@ -188,7 +217,7 @@ notices, Stop/Continue/Retry) and the keyboard map are specified in
 `render` step draws its view; a `delegate` step shows the child's request,
 steps and text, live while it works. A view's link shows its host, and its URL
 on hover. Settings' Memory pane shows which task wrote each document.
-Settings has five panes: Model, Storage accounts, Memory, Methods and
+Settings has six panes: Model, Storage accounts, Skills, Memory, Methods and
 Appearance; its close control is an X at the top-left. Design tokens live in
 `src/renderer/styles.css`; never use a raw colour in a component.
 `npm run contrast` guards secondary text. English by default; Chinese copy is

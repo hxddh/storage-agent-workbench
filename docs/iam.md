@@ -95,15 +95,15 @@ and never to AWS, so its credentials do not reach AWS.
 
 ## Boundaries
 
-- Scope (`scope.buckets`) is checked before any S3 or S3 Control call that
-  names a bucket, and `ListBuckets` is filtered to it. On a scoped account an
-  access point or outpost ARN is refused. A broad IAM policy does not make the
-  app read buckets outside the configured list. Reads of other services are
-  not filtered by bucket.
+- Scope (`scope.buckets`) is authorization: on a scoped account every call
+  names an in-scope bucket, is a bucket listing filtered to the scope, or
+  reveals no bucket; services that see across the account (IAM, CloudTrail,
+  Config, CloudWatch…) do not run. A broad IAM policy does not make the app
+  read buckets outside the configured list.
 - `@` context in the composer is focus only. It cannot grant access.
-- The app never stores or shows an account id. Every response is scrubbed to
-  `<account>`, and ARNs in any text are redacted before they leave the main
-  process.
+- Account ids and access key ids are identifiers and are shown as the
+  services return them; secret keys, session tokens and signatures are
+  redacted before they leave the main process.
 - A change the agent writes is text. Applying it needs write permissions the
   app neither asks for nor uses; `call` refuses any operation that is not a
   read, whatever the credentials allow.

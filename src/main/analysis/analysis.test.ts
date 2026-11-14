@@ -83,7 +83,7 @@ describe('lossless datasets', () => {
     ])
   })
 
-  it('splits every field of an S3 server access log, with the account scrubbed', async () => {
+  it('splits every field of an S3 server access log, with identifiers kept', async () => {
     expect(s3AccessFields(S3_LINE)?.[6]).toBe('REST.GET.VERSIONING')
     expect(logTime('06/Feb/2019:00:00:38 +0000')).toBe('2019-02-06T00:00:38Z')
     const dir = temp()
@@ -96,7 +96,7 @@ describe('lossless datasets', () => {
     expect(row).toMatchObject({
       bucket: 'awsexamplebucket1',
       remote_ip: '192.0.2.3',
-      requester: 'arn:aws:iam::<account>:user/alice',
+      requester: 'arn:aws:iam::123456789012:user/alice',
       operation: 'REST.GET.VERSIONING',
       request_uri: 'GET /awsexamplebucket1?versioning HTTP/1.1',
       http_status: 200,
@@ -108,7 +108,7 @@ describe('lossless datasets', () => {
       time_iso: '2019-02-06T00:00:38Z',
     })
     expect(String(row?.raw)).toContain('REST.GET.VERSIONING')
-    expect(String(row?.raw)).not.toContain('123456789012')
+    expect(String(row?.raw)).toContain('123456789012')
   })
 
   it('takes every key of JSON lines, nested values as JSON, and keeps a bad line', async () => {
@@ -139,9 +139,11 @@ describe('lossless datasets', () => {
     ])
   })
 
-  it('never stores an account id as text', () => {
-    expect(storedValue('Owner', '123456789012')).toBe('<account>')
+  it('keeps an account id as text and a quantity as a number', () => {
+    expect(storedValue('Owner', '123456789012')).toBe('123456789012')
     expect(storedValue('Size', '123456789012')).toBe(123456789012)
-    expect(storedValue('Note', 'AKIAABCDEFGHIJKLMNOP')).toBe('AKIA[redacted]')
+    expect(storedValue('Note', 'aws_secret_access_key = abc')).toBe(
+      'aws_secret_access_key = [redacted]',
+    )
   })
 })

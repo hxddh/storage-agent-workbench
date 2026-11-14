@@ -174,6 +174,11 @@ try {
   if (!sent.includes('<untrusted-data') || !sent.includes('IsPublic'))
     await fail(`the step does not show what the agent received: ${sent.slice(0, 120)}`)
   console.log('ANSWER OK:', (await lastText()).replace(/\s+/g, ' ').slice(0, 160))
+  // The task says what it spent.
+  const spend = page.locator('.conversation-spend')
+  await spend.waitFor({ timeout: 10_000 })
+  if (!/tokens/.test(await spend.innerText())) await fail('the conversation does not show its spend')
+  console.log('SPEND OK:', await spend.innerText())
   await checkA11y('conversation')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-answer.png') })
 
@@ -269,6 +274,12 @@ try {
   const kept = await openTool('Ran a read-only query')
   await kept.locator('.table-block table, .view-code, pre.code').first().waitFor({ timeout: 5_000 })
   await page.getByRole('button', { name: 'Settings' }).click()
+  // The agent's know-how, as data the user can read and replace.
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  await page.locator('.method-row:has-text("public-access")').waitFor({ timeout: 5_000 })
+  if ((await page.locator('section:not([hidden]) .method-row').count()) < 9)
+    await fail('Settings does not list the bundled skills')
+  console.log('SKILLS OK')
   await page.getByRole('button', { name: 'Memory', exact: true }).click()
   await page.locator('.dataset-row').first().waitFor({ timeout: 5_000 })
   if (!(await page.locator('.dataset-row').first().innerText()).includes('bucket_counts'))

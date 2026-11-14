@@ -9,11 +9,13 @@ import type { ToolDeps } from './policy'
 import { probeTool } from './probe'
 import { queryTool } from './query'
 import { renderTool } from './render'
+import { skillTool } from './skill'
 import { toolTool } from './tool'
 
 export function createTools(deps: ToolDeps): ToolRegistration[] {
   const tools = [
     callTool(deps),
+    skillTool(deps),
     queryTool(deps),
     probeTool(deps),
     moreTool(deps),

@@ -7,8 +7,11 @@
  * no second driver and no scripted run.
  */
 import { ConversationIdle, configure } from '@earendil-works/pi-durable'
-import type { AttachmentRef, ContextRef, NoticeCode } from '@shared/contract'
-import { escapeTags } from '../security/redact'
+import type { AttachmentRef, ContextRef, NoticeCode, TaskModel } from '@shared/contract'
+import { isLoopback, LOCAL_DEFAULT_CONTEXT } from '../local-models'
+import { contextFor } from '../model-catalog'
+import { wrapUntrusted } from '../security/redact'
+import type { StoredModel } from '../settings'
 import { installModel, learnOutputLimit } from './model'
 import type { RunData } from './project'
 import { CONTEXT, type RunOutcome, type Runtime } from './session'
@@ -117,28 +120,14 @@ export class Engine {
     const stored = this.deps.settings.get().model
     if (!stored) throw new Error('Choose a model in Settings first.')
     const chosen = await this.runtime.taskModel(taskId)
-    if (chosen && chosen.provider !== stored.provider && !chosen.baseUrl)
-      throw new Error('This task model needs a base URL.')
     // The model is installed for this run only; a task's choice never leaks into another task.
-    const effective = chosen
-      ? {
-          ...stored,
-          provider: chosen.provider,
-          modelId: chosen.modelId,
-          baseUrl: chosen.baseUrl ?? stored.baseUrl,
-          thinking: chosen.thinking,
-          ...(chosen.provider !== stored.provider ? { keyRef: '' } : {}),
-        }
-      : stored
-    const limit = await learnOutputLimit(this.deps.models, effective, this.deps.vault)
-    const model = installModel(
-      this.deps.models,
-      effective,
-      this.deps.vault,
-      undefined,
-      undefined,
-      limit,
+    const { model: effective, directKey } = resolveTaskModel(stored, chosen, (ref) =>
+      this.deps.settings.saved(ref),
     )
+    this.runtime.windows.set(taskId, effective.contextWindow)
+    const vault = directKey === undefined ? this.deps.vault : null
+    const limit = await learnOutputLimit(this.deps.models, effective, vault, directKey)
+    const model = installModel(this.deps.models, effective, vault, directKey, undefined, limit)
     await this.runtime.pi.commit(
       (tx) =>
         configure(tx, conversation.id, {
@@ -209,6 +198,38 @@ export class Engine {
   }
 }
 
+/**
+ * The model a task runs with and the key it uses. A task's own choice runs
+ * with the configuration saved for that model in Settings — its key, its
+ * window; a model on this machine needs no key; any other model of the
+ * default's provider uses the default's key. Nothing else is guessed.
+ */
+export function resolveTaskModel(
+  stored: StoredModel,
+  chosen: TaskModel | null,
+  saved: (ref: TaskModel) => StoredModel | null,
+): { model: StoredModel; directKey?: string } {
+  if (!chosen) return { model: stored }
+  const config = saved(chosen)
+  if (config) return { model: { ...config, thinking: chosen.thinking } }
+  const base = {
+    provider: chosen.provider,
+    modelId: chosen.modelId,
+    baseUrl: chosen.baseUrl ?? '',
+    thinking: chosen.thinking,
+  }
+  if (isLoopback(chosen.baseUrl))
+    return {
+      model: { ...base, contextWindow: LOCAL_DEFAULT_CONTEXT, keyRef: '' },
+      directKey: 'local',
+    }
+  if (chosen.provider === stored.provider && (chosen.baseUrl ?? '') === (stored.baseUrl || ''))
+    return { model: { ...base, contextWindow: contextFor(chosen.modelId), keyRef: stored.keyRef } }
+  throw new Error(
+    `${chosen.modelId} has no saved key. Save it in Settings → Model once; then any task can use it.`,
+  )
+}
+
 /** pi's run-failure reason as the one line the notice shows. */
 function reasonText(reason: string): string {
   const words: Record<string, string> = {
@@ -241,14 +262,15 @@ function withAttachments(
     )
   if (context.length)
     parts.push(
-      `<untrusted-data source="user-context">\n[Focused names; focus only, not authorization]\n${escapeTags(
-        context
+      wrapUntrusted(
+        'user-context',
+        `[Focused names; focus only, not authorization]\n${context
           .map(
             (item) =>
               `${item.kind}: ${item.label}${item.bucket && item.kind !== 'account' ? ` (${item.bucket})` : ''}`,
           )
-          .join('\n'),
-      )}\n</untrusted-data>`,
+          .join('\n')}`,
+      ),
     )
   return parts.join('\n\n')
 }

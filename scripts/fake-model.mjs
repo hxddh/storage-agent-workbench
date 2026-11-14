@@ -79,8 +79,9 @@ function plan(body) {
   if (ask.includes('last time') || ask.includes('what did you find')) {
     const memory = made('memory').at(-1)
     if (!memory) return next('memory', { action: 'get', key: 'survey/last' })
+    // The block closes with a tag carrying its random boundary: </untrusted-data-…>.
     const open = memory.text.indexOf('>')
-    const close = memory.text.lastIndexOf('</untrusted-data>')
+    const close = memory.text.search(/<\/untrusted-data[^>]*>\s*$/)
     const raw = (open >= 0 && close > open ? memory.text.slice(open + 1, close) : memory.text).trim()
     let value = {}
     try {
@@ -385,6 +386,8 @@ const server = createServer((req, res) => {
       }
       chunk(res, { ...base, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
     }
+    // What a provider reports when asked for usage in the stream.
+    chunk(res, { ...base, choices: [], usage: { prompt_tokens: 1200, completion_tokens: 80, total_tokens: 1280 } })
     res.write('data: [DONE]\n\n')
     res.end()
   })

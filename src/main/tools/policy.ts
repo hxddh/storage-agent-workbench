@@ -9,8 +9,9 @@ import type { AppDb } from '../db'
 import type { MemoryStore } from '../memory'
 import type { ProviderConfig, Providers } from '../providers'
 import { describeError } from '../s3/api'
-import { bound, escapeTags, redact, redactView } from '../security/redact'
+import { bound, redact, redactView, wrapUntrusted } from '../security/redact'
 import { assertInScope, ScopeError } from '../security/scope'
+import type { Skills } from '../skills'
 
 export interface ToolDeps {
   db: AppDb
@@ -22,6 +23,10 @@ export interface ToolDeps {
   userDatasetsDir: string
   uploadsDir: (conversationId: string) => string
   memory?: MemoryStore
+  /** Markdown advice the agent reads when a question needs it. */
+  skills?: Skills
+  /** How many characters of one result the model gets at once, for this task's model. */
+  piece?: (conversationId: string) => number
   /** The projected entries of a conversation, for a delegate's child answer. */
   entries?: (conversationId: string) => Promise<UiEntry[]>
   /** The registered tools, as each describes itself; `discover` lists them. */
@@ -53,16 +58,18 @@ function argsSummary(args: unknown): string | null {
   }
 }
 
-function attribute(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-}
-
 /** Characters of one result the model gets in one piece; `more` reads the rest. */
 export const PIECE = 24_000
+
+/**
+ * A piece fits the model: about a fifth of its window (four characters a
+ * token), at most `PIECE`. A small local model gets small pieces instead of a
+ * prompt its server silently cuts.
+ */
+export function pieceFor(contextWindow: number | undefined): number {
+  if (!contextWindow || contextWindow <= 0) return PIECE
+  return Math.max(1_000, Math.min(PIECE, Math.floor(contextWindow * 4 * 0.2)))
+}
 
 /** The result's path, kept whole when the model got only its first piece. */
 export function resultPath(deps: ToolDeps, conversationId: string, evidenceId: string): string {
@@ -76,18 +83,19 @@ async function fitPiece(
   evidenceId: string | undefined,
   text: string,
 ): Promise<string> {
-  if (!evidenceId) return bound(text, PIECE)
+  const piece = deps.piece?.(conversationId) ?? PIECE
+  if (!evidenceId) return bound(text, piece)
   // Every result is kept, so `more` can read any call again after the
   // conversation was compacted, not only one that was cut.
   const path = resultPath(deps, conversationId, evidenceId)
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, text, 'utf8')
-  if (text.length <= PIECE) return text
-  return `${text.slice(0, PIECE)}\n… ${text.length - PIECE} more characters. Read them with \`more\` (evidence "${evidenceId}", offset ${PIECE}).`
+  if (text.length <= piece) return text
+  return `${text.slice(0, piece)}\n… ${text.length - piece} more characters. Read them with \`more\` (evidence "${evidenceId}", offset ${piece}).`
 }
 
 export function envelope(text: string, evidenceId?: string): string {
-  return `<untrusted-data source="storage"${evidenceId ? ` evidence="${attribute(evidenceId)}"` : ''}>\n${escapeTags(redact(text))}\n</untrusted-data>`
+  return wrapUntrusted('storage', text, evidenceId)
 }
 
 export interface ToolDefinition<T extends Schema> {

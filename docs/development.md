@@ -37,7 +37,7 @@ Script aliases: `npm run e2e`, `npm run e2e:audit`, `npm run eval`,
 - `call` over a fake S3: any read runs and returns what the service answered,
   policy documents parsed, a failed call's error code and HTTP status, a body
   read up to the bytes asked for, anything not a read and any bucket outside
-  scope refused before a request, account ids scrubbed, a stopped call
+  scope refused before a request, identifiers kept and secrets redacted, a stopped call
   reported as stopped;
 - a long result sent as its first piece and read on with `more`; every result
   kept and read again; an attachment read at any offset and length; an
@@ -61,8 +61,8 @@ Script aliases: `npm run e2e`, `npm run e2e:audit`, `npm run eval`,
   `scope: 'user'` dataset found from another task with the task's own name
   winning, an S3 Inventory imported with its manifest's schema, earlier tasks
   read with `history()`, a non-row value returned as JSON;
-- lossless datasets: every CSV column (a 12-digit size kept, an account id
-  scrubbed), a header-less CSV named by the columns given, every field of an
+- lossless datasets: every CSV column (a 12-digit size a number, an account id
+  text), a header-less CSV named by the columns given, every field of an
   S3 server access log, every JSON-lines key, plain lines;
 - the output limit learned from a refusal that names a number or halved until
   the provider accepts;
@@ -90,7 +90,7 @@ Node.
 - `src/main/compat.test.ts` runs `call` against moto, an independent AWS
   emulator, as a custom-endpoint account: what AWS says about exposure, the
   account-wide public access block, account-level IAM, a KMS key policy and
-  CloudTrail events, with the account id never passed on. It runs only with
+  CloudTrail events, with identifiers as the service returns them. It runs only with
   `STORAGE_AGENT_AWS_ENDPOINT`:
 
   ```bash

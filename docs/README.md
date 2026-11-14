@@ -1,6 +1,6 @@
 # Documentation
 
-These pages describe the **41.0.0** tree. They are not a roadmap and not a
+These pages describe the **42.0.0** tree. They are not a roadmap and not a
 substitute for the code.
 
 | File | What it is |
@@ -9,7 +9,7 @@ substitute for the code.
 | [architecture.md](architecture.md) | Processes, runtime flow, modules and storage layout |
 | [data-model.md](data-model.md) | Host tables, pi entries, datasets and retention |
 | [tools.md](tools.md) | The ten tools, results, citations, memory and code mode |
-| [security.md](security.md) | Secrets, scope, redaction, account ids and the trust boundary |
+| [security.md](security.md) | Secrets, scope as authorization, redaction, identifiers and the trust boundary |
 | [iam.md](iam.md) | Read-only IAM permissions and where each read goes |
 | [capabilities.md](capabilities.md) | How S3-compatible endpoints are handled |
 | [design.md](design.md) | Tokens, type, layout, the conversation, motion and accessibility |

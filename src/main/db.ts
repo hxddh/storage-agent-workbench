@@ -4,7 +4,7 @@ import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
  * The one schema this version writes. A database at any other version is
  * cleared and created again, pi's tables and `tasks/` with it.
  */
-export const HOST_SCHEMA_VERSION = 21
+export const HOST_SCHEMA_VERSION = 22
 
 export interface ProviderRow {
   id: string

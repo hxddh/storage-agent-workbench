@@ -96,7 +96,7 @@ export async function readPart(
 export function moreTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'more',
-    description: `Read what this task holds, from any offset: a call's whole result again by its evidence id (every result is kept, so this works after the conversation was compacted too), an object body by its ref (objects/…), or a file the user attached as attachment:<file name>. An attached image comes back as an image the model can see. length defaults to one piece (${PIECE.toLocaleString('en-US')}).`,
+    description: `Read what this task holds, from any offset: a call's whole result again by its evidence id (every result is kept, so this works after the conversation was compacted too), an object body by its ref (objects/…), or a file the user attached as attachment:<file name>. An attached image comes back as an image the model can see. length defaults to one piece (up to ${PIECE.toLocaleString('en-US')} characters; less for a model with a small window).`,
     parameters: obj({
       evidence: str({
         description: "A call's evidence id, an object ref (objects/…) or attachment:<file name>.",
@@ -135,7 +135,7 @@ export function moreTool(deps: ToolDeps) {
         run.conversationId,
         args.evidence,
         offset,
-        args.length ?? PIECE,
+        args.length ?? deps.piece?.(run.conversationId) ?? PIECE,
       )
       const rest = part.total - part.end
       const body = part.base64 !== undefined ? `base64:${part.base64}` : part.text

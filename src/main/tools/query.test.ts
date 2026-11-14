@@ -117,7 +117,7 @@ describe('read-only code mode', () => {
     expect(new Map(view.rows.rows.map((r) => [r[0], r[1]]))).toEqual(expected)
     expect(view.chart?.labels).toHaveLength(3)
     expect(view.calls).toBe(3)
-    expect(text).toContain('<untrusted-data source="storage">')
+    expect(text).toMatch(/<untrusted-data-[0-9a-f]{12} source="storage"/)
   })
 
   it('refuses a bucket outside the account scope from inside the script', async () => {
@@ -280,7 +280,7 @@ describe('read-only code mode', () => {
     const many = toTable(Array.from({ length: 20_000 }, (_, i) => ({ i })))
     expect(many.table.rows).toHaveLength(20_000)
     expect(toTable([{ a: { nested: 'AKIAABCDEFGHIJKLMNOP' } }]).table.rows[0]?.[0]).toBe(
-      '{"nested":"AKIA[redacted]"}',
+      '{"nested":"AKIAABCDEFGHIJKLMNOP"}',
     )
   })
 })

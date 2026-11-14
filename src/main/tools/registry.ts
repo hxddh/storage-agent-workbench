@@ -15,5 +15,6 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'memory',
   'tool',
   'delegate',
+  'skill',
   'ask',
 ]

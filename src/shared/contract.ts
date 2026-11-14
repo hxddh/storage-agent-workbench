@@ -34,6 +34,7 @@ export type ToolName =
   | 'memory'
   | 'tool'
   | 'delegate'
+  | 'skill'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
 
@@ -44,6 +45,13 @@ export interface Table {
 }
 
 /** A method the agent wrote for itself. */
+export interface SkillRow {
+  name: string
+  description: string
+  body: string
+  source: 'bundled' | 'user'
+}
+
 export interface AgentToolRow {
   id: string
   name: string
@@ -378,6 +386,8 @@ export interface Bootstrap {
   tasks: TaskSummary[]
   accounts: Account[]
   model: ModelSettings | null
+  /** Every model saved in Settings; the task's Model select offers them. */
+  savedModels: SavedModel[]
   settings: AppSettings
   update: UpdateState
   /** The task open when the window last closed. */
@@ -403,6 +413,17 @@ export interface LocalModel {
   source: 'Ollama' | 'LM Studio'
   baseUrl: string
   modelId: string
+  /** The window the server runs the model with, in tokens. */
+  contextWindow: number
+}
+
+/** A model saved in Settings, with its own key; a task can run with any of them. */
+export interface SavedModel {
+  provider: ModelProvider
+  modelId: string
+  baseUrl: string | null
+  contextWindow: number
+  thinking: ThinkingLevel
 }
 
 /** The link that opens a task from anywhere: `storage-agent://task/<id>`. */
@@ -437,6 +458,9 @@ export interface AgentApi {
   deleteDataset(id: string): Promise<void>
   agentTools(): Promise<AgentToolRow[]>
   deleteAgentTool(id: string): Promise<void>
+  skills(): Promise<SkillRow[]>
+  deleteSkill(name: string): Promise<void>
+  openSkillsFolder(): Promise<void>
   saveText(input: {
     name: string
     content: string
