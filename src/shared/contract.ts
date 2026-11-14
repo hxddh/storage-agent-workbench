@@ -69,6 +69,16 @@ export interface MemoryRow {
   scope: 'task' | 'user'
 }
 
+/** A dataset the agent kept for the user, as Settings lists it. */
+export interface KeptDatasetRow {
+  id: string
+  name: string
+  rows: number
+  bytes: number
+  source: string
+  createdAt: string
+}
+
 export interface Chart {
   type: 'bar'
   labels: string[]
@@ -423,6 +433,8 @@ export interface AgentApi {
   search(query: string): Promise<SearchHit[]>
   memory(): Promise<MemoryRow[]>
   deleteMemory(id: string): Promise<void>
+  datasets(): Promise<KeptDatasetRow[]>
+  deleteDataset(id: string): Promise<void>
   agentTools(): Promise<AgentToolRow[]>
   deleteAgentTool(id: string): Promise<void>
   saveText(input: {

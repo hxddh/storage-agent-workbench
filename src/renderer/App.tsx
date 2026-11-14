@@ -42,6 +42,9 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [fatal, setFatal] = useState(false)
   const [searchSignal, setSearchSignal] = useState(0)
+  const [compact, setCompact] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches,
+  )
   const restored = useRef(false)
 
   const lang = boot?.settings.language ?? 'en'
@@ -68,6 +71,19 @@ export function App() {
       .then(setLocalModels)
       .catch(() => undefined)
   }, [])
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 860px)')
+    const apply = () => setCompact(query.matches)
+    apply()
+    query.addEventListener('change', apply)
+    return () => query.removeEventListener('change', apply)
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.lang = lang
+    if (boot) document.documentElement.dataset.platform = boot.platform
+  }, [lang, boot])
 
   useEffect(() => {
     if (!('agent' in window)) return
@@ -256,6 +272,8 @@ export function App() {
         onDelete={(id) => void remove(id)}
         onPin={(id, pinned) => void window.agent.pinTask(id, pinned)}
         searchSignal={searchSignal}
+        platform={boot?.platform}
+        compact={compact}
       />
       {sidebarOpen && (
         <button
@@ -265,7 +283,7 @@ export function App() {
           onClick={() => setSidebarOpen(false)}
         />
       )}
-      <main className="main">
+      <main className="main" inert={sidebarOpen ? true : undefined}>
         <div className="mobile-head">
           <button
             className="icon-btn"

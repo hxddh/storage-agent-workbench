@@ -53,6 +53,7 @@ export class App {
     this.settings = new Settings(dataDir)
     if (this.db.resetTasks) {
       await rm(join(dataDir, 'tasks'), { recursive: true, force: true })
+      await rm(join(dataDir, 'datasets'), { recursive: true, force: true })
       await mkdir(join(dataDir, 'tasks'), { recursive: true })
       this.settings.setLastTask(null)
     }

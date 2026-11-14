@@ -2,10 +2,11 @@ import type { Bootstrap, LocalModel, TaskSummary } from '@shared/contract'
 import { Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { dict, fill } from './i18n'
+import { useNow } from './time'
 
-function ago(iso: string | null, lang: 'en' | 'zh'): string {
+function ago(iso: string | null, lang: 'en' | 'zh', now: number): string {
   if (!iso) return lang === 'zh' ? '尚未读取' : 'not read yet'
-  const days = Math.floor((Date.now() - Date.parse(iso)) / 86_400_000)
+  const days = Math.floor((now - Date.parse(iso)) / 86_400_000)
   if (lang === 'zh') {
     if (days <= 0) return '今天'
     if (days === 1) return '昨天'
@@ -43,6 +44,7 @@ export function Home({
 }) {
   const lang = boot.settings.language
   const t = dict(lang)
+  const now = useNow()
   const hasModel = Boolean(boot.model)
   const hasAccount = boot.accounts.length > 0
   const [local, setLocal] = useState<LocalModel[]>([])
@@ -146,7 +148,7 @@ export function Home({
                   onClick={() => onOpenTask(task.id)}
                 >
                   <span className="home-recent-title">{task.title}</span>
-                  <span className="home-recent-time">{ago(task.updatedAt, lang)}</span>
+                  <span className="home-recent-time">{ago(task.updatedAt, lang, now)}</span>
                 </button>
               ))}
             </div>

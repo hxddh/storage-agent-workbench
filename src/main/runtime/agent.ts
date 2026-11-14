@@ -1,8 +1,10 @@
 import type { ToolRegistration } from '@earendil-works/pi-durable'
-import { defineExtension, section } from '@earendil-works/pi-durable'
+import { defineExtension, GenerationTask, hook, section } from '@earendil-works/pi-durable'
+import { searchRows } from '@shared/conversation'
 import { escapeTags } from '../security/redact'
 import { createTools } from '../tools'
 import type { ToolDeps } from '../tools/policy'
+import { mapEntries } from './project'
 
 const POLICY = `You are talking with the user in a conversation. You decide what to read, in what order, and what to say; the window shows your messages and, inline, every tool call you make and exactly what it returned to you. Each tool result carries an \`evidence\` id in its \`<untrusted-data>\` opening tag. You work until you have answered; the user can stop you.
 
@@ -38,6 +40,34 @@ export function createAgent(deps: ToolDeps, context: AgentContext, tools?: ToolR
       ),
     ],
     tools: registry,
+    hooks: [
+      hook(GenerationTask, {
+        // The run's own entries are indexed in the durable loop, so an answer
+        // that lands before the app quits still reaches search after reopen.
+        afterRun: async (run, api, context) => {
+          // Search is derived: a failure to index never fails an answer.
+          try {
+            const conversationId = String(api.conversationId)
+            if ((await deps.db.rootConversation(conversationId)) !== conversationId)
+              return { tasks: [] }
+            let cursor: Awaited<ReturnType<typeof api.entries>>['next']
+            do {
+              const page = await api.entries(
+                { minEntryId: run.first, maxEntryId: run.last, order: 'ascending' },
+                1000,
+                cursor,
+                context,
+              )
+              await deps.db.upsertSearchDocs(conversationId, searchRows(mapEntries(page.items)))
+              cursor = page.next
+            } while (cursor)
+          } catch {
+            // The task list's next index or settlement fills it.
+          }
+          return { tasks: [] }
+        },
+      }),
+    ],
   })
 }
 

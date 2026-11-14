@@ -2,8 +2,9 @@ import { lookup } from 'node:dns/promises'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { TLSSocket } from 'node:tls'
+import { lit, map, obj, opt, str, union } from '@earendil-works/pi-schema'
 import { scrub } from '../s3/api'
-import { agentTool, providerParam, type ToolDeps, Type } from './policy'
+import { agentTool, providerParam, type ToolDeps } from './policy'
 
 interface Answer {
   url: string
@@ -70,19 +71,17 @@ export function probeTool(deps: ToolDeps) {
     name: 'probe',
     description:
       "Send one unsigned HEAD, GET or OPTIONS to the account's endpoint, or to a host under it (a virtual-hosted bucket), with any request headers you choose (an Origin and Access-Control-Request-Method for a CORS preflight, a Range, a Host), and get what came back: resolved addresses, HTTP status, headers, the TLS certificate and timing. It carries no credentials: headers that would (Authorization, Cookie, X-Amz-Security-Token and the like) are refused.",
-    parameters: Type.Object({
+    parameters: obj({
       provider_id: providerParam,
-      url: Type.Optional(
-        Type.String({
+      url: opt(
+        str({
           description:
             "Full URL on the account's endpoint host or a subdomain of it; default the endpoint itself.",
         }),
       ),
-      method: Type.Optional(
-        Type.Union([Type.Literal('HEAD'), Type.Literal('GET'), Type.Literal('OPTIONS')]),
-      ),
-      headers: Type.Optional(
-        Type.Record(Type.String(), Type.String(), {
+      method: opt(union([lit('HEAD'), lit('GET'), lit('OPTIONS')])),
+      headers: opt(
+        map(str(), {
           description: 'Request headers to send, e.g. {"Origin": "https://example.com"}.',
         }),
       ),
@@ -94,6 +93,12 @@ export function probeTool(deps: ToolDeps) {
         config.endpoint || `https://s3.${config.region || 'us-east-1'}.amazonaws.com`,
       )
       const url = new URL(args.url ?? endpoint.toString())
+      if (url.protocol !== 'http:' && url.protocol !== 'https:')
+        throw new Error('The probe reaches http or https only.')
+      // Node turns `user:pass@host` into a Basic Authorization header. The
+      // probe promises to carry no credential, so refuse it before sending.
+      if (url.username || url.password)
+        throw new Error('The probe URL carries no credentials; remove the user:pass part.')
       // The probe reaches the account's own endpoint, never another host.
       const host = endpoint.hostname
       const awsS3 =

@@ -1,5 +1,6 @@
+import { lit, obj, opt, str, union } from '@earendil-works/pi-schema'
 import { operationShape, operationsOf, SERVICES } from '../s3/api'
-import { agentTool, type ToolDeps, Type } from './policy'
+import { agentTool, type ToolDeps } from './policy'
 
 /** What the agent can ask the environment; it decides when to ask. */
 export function discoverTool(deps: ToolDeps) {
@@ -7,15 +8,15 @@ export function discoverTool(deps: ToolDeps) {
     name: 'discover',
     description:
       'Inspect the environment: AWS services and their read operations, the tools available to you, or an agent-authored method. Use it when you need a capability you do not know; it reads no storage.',
-    parameters: Type.Object({
-      kind: Type.Optional(
-        Type.Union([Type.Literal('aws'), Type.Literal('tools')], {
+    parameters: obj({
+      kind: opt(
+        union([lit('aws'), lit('tools')], {
           description: 'aws (default) or tools.',
         }),
       ),
-      service: Type.Optional(Type.String({ description: 'An AWS service name, e.g. s3.' })),
-      operation: Type.Optional(Type.String({ description: 'An operation to inspect.' })),
-      tool: Type.Optional(Type.String({ description: 'An agent-authored tool name.' })),
+      service: opt(str({ description: 'An AWS service name, e.g. s3.' })),
+      operation: opt(str({ description: 'An operation to inspect.' })),
+      tool: opt(str({ description: 'An agent-authored tool name.' })),
     }),
     target: (args) =>
       [args.kind ?? 'aws', args.service, args.operation ?? args.tool].filter(Boolean).join(' '),

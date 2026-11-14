@@ -20,7 +20,15 @@ import { parse } from 'csv-parse'
 import { asyncBufferFromFile, parquetReadObjects } from 'hyparquet'
 import { scrub } from '../s3/api'
 
-export type DatasetFormat = 'csv' | 'tsv' | 'jsonl' | 'json' | 'parquet' | 's3_access_log' | 'lines'
+export type DatasetFormat =
+  | 'csv'
+  | 'tsv'
+  | 'jsonl'
+  | 'json'
+  | 'parquet'
+  | 's3_access_log'
+  | 'lines'
+  | 'rows'
 
 export const FORMATS: readonly DatasetFormat[] = [
   'csv',
@@ -393,6 +401,45 @@ export async function importDataset(
       throw error
     }
     return { format, rows, columns: table.columns }
+  } finally {
+    db.close()
+  }
+}
+
+/** Rows a script already computed, written as one dataset with their own columns. */
+export function importRows(
+  rows: Record<string, unknown>[],
+  destPath: string,
+  source = 'agent rows',
+): ImportResult {
+  if (!rows.length) throw new Error('dataset({rows}) needs at least one row.')
+  mkdirSync(dirname(destPath), { recursive: true })
+  if (existsSync(destPath)) rmSync(destPath)
+  const db = new DatabaseSync(destPath)
+  try {
+    db.exec('PRAGMA journal_mode = WAL')
+    db.exec('PRAGMA synchronous = NORMAL')
+    const table = new Table(db)
+    db.exec('BEGIN')
+    try {
+      for (const row of rows) {
+        if (!row || typeof row !== 'object' || Array.isArray(row))
+          throw new Error('dataset({rows}) takes objects: one flat object per row.')
+        const record: Record<string, unknown> = { ...row }
+        // `_source` is the dataset's own provenance column; keep a source field
+        // the caller supplied under a name that cannot collide with it.
+        if ('_source' in record) {
+          record.row_source = record._source
+          delete record._source
+        }
+        table.insert(source, record)
+      }
+      db.exec('COMMIT')
+    } catch (error) {
+      db.exec('ROLLBACK')
+      throw error
+    }
+    return { format: 'rows', rows: rows.length, columns: table.columns }
   } finally {
     db.close()
   }

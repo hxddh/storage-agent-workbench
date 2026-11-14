@@ -13,6 +13,7 @@ import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { createModels } from '@earendil-works/pi-ai'
 import {
   type Conversation,
+  type Cursor,
   createRegistry,
   type EntryRecord,
   Harness,
@@ -35,6 +36,7 @@ export const CONTEXT = BACKGROUND_CONTEXT
 export interface RuntimeDirs {
   task: (conversationId: string) => string
   datasets: (conversationId: string) => string
+  userDatasets: string
   uploads: (conversationId: string) => string
 }
 
@@ -59,6 +61,7 @@ export function runtimeDirs(dataDir: string): RuntimeDirs {
   return {
     task: (conversationId) => join(dataDir, 'tasks', conversationId),
     datasets: (conversationId) => join(dataDir, 'tasks', conversationId, 'datasets'),
+    userDatasets: join(dataDir, 'datasets'),
     uploads: (conversationId) => join(dataDir, 'tasks', conversationId, 'uploads'),
   }
 }
@@ -104,6 +107,7 @@ export class Runtime {
       providers: deps.providers,
       taskDir: deps.dirs.task,
       datasetsDir: deps.dirs.datasets,
+      userDatasetsDir: deps.dirs.userDatasets,
       uploadsDir: deps.dirs.uploads,
       memory: deps.memory,
       lang: () => deps.settings.get().language,
@@ -161,12 +165,14 @@ export class Runtime {
   async records(id: string): Promise<readonly EntryRecord[] | null> {
     const conversation = await this.conversation(id)
     if (!conversation) return null
-    const state = await conversation.viewState(CONTEXT)
-    try {
-      return state.value.entries
-    } finally {
-      state.dispose()
-    }
+    const out: EntryRecord[] = []
+    let cursor: Cursor | undefined
+    do {
+      const page = await conversation.entries({ order: 'ascending' }, 1000, cursor, CONTEXT)
+      out.push(...page.items)
+      cursor = page.next
+    } while (cursor)
+    return out
   }
 
   async entries(id: string): Promise<UiEntry[]> {

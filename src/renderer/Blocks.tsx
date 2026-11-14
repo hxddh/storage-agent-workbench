@@ -1,6 +1,6 @@
 import type { ChartSpec, Table, TreeNode, ViewBlock, ViewDoc, ViewTone } from '@shared/contract'
-import type { Dict } from './i18n'
-import Markdown from './Markdown'
+import { type Dict, fill } from './i18n'
+import Markdown, { CodeBlock } from './Markdown'
 import { TableView } from './Views'
 
 function toneClass(tone: ViewTone | undefined): string {
@@ -44,12 +44,17 @@ function ChartBlock({ spec, t }: { spec: ChartSpec; t: Dict }) {
   const y = (value: number) => height - pad - ((value - min) / span) * (height - pad * 2)
   const bar = (width - pad * 2) / Math.max(1, slots)
   const labels = Array.from({ length: slots }, (_, index) => entries[0]?.[1][index]?.label ?? '')
+  const compact = new Intl.NumberFormat(undefined, {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  })
+  const dataRows = spec.data.slice(0, 100)
   return (
     <figure className="view-chart">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`${spec.y} by ${spec.x}`}
+        aria-label={`${spec.y} by ${spec.x}: ${compact.format(min)} to ${compact.format(max)}`}
         preserveAspectRatio="none"
       >
         {[0, 0.5, 1].map((part) => (
@@ -60,6 +65,7 @@ function ChartBlock({ spec, t }: { spec: ChartSpec; t: Dict }) {
             y1={pad + part * (height - pad * 2)}
             y2={pad + part * (height - pad * 2)}
             className="chart-grid"
+            vectorEffect="non-scaling-stroke"
           />
         ))}
         {entries.map(([, points], series) =>
@@ -87,6 +93,7 @@ function ChartBlock({ spec, t }: { spec: ChartSpec; t: Dict }) {
               <polyline
                 points={points.map((point, index) => `${x(index)},${y(point.value)}`).join(' ')}
                 className={`chart-line series-${series}`}
+                vectorEffect="non-scaling-stroke"
               />
               {spec.mark === 'point' &&
                 points.map((point, index) => (
@@ -104,7 +111,9 @@ function ChartBlock({ spec, t }: { spec: ChartSpec; t: Dict }) {
       </svg>
       <figcaption>
         <span>{spec.xLabel ?? spec.x}</span>
-        <span>{spec.yLabel ?? spec.y}</span>
+        <span>
+          {spec.yLabel ?? spec.y} · {compact.format(min)}–{compact.format(max)}
+        </span>
       </figcaption>
       {spec.series && entries.length > 1 && (
         <div className="chart-series">
@@ -121,8 +130,72 @@ function ChartBlock({ spec, t }: { spec: ChartSpec; t: Dict }) {
           <span key={index}>{label}</span>
         ))}
       </div>
+      <details className="chart-data">
+        <summary>
+          {dataRows.length < spec.data.length
+            ? fill(t.chartDataShown, { shown: dataRows.length, n: spec.data.length })
+            : fill(t.chartData, { n: spec.data.length })}
+        </summary>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>{spec.x}</th>
+                {spec.series && <th>{spec.series}</th>}
+                <th>{spec.y}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dataRows.map((row, index) => (
+                <tr key={index}>
+                  <td>{String(row[spec.x] ?? '')}</td>
+                  {spec.series && <td>{String(row[spec.series] ?? '')}</td>}
+                  <td>{String(row[spec.y] ?? '')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </figure>
   )
+}
+
+/** Line-level LCS; unchanged lines are plain, removed and added lines are tinted. */
+function diffLines(before: string, after: string) {
+  const a = before.split('\n')
+  const b = after.split('\n')
+  const removed = new Set<number>()
+  const added = new Set<number>()
+  if (a.length * b.length > 250_000) return { a, b, removed, added }
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () =>
+    Array.from({ length: b.length + 1 }, () => 0),
+  )
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i]![j] =
+        a[i - 1] === b[j - 1]
+          ? (dp[i - 1]![j - 1] ?? 0) + 1
+          : Math.max(dp[i - 1]![j] ?? 0, dp[i]![j - 1] ?? 0)
+    }
+  }
+  let i = a.length
+  let j = b.length
+  while (i > 0 && j > 0) {
+    if (a[i - 1] === b[j - 1]) {
+      i--
+      j--
+    } else if ((dp[i - 1]![j] ?? 0) >= (dp[i]![j - 1] ?? 0)) {
+      removed.add(i - 1)
+      i--
+    } else {
+      added.add(j - 1)
+      j--
+    }
+  }
+  while (i > 0) removed.add(--i)
+  while (j > 0) added.add(--j)
+  return { a, b, removed, added }
 }
 
 function Tree({ nodes }: { nodes: TreeNode[] }) {
@@ -144,7 +217,7 @@ function Block({ block, t }: { block: ViewBlock; t: Dict }) {
     case 'markdown':
       return (
         <div className="prose view-markdown">
-          <Markdown text={block.text} components={{}} />
+          <Markdown text={block.text} components={{}} t={t} />
         </div>
       )
     case 'section':
@@ -192,7 +265,7 @@ function Block({ block, t }: { block: ViewBlock; t: Dict }) {
       return (
         <figure className="view-code">
           {block.caption && <figcaption>{block.caption}</figcaption>}
-          <pre className="code">{block.text}</pre>
+          <CodeBlock text={block.text} language={block.language} t={t} />
         </figure>
       )
     case 'callout':
@@ -215,13 +288,31 @@ function Block({ block, t }: { block: ViewBlock; t: Dict }) {
       )
     case 'tree':
       return <Tree nodes={block.nodes} />
-    case 'diff':
+    case 'diff': {
+      const diff = diffLines(block.before, block.after)
       return (
         <div className="view-diff">
-          <pre className="code diff-before">{block.before}</pre>
-          <pre className="code diff-after">{block.after}</pre>
+          {(['before', 'after'] as const).map((side) => (
+            <div key={side} className={`diff-pane diff-${side}`}>
+              <div className="diff-label">{side === 'before' ? t.before : t.after}</div>
+              <pre className="code">
+                {(side === 'before' ? diff.a : diff.b).map((line, index) => {
+                  const changed = side === 'before' ? diff.removed : diff.added
+                  return (
+                    <span
+                      key={index}
+                      className={changed.has(index) ? 'diff-line changed' : 'diff-line'}
+                    >
+                      {line || ' '}
+                    </span>
+                  )
+                })}
+              </pre>
+            </div>
+          ))}
         </div>
       )
+    }
     case 'timeline':
       return (
         <ol className="view-timeline">

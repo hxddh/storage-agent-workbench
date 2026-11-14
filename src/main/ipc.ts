@@ -1,5 +1,5 @@
 import { stat, writeFile } from 'node:fs/promises'
-import { isAbsolute } from 'node:path'
+import { isAbsolute, sep } from 'node:path'
 import type {
   AccountInput,
   AppSettings,
@@ -8,7 +8,7 @@ import type {
   TaskModel,
   ThinkingLevel,
 } from '@shared/contract'
-import { BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
+import { BrowserWindow, dialog, app as electronApp, ipcMain, nativeTheme, shell } from 'electron'
 import type { App } from './app'
 import { detectLocalModels } from './local-models'
 import { contextFor, listModels, thinkingFor } from './model-catalog'
@@ -17,6 +17,12 @@ import { awsProfiles } from './providers'
 const PROVIDERS = new Set(['openai', 'anthropic', 'compatible'])
 const THINKING = new Set<ThinkingLevel>(['off', 'low', 'medium', 'high'])
 const MAX_ATTACHMENT = 4 * 1024 * 1024 * 1024
+
+/** A file the user may attach: never the app's own database, key or settings. */
+function safeAttachment(path: string): boolean {
+  const data = electronApp.getPath('userData')
+  return path !== data && !path.startsWith(`${data}${sep}`)
+}
 
 export function registerIpc(app: App): void {
   ipcMain.handle('agent:bootstrap', () => app.bootstrap())
@@ -125,7 +131,7 @@ export function registerIpc(app: App): void {
       ],
     })
     if (result.canceled) return []
-    return app.staging.stage(result.filePaths)
+    return app.staging.stage(result.filePaths.filter(safeAttachment))
   })
 
   // Paths come from files the user dropped or pasted; the preload resolves them
@@ -134,7 +140,7 @@ export function registerIpc(app: App): void {
     if (!Array.isArray(paths)) return []
     const accepted: string[] = []
     for (const path of paths.slice(0, 10)) {
-      if (typeof path !== 'string' || !isAbsolute(path)) continue
+      if (typeof path !== 'string' || !isAbsolute(path) || !safeAttachment(path)) continue
       const info = await stat(path).catch(() => null)
       if (info?.isFile() && info.size <= MAX_ATTACHMENT) accepted.push(path)
     }
@@ -219,6 +225,10 @@ export function registerIpc(app: App): void {
   })
 
   ipcMain.handle('agent:memory', () => app.tasks.memoryRows())
+
+  ipcMain.handle('agent:datasets', () => app.tasks.datasetRows())
+
+  ipcMain.handle('agent:deleteDataset', (_event, id: string) => app.tasks.deleteDataset(id))
 
   ipcMain.handle('agent:deleteMemory', (_event, id: string) => app.tasks.deleteMemory(id))
 

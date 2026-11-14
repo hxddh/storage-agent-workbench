@@ -2,19 +2,19 @@
 
 ## Host tables (`storage-agent.db`)
 
-`main/db.ts` holds one schema, `HOST_SCHEMA_VERSION` **20**, stored in
+`main/db.ts` holds one schema, `HOST_SCHEMA_VERSION` **21**, stored in
 `PRAGMA user_version`. A new database is created at that version. A database at
 any other version is cleared and created again: every table goes, pi's
-included, the shell deletes `tasks/` on disk, and task-scoped memory documents
-are forgotten. The user's memory stays. Nothing is migrated, imported or
-backed up.
+included, the shell deletes `tasks/` and `datasets/` on disk, and task-scoped
+memory documents are forgotten. The user's memory stays; kept datasets belong
+to the host schema and do not. Nothing is migrated, imported or backed up.
 
 | Table | Columns |
 |---|---|
 | `providers` | `id`, `name`, `endpoint`, `region`, `force_path_style`, `access_key_id`, `secret_ref`, `session_ref`, `scope_json`, `created_at`, `auth` (`keys`/`profile`), `profile` |
 | `audit` | `id`, `conversation_id`, `tool`, `target`, `outcome`, `at` |
 | `task_meta` | `conversation_id`, `title`, `created_at`, `updated_at`, `pinned`, `model_json` |
-| `datasets` | `id`, `conversation_id`, `name`, `format`, `source`, `path`, `rows`, `bytes`, `created_at` |
+| `datasets` | `id`, `scope` (`task`/`user`), `owner`, `name`, `format`, `source`, `path`, `rows`, `bytes`, `created_at` |
 | `agent_tools` | `id`, `scope`, `conversation_id`, `name`, `description`, `schema_json`, `code`, `created_at`, `updated_at` |
 | `search_docs` | `conversation_id`, `entry_id`, `kind`, `text`, `at`: a derived index |
 | `search_docs_fts` | FTS5 trigram mirror of `search_docs` |
@@ -24,6 +24,11 @@ backed up.
 plaintext. A profile account stores only the profile name, with an empty
 `secret_ref`. `scope_json` is `{ "buckets": [] }`; an empty list means every
 bucket the credentials can see.
+
+**`datasets`** are local SQLite copies the agent imported. `scope` is `task`
+or `user`; a task dataset's `owner` is its conversation, a user dataset's is
+`user`. A name is unique per owner, so a kept dataset and a task dataset may
+share a name; `sql()` resolves the task's first. A user dataset outlives tasks.
 
 **`agent_tools`** holds methods the agent wrote for itself. `scope` is `task`
 or `user`; a task method has a `conversation_id`, a user method has null.
@@ -37,8 +42,10 @@ there.
 
 **`search_docs`** holds one row per user message, steers included
 (`kind = 'user'`), and one per agent text (`kind = 'answer'`), keyed by entry
-id, so a hit opens the task at that message. It is rebuilt for a conversation
-when a turn settles, and filled at startup for tasks that have no rows. Title
+id, so a hit opens the task at that message. A run's own entries are indexed
+by the durable loop's `afterRun` hook, so an answer reaches search even when
+the app quits before the turn settles; a failed or stopped run is indexed when
+it settles. Tasks with no rows are filled at startup. Title
 search reads `task_meta`. Queries of three or more characters use FTS5 BM25
 ranking with user text ahead of answers; shorter queries, including CJK
 substrings, use `LIKE`.
@@ -116,10 +123,14 @@ export includes them.
 
 ## Datasets
 
-One SQLite file per import at `tasks/<conversation>/datasets/<id>.sqlite`,
-with a row in `datasets` (`name`, `format`, `source`, `path`, `rows`,
-`bytes`); a name is unique in its task and a new import of it replaces the
-old. The file holds one table, `rows`, with the source's own columns plus
+A task dataset is one SQLite file at
+`tasks/<conversation>/datasets/<id>.sqlite`; a kept dataset is at
+`datasets/<id>.sqlite` under the data directory. Each has a row in `datasets`
+(`scope`, `owner`, `name`, `format`, `source`, `path`, `rows`, `bytes`); a name
+is unique per owner and a new import of it replaces the old file. A task
+dataset is deleted with its task; a kept one stays until the agent or the user
+forgets it, or a host schema reset clears it. The file holds one table, `rows`,
+with the source's own columns plus
 `_source` (the file or `s3://` URL a row came from):
 
 | Format | Columns |
@@ -136,16 +147,20 @@ such as a size); every other string is scrubbed: account ids become
 `<account>` and credential-shaped text is redacted. `query`'s `dataset()`
 imports an attachment, an object body, one object or every object under a
 prefix; `inventory()` imports every file of a bucket's latest S3 Inventory
-manifest with the manifest's schema. `sql()` reads a dataset by name, from any
-script of the task: one `SELECT` on a read-only connection. Imports have no
-row cap. Dataset files never enter model context; only what a script returns
-does.
+manifest with the manifest's schema. `dataset({rows, name, scope: 'user'})`
+keeps rows a script computed; it takes at most 500,000 rows, and one kept
+dataset is limited to 512 MiB with 2 GiB across all kept datasets. `sql()`
+reads a dataset by name, from any script of the task, task first and then the
+user's: one `SELECT` on a read-only connection. Imports otherwise have no row
+cap. Dataset files never enter model context; only what a script returns does.
 
 ## Retention
 
 Tasks, entries, user memory documents and user methods persist until the user
-deletes them. Memory outlives app versions: a schema reset clears tasks and
-their task-scoped documents, not the user's memory.
+deletes them. Kept datasets persist across tasks until forgotten, but not
+across a host schema reset. Memory outlives app versions: a schema reset
+clears tasks, their task-scoped documents and kept datasets, not the user's
+memory.
 
 Deleting a task removes its `task_meta` and `search_docs` rows, its pi rows
 (`pi_conversations`, `pi_entries`, `pi_tasks`, `pi_submissions`,
@@ -158,5 +173,6 @@ task-scoped memory, methods and folder are removed in the same purge.
 Removing an account deletes its `providers` row and its cached clients. Memory
 does not belong to an account and stays when an account is removed.
 
-The sidebar reads the 500 most recently updated tasks, pinned first; older
-rows stay in the database.
+A user dataset is removed by **Forget** in Settings or by the agent; nothing
+prunes one by age. The sidebar reads the 500 most recently updated tasks,
+pinned first; older rows stay in the database.

@@ -93,10 +93,10 @@ only capabilities are the read-only primitives below, called as
 |---|---|
 | `call({service, operation, input?, region?, maxBytes?})` | any read the `call` tool makes, under the same rules; an object `Body` comes back whole up to `maxBytes` (default 1 MiB) as `{text` or `base64, bytesRead, ref, more?}` |
 | `read({name, offset?, length?})` | any stretch of a call's kept result (evidence id), an object body (`objects/…`) or an attachment (`attachment:<name>`) |
-| `dataset({file? \| ref? \| bucket+key? \| bucket+prefix?, name?, format?, columns?, header?})` | imports an attachment, an object body, one object, or every object under a prefix (scope checked) into a dataset with every source column; `format` is `csv`, `tsv`, `jsonl`, `json`, `parquet`, `s3_access_log` or `lines`, detected when omitted; `columns` names a header-less CSV |
+| `dataset({rows? \| file? \| ref? \| bucket+key? \| bucket+prefix?, name?, scope?, format?, columns?, header?})` | imports rows a script computed, an attachment, an object body, one object, or every object under a prefix (scope checked) into a dataset with every source column; `format` is `csv`, `tsv`, `jsonl`, `json`, `parquet`, `s3_access_log` or `lines`, detected when omitted; `columns` names a header-less CSV; `scope: 'user'` keeps it across tasks (512 MiB each, 2 GiB total) |
 | `inventory({bucket, name?})` | finds the bucket's enabled S3 Inventory, reads its newest manifest and imports every file it lists with the manifest's `fileSchema`, each streamed to disk; source and destination bucket must be in scope |
-| `sql({name, sql, params?})` | one `SELECT` (or `WITH … SELECT`) over a dataset's `rows` table, on a read-only connection; no second statement, no `load_extension`. A dataset imported by an earlier script of the task is found by name |
-| `datasets()` | the task's datasets: name, format, source, rows and columns |
+| `sql({name, sql, params?})` | one `SELECT` (or `WITH … SELECT`) over a dataset's `rows` table, on a read-only connection; no second statement, no `load_extension`. A dataset imported by an earlier script of the task is found by name; a kept dataset is found when the task has no dataset of that name |
+| `datasets()` | the task's and the user's datasets: name, scope, format, source, rows and columns |
 | `history({query?, task?})` | messages and answers of every task matching `query`, every task's title with neither, or one task's whole conversation |
 | `discover({kind?, service?, operation?})` | services, read operations with their input and output members, or the tool names available |
 | `memory({action, ...})` | the same memory actions as the `memory` tool |

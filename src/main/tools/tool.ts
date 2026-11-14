@@ -1,10 +1,11 @@
 import { CodemodeSandbox } from '@earendil-works/pi-codemode'
+import { int, lit, obj, opt, str, union, unknown } from '@earendil-works/pi-schema'
 import type { Chart } from '@shared/contract'
 import { viewDoc, viewText } from '@shared/view'
 import Ajv from 'ajv'
 import { scrub } from '../s3/api'
 import { redact } from '../security/redact'
-import { agentTool, providerParam, type ToolDeps, Type } from './policy'
+import { agentTool, providerParam, type ToolDeps } from './policy'
 import { isRows, sandboxPrimitives, toTable } from './query'
 
 const NAME = /^[a-z][a-z0-9_]{1,48}$/
@@ -16,23 +17,16 @@ export function toolTool(deps: ToolDeps) {
     name: 'tool',
     description:
       'Write, list, run or delete a reusable method. A method is a JSON Schema and a JavaScript body; it runs in the same sandbox as `query` with only read-only primitives, no network, files, process or timers. The body reads its validated arguments as `args`. Save a method when a question will recur; run it by name.',
-    parameters: Type.Object({
-      action: Type.Union([
-        Type.Literal('save'),
-        Type.Literal('list'),
-        Type.Literal('run'),
-        Type.Literal('delete'),
-      ]),
-      name: Type.Optional(Type.String({ description: 'Lowercase name: a-z, 0-9, _.' })),
-      description: Type.Optional(Type.String()),
-      schema: Type.Optional(
-        Type.Unknown({ description: 'A JSON Schema object for the arguments.' }),
-      ),
-      code: Type.Optional(Type.String({ description: 'The JavaScript body; `return` the value.' })),
-      scope: Type.Optional(Type.Union([Type.Literal('task'), Type.Literal('user')])),
-      args: Type.Optional(Type.Unknown()),
+    parameters: obj({
+      action: union([lit('save'), lit('list'), lit('run'), lit('delete')]),
+      name: opt(str({ description: 'Lowercase name: a-z, 0-9, _.' })),
+      description: opt(str()),
+      schema: opt(unknown({ description: 'A JSON Schema object for the arguments.' })),
+      code: opt(str({ description: 'The JavaScript body; `return` the value.' })),
+      scope: opt(union([lit('task'), lit('user')])),
+      args: opt(unknown()),
       provider_id: providerParam,
-      memory_mb: Type.Optional(Type.Integer({ minimum: 16 })),
+      memory_mb: opt(int({ minimum: 16 })),
     }),
     target: (args) => `${args.action}${args.name ? ` · ${args.name}` : ''}`,
     run: async (args, run) => {

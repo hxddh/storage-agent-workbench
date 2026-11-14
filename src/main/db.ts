@@ -4,7 +4,7 @@ import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
  * The one schema this version writes. A database at any other version is
  * cleared and created again, pi's tables and `tasks/` with it.
  */
-export const HOST_SCHEMA_VERSION = 20
+export const HOST_SCHEMA_VERSION = 21
 
 export interface ProviderRow {
   id: string
@@ -23,11 +23,14 @@ export interface ProviderRow {
 
 export interface DatasetRecord {
   id: string
-  conversation_id: string
-  /** The name a script reads it by in `sql()`; unique within the task. */
+  /** `task` lives and dies with its conversation; `user` outlives it. */
+  scope: 'task' | 'user'
+  /** The conversation id for a task dataset, `user` for a kept one. */
+  owner: string
+  /** The name a script reads it by in `sql()`; unique within its owner. */
   name: string
   format: string
-  /** Where the rows came from: a file name, an object ref or an `s3://` URL. */
+  /** Where the rows came from: a file name, an object ref, an `s3://` URL or `agent rows`. */
   source: string
   path: string
   rows: number
@@ -83,7 +86,8 @@ CREATE TABLE IF NOT EXISTS task_meta (
 
 CREATE TABLE IF NOT EXISTS datasets (
   id TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  owner TEXT NOT NULL,
   name TEXT NOT NULL,
   format TEXT NOT NULL,
   source TEXT NOT NULL,
@@ -91,7 +95,7 @@ CREATE TABLE IF NOT EXISTS datasets (
   rows INTEGER NOT NULL,
   bytes INTEGER NOT NULL,
   created_at TEXT NOT NULL,
-  UNIQUE(conversation_id, name)
+  UNIQUE(owner, name)
 );
 
 CREATE TABLE IF NOT EXISTS agent_tools (
@@ -107,7 +111,7 @@ CREATE TABLE IF NOT EXISTS agent_tools (
   UNIQUE(scope, conversation_id, name)
 );
 
-CREATE INDEX IF NOT EXISTS datasets_conversation ON datasets (conversation_id);
+CREATE INDEX IF NOT EXISTS datasets_owner ON datasets (owner);
 CREATE INDEX IF NOT EXISTS agent_tools_name ON agent_tools (name);
 
 CREATE TABLE IF NOT EXISTS search_docs (
@@ -443,7 +447,7 @@ export class AppDb {
         await tx.run('DELETE FROM pi_submissions WHERE conversation_id = ?', current)
         await tx.run('DELETE FROM pi_entries WHERE conversation_id = ?', current)
         await tx.run('DELETE FROM pi_conversations WHERE id = ?', current)
-        await tx.run('DELETE FROM datasets WHERE conversation_id = ?', current)
+        await tx.run('DELETE FROM datasets WHERE owner = ?', current)
         await tx.run('DELETE FROM audit WHERE conversation_id = ?', current)
         await tx.run('DELETE FROM search_docs WHERE conversation_id = ?', key)
         await tx.run('DELETE FROM search_docs_fts WHERE conversation_id = ?', key)
@@ -480,6 +484,39 @@ export class AppDb {
           doc.entryId,
           doc.kind,
           text,
+          doc.at,
+        )
+      }
+    })
+  }
+
+  /** Add or replace the rows of one run, without rewriting the whole task. */
+  async upsertSearchDocs(
+    conversationId: string,
+    docs: { entryId: string; kind: string; text: string; at: string }[],
+  ): Promise<void> {
+    if (!docs.length) return
+    await this.raw.transaction(async (tx) => {
+      for (const doc of docs) {
+        await tx.run(
+          'INSERT OR REPLACE INTO search_docs (conversation_id, entry_id, kind, text, at) VALUES (?, ?, ?, ?, ?)',
+          conversationId,
+          doc.entryId,
+          doc.kind,
+          doc.text,
+          doc.at,
+        )
+        await tx.run(
+          'DELETE FROM search_docs_fts WHERE conversation_id = ? AND entry_id = ?',
+          conversationId,
+          doc.entryId,
+        )
+        await tx.run(
+          'INSERT INTO search_docs_fts (conversation_id, entry_id, kind, text, at) VALUES (?, ?, ?, ?, ?)',
+          conversationId,
+          doc.entryId,
+          doc.kind,
+          doc.text,
           doc.at,
         )
       }
@@ -578,19 +615,20 @@ export class AppDb {
 
   // -- datasets -------------------------------------------------------------
 
-  /** Record a dataset; one of the same name in the task is replaced. */
+  /** Record a dataset; one of the same name for the same owner is replaced. */
   async upsertDataset(row: Omit<DatasetRecord, 'created_at'>): Promise<DatasetRecord> {
     const record: DatasetRecord = { ...row, created_at: new Date().toISOString() }
     await this.raw.run(
-      'DELETE FROM datasets WHERE conversation_id = ? AND name = ?',
-      record.conversation_id,
+      'DELETE FROM datasets WHERE owner = ? AND name = ?',
+      record.owner,
       record.name,
     )
     await this.raw.run(
-      `INSERT INTO datasets (id, conversation_id, name, format, source, path, rows, bytes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO datasets (id, scope, owner, name, format, source, path, rows, bytes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       record.id,
-      record.conversation_id,
+      record.scope,
+      record.owner,
       record.name,
       record.format,
       record.source,
@@ -602,19 +640,48 @@ export class AppDb {
     return record
   }
 
-  async datasetByName(conversationId: string, name: string): Promise<DatasetRecord | undefined> {
+  /** The record at one exact owner and name, for replacing its file. */
+  async datasetByOwner(owner: string, name: string): Promise<DatasetRecord | undefined> {
     return this.raw.get<DatasetRecord>(
-      'SELECT * FROM datasets WHERE conversation_id = ? AND name = ?',
-      conversationId,
+      'SELECT * FROM datasets WHERE owner = ? AND name = ?',
+      owner,
       name,
     )
   }
 
-  async listDatasets(conversationId: string): Promise<DatasetRecord[]> {
-    return this.raw.all<DatasetRecord>(
-      'SELECT * FROM datasets WHERE conversation_id = ? ORDER BY created_at',
+  /** A task dataset shadows a kept one of the same name. */
+  async datasetByName(conversationId: string, name: string): Promise<DatasetRecord | undefined> {
+    return this.raw.get<DatasetRecord>(
+      `SELECT * FROM datasets WHERE owner IN (?, 'user') AND name = ?
+       ORDER BY CASE WHEN owner = ? THEN 0 ELSE 1 END LIMIT 1`,
+      conversationId,
+      name,
       conversationId,
     )
+  }
+
+  /** This task's datasets and the ones kept for the user, task first. */
+  async listDatasets(conversationId: string): Promise<DatasetRecord[]> {
+    return this.raw.all<DatasetRecord>(
+      `SELECT * FROM datasets WHERE owner IN (?, 'user')
+       ORDER BY CASE WHEN owner = ? THEN 0 ELSE 1 END, created_at`,
+      conversationId,
+      conversationId,
+    )
+  }
+
+  /** The datasets the agent kept for the user across tasks. */
+  async listUserDatasets(): Promise<DatasetRecord[]> {
+    return this.raw.all<DatasetRecord>(
+      "SELECT * FROM datasets WHERE scope = 'user' ORDER BY created_at",
+    )
+  }
+
+  async userDatasetBytes(): Promise<number> {
+    const row = await this.raw.get<{ bytes: number | null }>(
+      "SELECT SUM(bytes) AS bytes FROM datasets WHERE scope = 'user'",
+    )
+    return row?.bytes ?? 0
   }
 
   async getDataset(id: string): Promise<DatasetRecord | undefined> {

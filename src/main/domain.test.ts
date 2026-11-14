@@ -93,6 +93,7 @@ beforeAll(async () => {
     memory: MemoryStore.open(join(taskDir, 'memory.sqlite')),
     taskDir: () => taskDir,
     datasetsDir: () => tmpdir(),
+    userDatasetsDir: join(taskDir, 'user-datasets'),
     uploadsDir: () => uploads,
     lang: () => 'en',
   }

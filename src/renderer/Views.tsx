@@ -1,6 +1,6 @@
 import type { Chart, Table, ToolView } from '@shared/contract'
 import { Copy, Download } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { type Dict, fill } from './i18n'
 import { copyText, safeFileName, toCsv } from './lib/export'
 
@@ -42,7 +42,23 @@ export function TableView({
 }) {
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const shown = limit && !expanded ? table.rows.slice(0, limit) : table.rows
+  const [sort, setSort] = useState<{ column: number; direction: 1 | -1 } | null>(null)
+  const rows = useMemo(() => {
+    if (!sort) return table.rows
+    const next = [...table.rows]
+    next.sort((a, b) => {
+      const x = a[sort.column]
+      const y = b[sort.column]
+      if (x === null && y === null) return 0
+      if (x === null) return 1
+      if (y === null) return -1
+      if (typeof x === 'number' && typeof y === 'number') return (x - y) * sort.direction
+      return String(x).localeCompare(String(y)) * sort.direction
+    })
+    return next
+  }, [table.rows, sort])
+  const cap = limit ?? 200
+  const shown = expanded ? rows : rows.slice(0, cap)
   if (table.rows.length === 0) return <p className="view-empty">{empty}</p>
   return (
     <div className="table-block">
@@ -52,7 +68,7 @@ export function TableView({
             className="text-action"
             type="button"
             onClick={async () => {
-              if (await copyText(toCsv(table))) {
+              if (await copyText(toCsv({ ...table, rows }))) {
                 setCopied(true)
                 setTimeout(() => setCopied(false), 1500)
               }
@@ -67,7 +83,7 @@ export function TableView({
             onClick={() =>
               void window.agent.saveText({
                 name: safeFileName(name, 'csv'),
-                content: toCsv(table),
+                content: toCsv({ ...table, rows }),
                 kind: 'csv',
               })
             }
@@ -81,9 +97,34 @@ export function TableView({
         <table className="data">
           <thead>
             <tr>
-              {table.columns.map((column) => (
-                <th key={column}>{column}</th>
-              ))}
+              {table.columns.map((column, index) => {
+                const active = sort?.column === index ? sort.direction : 0
+                return (
+                  <th
+                    key={column}
+                    aria-sort={active === 1 ? 'ascending' : active === -1 ? 'descending' : 'none'}
+                  >
+                    <button
+                      className="th-sort"
+                      type="button"
+                      onClick={() =>
+                        setSort((current) =>
+                          current?.column === index
+                            ? current.direction === 1
+                              ? { column: index, direction: -1 }
+                              : null
+                            : { column: index, direction: 1 },
+                        )
+                      }
+                    >
+                      {column}
+                      <span className="th-sort-mark" aria-hidden="true">
+                        {active === 1 ? '↑' : active === -1 ? '↓' : ''}
+                      </span>
+                    </button>
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
@@ -97,14 +138,17 @@ export function TableView({
           </tbody>
         </table>
       </div>
-      {limit && table.rows.length > limit && (
+      {rows.length > cap && (
         <button
           className="text-action table-more"
           type="button"
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? t.less : fill(t.moreRows, { n: table.rows.length - limit })}
+          {expanded ? t.less : fill(t.moreRows, { n: rows.length - cap })}
         </button>
+      )}
+      {table.truncated && (
+        <p className="table-note">{fill(t.tableTruncated, { n: table.rows.length })}</p>
       )}
     </div>
   )

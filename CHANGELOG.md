@@ -1,3 +1,55 @@
+## 41.0.0 — 2026-11-14
+
+The workbench catches up to its runtime, and a dataset can outlive the task
+that imported it.
+
+- **A kept dataset.** `dataset({rows, name, scope: 'user'})` stores rows a
+  script computed under `datasets/`, outside any task. `sql()` resolves the
+  task's own datasets first, then the user's; `datasets()` names each one's
+  scope. Settings lists kept datasets with their size and **Forget**. They
+  survive task deletion, not a host schema reset; each is bounded to 512 MiB
+  and all to 2 GiB. The app stores, lists and forgets; the agent decides what
+  to keep and what to query.
+- **pi 1.5, used rather than merely installed.** Tool schemas are
+  pi-schema definitions; agent-authored method arguments are checked with
+  `ajv`. The durable loop pages
+  entries instead of materialising a whole conversation (`Runtime.records`,
+  `open`, **Load earlier**), and the watched task keeps a 100–200 entry window
+  so a long task costs the same as a short one. Steering is one admission with
+  `whenBusy: 'steer'` / `whenIdle: 'reject'`, not a check-then-act busy read.
+- **Search survives an abrupt quit.** pi's `afterRun` hook indexes a run's
+  own user messages and answers as they commit; a failed or stopped run is
+  indexed at settlement. Search no longer waits for the next launch.
+- **A failure says what happened.** pi's run reasons (`model_error`,
+  `interrupted`, `orphaned`, `restart_limit`, …) reach the notice as a sentence
+  instead of an internal token.
+- **Tools recover their own mistakes.** A delegate that fails now returns a
+  shaped error with its audit row and an `isError` result, not a raw throw;
+  `probe` refuses a URL with a username or password instead of letting Node
+  send Basic auth; staging and file picking refuse files under the app's own
+  userData (database, vault key, settings).
+- **The window holds up.** Rendered tables sort from the header
+  (`aria-sort`), stick the header while scrolling, keep 200 rows with **Show
+  all**, and say when the window itself was truncated. Charts state their
+  range and open a data table; diffs label their panes and tint changed lines,
+  not whole files. Markdown gains headings, tables, rules, images and deleted
+  text. Fenced code and rendered code show their language and **Copy**.
+- **Settings has an Advanced fold.** Context window and thinking level are
+  explicit when the user wants them and automatic otherwise. The key can be
+  revealed in place; a loopback endpoint says no real key is needed. Editing
+  an account says a blank key keeps the saved one.
+- **Quieter room, clearer feedback.** Send, steer and attach failures appear
+  above the composer; a settled answer is announced politely; notices and
+  errors carry `role=status`/`alert`; the compact sidebar is inert when closed;
+  destructive row actions ask twice within three seconds; `⌘`/`Ctrl`
+  shortcuts follow the platform; the launch surface follows the theme and the
+  window can narrow to 520px.
+- **Schema 21, no migration.** `datasets` now carries `scope` and `owner`.
+  Opening this version clears a v40 database, pi's tables, `tasks/` and
+  `datasets/` with it. Kept datasets are not imported from an earlier layout.
+- **React 19.3, pinned.** Chord 1.5.2 requires it exactly; `pi-ai`,
+  `pi-durable`, `pi-codemode`, `chord` and `pi-schema` are pinned at 1.5.2.
+
 ## 40.0.0 — 2026-10-30
 
 The agent reaches all of what it was given, and is told enough to correct

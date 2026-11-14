@@ -1,9 +1,9 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { S3Client } from '@aws-sdk/client-s3'
-import type { Context } from '@earendil-works/chord'
-import { type Static, type TSchema, Type } from '@earendil-works/pi-ai'
+import type { Context } from '@earendil-works/chord/context'
 import { defineTool, type ToolRegistration } from '@earendil-works/pi-durable'
+import { opt, type Schema, type Static, str } from '@earendil-works/pi-schema'
 import type { ToolDetails, ToolName, ToolView, UiEntry } from '@shared/contract'
 import type { AppDb } from '../db'
 import type { MemoryStore } from '../memory'
@@ -18,6 +18,8 @@ export interface ToolDeps {
   /** The task's own folder; a result cut for the model is kept here whole. */
   taskDir: (conversationId: string) => string
   datasetsDir: (conversationId: string) => string
+  /** Where a dataset the agent keeps across tasks lives. */
+  userDatasetsDir: string
   uploadsDir: (conversationId: string) => string
   memory?: MemoryStore
   /** The projected entries of a conversation, for a delegate's child answer. */
@@ -88,7 +90,7 @@ export function envelope(text: string, evidenceId?: string): string {
   return `<untrusted-data source="storage"${evidenceId ? ` evidence="${attribute(evidenceId)}"` : ''}>\n${escapeTags(redact(text))}\n</untrusted-data>`
 }
 
-export interface ToolDefinition<T extends TSchema> {
+export interface ToolDefinition<T extends Schema> {
   name: ToolName
   description: string
   parameters: T
@@ -106,7 +108,7 @@ export interface ToolDefinition<T extends TSchema> {
   }>
 }
 
-export function agentTool<T extends TSchema>(
+export function agentTool<T extends Schema>(
   deps: ToolDeps,
   def: ToolDefinition<T>,
 ): ToolRegistration<T> {
@@ -267,8 +269,8 @@ export function agentTool<T extends TSchema>(
   })
 }
 
-export const providerParam = Type.Optional(
-  Type.String({ description: 'Storage account id. Optional when only one account is configured.' }),
+export const providerParam = opt(
+  str({ description: 'Storage account id. Optional when only one account is configured.' }),
 )
 
-export { assertInScope, ScopeError, Type }
+export { assertInScope, ScopeError }

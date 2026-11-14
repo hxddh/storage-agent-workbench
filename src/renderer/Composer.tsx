@@ -1,5 +1,5 @@
 import type { ContextRef, Live, StagedFile, StorageRef } from '@shared/contract'
-import { ArrowUp, AtSign, ChevronDown, Paperclip, Square, X } from 'lucide-react'
+import { ArrowUp, AtSign, Paperclip, Settings2, Square, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { dict, fill, toolLabel } from './i18n'
 
@@ -28,6 +28,7 @@ export function Composer({
   const [text, setText] = useState(() => window.localStorage.getItem(`sa.draft:${draftKey}`) ?? '')
   const [files, setFiles] = useState<StagedFile[]>([])
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [focused, setFocused] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [context, setContext] = useState<ContextRef[]>([])
@@ -125,7 +126,7 @@ export function Composer({
             },
           ],
     )
-    setText((value) => value.replace(/@[^@\s]*$/, '').trimEnd())
+    setText((value) => value.replace(/(^|\s)@[^@\s]*$/, '$1').trimEnd())
     setPicker(null)
     ref.current?.focus()
   }
@@ -147,6 +148,7 @@ export function Composer({
   const send = async () => {
     const value = text.trim()
     if (!hasModel || busy) return
+    setError(null)
     if (live) {
       // A steer joins the running turn: its files and @refs go with it, not
       // into a later question.
@@ -161,6 +163,8 @@ export function Composer({
         setText('')
         setFiles([])
         setContext([])
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message.slice(0, 240) : String(cause))
       } finally {
         setBusy(false)
       }
@@ -182,19 +186,24 @@ export function Composer({
       )
       setFiles([])
       setContext([])
-    } catch {
+    } catch (cause) {
       // Restore both the field and its draft now: a failure can be followed
       // by a task switch before the effect that persists text runs.
       setText(value)
       window.localStorage.setItem(key, value)
+      setError(cause instanceof Error ? cause.message.slice(0, 240) : String(cause))
     } finally {
       setBusy(false)
     }
   }
 
   const attach = async () => {
-    const picked = await window.agent.pickFiles()
-    if (picked.length) setFiles((current) => [...current, ...picked].slice(0, 10))
+    try {
+      const picked = await window.agent.pickFiles()
+      if (picked.length) setFiles((current) => [...current, ...picked].slice(0, 10))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message.slice(0, 240) : String(cause))
+    }
   }
 
   const active = live?.tools.filter((tool) => tool.status === 'running').at(-1)
@@ -224,6 +233,11 @@ export function Composer({
 
   return (
     <div className="composer-dock">
+      {error && (
+        <p className="composer-error" role="alert">
+          {error}
+        </p>
+      )}
       {live && (
         <div className="run-strip">
           <span className="run-dot" aria-hidden="true" />
@@ -289,8 +303,11 @@ export function Composer({
           onChange={(event) => {
             const value = event.target.value
             setText(value)
-            const match = /@([^@\s]*)$/.exec(value)
-            setPicker(match ? (match[1] ?? '') : null)
+            if (error) setError(null)
+            // Focus starts only at a word boundary. An email or an ARN that
+            // contains `@` is text the user is writing, not a picker.
+            const match = /(^|\s)@([^@\s]*)$/.exec(value)
+            setPicker(match ? (match[2] ?? '') : null)
           }}
           onPaste={(event) => {
             if (event.clipboardData.files.length === 0) return
@@ -371,9 +388,9 @@ export function Composer({
             <AtSign size={15} strokeWidth={1.7} />
           </button>
           {hasModel && (
-            <button className="model-chip" type="button" onClick={onOpenSettings}>
+            <button className="model-chip" type="button" onClick={onOpenSettings} title={t.model}>
               <span>{modelLabel ?? t.model}</span>
-              <ChevronDown size={11} />
+              <Settings2 size={11} />
             </button>
           )}
           <span className="spacer" />

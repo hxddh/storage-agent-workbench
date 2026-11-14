@@ -4,19 +4,32 @@ import type {
   AgentToolRow,
   Bootstrap,
   CatalogModel,
+  KeptDatasetRow,
   Lang,
   LocalModel,
   MemoryRow,
   ModelProvider,
   Theme,
+  ThinkingLevel,
 } from '@shared/contract'
-import { Brain, Cloud, Cpu, Palette, Plus, Wrench, X } from 'lucide-react'
+import { Brain, Cloud, Copy, Cpu, Eye, EyeOff, Palette, Plus, Wrench, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { type Dict, dict, fill } from './i18n'
+import { copyText } from './lib/export'
 import { useFocusTrap } from './lib/focus'
+import { humanBytes } from './Views'
 
 type Provider = ModelProvider
 export type SettingsPane = 'model' | 'accounts' | 'memory' | 'methods' | 'appearance'
+
+/** A loopback endpoint: the provider needs a key value, but the user does not. */
+function localEndpoint(baseUrl: string): boolean {
+  try {
+    return ['localhost', '127.0.0.1', '::1'].includes(new URL(baseUrl).hostname)
+  } catch {
+    return false
+  }
+}
 
 /** Map the provider layer's fixed test messages; pass other provider errors through. */
 function testDetail(detail: string, t: Dict): string {
@@ -77,12 +90,14 @@ export function Settings({
   )
   const [modelId, setModelId] = useState(boot.model?.modelId ?? '')
   const [apiKey, setApiKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
   const [baseUrl, setBaseUrl] = useState(boot.model?.baseUrl ?? '')
   // null means "infer on save"; never keep a previous model's window when the
   // user changes the id by hand.
   const [contextWindow, setContextWindow] = useState<number | null>(
     boot.model?.contextWindow ?? null,
   )
+  const [thinking, setThinking] = useState<ThinkingLevel | 'auto'>(boot.model?.thinking ?? 'auto')
   const [models, setModels] = useState<CatalogModel[]>([])
   const [modelsBusy, setModelsBusy] = useState(false)
   const [modelDetail, setModelDetail] = useState('')
@@ -103,11 +118,14 @@ export function Settings({
   } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [memory, setMemory] = useState<MemoryRow[]>([])
+  const [confirming, setConfirming] = useState<string | null>(null)
+  const [datasets, setDatasets] = useState<KeptDatasetRow[]>([])
   const [methods, setMethods] = useState<AgentToolRow[]>([])
   const trap = useFocusTrap<HTMLDivElement>(onClose, '[data-active-tab="true"]')
 
   useEffect(() => {
     void window.agent.memory().then(setMemory)
+    void window.agent.datasets().then(setDatasets)
     void window.agent.agentTools().then(setMethods)
     void window.agent.awsProfiles().then(setProfiles)
     void window.agent.localModels().then(setLocalModels)
@@ -118,6 +136,18 @@ export function Settings({
     setModelId(model.modelId)
     setBaseUrl(model.baseUrl)
     setApiKey('local')
+    setThinking('auto')
+    setContextWindow(null)
+  }
+
+  const confirmAction = (id: string, action: () => void) => {
+    if (confirming !== id) {
+      setConfirming(id)
+      setTimeout(() => setConfirming(null), 3000)
+      return
+    }
+    setConfirming(null)
+    action()
   }
 
   const forget = async (id: string) => {
@@ -130,6 +160,11 @@ export function Settings({
     setMethods(await window.agent.agentTools())
   }
 
+  const forgetDataset = async (id: string) => {
+    await window.agent.deleteDataset(id)
+    setDatasets(await window.agent.datasets())
+  }
+
   const saveModel = async () => {
     setModelBusy(true)
     setModelStatus(null)
@@ -137,9 +172,10 @@ export function Settings({
       await window.agent.saveModel({
         provider,
         modelId,
-        apiKey: apiKey || undefined,
+        apiKey: apiKey || (localEndpoint(baseUrl) ? 'local' : undefined),
         baseUrl,
         ...(contextWindow ? { contextWindow } : {}),
+        ...(thinking === 'auto' ? {} : { thinking }),
       })
       setApiKey('')
       setModelStatus({ ok: true, detail: t.saved })
@@ -218,8 +254,9 @@ export function Settings({
         provider,
         modelId,
         baseUrl,
-        ...(apiKey ? { apiKey } : {}),
+        ...(apiKey || localEndpoint(baseUrl) ? { apiKey: apiKey || 'local' } : {}),
         ...(contextWindow ? { contextWindow } : {}),
+        ...(thinking === 'auto' ? {} : { thinking }),
       })
       setModelStatus(result)
     } finally {
@@ -393,6 +430,7 @@ export function Settings({
                       setProvider(event.target.value as Provider)
                       setModels([])
                       setContextWindow(null)
+                      setThinking('auto')
                     }}
                   >
                     <option value="openai">{t.providerOpenAI}</option>
@@ -411,6 +449,7 @@ export function Settings({
                       onChange={(event) => {
                         setModelId(event.target.value)
                         setContextWindow(null)
+                        setThinking('auto')
                       }}
                     />
                     {!apiKey.trim() && (
@@ -434,6 +473,7 @@ export function Settings({
                         setModelId(next)
                         const found = models.find((model) => model.id === next)
                         setContextWindow(found?.contextWindow ?? null)
+                        setThinking('auto')
                       }}
                     >
                       {models.map((model) => (
@@ -465,16 +505,68 @@ export function Settings({
                 </div>
                 <div className="field">
                   <label htmlFor="apiKey">{t.apiKey}</label>
-                  <input
-                    id="apiKey"
-                    type="password"
-                    value={apiKey}
-                    placeholder=""
-                    onChange={(event) => setApiKey(event.target.value)}
-                  />
-                  <span className="hint">{boot.model ? t.keySaved : t.keyHint}</span>
+                  <div className="secret-field">
+                    <input
+                      id="apiKey"
+                      type={showKey ? 'text' : 'password'}
+                      value={apiKey}
+                      placeholder=""
+                      onChange={(event) => setApiKey(event.target.value)}
+                    />
+                    <button
+                      className="secret-toggle"
+                      type="button"
+                      aria-label={showKey ? t.hideKey : t.showKey}
+                      title={showKey ? t.hideKey : t.showKey}
+                      onClick={() => setShowKey((value) => !value)}
+                    >
+                      {showKey ? (
+                        <EyeOff size={15} aria-hidden="true" />
+                      ) : (
+                        <Eye size={15} aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                  <span className="hint">
+                    {localEndpoint(baseUrl) ? t.localNoKey : boot.model ? t.keySaved : t.keyHint}
+                  </span>
                   {boot.platform === 'darwin' && <span className="hint">{t.keychainHint}</span>}
                 </div>
+                <details className="settings-advanced">
+                  <summary>{t.advanced}</summary>
+                  <div className="field">
+                    <label htmlFor="contextWindow">{t.contextWindow}</label>
+                    <input
+                      id="contextWindow"
+                      type="number"
+                      min={0}
+                      step={1000}
+                      value={contextWindow ?? ''}
+                      placeholder={t.contextAuto}
+                      onChange={(event) => {
+                        const next = Number(event.target.value)
+                        setContextWindow(Number.isFinite(next) && next > 0 ? next : null)
+                      }}
+                    />
+                    <span className="hint">{t.contextHint}</span>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="thinking">{t.thinking}</label>
+                    <select
+                      id="thinking"
+                      value={thinking}
+                      onChange={(event) =>
+                        setThinking(event.target.value as ThinkingLevel | 'auto')
+                      }
+                    >
+                      <option value="auto">{t.thinkingAutoOption}</option>
+                      <option value="off">{t.thinkingOff}</option>
+                      <option value="low">{t.thinkingLow}</option>
+                      <option value="medium">{t.thinkingMedium}</option>
+                      <option value="high">{t.thinkingHigh}</option>
+                    </select>
+                  </div>
+                </details>
                 <p className="hint">{t.thinkingAuto}</p>
                 <div className="account-actions">
                   <button
@@ -666,6 +758,7 @@ export function Settings({
                               setForm({ ...form, secretAccessKey: event.target.value })
                             }
                           />
+                          {form.id && <span className="hint">{t.keySaved}</span>}
                         </div>
                         <div className="field">
                           <label htmlFor="accToken">{t.sessionToken}</label>
@@ -770,9 +863,39 @@ export function Settings({
                         <button
                           className="text-action"
                           type="button"
-                          onClick={() => void forget(doc.id)}
+                          onClick={() => confirmAction(doc.id, () => void forget(doc.id))}
                         >
-                          {t.forget}
+                          {confirming === doc.id ? `${t.forget}?` : t.forget}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <h3 className="settings-subhead">{t.keptDatasets}</h3>
+                {datasets.length === 0 ? (
+                  <p className="hint">{t.noDatasets}</p>
+                ) : (
+                  <div className="memory-list">
+                    {datasets.map((dataset) => (
+                      <div className="memory-row memory-doc dataset-row" key={dataset.id}>
+                        <div className="memory-head">
+                          <span className="method-name mono">{dataset.name}</span>
+                          <span className="hint">
+                            {fill(t.datasetRows, { n: dataset.rows })} · {humanBytes(dataset.bytes)}
+                          </span>
+                        </div>
+                        <span className="hint">
+                          {dataset.source} · {dataset.createdAt.slice(0, 10)}
+                        </span>
+                        <button
+                          className="text-action"
+                          type="button"
+                          onClick={() =>
+                            confirmAction(dataset.id, () => void forgetDataset(dataset.id))
+                          }
+                        >
+                          {confirming === dataset.id ? `${t.forget}?` : t.forget}
                         </button>
                       </div>
                     ))}
@@ -804,9 +927,19 @@ export function Settings({
                         <button
                           className="text-action"
                           type="button"
-                          onClick={() => void forgetMethod(method.id)}
+                          onClick={() => void copyText(method.code)}
                         >
-                          {t.delete}
+                          <Copy size={12} aria-hidden="true" />
+                          {t.copy}
+                        </button>
+                        <button
+                          className="text-action"
+                          type="button"
+                          onClick={() =>
+                            confirmAction(method.id, () => void forgetMethod(method.id))
+                          }
+                        >
+                          {confirming === method.id ? `${t.delete}?` : t.delete}
                         </button>
                       </div>
                     ))}

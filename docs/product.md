@@ -84,7 +84,8 @@ prescribe a workflow, and each tool describes itself. The full contracts are in 
   one call: every object in a bucket, every bucket, an inventory, an attached
   log, every log under a prefix. Its primitives include `call()` (bodies
   whole), `read()`, `dataset()` and `inventory()` (every column of the
-  source), `sql()`, `datasets()`, `history()` (earlier tasks), `discover()`,
+  source; `dataset({scope: 'user'})` keeps one across tasks), `sql()`,
+  `datasets()`, `history()` (earlier tasks), `discover()`,
   `memory()` and `render()`. It returns rows, a view or any JSON. It has no
   network, filesystem, process, timer or model access.
 - **`probe`**: one unsigned HEAD, GET or OPTIONS, with any headers but

@@ -7,7 +7,7 @@ every tool call the agent made and what it returned. Nothing in storage is
 written, deleted or changed. The agent may write a change for you to apply; the
 app never runs it.
 
-Version in this tree: **40.0.0**.
+Version in this tree: **41.0.0**.
 
 ![A conversation in Storage Agent](docs/screenshot.png)
 
@@ -86,15 +86,16 @@ appearance and notifications.
 
 - **Electron 45, TypeScript, React 19.** No sidecar, no HTTP server, no native
   addon.
-- **pi-durable 1.4** owns the durable loop: storage, resume, steering, abort,
-  compaction and tool tasks.
-- **pi-ai 1.4** talks to OpenAI Responses, Anthropic Messages and
+- **pi-durable 1.5** owns the durable loop: storage, resume, steering, abort,
+  compaction, tool tasks and per-run hooks.
+- **pi-ai 1.5** talks to OpenAI Responses, Anthropic Messages and
   OpenAI-compatible Chat Completions.
 - **Accounts** use sealed access keys or an AWS profile. A profile resolves
   through the AWS SDK, including SSO, `credential_process` and assume-role.
 - **One host SQLite database** through `node:sqlite`; pi's tables use the `pi_`
   prefix. Agent memory is a separate `memory.sqlite` so a memory query cannot
-  reach host tables. Each imported dataset is its own SQLite file.
+  reach host tables. Each imported dataset is its own SQLite file; one the
+  agent keeps for the user survives its task.
 - **Scope** (`scope.buckets`) is enforced in the main process before any S3 or
   S3 Control call that names a bucket, and `ListBuckets` shows only scoped
   buckets. Focus in the composer is not scope.

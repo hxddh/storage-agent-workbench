@@ -186,6 +186,17 @@ function plan(body) {
 
   const bucketArg = /`?([a-z0-9][a-z0-9.-]*-[a-z0-9.-]+)`?/.exec(ask.replace(/^.*?(for|on|of|read|in|check) /, ''))?.[1]
 
+  // A dataset the agent keeps for the user, not for this task.
+  if (ask.includes('keep') && ask.includes('dataset')) {
+    const query = made('query')[0]
+    if (!query)
+      return next('query', {
+        title: 'Keep bucket counts',
+        code: "const kept = await tools.dataset({ rows: [{ bucket: 'web-assets', objects: 2 }, { bucket: 'data-lake', objects: 1 }], name: 'bucket_counts', scope: 'user' }); return kept",
+      })
+    return { text: `Kept the bucket counts for later.${cite(query)}` }
+  }
+
   if (ask.includes('largest')) {
     const query = made('query')[0]
     const bucket = bucketArg ?? 'web-assets'

@@ -18,6 +18,7 @@ import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { pipeline } from 'node:stream/promises'
 import { CodemodeSandbox, type CodemodeTool } from '@earendil-works/pi-codemode'
+import { int, obj, opt, str } from '@earendil-works/pi-schema'
 import type { Chart, Table } from '@shared/contract'
 import { checkViewDoc, viewDoc, viewText } from '@shared/view'
 import {
@@ -28,6 +29,7 @@ import {
   type ImportOptions,
   type ImportSource,
   importDataset,
+  importRows,
 } from '../analysis/import'
 import type { ProviderConfig } from '../providers'
 import { type CallInput, callApi, operationShape, operationsOf, SERVICES, scrub } from '../s3/api'
@@ -35,7 +37,7 @@ import { redact, redactView } from '../security/redact'
 import { assertInScope } from '../security/scope'
 import { checkSql } from '../sql'
 import { locate, readPart } from './more'
-import { agentTool, providerParam, type ToolDeps, Type } from './policy'
+import { agentTool, providerParam, type ToolDeps } from './policy'
 
 /**
  * What the sandbox may take of this machine unless the script asks for more.
@@ -47,7 +49,7 @@ export const SANDBOX = { memoryMb: 1024, viewRows: 10_000 }
 export const QUERY_API = `Primitives (all read-only, all async):
   call({service, operation, input?, region?, maxBytes?}): the service's response   // any read the call tool makes, same rules; an object Body comes back whole up to maxBytes (default 1 MiB) as {text|base64, bytesRead, ref, more?}
   read({name, offset?, length?}): {text|base64, start, end, total}   // any stretch of what this task holds: a call's evidence id, an object ref (objects/…) or attachment:<file>
-  dataset({file? | ref? | bucket+key? | bucket+prefix?, name?, format?, columns?, header?}): {name, format, rows, columns}   // import an attachment, an object body, one object or every object under a prefix into a local SQLite table "rows" with every source column (format: ${FORMATS.join('|')}, detected when omitted; columns names a header-less CSV); _source says where a row came from
+  dataset({rows? | file? | ref? | bucket+key? | bucket+prefix?, name?, scope?, format?, columns?, header?}): {name, scope, format, rows, columns, createdAt}   // import rows a script computed, an attachment, an object body, one object or every object under a prefix into a local SQLite table "rows" with every source column (format: ${FORMATS.join('|')}, detected when omitted; columns names a header-less CSV); scope "user" outlives the task; _source says where a row came from
   inventory({bucket, name?}): {name, rows, columns, manifestAt, files}   // import the bucket's latest S3 Inventory report with its own schema
   sql({name, sql, params?}): row[]   // one read-only SELECT (or WITH … SELECT) over a dataset's "rows" table; datasets imported in earlier scripts of this task are found by name
   datasets(): {name, format, source, rows, columns}[]   // the datasets this task holds
@@ -165,26 +167,61 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
       input,
     )
   }
+  const MAX_KEPT_BYTES = 512 * 1024 * 1024
+  const MAX_KEPT_TOTAL = 2 * 1024 * 1024 * 1024
   const register = async (
     name: string,
     source: string,
     path: string,
     result: { format: string; rows: number; columns: string[] },
+    scope: 'task' | 'user' = 'task',
   ) => {
+    const owner = scope === 'user' ? 'user' : ctx.conversationId
+    const bytes = datasetBytes(path)
+    const previous = await deps.db.datasetByOwner(owner, name)
+    if (scope === 'user') {
+      if (bytes > MAX_KEPT_BYTES) {
+        await rm(path, { force: true }).catch(() => undefined)
+        throw new Error(
+          `A kept dataset may be at most ${MAX_KEPT_BYTES / 1024 / 1024} MiB; split it into smaller datasets.`,
+        )
+      }
+      const total = (await deps.db.userDatasetBytes()) - (previous?.bytes ?? 0) + bytes
+      if (total > MAX_KEPT_TOTAL) {
+        await rm(path, { force: true }).catch(() => undefined)
+        throw new Error(
+          `Kept datasets may total ${MAX_KEPT_TOTAL / 1024 / 1024 / 1024} GiB; forget one or split this one.`,
+        )
+      }
+    }
+    if (previous && previous.path !== path)
+      await rm(previous.path, { force: true }).catch(() => undefined)
     ctx.datasets.set(name, { format: result.format, path, rows: result.rows })
-    await deps.db.upsertDataset({
+    const record = await deps.db.upsertDataset({
       id: basename(path, '.sqlite'),
-      conversation_id: ctx.conversationId,
+      scope,
+      owner,
       name,
       format: result.format,
       source,
       path,
       rows: result.rows,
-      bytes: datasetBytes(path),
+      bytes,
     })
-    return { name, format: result.format, rows: result.rows, columns: result.columns }
+    return {
+      name,
+      scope,
+      format: result.format,
+      rows: result.rows,
+      columns: result.columns,
+      createdAt: record.created_at,
+    }
   }
-  const datasetPath = () => join(deps.datasetsDir(ctx.conversationId), `${randomUUID()}.sqlite`)
+  const datasetPath = (scope: 'task' | 'user') =>
+    join(
+      scope === 'user' ? deps.userDatasetsDir : deps.datasetsDir(ctx.conversationId),
+      `${randomUUID()}.sqlite`,
+    )
   /** One object streamed to a local file; nothing holds it whole in memory. */
   const download = async (bucket: string, key: string, dir: string, index: number) => {
     ctx.calls.count += 1
@@ -368,25 +405,38 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
     },
     {
       name: 'datasets',
-      description: 'The datasets this task holds.',
+      description: 'The datasets this task holds, and the ones kept for the user across tasks.',
       execute: async () =>
         (await deps.db.listDatasets(ctx.conversationId))
           .filter((row) => existsSync(row.path))
           .map((row) => ({
             name: row.name,
+            scope: row.scope,
             format: row.format,
             source: row.source,
             rows: row.rows,
             columns: columnsOf(row.path),
+            createdAt: row.created_at,
           })),
     },
     {
       name: 'dataset',
-      description: 'Import a file, object, prefix or body into a local dataset with every column.',
+      description:
+        'Import a file, object, prefix or body, or rows a script computed, into a local dataset with every column. `scope:"user"` keeps it across tasks; `scope` defaults to this task.',
       execute: async (args) => {
         const a = (args ?? {}) as Record<string, unknown>
         const options = importOptions(a)
         const named = typeof a.name === 'string' && a.name ? a.name : null
+        const scope: 'task' | 'user' = a.scope === 'user' ? 'user' : 'task'
+        // Rows the script already has: a listing, a policy set, an inventory.
+        if (Array.isArray(a.rows)) {
+          if (!named) throw new Error('dataset({rows}) needs a name.')
+          if (a.rows.length > 500_000)
+            throw new Error('dataset({rows}) takes at most 500,000 rows; split it into parts.')
+          const path = datasetPath(scope)
+          const result = importRows(a.rows as Record<string, unknown>[], path, 'agent rows')
+          return register(named, 'agent rows', path, result, scope)
+        }
         // An attached file or an object body this task already read.
         if (typeof a.file === 'string' || typeof a.ref === 'string') {
           const ref =
@@ -402,9 +452,9 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
             )
           }
           const label = ref.replace(/^attachment:/, '')
-          const path = datasetPath()
+          const path = datasetPath(scope)
           const result = await importDataset([{ path: where.path, label }], path, options)
-          return register(named ?? label, ref, path, result)
+          return register(named ?? label, ref, path, result, scope)
         }
         const bucket = typeof a.bucket === 'string' ? a.bucket : ''
         if (!bucket) throw new Error('dataset needs file, ref, or bucket with key or prefix.')
@@ -436,9 +486,9 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
               path: await download(bucket, key, dir, index),
               label: `s3://${bucket}/${key}`,
             })
-          const path = datasetPath()
+          const path = datasetPath(scope)
           const result = await importDataset(files, path, options)
-          return register(named ?? source, source, path, result)
+          return register(named ?? source, source, path, result, scope)
         } finally {
           await rm(dir, { recursive: true, force: true }).catch(() => undefined)
         }
@@ -449,8 +499,9 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
       description:
         "Import every file of a bucket's latest S3 Inventory manifest into a local dataset.",
       execute: async (args) => {
-        const a = (args ?? {}) as { bucket?: unknown; name?: unknown }
+        const a = (args ?? {}) as { bucket?: unknown; name?: unknown; scope?: unknown }
         const bucket = String(a.bucket ?? '')
+        const scope: 'task' | 'user' = a.scope === 'user' ? 'user' : 'task'
         if (!bucket) throw new Error('bucket is required.')
         assertInScope(config, bucket)
         ctx.touched.add(bucket)
@@ -519,12 +570,12 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
               path: await download(target, key, dir, index),
               label: `s3://${target}/${key}`,
             })
-          const path = datasetPath()
+          const path = datasetPath(scope)
           const result = await importDataset(files, path, {
             format,
             ...(columns ? { columns, header: false } : {}),
           })
-          const registered = await register(name, `inventory:${bucket}`, path, result)
+          const registered = await register(name, `inventory:${bucket}`, path, result, scope)
           return {
             ...registered,
             manifestAt: manifest.creationTimestamp ?? null,
@@ -537,7 +588,7 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
     },
     {
       name: 'sql',
-      description: 'One read-only SELECT over a dataset of this task.',
+      description: 'One read-only SELECT over a dataset of this task or one kept for the user.',
       execute: async (args) => {
         const a = (args ?? {}) as {
           name?: unknown
@@ -549,7 +600,7 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
         const dataset = await datasetNamed(ctx, name)
         if (!dataset)
           throw new Error(
-            `No dataset named '${name}' in this task. Import one with dataset() or inventory(); datasets() lists them.`,
+            `No dataset named '${name}' in this task or kept for the user. Import one with dataset() or inventory(); datasets() lists them.`,
           )
         const sql = String(a.sql ?? '')
         checkSql(sql)
@@ -572,12 +623,12 @@ export function queryTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'query',
     description: `Run a read-only JavaScript script over the account when a question spans more than one call carries: every object in a bucket, every bucket, an inventory, an attached log. The script runs in a sandbox with no network, files, process or timers; its only capabilities are these primitives. It runs until it returns or the user stops it.\n${QUERY_API}`,
-    parameters: Type.Object({
+    parameters: obj({
       provider_id: providerParam,
-      title: Type.Optional(Type.String({ description: 'A name for the result.' })),
-      code: Type.String({ description: 'The script body; `return` the rows.' }),
-      memory_mb: Type.Optional(
-        Type.Integer({
+      title: opt(str({ description: 'A name for the result.' })),
+      code: str({ description: 'The script body; `return` the rows.' }),
+      memory_mb: opt(
+        int({
           minimum: 16,
           description: `Sandbox memory, default ${SANDBOX.memoryMb} MB; raise it for a script that holds more.`,
         }),

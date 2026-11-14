@@ -57,17 +57,19 @@ Script aliases: `npm run e2e`, `npm run e2e:audit`, `npm run eval`,
 - code mode: the sandbox has no network, filesystem or process, a script
   pages through every object, scope holds inside a script, a script runs until
   stopped, SQL over an attached log only reads, an object body read whole and
-  imported as a dataset, a dataset found by name in a later script, an S3
-  Inventory imported with its manifest's schema, earlier tasks read with
-  `history()`, a non-row value returned as JSON;
+  imported as a dataset, a dataset found by name in a later script, a kept
+  `scope: 'user'` dataset found from another task with the task's own name
+  winning, an S3 Inventory imported with its manifest's schema, earlier tasks
+  read with `history()`, a non-row value returned as JSON;
 - lossless datasets: every CSV column (a 12-digit size kept, an account id
   scrubbed), a header-less CSV named by the columns given, every field of an
   S3 server access log, every JSON-lines key, plain lines;
 - the output limit learned from a refusal that names a number or halved until
   the provider accepts;
 - the schema: created on a new file, and started over from any other version
-  with pi tables included; the memory file at its own version, keeping every
-  match in a list or search and recording the task that wrote it;
+  with pi tables, `tasks/` and kept datasets included; the memory file at its
+  own version, keeping every match in a list or search and recording the task
+  that wrote it;
 - the search index (CJK substrings, FTS ranking, `%` and `_` as text);
 - the entry projection, the live projection and the conversation thread
   (order, steers, the live slot, citations, what each call returned, the

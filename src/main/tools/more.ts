@@ -1,6 +1,7 @@
 import { open } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import { agentTool, PIECE, resultPath, type ToolDeps, Type } from './policy'
+import { int, obj, opt, str } from '@earendil-works/pi-schema'
+import { agentTool, PIECE, resultPath, type ToolDeps } from './policy'
 
 const IMAGES: Record<string, string> = {
   '.png': 'image/png',
@@ -96,17 +97,17 @@ export function moreTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'more',
     description: `Read what this task holds, from any offset: a call's whole result again by its evidence id (every result is kept, so this works after the conversation was compacted too), an object body by its ref (objects/…), or a file the user attached as attachment:<file name>. An attached image comes back as an image the model can see. length defaults to one piece (${PIECE.toLocaleString('en-US')}).`,
-    parameters: Type.Object({
-      evidence: Type.String({
+    parameters: obj({
+      evidence: str({
         description: "A call's evidence id, an object ref (objects/…) or attachment:<file name>.",
       }),
-      offset: Type.Optional(
-        Type.Integer({
+      offset: opt(
+        int({
           minimum: 0,
           description: 'Where to start: characters for a result, bytes for a body or file.',
         }),
       ),
-      length: Type.Optional(Type.Integer({ minimum: 1, description: 'How much to read.' })),
+      length: opt(int({ minimum: 1, description: 'How much to read.' })),
     }),
     target: (args) => `${args.evidence} @ ${args.offset ?? 0}`,
     run: async (args, run) => {

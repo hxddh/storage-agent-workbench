@@ -183,10 +183,10 @@ async function createWindow(): Promise<void> {
     width: bounds.width,
     height: bounds.height,
     ...(bounds.x !== undefined && bounds.y !== undefined ? { x: bounds.x, y: bounds.y } : {}),
-    minWidth: 760,
+    minWidth: 520,
     minHeight: 520,
     show: false,
-    backgroundColor: '#f7f6f3',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#12110f' : '#f7f5ef',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 16 },
     ...(process.platform === 'darwin'

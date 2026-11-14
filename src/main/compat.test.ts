@@ -92,6 +92,7 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
       providers,
       taskDir: () => tmpdir(),
       datasetsDir: () => tmpdir(),
+      userDatasetsDir: tmpdir(),
       uploadsDir: () => tmpdir(),
       lang: () => 'en',
     }

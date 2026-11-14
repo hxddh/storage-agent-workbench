@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 40.0.0**. Read
+> Implementation contract for **Storage Agent 41.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md`,
 > `docs/data-model.md` and `docs/tools.md` before changing product structure.
 > The code and its tests are authoritative; release notes and the changelog
@@ -164,10 +164,13 @@ second queue.
 
 Host tables in `storage-agent.db`: `providers`, `audit`, `task_meta`,
 `datasets`, `agent_tools`, `search_docs` (+ FTS5 trigram). pi's tables are
-prefixed `pi_`. `db.ts` holds one schema at `user_version` **20**. A database
-at any other version is cleared and created again, pi's tables and `tasks/`
-with it: the app carries no task from an earlier layout, keeps no backup, and
-no code reads one. The agent's memory is `memory.sqlite` (`docs` table, its
+prefixed `pi_`. `db.ts` holds one schema at `user_version` **21**. A database
+at any other version is cleared and created again, pi's tables, `tasks/` and
+`datasets/` with it: the app carries no task from an earlier layout, keeps no
+backup, and no code reads one. A dataset is task-scoped by default
+(`tasks/<conversation>/datasets/`); `scope: 'user'` keeps it under
+`datasets/`, listed in Settings and found from another task, until it is
+forgotten or the host schema resets. The agent's memory is `memory.sqlite` (`docs` table, its
 own `user_version` **1**): it outlives tasks and app versions; task-scoped
 documents are purged with their task, and all of them when tasks are reset.
 

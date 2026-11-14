@@ -90,8 +90,16 @@ function ToolStep({
       <button className="step-line" type="button" aria-expanded={open} onClick={onToggle}>
         <Mark status={item.status} />
         <span className="step-title">{toolLabel(item.name, lang)}</span>
-        {item.target && <span className="step-target mono">{item.target}</span>}
-        {item.note && <span className="step-note">{item.note}</span>}
+        {item.target && (
+          <span className="step-target mono" title={item.target}>
+            {item.target}
+          </span>
+        )}
+        {item.note && (
+          <span className="step-note" title={item.note}>
+            {item.note}
+          </span>
+        )}
         {item.status !== 'done' && (
           <span className={`step-status ${item.status}`}>{statusLabel(item.status, t)}</span>
         )}
@@ -239,7 +247,7 @@ function ChildThread({
           />
         ) : item.kind === 'text' ? (
           <li className="child-text prose" key={item.id}>
-            <Markdown text={item.text} components={CHILD_LINKS} />
+            <Markdown text={item.text} components={CHILD_LINKS} t={t} />
           </li>
         ) : item.kind === 'notice' ? (
           <li className="quiet" key={item.id}>
@@ -394,7 +402,13 @@ function Menu({ view, items, t }: { view: TaskView; items: ThreadItem[]; t: Dict
           )}
           {item(t.savePdf, () => {
             window.dispatchEvent(new Event('sa:prepare-print'))
-            setTimeout(() => void window.agent.exportPdf(), 80)
+            setTimeout(
+              () =>
+                void window.agent
+                  .exportPdf()
+                  .finally(() => window.dispatchEvent(new Event('sa:restore-print'))),
+              80,
+            )
           })}
         </div>
       )}
@@ -449,7 +463,7 @@ function AgentText({
   return (
     <div className={`msg agent text ${streaming ? 'streaming' : ''}`}>
       <div className="prose">
-        <Markdown text={text} components={components} />
+        <Markdown text={text} components={components} t={t} />
       </div>
       {!streaming && (
         <button
@@ -500,6 +514,10 @@ export function Conversation({
   const t = dict(lang)
   const items = useMemo(() => thread(view.entries, view.live), [view.entries, view.live])
   const pending = useMemo(() => (view.live ? null : pendingQuestion(items)), [items, view.live])
+  const settledAnswer = useMemo(() => {
+    const last = [...items].reverse().find((item) => item.kind === 'text' && !item.streaming)
+    return last?.kind === 'text' ? last.text : ''
+  }, [items])
   const providers = useMemo(
     () => [
       ...new Set(
@@ -523,8 +541,15 @@ export function Conversation({
 
   useEffect(() => {
     const print = () => setPrinting(true)
+    const restore = () => setPrinting(false)
     window.addEventListener('sa:prepare-print', print)
-    return () => window.removeEventListener('sa:prepare-print', print)
+    window.addEventListener('sa:restore-print', restore)
+    window.addEventListener('afterprint', restore)
+    return () => {
+      window.removeEventListener('sa:prepare-print', print)
+      window.removeEventListener('sa:restore-print', restore)
+      window.removeEventListener('afterprint', restore)
+    }
   }, [])
 
   // Follow the conversation as it grows, unless the user scrolled up to read.
@@ -588,6 +613,9 @@ export function Conversation({
     >
       <article className="conversation" data-task-id={view.task.id}>
         <h1 className="visually-hidden">{view.task.title}</h1>
+        <div className="visually-hidden" aria-live="polite" aria-atomic="true">
+          {settledAnswer}
+        </div>
         {providers.length > 0 && (
           <div className="conversation-meta">
             {providers.map((provider) => (
@@ -689,7 +717,7 @@ export function Conversation({
                 <div
                   className={`notice ${item.tone}`}
                   key={item.id}
-                  role={item.tone === 'error' ? 'alert' : undefined}
+                  role={item.tone === 'error' ? 'alert' : 'status'}
                 >
                   <span className="dot" aria-hidden="true" />
                   <span className="text">{noticeText(item, t)}</span>

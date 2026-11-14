@@ -43,6 +43,7 @@ beforeEach(async () => {
     } as unknown as Providers,
     memory,
     taskDir: () => join(dir, `task-${n}`),
+    userDatasetsDir: join(dir, `user-datasets-${n}`),
     datasetsDir: () => join(dir, `datasets-${n}`),
     uploadsDir: () => join(dir, `uploads-${n}`),
     lang: () => 'en',

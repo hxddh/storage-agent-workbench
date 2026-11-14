@@ -263,6 +263,28 @@ try {
   console.log('QUERY OK')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-query.png') })
 
+  // A dataset kept for the user survives the task and appears in Settings.
+  await page.getByRole('button', { name: 'New task' }).click()
+  await say('Keep a bucket count dataset for later')
+  const kept = await openTool('Ran a read-only query')
+  await kept.locator('.table-block table, .view-code, pre.code').first().waitFor({ timeout: 5_000 })
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Memory', exact: true }).click()
+  await page.locator('.dataset-row').first().waitFor({ timeout: 5_000 })
+  if (!(await page.locator('.dataset-row').first().innerText()).includes('bucket_counts'))
+    await fail('kept dataset missing from Settings')
+  await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-dataset.png') })
+  console.log('KEPT DATASET OK')
+  await page.locator('.dataset-row .text-action').first().click()
+  await page.waitForTimeout(100)
+  if (!(await page.locator('.dataset-row .text-action').first().innerText()).includes('?'))
+    await fail('kept dataset delete did not ask twice')
+  await page.locator('.dataset-row .text-action').first().click()
+  await page.waitForTimeout(300)
+  if ((await page.locator('.dataset-row').count()) > 0) await fail('kept dataset was not forgotten')
+  console.log('KEPT DATASET FORGET OK')
+  await page.getByRole('button', { name: 'Close settings' }).click()
+
   // A view the agent composed, not app-generated report scaffolding.
   await page.getByRole('button', { name: 'New task' }).click()
   await say('Show the buckets as a view')

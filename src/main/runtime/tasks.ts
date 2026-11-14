@@ -27,6 +27,7 @@ const INITIAL_ENTRIES = 200
 interface ActiveWatch {
   id: string
   watch: WatchHandle<ConversationView>
+  view: ConversationView
   seen: Set<string>
   entries: UiEntry[]
 }
@@ -57,18 +58,6 @@ export class Tasks {
     await this.deps.db.upsertTaskMeta({ conversationId: id, title: deriveTitle(text) })
     await this.refreshList()
     return id
-  }
-
-  /** Whether a turn is running in this task. */
-  async busy(taskId: string): Promise<boolean> {
-    const conversation = await this.runtime.conversation(taskId)
-    if (!conversation) return false
-    const state = await conversation.viewState(CONTEXT)
-    try {
-      return Boolean((state.value.docs['pi.live'] as { run?: unknown } | undefined)?.run)
-    } finally {
-      state.dispose()
-    }
   }
 
   async waitForIdle(taskId: string): Promise<void> {
@@ -140,6 +129,23 @@ export class Tasks {
   async deleteMemory(id: string): Promise<void> {
     this.deps.memory.delete(id)
     await this.runtime.refreshDigest()
+  }
+  async datasetRows() {
+    return (await this.deps.db.listUserDatasets()).map((row) => ({
+      id: row.id,
+      name: row.name,
+      rows: row.rows,
+      bytes: row.bytes,
+      source: row.source,
+      createdAt: row.created_at,
+    }))
+  }
+
+  async deleteDataset(id: string): Promise<void> {
+    const row = await this.deps.db.getDataset(id)
+    if (row?.scope !== 'user') return
+    await this.deps.db.deleteDataset(id)
+    await rm(row.path, { force: true }).catch(() => undefined)
   }
 
   async agentTools() {
@@ -238,27 +244,50 @@ export class Tasks {
     if (!meta) throw new Error('Task not found.')
     await this.watch(taskId)
     this.deps.settings.setLastTask(taskId)
-    const state = await conversation.viewState(CONTEXT)
-    try {
-      const entries = mapEntries(state.value.entries)
-      if (this.active) this.active.entries = entries
-      let start = Math.max(0, entries.length - INITIAL_ENTRIES)
-      if (focus) {
-        const index = entries.findIndex((entry) => entry.id === focus)
-        if (index >= 0) start = Math.max(0, index - 20)
-      }
-      const slice = entries.slice(start)
-      return {
-        task: (await this.summary(taskId))!,
-        entries: slice,
-        live: this.liveOf(state.value, taskId),
-        hasOlder: start > 0,
-        cursor: slice[0]?.id ?? null,
-        usage: usageOf(state.value),
-        model: parseTaskModel(meta.model_json),
-      }
-    } finally {
-      state.dispose()
+    const active = this.active
+    if (!active) throw new Error('Task not found.')
+
+    let entries: UiEntry[]
+    let hasOlder: boolean
+    if (focus) {
+      // A search hit or citation jumps to a known entry: read the history it
+      // belongs to, then show from a little before it through the newest.
+      const all = await this.runtime.entries(taskId)
+      const index = all.findIndex((entry) => entry.id === focus)
+      const start = index >= 0 ? Math.max(0, index - 20) : Math.max(0, all.length - INITIAL_ENTRIES)
+      entries = all.slice(start)
+      hasOlder = start > 0
+    } else {
+      // The newest page only. The watch adds what arrives; older pages are a
+      // separate read, so a long task never has to sit in memory whole.
+      const page = await conversation.entries(
+        { order: 'descending' },
+        INITIAL_ENTRIES + 1,
+        undefined,
+        CONTEXT,
+      )
+      const ordered = mapEntries([...page.items].reverse())
+      hasOlder = Boolean(page.next) || ordered.length > INITIAL_ENTRIES
+      entries = ordered.slice(-INITIAL_ENTRIES)
+    }
+    // An entry can commit while the page is read. It is already in the watch's
+    // projection; keep it after the page instead of assigning it away.
+    const seen = new Set(entries.map((entry) => entry.id))
+    for (const entry of active.entries) {
+      if (seen.has(entry.id)) continue
+      seen.add(entry.id)
+      entries.push(entry)
+    }
+    active.entries = entries
+    for (const entry of entries) active.seen.add(entry.id)
+    return {
+      task: (await this.summary(taskId))!,
+      entries,
+      live: this.liveOf(active.view, taskId),
+      hasOlder,
+      cursor: entries[0]?.id ?? null,
+      usage: usageOf(active.view),
+      model: parseTaskModel(meta.model_json),
     }
   }
 
@@ -274,23 +303,26 @@ export class Tasks {
   ): Promise<{ entries: UiEntry[]; hasOlder: boolean; cursor: string | null }> {
     if (!this.active || this.active.id !== taskId)
       return { entries: [], hasOlder: false, cursor: null }
-    const index = this.active.entries.findIndex((entry) => entry.id === before)
-    if (index <= 0) return { entries: [], hasOlder: false, cursor: null }
-    const start = Math.max(0, index - INITIAL_ENTRIES)
-    const slice = this.active.entries.slice(start, index)
-    return { entries: slice, hasOlder: start > 0, cursor: slice[0]?.id ?? null }
+    const conversation = await this.runtime.require(taskId)
+    const page = await conversation.entries(
+      { order: 'descending', maxEntryId: before as never },
+      INITIAL_ENTRIES + 1,
+      undefined,
+      CONTEXT,
+    )
+    const items = page.items
+      .filter((entry) => String(entry.id) !== before)
+      .slice(0, INITIAL_ENTRIES)
+    const entries = mapEntries([...items].reverse())
+    for (const entry of entries) this.active.seen.add(entry.id)
+    this.active.entries = [...entries, ...this.active.entries]
+    return { entries, hasOlder: Boolean(page.next), cursor: entries[0]?.id ?? before }
   }
 
   /** The search rows of a task, from the same projection the window renders. */
   async index(taskId: string): Promise<void> {
-    // The last assistant message can land in the active watch a beat before
-    // the durable view; keep the longer projection so search sees the answer.
     const durable = await this.runtime.entries(taskId)
-    const watched =
-      this.active?.id === taskId && this.active.entries.length > durable.length
-        ? this.active.entries
-        : durable
-    await this.deps.db.replaceSearchDocs(taskId, searchRows(watched))
+    await this.deps.db.replaceSearchDocs(taskId, searchRows(durable))
   }
 
   emitTask(taskId: string): void {
@@ -323,18 +355,30 @@ export class Tasks {
     if (this.active?.id === taskId) return
     if (this.active) await this.active.watch.stop().catch(() => undefined)
     const conversation = await this.runtime.require(taskId)
-    const watch = await conversation.watch(CONTEXT)
-    const active: ActiveWatch = { id: taskId, watch, seen: new Set(), entries: [] }
+    // A window, not the whole transcript: a long task costs the same to watch
+    // as a short one. `open`/`older` read the pages the user actually asks for.
+    const watch = await conversation.watch(CONTEXT, { min: 100, max: 200 })
+    const active: ActiveWatch = {
+      id: taskId,
+      watch,
+      view: watch.value,
+      seen: new Set(),
+      entries: [],
+    }
     this.active = active
-    for (const entry of mapEntries(watch.value.entries)) active.seen.add(entry.id)
+    const initial = mapEntries(watch.value.entries)
+    active.entries = initial
+    for (const entry of initial) active.seen.add(entry.id)
     let lastUsage = JSON.stringify(usageOf(watch.value))
-    await watch.start(async (value) => {
-      if (this.active !== active) return
+    await watch.start(async (call) => {
+      if (this.active !== active || call.kind !== 'value') return
+      const value = call.value
+      active.view = value
       const mapped = mapEntries(value.entries)
-      active.entries = mapped
       for (const entry of mapped) {
         if (active.seen.has(entry.id)) continue
         active.seen.add(entry.id)
+        active.entries.push(entry)
         this.deps.emit({ type: 'entry', taskId, entry })
       }
       this.deps.emit({ type: 'live', taskId, live: this.liveOf(value, taskId) })
@@ -365,7 +409,9 @@ export class Tasks {
           void this.refreshList()
         }
         apply(watch.value)
-        watch.start(async (value) => apply(value))
+        watch.start(async (call) => {
+          if (call.kind === 'value') apply(call.value)
+        })
       })
       .catch(() => undefined)
   }

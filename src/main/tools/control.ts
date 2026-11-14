@@ -1,5 +1,5 @@
-import { Type } from '@earendil-works/pi-ai'
 import { defineTool } from '@earendil-works/pi-durable'
+import { arr, obj, opt, str } from '@earendil-works/pi-schema'
 import type { ToolDetails } from '@shared/contract'
 
 function details(view: ToolDetails['view'], target: string, note: string | null): ToolDetails {
@@ -15,10 +15,10 @@ export function askTool() {
     name: 'ask',
     description:
       'Ask the user a question and end your turn until they answer. Options, when given, are shown as buttons; the user can also reply in their own words.',
-    parameters: Type.Object({
-      question: Type.String({ minLength: 1 }),
-      options: Type.Optional(Type.Array(Type.String())),
-      note: Type.Optional(Type.String()),
+    parameters: obj({
+      question: str({ minLength: 1 }),
+      options: opt(arr(str())),
+      note: opt(str()),
     }),
     execute: async (args) => {
       const question = text(args.question)

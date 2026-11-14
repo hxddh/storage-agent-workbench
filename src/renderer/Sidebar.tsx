@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { dict } from './i18n'
 import { LogoMark } from './Logo'
+import { useNow } from './time'
 
 function Snippet({ text, query }: { text: string; query: string }) {
   const index = text.toLowerCase().indexOf(query.toLowerCase())
@@ -17,17 +18,19 @@ function Snippet({ text, query }: { text: string; query: string }) {
   )
 }
 
-function relative(iso: string, lang: 'en' | 'zh'): string {
-  const seconds = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
+function relative(iso: string, lang: 'en' | 'zh', now: number): string {
+  const seconds = Math.max(0, (now - Date.parse(iso)) / 1000)
   if (lang === 'zh') {
     if (seconds < 60) return '刚刚'
     if (seconds < 3600) return `${Math.floor(seconds / 60)} 分`
     if (seconds < 86_400) return `${Math.floor(seconds / 3600)} 时`
+    if (seconds < 172_800) return '昨天'
     return `${Math.floor(seconds / 86_400)} 天`
   }
   if (seconds < 60) return 'now'
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
   if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h`
+  if (seconds < 172_800) return 'yesterday'
   return `${Math.floor(seconds / 86_400)}d`
 }
 
@@ -39,6 +42,7 @@ function TaskRow({
   onRename,
   onDelete,
   onPin,
+  now,
 }: {
   task: TaskSummary
   active: boolean
@@ -47,6 +51,7 @@ function TaskRow({
   onRename: (title: string) => void
   onDelete: () => void
   onPin: () => void
+  now: number
 }) {
   const t = dict(lang)
   const [editing, setEditing] = useState(false)
@@ -144,7 +149,7 @@ function TaskRow({
             {task.title}
           </span>
           {task.pinned && <Pin size={10} className="pin-mark" aria-hidden="true" />}
-          <span className="task-time">{relative(task.updatedAt, lang)}</span>
+          <span className="task-time">{relative(task.updatedAt, lang, now)}</span>
         </button>
       )}
       <button
@@ -231,8 +236,12 @@ export function Sidebar({
   onDelete,
   onPin,
   searchSignal = 0,
+  platform,
+  compact = false,
 }: {
   searchSignal?: number
+  platform?: string
+  compact?: boolean
   tasks: TaskSummary[]
   activeId: string | null
   lang: 'en' | 'zh'
@@ -246,10 +255,17 @@ export function Sidebar({
   onPin: (id: string, pinned: boolean) => void
 }) {
   const t = dict(lang)
+  const now = useNow()
+  const mod = platform === 'darwin' ? '⌘' : 'Ctrl+'
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<SearchHit[]>([])
   const [selected, setSelected] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    input.current?.focus()
+  }, [open])
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -315,7 +331,11 @@ export function Sidebar({
   }
 
   return (
-    <aside className={`sidebar ${open ? 'open' : ''}`}>
+    <aside
+      className={`sidebar ${open ? 'open' : ''}`}
+      inert={compact && !open ? true : undefined}
+      aria-hidden={compact && !open ? true : undefined}
+    >
       <div className="brand">
         <LogoMark size={24} />
         <span className="brand-name">Storage Agent</span>
@@ -335,7 +355,7 @@ export function Sidebar({
           <Plus size={14} strokeWidth={1.8} />
           {t.newTask}
         </span>
-        <kbd>⌘N</kbd>
+        <kbd>{mod}N</kbd>
       </button>
 
       <div className="sidebar-search">
@@ -370,7 +390,7 @@ export function Sidebar({
             <X size={12} />
           </button>
         ) : (
-          <kbd>⌘K</kbd>
+          <kbd>{mod}K</kbd>
         )}
       </div>
 
@@ -414,6 +434,7 @@ export function Sidebar({
                     task={task}
                     active={task.id === activeId}
                     lang={lang}
+                    now={now}
                     onOpen={() => onOpen(task.id)}
                     onRename={(title) => onRename(task.id, title)}
                     onDelete={() => onDelete(task.id)}
@@ -431,6 +452,7 @@ export function Sidebar({
                     task={task}
                     active={task.id === activeId}
                     lang={lang}
+                    now={now}
                     onOpen={() => onOpen(task.id)}
                     onRename={(title) => onRename(task.id, title)}
                     onDelete={() => onDelete(task.id)}
@@ -448,6 +470,7 @@ export function Sidebar({
                     task={task}
                     active={task.id === activeId}
                     lang={lang}
+                    now={now}
                     onOpen={() => onOpen(task.id)}
                     onRename={(title) => onRename(task.id, title)}
                     onDelete={() => onDelete(task.id)}

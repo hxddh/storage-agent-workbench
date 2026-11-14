@@ -62,8 +62,12 @@
    the agent can follow one address or request. Strings are scrubbed before
    they are stored (account ids, credential-shaped text). The agent reads a
    dataset with `sql()`: one `SELECT` (or `WITH … SELECT`) on a read-only
-   connection, no second statement and no `load_extension`. An attached image
-   is sent to the model as an image; its bytes are not redacted.
+   connection, no second statement and no `load_extension`. A dataset the
+   agent keeps with `scope: 'user'` is stored at `datasets/<id>.sqlite` under
+   the app data directory, bounded to 512 MiB each and 2 GiB in total; it is
+   readable only through the read-only `sql()` connection and is removed by
+   Settings **Forget**, the agent, or a host schema reset. An attached image is sent to the model
+   as an image; its bytes are not redacted.
 8. **Memory is a separate database.** `memory.sqlite` holds only the agent's
    documents. A `memory` query runs on a read-only connection with one
    `SELECT`; it cannot see `storage-agent.db`, accounts, task metadata or vault

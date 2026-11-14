@@ -6,7 +6,7 @@
  * settles the turn: notices, the search index and the memory digest. There is
  * no second driver and no scripted run.
  */
-import { configure } from '@earendil-works/pi-durable'
+import { ConversationIdle, configure } from '@earendil-works/pi-durable'
 import type { AttachmentRef, ContextRef, NoticeCode } from '@shared/contract'
 import { escapeTags } from '../security/redact'
 import { installModel, learnOutputLimit } from './model'
@@ -59,23 +59,29 @@ export class Engine {
     attachments: AttachmentRef[] = [],
     context: ContextRef[] = [],
   ): Promise<void> {
-    if (!(await this.tasks.busy(taskId))) return this.submit(taskId, text, attachments, context)
     const conversation = await this.runtime.require(taskId)
     const focus = await this.tasks.sanitizeContext(context)
-    const submission = await conversation.submit(
-      {
-        type: 'input',
-        content: withAttachments(text, attachments, focus),
-        whenBusy: 'steer',
-        entry: {
-          kind: 'sa.steer',
-          data: { text, attachments, ...(focus.length ? { context: focus } : {}) },
-        } as never,
-      },
-      CONTEXT,
-    )
-    // The running submission's settlement does the bookkeeping.
-    void submission.wait(CONTEXT).catch(() => undefined)
+    try {
+      // One admission: busy steers, idle says so. No check-then-act window.
+      const submission = await conversation.submit(
+        {
+          type: 'input',
+          content: withAttachments(text, attachments, focus),
+          whenBusy: 'steer',
+          whenIdle: 'reject',
+          entry: {
+            kind: 'sa.steer',
+            data: { text, attachments, ...(focus.length ? { context: focus } : {}) },
+          } as never,
+        },
+        CONTEXT,
+      )
+      // The running submission's settlement does the bookkeeping.
+      void submission.wait(CONTEXT).catch(() => undefined)
+    } catch (error) {
+      if (!(error instanceof ConversationIdle)) throw error
+      await this.submit(taskId, text, attachments, context)
+    }
   }
 
   async stop(taskId: string): Promise<void> {
@@ -150,7 +156,7 @@ export class Engine {
       const settled = await submission.wait(CONTEXT)
       if (settled.status !== 'unanswered') return 'answered'
       if (settled.reason === 'aborted') return 'stopped'
-      await this.notice(conversation, 'no_answer', 'error', 'retry', settled.reason)
+      await this.notice(conversation, 'no_answer', 'error', 'retry', reasonText(settled.reason))
       return 'failed'
     })
   }
@@ -176,7 +182,7 @@ export class Engine {
     } finally {
       if (outcome === 'failed') this.runtime.failed.add(taskId)
       await this.deps.db.touchTask(taskId)
-      await this.tasks.index(taskId).catch(() => undefined)
+      if (outcome !== 'answered') await this.tasks.index(taskId).catch(() => undefined)
       await this.runtime.refreshDigest()
       await this.tasks.refreshList()
       const summary = await this.tasks.summary(taskId)
@@ -201,6 +207,22 @@ export class Engine {
       })
       .catch(() => undefined)
   }
+}
+
+/** pi's run-failure reason as the one line the notice shows. */
+function reasonText(reason: string): string {
+  const words: Record<string, string> = {
+    model_error: 'The model returned an error.',
+    no_model: 'No model is available.',
+    reset: 'The run was reset before it answered.',
+    faulted: 'The run failed.',
+    orphaned: 'The run could not continue.',
+    interrupted: 'The app was interrupted before the model answered.',
+    restart_limit: 'The app was interrupted too many times.',
+    nothing_to_answer: 'There was nothing to answer.',
+    turn_limit: 'The turn limit was reached.',
+  }
+  return words[reason] ?? 'The run ended without an answer.'
 }
 
 function withAttachments(

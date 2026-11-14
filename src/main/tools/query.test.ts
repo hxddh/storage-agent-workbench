@@ -73,6 +73,7 @@ beforeAll(async () => {
     providers,
     taskDir: () => dir,
     datasetsDir: () => join(dir, 'datasets'),
+    userDatasetsDir: join(dir, 'user-datasets'),
     uploadsDir: () => join(dir, 'uploads'),
     lang: () => 'en',
   }
@@ -206,6 +207,37 @@ describe('read-only code mode', () => {
       format: 'lines',
       rows: [{ line: 'hello from the fake bucket', same: 1 }],
     })
+  })
+
+  it('keeps rows for the user across tasks, and a task dataset shadows it', async () => {
+    const made = await run({
+      title: 'kept',
+      code: `return await tools.dataset({ rows: [{ key: 'a', size: 1 }, { key: 'b', size: 2 }], name: 'kept', scope: 'user' })`,
+    })
+    expect(made.details.status, made.text).toBe('done')
+    expect(made.text).toContain('"scope": "user"')
+    const read = await run({
+      title: 'kept read',
+      code: `return { list: (await tools.datasets()).filter((d) => d.scope === 'user').map((d) => d.name), n: (await tools.sql({ name: 'kept', sql: 'SELECT count(*) AS n FROM rows' }))[0].n }`,
+    })
+    expect(JSON.parse(/\{[\s\S]*\}/.exec(read.text)?.[0] ?? '{}')).toEqual({
+      list: ['kept'],
+      n: 2,
+    })
+    // Another task finds it by name; its owner is the user, not this conversation.
+    const other = await deps.db.datasetByName('another-task', 'kept')
+    expect(other?.scope).toBe('user')
+    expect(other?.path.startsWith(deps.userDatasetsDir)).toBe(true)
+    // A task dataset of the same name shadows the kept one in this task.
+    await run({
+      title: 'shadow',
+      code: `return await tools.dataset({ rows: [{ key: 'z' }], name: 'kept' })`,
+    })
+    const shadow = await run({
+      title: 'shadow read',
+      code: `return (await tools.sql({ name: 'kept', sql: 'SELECT count(*) AS n FROM rows' }))[0].n`,
+    })
+    expect(shadow.text).toContain('1')
   })
 
   it('imports an S3 Inventory report with the schema its manifest names', async () => {

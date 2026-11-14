@@ -1,5 +1,6 @@
+import { obj, opt, str, unknown } from '@earendil-works/pi-schema'
 import { checkViewDoc, viewText } from '@shared/view'
-import { agentTool, type ToolDeps, Type } from './policy'
+import { agentTool, type ToolDeps } from './policy'
 
 /**
  * The agent's presentation primitive. The document is data; the window owns
@@ -11,9 +12,9 @@ export function renderTool(deps: ToolDeps) {
     name: 'render',
     description:
       'Compose a view from a declarative block tree. Use it when a table, chart, timeline, tree or diff says more than prose. It is optional: normal Markdown is always valid. The document is data, never HTML or code.',
-    parameters: Type.Object({
-      title: Type.Optional(Type.String({ description: 'A short name for the view.' })),
-      doc: Type.Unknown({
+    parameters: obj({
+      title: opt(str({ description: 'A short name for the view.' })),
+      doc: unknown({
         description:
           'A ViewDoc: {version:1, blocks:[...]}. Blocks: markdown, section, stack, row, table, chart, code, callout, kv, tree, diff, timeline, link.',
       }),

@@ -80,7 +80,10 @@ describe('the conversation', () => {
     )
     expect(screen.getByText('Which buckets are public?')).toBeTruthy()
     expect(screen.getByText('Thanks — what about access?')).toBeTruthy()
-    await waitFor(() => expect(screen.getByText('Nothing grants public access.')).toBeTruthy())
+    await waitFor(() => {
+      const answers = document.querySelectorAll('.msg.agent.text .prose')
+      expect(answers[answers.length - 1]?.textContent).toContain('Nothing grants public access.')
+    })
     expect(document.querySelectorAll('.msg.user')).toHaveLength(2)
     expect(document.querySelectorAll('.step.tool')).toHaveLength(1)
     for (const gone of ['Earlier in this task', 'Not checked', 'Findings', 'Work'])

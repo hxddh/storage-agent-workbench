@@ -48,8 +48,9 @@ preload surface, which is exactly `AgentApi` in `src/shared/contract.ts`.
   says what it does; the prompt does not list the tools or prescribe a
   workflow. Every turn starts from a message the user sent.
 - **One settlement.** Every turn settles in `Engine.settle()`: the failure
-  state, the search index, the memory digest, the task list and the shell
-  notification.
+  state, the memory digest, the task list and the shell notification. Search
+  rows are written by the extension's `afterRun` hook as a run's entries
+  commit; a failed or stopped run is completed at settlement.
 - **One projection.** `runtime/project.ts` maps durable entries and the live
   slot to `UiEntry`; `shared/conversation.ts` builds the thread, resolves
   citations and writes search rows. The window renders that thread; it does
@@ -62,8 +63,8 @@ say. Any read-only operation of a bundled service client is reachable
 
 ## What the harness decides
 
-Nothing about the agent's work. There is no round ceiling, hook, working
-budget or fixed output cap. Which calls to make, whether to repeat one, how
+Nothing about the agent's work. There is no round ceiling, no hook that
+blocks a call, no working budget and no fixed output cap. Which calls to make, whether to repeat one, how
 much to read, whether to delegate, what to remember and how long to work are
 the agent's. **Stop** is the user's control.
 
@@ -110,10 +111,10 @@ Each model configuration is its own provider in the shared pi-ai collection
    `Settings`, `Vault`, `Providers`, `Staging`, `MemoryStore`, then `Runtime`
    (pi, one extension, the tool registry), `Tasks` and `Engine`, registers IPC
    and creates the window. The vault is not opened at launch.
-2. A database at any `user_version` but 20 is cleared and created again;
-   `tasks/` is deleted with it and task-scoped memory documents are forgotten.
-   The rest of `memory.sqlite` stays: the agent's memory outlives versions.
-   Nothing is migrated, imported or backed up.
+2. A database at any `user_version` but 21 is cleared and created again;
+   `tasks/` and `datasets/` are deleted with it and task-scoped memory
+   documents are forgotten. The rest of `memory.sqlite` stays: the agent's
+   memory outlives versions. Nothing is migrated, imported or backed up.
 3. `Tasks.newTask()` creates one pi conversation per task and writes
    `task_meta` with a title from the first message.
 4. `Engine.submit()` installs the task's model for this turn, configures the
@@ -139,8 +140,9 @@ Each model configuration is its own provider in the shared pi-ai collection
    notice with **Continue**.
 10. pi compacts when the model context fills; the compaction shows as a
     divider. Provider-facing messages never reach the renderer.
-11. When a turn settles, `searchRows()` writes the task's user messages and
-    agent text to `search_docs`, and the digest is rebuilt so a new memory
+11. The extension's `afterRun` hook writes each committed run's user messages
+    and agent text to `search_docs`; a failed or stopped run is completed by
+    `searchRows()` at settlement. The digest is rebuilt then, so a new memory
     count is in the next turn.
 
 `project.ts` renders a view for a known view kind (`raw`, `note`, `query`,
@@ -199,6 +201,7 @@ shows as a failed step.
   window.json               window bounds
   .vault-key                only when no OS keyring (0600)
   staging/<token>/          files waiting for their message
+  datasets/<id>.sqlite      datasets the agent kept for the user
   tasks/<conversation>/
     uploads/                attached logs and inventories
     datasets/<id>.sqlite    one analytical database per import

@@ -3,9 +3,13 @@ import type { ToolDeps } from '../tools/policy'
 import { buildDigest, createAgent } from './agent'
 
 describe('the agent loop', () => {
-  it("has no hook that blocks a call: how long to work is the agent's", () => {
+  it('indexes the run after it settles, and has no hook that blocks a call', () => {
     const extension = createAgent({} as ToolDeps, { digest: () => '', language: () => 'en' }, [])
-    expect((extension as { hooks?: unknown[] }).hooks ?? []).toHaveLength(0)
+    const hooks =
+      (extension as { hooks?: { task?: string; handlers?: Record<string, unknown> }[] }).hooks ?? []
+    expect(hooks).toHaveLength(1)
+    expect(hooks[0]?.task).toBe('pi.generation')
+    expect(Object.keys(hooks[0]?.handlers ?? {})).toEqual(['afterRun'])
   })
 
   it('states the hard rules, and no ceiling or workflow', async () => {

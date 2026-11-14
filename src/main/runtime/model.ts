@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createModels, createProvider, type Model } from '@earendil-works/pi-ai'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
@@ -119,7 +119,14 @@ export async function learnOutputLimit(
   const window = stored.contextWindow > 0 ? stored.contextWindow : 128_000
   const ask = async (maxTokens: number): Promise<string | null> => {
     try {
-      const ref = installModel(models, stored, vault, undefined, `${PROVIDER_ID}-limit`, maxTokens)
+      const ref = installModel(
+        models,
+        stored,
+        vault,
+        undefined,
+        `${providerIdFor(stored)}-limit`,
+        maxTokens,
+      )
       const model = models.getModel(ref.provider, ref.modelId)
       if (!model) return 'no model'
       const response = await models.complete(
@@ -173,7 +180,7 @@ async function testModelWithKey(
 ): Promise<{ ok: boolean; detail: string }> {
   try {
     // A test has its own provider id: it never replaces a model a run is using.
-    const ref = installModel(models, stored, null, apiKey, `${PROVIDER_ID}-test`)
+    const ref = installModel(models, stored, null, apiKey, `${PROVIDER_ID}-test-${randomUUID()}`)
     const model = models.getModel(ref.provider, ref.modelId)
     if (!model) return { ok: false, detail: 'The model is not available.' }
     const started = Date.now()
