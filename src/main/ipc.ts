@@ -223,6 +223,9 @@ export function registerIpc(app: App): void {
   ipcMain.handle('agent:saveSettings', async (_event, patch: Partial<AppSettings>) => {
     app.settings.patch(patch)
     if (patch.theme) nativeTheme.themeSource = patch.theme
+    // Started at login, the app opens no window: schedules run in the background.
+    if (typeof patch.openAtLogin === 'boolean')
+      electronApp.setLoginItemSettings({ openAtLogin: patch.openAtLogin, args: ['--background'] })
   })
 
   ipcMain.handle('agent:datasets', () => app.tasks.datasetRows())

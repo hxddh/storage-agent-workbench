@@ -1,3 +1,77 @@
+## 43.0.0 — 2026-11-22
+
+Storage Agent stops being a question-and-answer tool and becomes an agent that
+looks after your storage: it keeps what it learns, watches what you ask it to,
+tells you when something needs you, and fixes what you approve. The app adds a
+few general capabilities; every one of those things is the agent composing
+them from your request — no feature code was written for any of them.
+
+**New capabilities (tools)**
+
+- **`workspace`** — a folder the agent owns across tasks, that you can open:
+  notes, skills, datasets, scripts, a board and exports, plus its own
+  `db.sqlite`. Paths never leave the folder; secrets are redacted on write.
+  A `board/<name>.view.json` it writes is pinned on Home; a file in
+  `exports/` gets a Save link in the conversation. `query` can run a
+  workspace script (`run({path, args})`).
+- **`schedule`** — work for later: at a time, every n minutes or hours,
+  daily or weekly. Each schedule is a task you can open; a pi durable task
+  sleeps until the run is due, so timing survives restarts. A run nobody is
+  watching stops at its token budget (default 100,000).
+- **`notify`** — a system notification and an inbox entry on Home that opens
+  the task; one per run; your notification setting applies.
+- **`change`** — the agent proposes one write; you approve it in the window
+  and only then does the app run exactly that call. Reversible bucket
+  configuration only (public access block, policy, ownership, encryption,
+  versioning, lifecycle, CORS, logging, tags, ACL, account-wide block). The
+  app reads what the change replaces first, so every applied change can be
+  rolled back. Off by default per account ("Allow changes I approve"), with an
+  optional AWS profile used only for changes.
+- **`self`** — the agent knows its model and window, what the task spent, the
+  accounts (never a key), its schedules and version; it can name and pin its
+  task, and propose an account's scope or change permission for you to
+  approve.
+- **MCP** — `storage-agent --mcp` serves `call`, `query`, `probe`, `more` and
+  the workspace's reads to other agents over stdio, with the same scope,
+  redaction and audit.
+
+Removed, folded into the above: `memory`, `tool`, `skill`, `render`,
+`discover`. 42's memory documents, methods and user skills move into the
+workspace on first launch (`memory.sqlite` is renamed, not deleted).
+
+**Home** shows what the agent keeps in front of you: its inbox, the board and
+its schedules. Settings: Model, Storage accounts, Workspace, Appearance.
+"Open at login" starts the app in the background; with work scheduled it keeps
+running when the window closes, and launching it again opens the window.
+
+**Safety, from the independent review of 42**
+
+- Every input member must be one the operation models: a scoped account could
+  pass the scope check with a `Bucket` the SDK then dropped (S3 Control jobs,
+  access points, Storage Lens). Fixed.
+- `s3control:GetDataAccess` (hands out credentials) no longer runs.
+- A saved model key goes only to the provider and endpoint it was saved for.
+- Results are redacted whole before they are kept or cut; body pieces end on a
+  line; the IAM key CSV, YAML/ini/env secrets and PEM keys are redacted.
+- Compaction is sized to the model's window and a reply takes at most a
+  quarter of it; a window under 16,384 tokens is refused with how to load the
+  model with more (a 4k local model could not hold the prompt).
+- `probe` stops reading once it has 4 KB.
+- Workspace skills are listed as untrusted data and never replace a bundled
+  skill.
+
+**Data**: the host schema now migrates forward (22 → 23: schedules, changes,
+inbox, account change settings). Your tasks and accounts survive this upgrade
+and later ones; a database from a newer version is refused, not cleared.
+
+**Tests**: e2e covers the workspace, a schedule firing and notifying, and a
+change proposed → approved → verified → rolled back; moto covers the change
+round-trip; `scripts/mcp-smoke.mjs` talks to the built app over MCP in CI;
+`bench.mjs` gains six real-model acceptance scenarios (run with `EVAL_*`).
+
+Not in 43: a tray icon (the background app reopens when launched again), and
+separate static keys for changes (use a profile).
+
 ## 42.0.0 — 2026-11-14
 
 The agent sees what the services return, knows its trade, and runs on the

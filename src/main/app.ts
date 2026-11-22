@@ -92,6 +92,11 @@ export class App {
     this.tasks.start()
   }
 
+  /** Whether the app should keep running with no window: work is scheduled, or it starts at login. */
+  async hasScheduledWork(): Promise<boolean> {
+    return this.settings.get().openAtLogin || (await this.db.listSchedules()).length > 0
+  }
+
   /** Whether a task is a schedule's: its runs notify only when the agent says so. */
   async isScheduled(taskId: string): Promise<boolean> {
     return (await this.db.listSchedules()).some((row) => row.conversation_id === taskId)

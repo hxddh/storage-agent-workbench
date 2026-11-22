@@ -11,6 +11,7 @@ import type { ToolDetails } from '@shared/contract'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { type FakeBucket, startFakeS3 } from '../../scripts/fake-s3.mjs'
 import { AppDb } from './db'
+import { mcpTools } from './mcp'
 import { Providers } from './providers'
 import { checkCall, operationsOf, shape } from './s3/api'
 import type { Vault } from './security/vault'
@@ -150,6 +151,33 @@ describe('what the task holds', () => {
     const listed = await call({ service: 's3', operation: 'ListBuckets' })
     const again = await run(moreTool(deps), { evidence: listed.details.evidenceId! })
     expect(sent(again.text)).toContain('Buckets')
+  })
+})
+
+describe('MCP', () => {
+  it('serves the read tools with the same envelope and refuses workspace writes', async () => {
+    const tools = mcpTools(deps)
+    expect(
+      tools
+        .list()
+        .map((tool) => tool.name)
+        .sort(),
+    ).toEqual(['call', 'more', 'probe', 'query', 'workspace'])
+    expect(tools.list().find((tool) => tool.name === 'call')?.inputSchema).toMatchObject({
+      type: 'object',
+    })
+    const listed = await tools.call('call', { service: 's3', operation: 'ListBuckets' })
+    expect(listed.isError).toBe(false)
+    expect(listed.content[0]).toMatchObject({ type: 'text' })
+    expect(JSON.stringify(listed.content)).toMatch(/untrusted-data-[0-9a-f]{12}/)
+    expect(JSON.stringify(listed.content)).toContain('cors-open')
+    const write = await tools.call('workspace', {
+      action: 'write',
+      path: 'notes/x.md',
+      content: 'x',
+    })
+    expect(write.isError).toBe(true)
+    expect((await tools.call('change', {})).isError).toBe(true)
   })
 })
 

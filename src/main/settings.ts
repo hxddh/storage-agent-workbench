@@ -17,6 +17,7 @@ export interface StoredSettings {
   language: Lang
   theme: Theme
   notify: boolean
+  openAtLogin: boolean
   model: StoredModel | null
   /** Every model saved, each with its own key; the default is one of them. */
   models: StoredModel[]
@@ -42,6 +43,7 @@ const DEFAULTS: StoredSettings = {
   language: 'en',
   theme: 'system',
   notify: true,
+  openAtLogin: false,
   model: null,
   models: [],
   lastTaskId: null,
@@ -67,6 +69,7 @@ export class Settings {
       language: this.value.language,
       theme: this.value.theme,
       notify: this.value.notify,
+      openAtLogin: this.value.openAtLogin,
     }
   }
 
@@ -75,6 +78,7 @@ export class Settings {
     if (patch.theme === 'light' || patch.theme === 'dark' || patch.theme === 'system')
       this.value.theme = patch.theme
     if (typeof patch.notify === 'boolean') this.value.notify = patch.notify
+    if (typeof patch.openAtLogin === 'boolean') this.value.openAtLogin = patch.openAtLogin
     this.save()
   }
 
@@ -135,6 +139,7 @@ export class Settings {
         language: raw.language === 'zh' ? 'zh' : 'en',
         theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
         notify: raw.notify !== false,
+        openAtLogin: raw.openAtLogin === true,
         model,
         models,
         lastTaskId: typeof raw.lastTaskId === 'string' ? raw.lastTaskId : null,

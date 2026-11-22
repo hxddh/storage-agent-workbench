@@ -121,6 +121,7 @@ export function Settings({
   const [confirming, setConfirming] = useState<string | null>(null)
   const [datasets, setDatasets] = useState<KeptDatasetRow[]>([])
   const [skills, setSkills] = useState<SkillRow[]>([])
+  const [openAtLogin, setOpenAtLogin] = useState(boot.settings.openAtLogin)
   const trap = useFocusTrap<HTMLDivElement>(onClose, '[data-active-tab="true"]')
 
   useEffect(() => {
@@ -1007,6 +1008,18 @@ export function Settings({
                   />
                   <span className="check-box" aria-hidden="true" />
                   <span>{t.notify}</span>
+                </label>
+                <label className="check-field">
+                  <input
+                    type="checkbox"
+                    checked={openAtLogin}
+                    onChange={(event) => {
+                      setOpenAtLogin(event.target.checked)
+                      void window.agent.saveSettings({ openAtLogin: event.target.checked })
+                    }}
+                  />
+                  <span className="check-box" aria-hidden="true" />
+                  <span>{t.openAtLogin}</span>
                 </label>
               </section>
             </div>

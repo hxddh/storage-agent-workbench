@@ -440,7 +440,8 @@ export interface AppSettings {
   theme: Theme
   /** A system notification when a run finishes while the window is in the background. */
   notify: boolean
-  /** Notes older than this are hidden from Memory; 0 keeps every note. */
+  /** Start at login in the background, so schedules run without opening the window. */
+  openAtLogin: boolean
 }
 
 export type UpdateState =
