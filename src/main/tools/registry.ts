@@ -10,11 +10,7 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'query',
   'probe',
   'more',
-  'discover',
-  'render',
-  'memory',
-  'tool',
+  'workspace',
   'delegate',
-  'skill',
   'ask',
 ]

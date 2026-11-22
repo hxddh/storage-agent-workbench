@@ -274,13 +274,15 @@ try {
   const kept = await openTool('Ran a read-only query')
   await kept.locator('.table-block table, .view-code, pre.code').first().waitFor({ timeout: 5_000 })
   await page.getByRole('button', { name: 'Settings' }).click()
-  // The agent's know-how, as data the user can read and replace.
-  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  // The agent's workspace: what it keeps across tasks, and its know-how as data.
+  await page.getByRole('button', { name: 'Workspace', exact: true }).click()
   await page.locator('.method-row:has-text("public-access")').waitFor({ timeout: 5_000 })
   if ((await page.locator('section:not([hidden]) .method-row').count()) < 9)
     await fail('Settings does not list the bundled skills')
   console.log('SKILLS OK')
-  await page.getByRole('button', { name: 'Memory', exact: true }).click()
+  if (!(await page.locator('section:not([hidden]) .workspace-row').count()))
+    await fail('the workspace pane lists nothing after a survey')
+  console.log('WORKSPACE OK')
   await page.locator('.dataset-row').first().waitFor({ timeout: 5_000 })
   if (!(await page.locator('.dataset-row').first().innerText()).includes('bucket_counts'))
     await fail('kept dataset missing from Settings')
@@ -299,7 +301,7 @@ try {
   // A view the agent composed, not app-generated report scaffolding.
   await page.getByRole('button', { name: 'New task' }).click()
   await say('Show the buckets as a view')
-  const rendered = await openTool('Composed a view')
+  const rendered = await openTool('Ran a read-only query')
   await rendered.locator('.view-doc table').waitFor({ timeout: 5_000 })
   if (!(await rendered.locator('.view-doc').innerText()).includes('web-assets'))
     await fail('render view missing web-assets')
@@ -307,12 +309,13 @@ try {
 
   // A method the agent writes, saves and runs.
   await page.getByRole('button', { name: 'New task' }).click()
-  await say('Write a method for bucket names and run it')
-  const method = await openTool('Used an agent method')
+  await say('Write a script for bucket names and run it')
+  await openTool('Used its workspace')
+  const method = await openTool('Ran a read-only query')
   await method.locator('.table-block table').waitFor({ timeout: 5_000 })
   if (!(await method.locator('.table-block').innerText()).includes('web-assets'))
-    await fail('agent method did not return buckets')
-  console.log('AGENT TOOL OK')
+    await fail('workspace script did not return buckets')
+  console.log('WORKSPACE SCRIPT OK')
 
   // A child agent for an independent investigation.
   await page.getByRole('button', { name: 'New task' }).click()

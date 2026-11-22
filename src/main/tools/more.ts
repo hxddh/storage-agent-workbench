@@ -23,6 +23,16 @@ export function locate(
   conversationId: string,
   name: string,
 ): { path: string; unit: 'bytes' | 'characters'; mime: string | null } {
+  const skill = /^skill:([a-z][a-z0-9-]{1,48})$/.exec(name)?.[1]
+  if (skill && deps.bundledSkillsDir)
+    return { path: join(deps.bundledSkillsDir, `${skill}.md`), unit: 'bytes', mime: null }
+  const inWorkspace = /^workspace:(.+)$/.exec(name)?.[1]
+  if (inWorkspace && deps.workspace)
+    return {
+      path: deps.workspace.resolve(inWorkspace),
+      unit: 'bytes',
+      mime: IMAGES[extname(inWorkspace).toLowerCase()] ?? null,
+    }
   if (/^objects\/[A-Za-z0-9._-]+$/.test(name))
     return { path: join(deps.taskDir(conversationId), name), unit: 'bytes', mime: null }
   const attachment = /^attachment:([^/\\]+)$/.exec(name)?.[1]
@@ -57,7 +67,7 @@ export async function readPart(
     handle = await open(where.path, 'r')
   } catch {
     throw new Error(
-      `Nothing named "${name}" in this task: give a call's evidence id, an object ref (objects/…) or attachment:<file name>.`,
+      `Nothing named "${name}": give a call's evidence id, an object ref (objects/…), attachment:<file name>, workspace:<path> or skill:<name>.`,
     )
   }
   try {
@@ -107,7 +117,7 @@ export async function readPart(
 export function moreTool(deps: ToolDeps) {
   return agentTool(deps, {
     name: 'more',
-    description: `Read what this task holds, from any offset: a call's whole result again by its evidence id (every result is kept, so this works after the conversation was compacted too), an object body by its ref (objects/…), or a file the user attached as attachment:<file name>. An attached image comes back as an image the model can see. length defaults to one piece (up to ${PIECE.toLocaleString('en-US')} characters; less for a model with a small window).`,
+    description: `Read any stretch, from any offset, of: a call's whole result again by its evidence id (every result is kept, so this works after the conversation was compacted too), an object body by its ref (objects/…), a file the user attached (attachment:<file name>), a workspace file (workspace:<path>) or a bundled skill (skill:<name>). An attached image comes back as an image the model can see. length defaults to one piece (up to ${PIECE.toLocaleString('en-US')} characters; less for a model with a small window).`,
     parameters: obj({
       evidence: str({
         description: "A call's evidence id, an object ref (objects/…) or attachment:<file name>.",

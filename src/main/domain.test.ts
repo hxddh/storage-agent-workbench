@@ -11,15 +11,14 @@ import type { ToolDetails } from '@shared/contract'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { type FakeBucket, startFakeS3 } from '../../scripts/fake-s3.mjs'
 import { AppDb } from './db'
-import { MemoryStore } from './memory'
 import { Providers } from './providers'
 import { checkCall, operationsOf, shape } from './s3/api'
 import type { Vault } from './security/vault'
 import { callTool } from './tools/call'
-import { memoryTool } from './tools/memory'
 import { moreTool } from './tools/more'
 import { PIECE, type ToolDeps } from './tools/policy'
 import { isPublicAddress, probeTool } from './tools/probe'
+import { Workspace } from './workspace'
 
 const BUCKETS: Record<string, FakeBucket> = {
   'aws-public': { public: true },
@@ -90,7 +89,7 @@ beforeAll(async () => {
   deps = {
     db,
     providers,
-    memory: MemoryStore.open(join(taskDir, 'memory.sqlite')),
+    workspace: new Workspace(join(taskDir, 'workspace')),
     taskDir: () => taskDir,
     datasetsDir: () => tmpdir(),
     userDatasetsDir: join(taskDir, 'user-datasets'),
@@ -454,25 +453,5 @@ describe('a result longer than one piece', () => {
     const next = await run(moreTool(deps), { evidence, offset })
     expect(next.details.status).toBe('done')
     expect(sent(next.text).length).toBeGreaterThan(0)
-  })
-})
-
-describe('memory', () => {
-  it('remembers JSON without its secrets, lists it, and forgets it', async () => {
-    const { details } = await run(memoryTool(deps), {
-      action: 'put',
-      key: 'logs',
-      value: { bucket: 'cors-open', secret: 'aws_secret_access_key = wJalrXUtnFEMI' },
-      text: 'Logs land in cors-open. aws_secret_access_key = wJalrXUtnFEMI',
-    })
-    expect(details.status).toBe('done')
-    const mine = deps.memory?.get('logs')
-    expect(mine?.value).toMatchObject({ bucket: 'cors-open' })
-    expect(JSON.stringify(mine?.value)).not.toContain('wJalrXUtnFEMI')
-    const list = await run(memoryTool(deps), { action: 'list' })
-    expect(list.details.status).toBe('done')
-    const forgot = await run(memoryTool(deps), { action: 'delete', key: 'logs' })
-    expect(forgot.details.status).toBe('done')
-    expect(deps.memory?.get('logs')).toBeNull()
   })
 })

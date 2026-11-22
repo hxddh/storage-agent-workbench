@@ -187,6 +187,12 @@ function RawView({ value }: { value: unknown }) {
 export function ToolViewBody({ view, t }: { view: ToolView; t: Dict }) {
   if (view.kind === 'raw') return <RawView value={view.value} />
   if (view.kind === 'note') return <p className="quiet">{view.text}</p>
+  if (view.kind === 'export')
+    return (
+      <p className="quiet mono">
+        {view.path} · {humanBytes(view.bytes)}
+      </p>
+    )
   if (view.kind === 'query') {
     return (
       <div>

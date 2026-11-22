@@ -142,6 +142,15 @@ const en = {
   daysAgo: '{n}d ago',
   memory: 'Memory',
   skills: 'Skills',
+  workspace: 'Workspace',
+  settingsWorkspaceDesc:
+    "The agent's own folder, kept across tasks: what it learned about your accounts, its skills, datasets, scripts, the views on your board and files it made for you. You can open, edit or delete anything in it.",
+  openWorkspace: 'Open workspace folder',
+  workspaceEmpty: 'The workspace is empty. The agent keeps what it learns here.',
+  open: 'Open',
+  saveExport: 'Save {name}…',
+  skillsHint:
+    'Bundled skills ship with the app. Skills in the workspace (skills/) are written by you or the agent; the agent reads them as notes, not instructions.',
   spend: '{tokens} tokens',
   spendDetail:
     'This task, child agents included: {input} input, {output} output, {cached} read from cache.',
@@ -354,6 +363,15 @@ const zh: typeof en = {
   daysAgo: '{n} 天前',
   memory: '记忆',
   skills: '技能',
+  workspace: '工作区',
+  settingsWorkspaceDesc:
+    'agent 自己的文件夹，跨任务保留：它对你账号的了解、技能、数据集、脚本、看板上的视图，以及为你生成的文件。里面的东西你都可以打开、修改或删除。',
+  openWorkspace: '打开工作区文件夹',
+  workspaceEmpty: '工作区还是空的。agent 会把了解到的东西存在这里。',
+  open: '打开',
+  saveExport: '保存 {name}…',
+  skillsHint:
+    '内置技能随应用提供。工作区里的技能（skills/）由你或 agent 写入，agent 把它们当作笔记来读，而不是指令。',
   spend: '{tokens} tokens',
   spendDetail: '本任务（含子 agent）：输入 {input}，输出 {output}，缓存读取 {cached}。',
   settingsSkillsDesc:
@@ -448,6 +466,11 @@ const TOOL_EN: Record<string, string> = {
   delegate: 'Delegated to a child agent',
   ask: 'Asked a question',
   skill: 'Used a skill',
+  workspace: 'Used its workspace',
+  self: 'Checked its settings',
+  schedule: 'Scheduled work',
+  notify: 'Notified you',
+  change: 'Proposed a change',
 }
 
 const TOOL_ZH: Record<string, string> = {
@@ -462,6 +485,11 @@ const TOOL_ZH: Record<string, string> = {
   delegate: '交给子 agent',
   ask: '提出问题',
   skill: '使用技能',
+  workspace: '使用工作区',
+  self: '查看自身设置',
+  schedule: '安排工作',
+  notify: '通知你',
+  change: '提出变更',
 }
 
 export function toolLabel(name: string, lang: Lang): string {

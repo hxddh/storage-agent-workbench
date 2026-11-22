@@ -6,12 +6,11 @@ import { defineTool, type ToolRegistration } from '@earendil-works/pi-durable'
 import { opt, type Schema, type Static, str } from '@earendil-works/pi-schema'
 import type { ToolDetails, ToolName, ToolView, UiEntry } from '@shared/contract'
 import type { AppDb } from '../db'
-import type { MemoryStore } from '../memory'
 import type { ProviderConfig, Providers } from '../providers'
 import { describeError } from '../s3/api'
 import { bound, redact, redactView, wrapUntrusted } from '../security/redact'
 import { assertInScope, ScopeError } from '../security/scope'
-import type { Skills } from '../skills'
+import type { Workspace } from '../workspace'
 
 export interface ToolDeps {
   db: AppDb
@@ -22,9 +21,10 @@ export interface ToolDeps {
   /** Where a dataset the agent keeps across tasks lives. */
   userDatasetsDir: string
   uploadsDir: (conversationId: string) => string
-  memory?: MemoryStore
-  /** Markdown advice the agent reads when a question needs it. */
-  skills?: Skills
+  /** The agent's own folder across tasks: notes, skills, data, scripts, board, exports. */
+  workspace?: Workspace
+  /** Where the bundled skills are written out, for `more` (evidence "skill:<name>"). */
+  bundledSkillsDir?: string
   /** How many characters of one result the model gets at once, for this task's model. */
   piece?: (conversationId: string) => number
   /** The projected entries of a conversation, for a delegate's child answer. */

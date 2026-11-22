@@ -76,7 +76,7 @@ function ToolStep({
   // a storage read's input; for a method, view or child agent it is noise.
   const showArgs =
     item.args &&
-    !['render', 'delegate', 'memory', 'tool', 'discover', 'ask', 'skill'].includes(item.name)
+    !['delegate', 'workspace', 'ask', 'self', 'schedule', 'notify', 'change'].includes(item.name)
   const elapsed =
     item.ms !== null
       ? duration(item.ms)
@@ -108,6 +108,15 @@ function ToolStep({
         {elapsed && <span className="step-time">{elapsed}</span>}
         <ChevronRight size={13} className={`chev ${open ? 'open' : ''}`} />
       </button>
+      {item.view?.kind === 'export' && (
+        <button
+          className="export-link"
+          type="button"
+          onClick={() => void window.agent.saveExport((item.view as { path: string }).path)}
+        >
+          {fill(t.saveExport, { name: item.view.path.replace(/^exports\//, '') })}
+        </button>
+      )}
       {open && (
         <div className="step-detail">
           {showArgs && <p className="step-args mono">{item.args}</p>}

@@ -3005,3 +3005,28 @@ sup.cite.missing {
   overflow: auto;
   margin: 6px 0 0;
 }
+
+/* A file the agent made for the user: a link under its step, always visible. */
+.export-link {
+  display: inline-flex;
+  align-items: center;
+  margin: 2px 0 4px 22px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  transition: background var(--fast) var(--ease);
+}
+.export-link:hover {
+  color: var(--ink);
+}
+
+.workspace-row .memory-actions {
+  display: flex;
+  gap: 12px;
+}
+.workspace-row .memory-head {
+  flex: 1;
+  min-width: 0;
+}

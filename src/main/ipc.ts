@@ -1,4 +1,4 @@
-import { stat, writeFile } from 'node:fs/promises'
+import { copyFile, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, sep } from 'node:path'
 import type {
   AccountInput,
@@ -225,25 +225,37 @@ export function registerIpc(app: App): void {
     if (patch.theme) nativeTheme.themeSource = patch.theme
   })
 
-  ipcMain.handle('agent:memory', () => app.tasks.memoryRows())
-
   ipcMain.handle('agent:datasets', () => app.tasks.datasetRows())
 
   ipcMain.handle('agent:deleteDataset', (_event, id: string) => app.tasks.deleteDataset(id))
 
-  ipcMain.handle('agent:deleteMemory', (_event, id: string) => app.tasks.deleteMemory(id))
+  ipcMain.handle('agent:workspace', () => app.tasks.workspaceEntries())
 
-  ipcMain.handle('agent:agentTools', () => app.tasks.agentTools())
+  ipcMain.handle('agent:deleteWorkspacePath', (_event, path: string) =>
+    app.tasks.deleteWorkspacePath(String(path)),
+  )
 
-  ipcMain.handle('agent:deleteAgentTool', (_event, id: string) => app.tasks.deleteAgentTool(id))
+  ipcMain.handle('agent:openWorkspace', async (_event, path?: string) => {
+    const root = app.tasks.workspaceFolder()
+    // A path the window names is resolved inside the workspace, never outside it.
+    const target = path ? app.runtime.tools.workspace?.resolve(String(path)) : root
+    await shell.openPath(target ?? root)
+  })
+
+  ipcMain.handle('agent:saveExport', async (_event, path: string) => {
+    const source = app.runtime.tools.workspace?.resolve(String(path))
+    if (!source) return false
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: source.split(/[\\/]/).pop(),
+    })
+    if (canceled || !filePath) return false
+    await copyFile(source, filePath)
+    return true
+  })
 
   ipcMain.handle('agent:skills', () => app.tasks.skills())
 
-  ipcMain.handle('agent:deleteSkill', (_event, name: string) => app.tasks.deleteSkill(String(name)))
-
-  ipcMain.handle('agent:openSkillsFolder', async () => {
-    await shell.openPath(await app.tasks.skillsFolder())
-  })
+  ipcMain.handle('agent:board', () => app.tasks.board())
 
   ipcMain.handle('agent:openExternal', (_event, url: string) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url)

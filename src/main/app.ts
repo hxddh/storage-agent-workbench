@@ -4,7 +4,7 @@ import type { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { AppEvent, Bootstrap, ModelInput, TaskSummary, UpdateState } from '@shared/contract'
 import { app } from 'electron'
 import { AppDb } from './db'
-import { MemoryStore } from './memory'
+import { importLegacy } from './legacy'
 import { Providers } from './providers'
 import { Engine } from './runtime/engine'
 import { createModelSet, testModel, testModelDraft } from './runtime/model'
@@ -31,7 +31,6 @@ export class App {
   tasks!: Tasks
   engine!: Engine
   staging!: Staging
-  memory!: MemoryStore
   update: UpdateState = { state: 'idle' }
   /** Set by the shell once an update is downloaded. */
   installUpdate?: () => void
@@ -61,22 +60,20 @@ export class App {
     this.providers = new Providers(this.db, this.vault)
     this.staging = new Staging(join(dataDir, 'staging'))
     await this.staging.clear()
-    // Memory outlives tasks and app versions; documents of tasks a reset cleared go with them.
-    this.memory = MemoryStore.open(join(dataDir, 'memory.sqlite'))
-    if (this.db.resetTasks) this.memory.forgetTasks()
-
     this.runtime = await Runtime.open(this.database, {
       db: this.db,
       providers: this.providers,
       settings: this.settings,
       vault: this.vault,
       models: this.models,
-      memory: this.memory,
       dirs: runtimeDirs(dataDir),
       emit: (event) => this.hooks.emit(event),
       settled: (task, outcome) => this.hooks.settled(task, outcome),
       working: (count) => this.hooks.working(count),
     })
+    // 42.0.0's memory, methods and skills move into the workspace once.
+    const workspace = this.runtime.tools.workspace
+    if (workspace) await importLegacy(dataDir, this.db, workspace).catch(() => [])
     this.tasks = new Tasks(this.runtime)
     this.engine = new Engine(this.runtime, this.tasks)
     this.tasks.start()
@@ -146,6 +143,5 @@ export class App {
     await this.tasks?.close().catch(() => undefined)
     await this.runtime?.close().catch(() => undefined)
     await this.database?.close().catch(() => undefined)
-    this.memory?.close()
   }
 }

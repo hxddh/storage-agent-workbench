@@ -29,12 +29,12 @@ export type ToolName =
   | 'probe'
   | 'more'
   | 'ask'
-  | 'discover'
-  | 'render'
-  | 'memory'
-  | 'tool'
+  | 'workspace'
   | 'delegate'
-  | 'skill'
+  | 'self'
+  | 'schedule'
+  | 'notify'
+  | 'change'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
 
@@ -45,6 +45,20 @@ export interface Table {
 }
 
 /** A method the agent wrote for itself. */
+export interface WorkspaceEntry {
+  path: string
+  kind: 'file' | 'dir'
+  bytes: number
+  modifiedAt: string
+}
+
+export interface BoardItem {
+  path: string
+  title: string
+  doc: ViewDoc
+  modifiedAt: string
+}
+
 export interface SkillRow {
   name: string
   description: string
@@ -127,6 +141,8 @@ export type ToolView =
     }
   /** Rows from agent memory. */
   | { kind: 'memory'; title: string; table: Table; text?: string }
+  /** A file the agent wrote to the workspace's exports/ for the user. */
+  | { kind: 'export'; path: string; bytes: number }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped'
 
@@ -454,15 +470,14 @@ export interface AgentApi {
   retryTask(taskId: string): Promise<void>
   continueTask(taskId: string): Promise<void>
   search(query: string): Promise<SearchHit[]>
-  memory(): Promise<MemoryRow[]>
-  deleteMemory(id: string): Promise<void>
   datasets(): Promise<KeptDatasetRow[]>
   deleteDataset(id: string): Promise<void>
-  agentTools(): Promise<AgentToolRow[]>
-  deleteAgentTool(id: string): Promise<void>
+  workspace(): Promise<WorkspaceEntry[]>
+  deleteWorkspacePath(path: string): Promise<void>
+  openWorkspace(path?: string): Promise<void>
+  saveExport(path: string): Promise<boolean>
   skills(): Promise<SkillRow[]>
-  deleteSkill(name: string): Promise<void>
-  openSkillsFolder(): Promise<void>
+  board(): Promise<BoardItem[]>
   saveText(input: {
     name: string
     content: string

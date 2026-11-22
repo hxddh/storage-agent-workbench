@@ -5,19 +5,17 @@ import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { ToolDetails } from '@shared/contract'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { AppDb } from '../db'
-import { MemoryStore } from '../memory'
 import type { ProviderConfig, Providers } from '../providers'
+import { Workspace } from '../workspace'
 import { delegateTool } from './delegate'
-import { discoverTool } from './discover'
 import { createTools } from './index'
-import { memoryTool } from './memory'
 import type { ToolDeps } from './policy'
-import { renderTool } from './render'
-import { toolTool } from './tool'
+import { queryTool } from './query'
+import { workspaceTool } from './workspace'
 
 const dir = mkdtempSync(join(tmpdir(), 'sa-agent-tools-'))
 let db: AppDb
-let memory: MemoryStore
+let workspace: Workspace
 let deps: ToolDeps
 let n = 0
 
@@ -33,7 +31,7 @@ const config = {
 
 beforeEach(async () => {
   db = await AppDb.open(await openNodeSqliteDatabase(join(dir, `db-${++n}.sqlite`)))
-  memory = MemoryStore.open(join(dir, `memory-${n}.sqlite`))
+  workspace = new Workspace(join(dir, `workspace-${n}`))
   deps = {
     db,
     providers: {
@@ -41,7 +39,7 @@ beforeEach(async () => {
       regional: () => undefined,
       client: () => ({ send: async () => ({}) }),
     } as unknown as Providers,
-    memory,
+    workspace,
     taskDir: () => join(dir, `task-${n}`),
     userDatasetsDir: join(dir, `user-datasets-${n}`),
     datasetsDir: () => join(dir, `datasets-${n}`),
@@ -75,110 +73,84 @@ async function run(
   }
 }
 
-describe('agent-authored tools', () => {
-  it('saves, lists and runs a method in the read-only sandbox', async () => {
-    const saved = await run(toolTool(deps), {
-      action: 'save',
-      name: 'rows',
-      description: 'two rows',
-      schema: { type: 'object', properties: {}, additionalProperties: false },
-      code: 'return [{ bucket: "logs", n: 2 }]',
-      scope: 'user',
+describe('workspace', () => {
+  it('keeps files across tasks, redacts secrets, and searches them', async () => {
+    const wrote = await run(workspaceTool(deps), {
+      action: 'write',
+      path: 'notes/accounts.md',
+      content: 'Vendor 999988887777 reads exports/.\naws_secret_access_key = wJalrXUtnFEMI',
     })
-    expect(saved.details.status).toBe('done')
-    const list = await run(toolTool(deps), { action: 'list' })
-    expect(list.details.status).toBe('done')
-    expect(JSON.stringify(list.details.view)).toContain('rows')
-    const ran = await run(toolTool(deps), { action: 'run', name: 'rows', args: {} })
-    expect(ran.details.status).toBe('done')
-    expect(JSON.stringify(ran.details.view)).toContain('logs')
-    const bad = await run(toolTool(deps), { action: 'run', name: 'rows', args: { extra: true } })
-    expect(bad.details.status).toBe('failed')
-    await run(toolTool(deps), {
-      action: 'save',
-      name: 'echo',
-      schema: { type: 'object', properties: { bucket: { type: 'string' } }, required: ['bucket'] },
-      code: 'return [{ bucket: args.bucket }]',
-    })
-    const echoed = await run(toolTool(deps), {
-      action: 'run',
-      name: 'echo',
-      args: { bucket: 'logs' },
-    })
-    expect(JSON.stringify(echoed.details.view)).toContain('logs')
+    expect(wrote.details.status).toBe('done')
+    const read = await run(workspaceTool(deps), { action: 'read', path: 'notes/accounts.md' })
+    expect(read.text).toContain('999988887777')
+    expect(read.text).toContain('aws_secret_access_key = [redacted]')
+    const found = await run(workspaceTool(deps), { action: 'search', text: 'vendor' })
+    expect(found.text).toContain('notes/accounts.md:1')
+    const listed = await run(workspaceTool(deps), { action: 'list' })
+    expect(listed.text).toContain('notes/accounts.md')
   })
 
-  it('stores a method as written, identifiers included', async () => {
-    await run(toolTool(deps), {
-      action: 'save',
-      name: 'role_check',
-      code: "return 'arn:aws:iam::123456789012:role/x'",
+  it('never leaves its folder or its own database', async () => {
+    for (const path of ['../escape.md', '/etc/passwd', 'notes/../../x'])
+      expect(
+        (await run(workspaceTool(deps), { action: 'write', path, content: 'x' })).isError,
+      ).toBe(true)
+    const attach = await run(workspaceTool(deps), {
+      action: 'sql',
+      sql: "ATTACH DATABASE '/tmp/other.sqlite' AS other",
     })
-    const saved = await db.getAgentTool('role_check', 'c1')
-    expect(saved?.code).toContain('arn:aws:iam::123456789012:role/x')
+    expect(attach.isError).toBe(true)
+    expect(attach.text).toMatch(/ATTACH/)
+    await run(workspaceTool(deps), {
+      action: 'sql',
+      sql: 'CREATE TABLE seen (bucket TEXT, at TEXT)',
+    })
+    await run(workspaceTool(deps), {
+      action: 'sql',
+      sql: 'INSERT INTO seen VALUES (?, ?)',
+      params: ['web-assets', '2026-11-22'],
+    })
+    const rows = await run(workspaceTool(deps), { action: 'sql', sql: 'SELECT bucket FROM seen' })
+    expect(rows.text).toContain('web-assets')
   })
 
-  it('does not let a method reach the network or filesystem', async () => {
-    await run(toolTool(deps), {
-      action: 'save',
-      name: 'escape',
-      schema: { type: 'object', additionalProperties: false },
-      code: 'return [{ fetch: typeof fetch, require: typeof require, process: typeof process }]',
+  it('pins a view on the board and links an export', async () => {
+    await run(workspaceTool(deps), {
+      action: 'write',
+      path: 'board/cost.view.json',
+      content: JSON.stringify({
+        title: 'Storage cost',
+        doc: { version: 1, blocks: [{ type: 'markdown', text: '**12 TB**' }] },
+      }),
     })
-    const ran = await run(toolTool(deps), { action: 'run', name: 'escape', args: {} })
-    expect(ran.details.status).toBe('done')
-    expect(JSON.stringify(ran.details.view)).toContain('undefined')
-  })
-})
-
-describe('render and memory', () => {
-  it('renders a validated view and refuses an invalid one', async () => {
-    const ok = await run(renderTool(deps), {
-      title: 'Buckets',
-      doc: {
-        version: 1,
-        blocks: [{ type: 'table', columns: [{ key: 'name' }], rows: [{ name: 'logs' }] }],
-      },
+    await run(workspaceTool(deps), {
+      action: 'write',
+      path: 'board/broken.view.json',
+      content: '{',
     })
-    expect(ok.details.status).toBe('done')
-    const bad = await run(renderTool(deps), { doc: { version: 1, blocks: [{ type: 'html' }] } })
-    expect(bad.details.status).toBe('failed')
-    // The agent is told why, so it can correct the view.
-    expect(bad.text).toContain('blocks[0].type')
-    const partly = await run(renderTool(deps), {
-      doc: {
-        version: 1,
-        blocks: [
-          { type: 'markdown', text: 'kept' },
-          { type: 'chart', spec: { mark: 'pie', x: 'a', y: 'b', data: [] } },
-        ],
-      },
+    expect(workspace.board().map((item) => item.title)).toEqual(['Storage cost'])
+    const exported = await run(workspaceTool(deps), {
+      action: 'write',
+      path: 'exports/public.csv',
+      content: 'bucket\nweb-assets\n',
     })
-    expect(partly.details.status).toBe('done')
-    expect(partly.text).toContain('Not drawn as given: blocks[1].spec.mark')
+    expect(exported.details.view).toMatchObject({ kind: 'export', path: 'exports/public.csv' })
   })
 
-  it('stores JSON and queries it with read-only SQL', async () => {
-    const put = await run(memoryTool(deps), {
-      action: 'put',
-      key: 'account/prod',
-      value: { buckets: 2, public: 1 },
-      tags: ['account'],
+  it('runs a workspace script from a query, with its arguments', async () => {
+    workspace.write('scripts/double.js', 'return args.n * 2')
+    const result = await run(queryTool(deps), {
+      code: "return await tools.run({ path: 'scripts/double.js', args: { n: 21 } })",
     })
-    expect(put.details.status).toBe('done')
-    const got = await run(memoryTool(deps), { action: 'get', key: 'account/prod' })
-    expect(got.text).toContain('buckets')
-    const query = await run(memoryTool(deps), {
-      action: 'query',
-      sql: "SELECT key, json_extract(value_json, '$.public') AS public FROM docs",
-    })
-    expect(query.details.status).toBe('done')
-    expect(query.text).toContain('account/prod')
-    const write = await run(memoryTool(deps), {
-      action: 'query',
-      sql: 'DELETE FROM docs',
-    })
-    expect(write.details.status).toBe('failed')
+    expect(result.details.status).toBe('done')
+    expect(result.text).toContain('42')
+  })
+
+  it('lists the tools without the ones folded into the workspace', () => {
+    const names = createTools(deps).map((tool) => tool.name)
+    expect(names).toContain('workspace')
+    for (const gone of ['memory', 'tool', 'skill', 'render', 'discover'])
+      expect(names).not.toContain(gone)
   })
 })
 
@@ -274,24 +246,5 @@ describe('delegate stop', () => {
     const result = (await pending) as { details: { status: string } }
     expect(aborted).toBe(true)
     expect(result.details.status).toBe('stopped')
-  })
-})
-
-describe('discover', () => {
-  it('lists the environment and a read operation', async () => {
-    const services = await run(discoverTool(deps), { kind: 'aws' })
-    expect(services.details.status).toBe('done')
-    expect(services.text).toContain('s3')
-    const op = await run(discoverTool(deps), {
-      kind: 'aws',
-      service: 's3',
-      operation: 'GetBucketPolicy',
-    })
-    expect(op.details.status).toBe('done')
-    expect(op.text).toContain('Bucket')
-    expect(op.text).toContain('Policy')
-    createTools(deps)
-    const tools = await run(discoverTool(deps), { kind: 'tools' })
-    expect(tools.text).toContain('render')
   })
 })

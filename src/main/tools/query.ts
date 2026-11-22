@@ -33,7 +33,7 @@ import {
 } from '../analysis/import'
 import type { ProviderConfig } from '../providers'
 import { type CallInput, callApi, operationShape, operationsOf, SERVICES, shape } from '../s3/api'
-import { redact, redactView } from '../security/redact'
+import { redact } from '../security/redact'
 import { assertInScope } from '../security/scope'
 import { checkSql } from '../sql'
 import { locate, readPart } from './more'
@@ -55,7 +55,8 @@ export const QUERY_API = `Primitives (all read-only, all async):
   datasets(): {name, format, source, rows, columns}[]   // the datasets this task holds
   history({query?, task?}): matching messages and answers from every task, or one task's whole conversation   // what earlier work found
   discover({kind?: "aws"|"tools", service?, operation?}): services, read operations with their input and output members, tools
-  memory({action, ...}): read or write durable JSON memory (put, get, list, search, query, delete)
+  workspace({action, path?, content?, to?, text?, sql?, params?}): your workspace across tasks (list, read, write, append, move, delete, search, sql on db.sqlite)
+  run({path, args?}): run a workspace script (it reads its arguments as \`args\` and returns a value)
   render({title?, doc}): return a ViewDoc for the window to render
 Call them as tools.call({...}) etc. Return rows (an array of objects) for a table, {rows, chart: {label, value}} for a bar chart, a ViewDoc, or any JSON value. text("…") adds a line of output.`
 
@@ -149,6 +150,25 @@ async function datasetNamed(ctx: SandboxContext, name: string) {
   const found = { format: known.format, path: known.path, rows: known.rows }
   ctx.datasets.set(name, found)
   return found
+}
+
+/** A workspace script, run in the same sandbox with the same primitives; it reads `args`. */
+async function runScript(ctx: SandboxContext, code: string, args: unknown, path: string) {
+  const sandbox = new CodemodeSandbox({
+    tools: sandboxPrimitives(ctx),
+    timeoutMs: 2_147_483_647,
+    memoryLimitBytes: SANDBOX.memoryMb * 1024 * 1024,
+  })
+  try {
+    const result = await sandbox.execute(`const args = ${JSON.stringify(args ?? {})};\n${code}`, {
+      signal: ctx.signal,
+    })
+    if (!result.ok)
+      throw new Error(`${path}: ${result.error.name ?? 'Error'}: ${result.error.message}`)
+    return result.value
+  } finally {
+    await sandbox.close().catch(() => undefined)
+  }
 }
 
 export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
@@ -285,15 +305,7 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
       description: 'The environment capability graph: AWS reads or the tools available here.',
       execute: async (args) => {
         const a = (args ?? {}) as { kind?: unknown; service?: unknown; operation?: unknown }
-        if (a.kind === 'tools') {
-          const saved = await deps.db.listAgentTools(ctx.conversationId)
-          return {
-            tools: [
-              ...(deps.catalog ?? []).map((tool) => tool.name),
-              ...saved.map((row) => row.name),
-            ],
-          }
-        }
+        if (a.kind === 'tools') return { tools: (deps.catalog ?? []).map((tool) => tool.name) }
         const service = typeof a.service === 'string' ? a.service.toLowerCase() : ''
         if (!service) return { services: SERVICES }
         if (!SERVICES.includes(service))
@@ -308,62 +320,53 @@ export function sandboxPrimitives(ctx: SandboxContext): CodemodeTool[] {
       },
     },
     {
-      name: 'memory',
-      description: 'Read or write durable JSON memory.',
+      name: 'workspace',
+      description:
+        'Your workspace across tasks: list, read, write, append, move, delete, search, sql (on db.sqlite).',
       execute: async (args) => {
+        const ws = deps.workspace
+        if (!ws) throw new Error('No workspace is available in this build.')
         const a = (args ?? {}) as Record<string, unknown>
-        const memory = deps.memory
-        if (!memory) throw new Error('Memory is not available in this build.')
-        const scope = a.scope === 'task' ? 'task' : 'user'
-        const conversationId = scope === 'task' ? ctx.conversationId : null
-        if (a.action === 'put') {
-          const key = String(a.key ?? '')
-          if (!key) throw new Error('memory put needs a key.')
-          return memory.put({
-            key,
-            value: redactView(a.value ?? null),
-            ...(typeof a.text === 'string' ? { text: redact(a.text) } : {}),
-            ...(Array.isArray(a.tags)
-              ? {
-                  tags: a.tags
-                    .filter((tag): tag is string => typeof tag === 'string')
-                    .map((tag) => redact(tag)),
-                }
-              : {}),
-            scope,
-            conversationId,
-            origin: ctx.conversationId,
-          })
+        const path = typeof a.path === 'string' ? a.path : ''
+        switch (a.action) {
+          case 'list':
+            return ws.list(path, typeof a.depth === 'number' ? a.depth : 2)
+          case 'read':
+            return ws.read(path)
+          case 'write':
+            return ws.write(path, String(a.content ?? ''))
+          case 'append':
+            return ws.append(path, String(a.content ?? ''))
+          case 'move':
+            ws.move(path, String(a.to ?? ''))
+            return { moved: path, to: a.to }
+          case 'delete':
+            ws.delete(path)
+            return { deleted: path }
+          case 'search':
+            return ws.search(String(a.text ?? ''), path)
+          case 'sql':
+            return ws.sql(
+              String(a.sql ?? ''),
+              (Array.isArray(a.params) ? a.params : []).map((value) =>
+                value === null || typeof value === 'number' || typeof value === 'string'
+                  ? value
+                  : JSON.stringify(value),
+              ),
+            )
         }
-        if (a.action === 'get') {
-          const key = String(a.key ?? '')
-          const doc = memory.get(key, scope, conversationId)
-          if (!doc) throw new Error(`No memory document '${key}'.`)
-          return doc
-        }
-        if (a.action === 'list')
-          return memory.list({
-            ...(a.scope ? { scope, conversationId } : {}),
-            ...(typeof a.prefix === 'string' ? { prefix: a.prefix } : {}),
-            ...(typeof a.tag === 'string' ? { tag: a.tag } : {}),
-          })
-        if (a.action === 'search') return memory.search(String(a.query ?? ''))
-        if (a.action === 'query')
-          return memory.query(
-            String(a.sql ?? ''),
-            Array.isArray(a.params) ? (a.params as (string | number | null)[]) : [],
-          )
-        if (a.action === 'delete') {
-          if (typeof a.id === 'string') {
-            memory.delete(a.id)
-            return { deleted: a.id }
-          }
-          const key = String(a.key ?? '')
-          if (!key) throw new Error('memory delete needs a key or id.')
-          memory.deleteByKey(key, scope, conversationId)
-          return { deleted: key }
-        }
-        throw new Error(`Unknown memory action '${String(a.action)}'.`)
+        throw new Error(`Unknown workspace action '${String(a.action)}'.`)
+      },
+    },
+    {
+      name: 'run',
+      description: 'Run a workspace script (scripts/…js) with args; it returns its value.',
+      execute: async (args) => {
+        const a = (args ?? {}) as { path?: unknown; args?: unknown }
+        const ws = deps.workspace
+        if (!ws) throw new Error('No workspace is available in this build.')
+        const path = String(a.path ?? '')
+        return runScript(ctx, ws.read(path), a.args ?? {}, path)
       },
     },
     {
