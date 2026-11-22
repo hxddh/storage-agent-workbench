@@ -47,6 +47,7 @@ jobs:
       - run: npm run build
       - run: xvfb-run -a node scripts/e2e.mjs
       - run: xvfb-run -a node scripts/e2e-audit.mjs
+      - run: xvfb-run -a node scripts/mcp-smoke.mjs
       - run: xvfb-run -a node scripts/eval.mjs --smoke
       - run: xvfb-run -a node scripts/bench.mjs --smoke
       - run: xvfb-run -a node scripts/perf.mjs

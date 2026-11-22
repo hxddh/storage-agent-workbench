@@ -17,10 +17,16 @@ export interface StoredSettings {
   language: Lang
   theme: Theme
   notify: boolean
+  openAtLogin: boolean
   model: StoredModel | null
   /** Every model saved, each with its own key; the default is one of them. */
   models: StoredModel[]
   lastTaskId: string | null
+}
+
+/** An endpoint as configured: the base URL without a trailing slash; empty means the provider's own. */
+export function endpointOf(baseUrl: string | null | undefined): string {
+  return (baseUrl ?? '').trim().replace(/\/+$/, '')
 }
 
 /** Two configurations name the same model when provider, endpoint and id match. */
@@ -37,6 +43,7 @@ const DEFAULTS: StoredSettings = {
   language: 'en',
   theme: 'system',
   notify: true,
+  openAtLogin: false,
   model: null,
   models: [],
   lastTaskId: null,
@@ -62,6 +69,7 @@ export class Settings {
       language: this.value.language,
       theme: this.value.theme,
       notify: this.value.notify,
+      openAtLogin: this.value.openAtLogin,
     }
   }
 
@@ -70,6 +78,7 @@ export class Settings {
     if (patch.theme === 'light' || patch.theme === 'dark' || patch.theme === 'system')
       this.value.theme = patch.theme
     if (typeof patch.notify === 'boolean') this.value.notify = patch.notify
+    if (typeof patch.openAtLogin === 'boolean') this.value.openAtLogin = patch.openAtLogin
     this.save()
   }
 
@@ -89,6 +98,18 @@ export class Settings {
     }
     this.value.model = model
     this.save()
+  }
+
+  /**
+   * A saved key for this provider at this endpoint, and only there: a key is
+   * never sent to a base URL other than the one it was saved for.
+   */
+  keyFor(provider: string, baseUrl: string | null | undefined): string | null {
+    const endpoint = endpointOf(baseUrl)
+    const match = [this.value.model, ...this.value.models].find(
+      (item) => item && item.provider === provider && endpointOf(item.baseUrl) === endpoint,
+    )
+    return match?.keyRef ?? null
   }
 
   /** The saved configuration for a model, with its key reference. */
@@ -118,6 +139,7 @@ export class Settings {
         language: raw.language === 'zh' ? 'zh' : 'en',
         theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
         notify: raw.notify !== false,
+        openAtLogin: raw.openAtLogin === true,
         model,
         models,
         lastTaskId: typeof raw.lastTaskId === 'string' ? raw.lastTaskId : null,

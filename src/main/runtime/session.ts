@@ -7,6 +7,7 @@
  * Nothing that decides a run's behaviour is kept here in memory; the
  * extension rebuilds what it needs from the entries.
  */
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
@@ -22,15 +23,16 @@ import {
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite'
 import type { AppEvent, TaskModel, TaskSummary, UiEntry } from '@shared/contract'
 import type { AppDb } from '../db'
-import type { MemoryStore } from '../memory'
 import type { Providers } from '../providers'
 import type { Vault } from '../security/vault'
 import type { Settings } from '../settings'
-import { Skills } from '../skills'
+import { formatSkill } from '../skills'
 import { createTools } from '../tools'
 import { pieceFor, type ToolDeps } from '../tools/policy'
+import { Workspace } from '../workspace'
 import { buildDigest, createAgent } from './agent'
 import { mapEntries } from './project'
+import { type ScheduleHost, scheduleTask } from './schedules'
 
 export const CONTEXT = BACKGROUND_CONTEXT
 
@@ -39,7 +41,10 @@ export interface RuntimeDirs {
   datasets: (conversationId: string) => string
   userDatasets: string
   uploads: (conversationId: string) => string
-  skills: string
+  /** The agent's folder across tasks. */
+  workspace: string
+  /** Bundled skills written out at launch, so `more` reads them like any file. */
+  bundledSkills: string
 }
 
 export type RunOutcome = 'answered' | 'failed' | 'stopped'
@@ -50,7 +55,6 @@ export interface RuntimeDeps {
   settings: Settings
   vault: Vault
   models: ReturnType<typeof createModels>
-  memory: MemoryStore
   dirs: RuntimeDirs
   emit: (event: AppEvent) => void
   /** A run settled; the shell decides whether to notify. */
@@ -63,9 +67,10 @@ export function runtimeDirs(dataDir: string): RuntimeDirs {
   return {
     task: (conversationId) => join(dataDir, 'tasks', conversationId),
     datasets: (conversationId) => join(dataDir, 'tasks', conversationId, 'datasets'),
-    userDatasets: join(dataDir, 'datasets'),
+    userDatasets: join(dataDir, 'workspace', 'data'),
     uploads: (conversationId) => join(dataDir, 'tasks', conversationId, 'uploads'),
-    skills: join(dataDir, 'skills'),
+    workspace: join(dataDir, 'workspace'),
+    bundledSkills: join(dataDir, 'bundled-skills'),
   }
 }
 
@@ -85,6 +90,9 @@ export function parseTaskModel(raw: string | null | undefined): TaskModel | null
       modelId: value.modelId.slice(0, 160),
       baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl.slice(0, 300) : null,
       thinking: value.thinking as TaskModel['thinking'],
+      ...(typeof value.contextWindow === 'number' && value.contextWindow > 0
+        ? { contextWindow: Math.min(Math.round(value.contextWindow), 10_000_000) }
+        : {}),
     }
   } catch {
     return null
@@ -96,6 +104,10 @@ export class Runtime {
   readonly failed = new Set<string>()
   /** The context window, in tokens, of the model each task last ran with. */
   readonly windows = new Map<string, number>()
+  /** What runs a schedule when pi says it is due; wired once the engine exists. */
+  scheduleHost: ScheduleHost | null = null
+  /** The one registered definition of a schedule's durable timer. */
+  scheduleTask!: ReturnType<typeof scheduleTask>
   private digest = ''
 
   private constructor(
@@ -114,14 +126,19 @@ export class Runtime {
       datasetsDir: deps.dirs.datasets,
       userDatasetsDir: deps.dirs.userDatasets,
       uploadsDir: deps.dirs.uploads,
-      memory: deps.memory,
-      skills: new Skills(deps.dirs.skills),
+      workspace: new Workspace(deps.dirs.workspace),
+      bundledSkillsDir: deps.dirs.bundledSkills,
       piece: (conversationId) =>
         pieceFor(runtime?.windows.get(conversationId) ?? deps.settings.get().model?.contextWindow),
       lang: () => deps.settings.get().language,
     }
+    // Bundled skills as files, so `more` reads any stretch of one like any other file.
+    mkdirSync(deps.dirs.bundledSkills, { recursive: true })
+    for (const skill of tools.workspace?.skills.bundled() ?? [])
+      writeFileSync(join(deps.dirs.bundledSkills, `${skill.name}.md`), formatSkill(skill), 'utf8')
     const list = createTools(tools)
     let runtime: Runtime | null = null
+    const timer = scheduleTask(() => runtime?.scheduleHost ?? null)
     const registry = createRegistry()
     registry.install(
       createAgent(
@@ -131,6 +148,7 @@ export class Runtime {
           language: () => deps.settings.get().language,
         },
         list,
+        [timer],
       ),
     )
     const pi = await Harness.open(
@@ -144,6 +162,7 @@ export class Runtime {
       CONTEXT,
     )
     runtime = new Runtime(deps, pi, tools, list)
+    runtime.scheduleTask = timer
     tools.entries = (id) => runtime!.entries(id)
     // The vault stays closed at launch: on macOS it can prompt for Keychain
     // access, which belongs to the first model run. The digest is one query.

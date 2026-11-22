@@ -32,7 +32,7 @@ import { redact } from '../security/redact'
 import { ScopeError } from '../security/scope'
 
 /** The service modules the app bundles; each exports `<Operation>Command` classes. */
-const MODULES: Record<string, Record<string, unknown>> = {
+export const MODULES: Record<string, Record<string, unknown>> = {
   s3,
   s3control,
   sts,
@@ -66,6 +66,8 @@ const NEVER = new Set([
   'sts:GetWebIdentityToken',
   'sts:GetDelegatedAccessToken',
   'kms:GetParametersForImport',
+  // Returns temporary credentials for an S3 Access Grants location.
+  's3control:GetDataAccess',
 ])
 
 /** Every operation a service offers, for the error that names a wrong one. */
@@ -351,8 +353,28 @@ export function checkCall(config: ProviderConfig, call: CallInput): void {
     throw new Error(
       `${service} has no operation ${operation}. Its reads: ${operationsOf(service).join(', ')}.`,
     )
+  checkInput(service, operation, call.input)
   const scope = config.scope.buckets
   if (scope.length) checkScope(scope, service, operation, call.input)
+}
+
+/**
+ * Every input member must be one the operation models. The SDK silently drops
+ * a member an operation does not have, so without this a scope check could
+ * pass on a `Bucket` that is never sent — and a misspelt member would be
+ * ignored instead of named.
+ */
+export function checkInput(service: string, operation: string, input: unknown): void {
+  if (input === undefined || input === null) return
+  if (typeof input !== 'object' || Array.isArray(input))
+    throw new Error(`${service}:${operation} input must be an object of the operation's members.`)
+  // An operation the SDK models without an input shape takes no input.
+  const members = operationShape(service, operation).input ?? []
+  const unknown = Object.keys(input).filter((key) => !members.includes(key))
+  if (unknown.length)
+    throw new Error(
+      `${service}:${operation} has no input member${unknown.length === 1 ? '' : 's'} ${unknown.join(', ')}. Its members: ${members.join(', ') || '(none)'}.`,
+    )
 }
 
 /** S3 operations that name no bucket; their answers are filtered to the scope. */
@@ -374,8 +396,9 @@ function checkScope(scope: string[], service: string, operation: string, input: 
     throw new ScopeError(
       `This account is scoped to ${scope.join(', ')}; ${service} sees beyond those buckets, so it does not run. Ask the user to widen the scope in Settings if the question needs it.`,
     )
+  const members = operationShape(service, operation).input
   const bucket = (input as { Bucket?: unknown } | undefined)?.Bucket
-  if (typeof bucket !== 'string' || !bucket)
+  if (!members?.includes('Bucket') || typeof bucket !== 'string' || !bucket)
     throw new ScopeError(
       `This account is scoped to ${scope.join(', ')}; ${key} names no bucket, so it could reach others. Give Bucket.`,
     )

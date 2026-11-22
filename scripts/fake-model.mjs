@@ -18,6 +18,11 @@ const call = (id, name, args) => ({
 /** The reads of one bucket that say whether it is public. */
 const ACCESS = ['GetBucketPolicyStatus', 'GetBucketAcl']
 
+/** A view the agent composes: a query script that returns a view document. */
+function viewCall(title, doc) {
+  return { title, code: `return ${JSON.stringify(doc)}` }
+}
+
 function plan(body) {
   const messages = Array.isArray(body.messages) ? body.messages : []
   const system = messages
@@ -50,6 +55,7 @@ function plan(body) {
           typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')
     }
   }
+  const nextView = (title, doc) => next('query', viewCall(title, { version: 1, ...doc }))
   const made = (name) => calls.filter((item) => item.name === name)
   const reads = (operation, bucket) =>
     made('call').filter(
@@ -75,10 +81,10 @@ function plan(body) {
       : null
   const first = (result) => (reasoning ? { reasoning, ...result } : result)
 
-  // Memory is a tool, not prompt content; the agent asks for it.
+  // What the agent learned lives in its workspace; it reads it when it decides to.
   if (ask.includes('last time') || ask.includes('what did you find')) {
-    const memory = made('memory').at(-1)
-    if (!memory) return next('memory', { action: 'get', key: 'survey/last' })
+    const memory = made('workspace').at(-1)
+    if (!memory) return next('workspace', { action: 'read', path: 'notes/survey-last.json' })
     // The block closes with a tag carrying its random boundary: </untrusted-data-…>.
     const open = memory.text.indexOf('>')
     const close = memory.text.search(/<\/untrusted-data[^>]*>\s*$/)
@@ -102,11 +108,9 @@ function plan(body) {
     const listing = reads('ListBuckets')[0]
     if (!listing) return first(s3('ListBuckets'))
     const names = [...listing.text.matchAll(/"Name": "([^"]+)"/g)].map((match) => match[1])
-    const view = made('render')[0]
+    const view = made('query')[0]
     if (!view)
-      return next('render', {
-        title: 'Buckets',
-        doc: {
+      return nextView('Buckets', {
           version: 1,
           blocks: [
             {
@@ -121,7 +125,6 @@ function plan(body) {
               ],
             },
           ],
-        },
       })
     return { text: `I rendered the buckets I read.${cite(view)}` }
   }
@@ -129,11 +132,9 @@ function plan(body) {
 
   // A chart with two series, to exercise the renderer's series split.
   if (ask.includes('compare accounts over time') || ask.includes('chart series')) {
-    const view = made('render')[0]
+    const view = made('query')[0]
     if (!view)
-      return next('render', {
-        title: 'Account trend',
-        doc: {
+      return nextView('Account trend', {
           version: 1,
           blocks: [
             {
@@ -156,26 +157,69 @@ function plan(body) {
               },
             },
           ],
-        },
       })
     return { text: `The chart keeps the two accounts separate.${cite(view)}` }
   }
 
-  // A method the agent writes and reuses.
-  if (ask.includes('method') || ask.includes('reuse')) {
-    const save = made('tool').find((item) => item.args.action === 'save')
+  // A script the agent writes to its workspace and runs again later.
+  if (ask.includes('method') || ask.includes('script') || ask.includes('reuse')) {
+    const save = made('workspace').find((item) => item.args.action === 'write')
     if (!save)
-      return next('tool', {
-        action: 'save',
-        name: 'bucket_names',
-        description: 'List the buckets this account can see.',
-        schema: { type: 'object', additionalProperties: false },
-        code: 'const p = await tools.call({ service: "s3", operation: "ListBuckets" }); return (p.Buckets ?? []).map((b) => ({ name: b.Name }))',
-        scope: 'user',
+      return next('workspace', {
+        action: 'write',
+        path: 'scripts/bucket_names.js',
+        content:
+          '// List the buckets this account can see.\nconst p = await tools.call({ service: "s3", operation: "ListBuckets" }); return (p.Buckets ?? []).map((b) => ({ name: b.Name }))',
       })
-    const run = made('tool').find((item) => item.args.action === 'run')
-    if (!run) return next('tool', { action: 'run', name: 'bucket_names', args: {} })
-    return { text: `The method returned the buckets I read.${cite(run)}` }
+    const run = made('query')[0]
+    if (!run)
+      return next('query', {
+        title: 'Bucket names',
+        code: "return await tools.run({ path: 'scripts/bucket_names.js' })",
+      })
+    return { text: `The script returned the buckets I read.${cite(run)}` }
+  }
+
+  // A change the agent proposes; the user's decision comes back as their next message.
+  if (ask.includes('block public access on')) {
+    const proposed = made('change')[0]
+    if (!proposed)
+      return next('change', {
+        service: 's3',
+        operation: 'PutPublicAccessBlock',
+        input: {
+          Bucket: 'web-assets',
+          PublicAccessBlockConfiguration: {
+            BlockPublicAcls: true,
+            IgnorePublicAcls: true,
+            BlockPublicPolicy: true,
+            RestrictPublicBuckets: true,
+          },
+        },
+        reason: 'web-assets is public through its policy; blocking public access closes it. Anything that reads it anonymously will stop working.',
+      })
+    return { text: 'I proposed the change; it runs only when you approve it.' }
+  }
+  if (ask.startsWith('approved:') || ask.startsWith('rolled back:')) {
+    const read = reads('GetPublicAccessBlock', 'web-assets')[0]
+    if (!read) return s3('GetPublicAccessBlock', { Bucket: 'web-assets' })
+    const blocked = !/NoSuchPublicAccessBlockConfiguration/.test(read.text)
+    return {
+      text: `${blocked ? 'Verified: web-assets now blocks public access' : 'Verified: web-assets has no public access block again'}.${cite(read)}`,
+    }
+  }
+
+  // Work for later: a schedule whose run reads and tells the user.
+  if (ask.includes('schedule a public check')) {
+    const created = made('schedule')[0]
+    if (!created)
+      return next('schedule', {
+        action: 'create',
+        name: 'Public check',
+        prompt: 'Scheduled public check: read the buckets and notify me which are public.',
+        when: `at ${new Date(Date.now() + 20_000).toISOString()}`,
+      })
+    return { text: `Scheduled; I will tell you what I find.${cite(created)}` }
   }
 
   // A child agent for an independent investigation.
@@ -266,13 +310,19 @@ function plan(body) {
   const deniedText = denied.length
     ? ` I could not read every part of ${denied.map((name) => `\`${name}\``).join(', ')} (access denied), so that bucket is not fully checked.`
     : ''
-  if (open.length && !made('memory').length && (ask.includes('survey') || ask.includes('check')))
-    return next('memory', {
-      action: 'put',
-      key: 'survey/last',
-      value: { public: open, checkedAt: new Date().toISOString() },
-      text: `${open.join(', ')} public at last check.`,
-      tags: ['survey'],
+  const scheduledCheck = ask.includes('scheduled public check')
+  if (scheduledCheck && reads('GetBucketAcl').length && !made('notify').length)
+    return next('notify', {
+      title: open.length ? `${open[0]} is public` : 'No bucket is public',
+      body: open.length
+        ? `${open.join(', ')} can be read by anyone. Open the task to see the reads.`
+        : 'The scheduled check read every bucket; none is public.',
+    })
+  if (open.length && !made('workspace').length && (ask.includes('survey') || ask.includes('check')))
+    return next('workspace', {
+      action: 'write',
+      path: 'notes/survey-last.json',
+      content: JSON.stringify({ public: open, checkedAt: new Date().toISOString() }),
     })
   return { text: `${publicText}${deniedText}` }
 }

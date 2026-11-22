@@ -176,6 +176,16 @@ export function respond(buckets, request) {
 
   if (method === 'HEAD') return { status: 200, headers: {}, body: '' }
 
+  // The one write the fake takes: an approved change to the bucket's public access block.
+  if (query.has('publicAccessBlock') && method === 'PUT') {
+    config.blocked = true
+    return { status: 200, headers: {}, body: '' }
+  }
+  if (query.has('publicAccessBlock') && method === 'DELETE') {
+    config.blocked = false
+    return { status: 204, headers: {}, body: '' }
+  }
+
   // An S3-compatible provider without the AWS-only configuration APIs.
   if (config.compat && (query.has('policyStatus') || query.has('publicAccessBlock')))
     return error(501, 'NotImplemented')

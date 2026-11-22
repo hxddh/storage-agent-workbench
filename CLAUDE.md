@@ -1,238 +1,138 @@
 # CLAUDE.md
 
-> Implementation contract for **Storage Agent 41.0.0**. Read
+> Implementation contract for **Storage Agent 43.0.0**. Read
 > `docs/architecture.md`, `docs/product.md`, `docs/security.md`,
 > `docs/data-model.md` and `docs/tools.md` before changing product structure.
-> The code and its tests are authoritative; release notes and the changelog
-> are history.
+> The code and its tests are authoritative; release notes, the changelog and
+> `docs/v43.md` are history.
 
 ## The product
 
-A local, read-only agent for object storage and the cloud around it. One
-window, one conversation per task, one composer. A **task** is a conversation
-with the agent: the user's messages, and between them what the agent did and
-said. A **turn** is one user message and the agent's work on it.
+An agent that looks after the user's object storage and the cloud around it,
+on their own machine. It reads, judges and says what it found; it keeps what
+it learns in a workspace of its own; it works on a schedule when asked to
+watch something; and it proposes changes that run only when the user approves
+them. One window: tasks (conversations), Home (what the agent keeps in front
+of the user), Settings.
 
-> The agent reads, judges and says what it found; the application gives it
-> read-only tools that return what the services return — faithfully — the
-> know-how to use them (skills, as data), enforces the safety boundaries and
-> shows each call where it happened. The app decides nothing about the
-> storage: no rules, no findings, no verdict, no report, no next-step prompt.
->
-> The test for every change: does it let a real user, on a real account, with
-> a real (possibly small, local) model, get a correct answer? Faithful data
-> beats masking; expertise the agent can read beats a bare prompt; a refusal
-> that says why beats a silent limit.
+> The app gives the agent a few general capabilities and the boundaries around
+> them. Everything the user asks for — a watch, a board, a remediation, an
+> estate map — is the agent composing those capabilities. The app decides
+> nothing about the storage: no rules, no findings, no verdicts, no reports.
 
-## Non-negotiables
+The test for every change: does it let a real user, on a real account, with a
+real model (possibly small and local), get a correct answer or a correct
+change, with no feature code written for that request?
 
-1. Every storage operation is read-only. No put/delete/mutate call exists. The
-   agent may write a change (a CLI command, a policy) for the user to apply;
-   the app never runs it and has no Apply button.
-2. Secrets never reach SQLite in the clear, a model prompt, a log or the
-   window. `security/vault.ts` is the only place that opens one. A profile
-   account stores a profile name, never a key.
-3. A provider's `scope.buckets` is authorization (`checkCall` in
-   `s3/api.ts`; `assertInScope` for what a script imports): on a scoped
-   account a call names an in-scope bucket, is a bucket listing filtered to
-   the scope, or reveals no bucket; services that see across the account do
-   not run. `@` focus is not authorization.
-4. Tool output reaches the model unchanged, inside an
-   `<untrusted-data-<boundary>>` block whose random boundary text inside
-   cannot know (`wrapUntrusted` in `security/redact.ts`); only secrets are
-   redacted. Nothing is entity-escaped: a key the agent was shown is a key it
-   can call with. `details` reaching the window are already shaped. Status
-   comes from `details.status`, never from result text. Every result is kept
-   whole in the task folder under its evidence id; the model gets one piece
-   (`pieceFor`: about a fifth of its context window, at most `PIECE`, 24,000
-   characters) at a time and reads any stretch again with `more`, after a
-   compaction too. Attachments and object bodies are read the same way: nothing
-   a tool returned or the user attached is out of the agent's reach.
-5. Tools return data, not judgements. `call` returns the service's response,
-   or its error code, HTTP status and message (`s3/api.ts`); `probe` returns
-   what the endpoint answered. What is public, risky or missing is the agent's
-   to decide and say.
-6. Capabilities are not fixed in code. `call` reaches every operation of every
-   bundled service client whose name says it reads (Get, List, Head, Describe,
-   Lookup, Search, Select, Simulate, BatchGet), minus the few that hand out
-   credentials. The bundled services are the storage and the account around
-   it: S3, S3 Control, STS, IAM, Organizations, KMS, Access Analyzer,
-   CloudWatch, CloudTrail, Config, CloudFront, Backup, Security Hub, GuardDuty,
-   SNS and SQS; a service whose reads return secrets or compute (Lambda, EC2,
-   Secrets Manager, SSM, ECR, DynamoDB) is not bundled. `discover` lists the current services and operations.
-   `tool` lets the agent write a reusable read-only method; `render` lets it
-   compose a view; `memory` stores arbitrary JSON; `delegate` gives an
-   independent investigation to a child with the same tools and scope;
-   `skill` reads and writes skills. No list of checks or prescribed workflow
-   stands between the agent and its work.
-7. Identifiers are data. Account ids, access key ids, ARNs, canonical ids,
-   bucket names and object keys reach the agent, the window and the task
-   folder exactly as the service returned them (`shape()` in `s3/api.ts`), so
-   the agent can tell its own account from another and call with what it was
-   shown. Secrets are not identifiers: `redact()` and `shape()`'s secret-field
-   rule remove them everywhere. `<account>` in an input is a convenience for
-   the caller's id; S3 Control's `AccountId` is filled in when left out.
-8. The conversation shows what happened, in order: the user's messages, the
-   agent's text, provider reasoning as returned, and every tool call — failed
-   and refused ones, and calls to a tool that does not exist — with its shaped
-   result and exactly what the agent received. A delegated child's calls are
-   shown inside the `delegate` step, in the same way, while it works. A tool's `model` text carries
-   what its view shows; when the agent got only the first piece, the step says
-   so. The app never writes into the agent's answer, rewrites it, corrects it,
-   validates its claims or summarises it. A citation that resolves opens its
-   call; one that does not is plain text with a quiet tooltip.
-9. Code mode runs in the QuickJS sandbox with no network, filesystem, process,
-   timers or modules. Its only capabilities are the scoped read-only
-   primitives in `tools/query.ts`: `call()` (a body comes back whole up to
-   `maxBytes`), `read()`, `dataset()`, `inventory()`, `sql()`, `datasets()`,
-   `history()`, `discover()`, `memory()` and `render()`. A dataset keeps every
-   column of its source — an attachment, an object, every object under a
-   prefix, an inventory report with its manifest's schema — unmasked and
-   uncut; strings are scrubbed like every read. A script returns rows, a view
-   or any JSON value. It runs until it returns or the user stops it. `models`
-   stays off. Agent-authored methods run in the same sandbox, with their
-   arguments checked against their schema.
-10. Every read goes through the agent. There is no scripted run, model-free
-    check, scheduled check or demo storage: without a model the window says so
-    and asks for one; without an account it asks for one.
-11. The harness never overrides the agent: no round ceiling, no working budget,
-    no fixed timeout, no fixed output cap (the model's own maximum is learned
-    from its provider, `learnOutputLimit`). Which calls to make, whether to
-    repeat one, how much to read, whether to delegate, what to remember and
-    how long to work are the agent's; Stop is the user's control. The prompt
-    states the hard rules; it does not list the tools or prescribe a workflow.
-    A default exists only where it protects the user's machine, and the agent
-    can change it: the sandbox's memory (`memory_mb`) and how much of a body
-    one read holds (`max_bytes`, default 1 MiB). Stopping the parent stops a
-    delegated child. A tool that refuses or cannot do what was asked says
-    exactly why (a view's invalid block, a header the probe will not send), so
-    the agent can correct itself. Each model's context window is what its
-    provider's model list states, when it states one.
-12. The app does not speak for the user. Home has no canned prompts; Continue
-    sends `Continue.`
-13. Expertise is data, not code. Skills (`main/skills.ts`; bundled
-    `main/skills/*.md`, the user's own in `<data>/skills/`) are Markdown the
-    agent reads with `skill` when it decides a question needs one; the prompt
-    lists them by name and description only. A skill is advice: the app never
-    runs, checks or scores one, and a user skill replaces a bundled one with
-    the same name. Domain know-how goes into a skill, never into the prompt
-    or a tool.
-14. Models are the user's. Every model saved in Settings keeps its own key and
-    window (`Settings.models`); a task runs with any of them or with a model on
-    this machine (`resolveTaskModel` in `runtime/engine.ts`). A local model
-    runs with the window its server reports, 4,096 tokens unless loaded with
-    more (`local-models.ts`). The conversation shows what a task spent, its
-    child agents included.
+## Hard boundaries
+
+1. **The agent never changes storage itself.** Reads go through `call`/`query`
+   (only operations named as reads, minus those that hand out credentials,
+   `NEVER` in `s3/api.ts`). A write is a proposal (`change`), runs only when the
+   user approves it in the window over IPC (`runtime/approvals.ts`), only on an
+   account that allows changes, only from the reversible allowlist
+   (`WRITABLE` in `changes.ts`), and always with a snapshot that can roll it
+   back. Nothing the model writes or reads can approve.
+2. **Secrets never reach SQLite in the clear, a prompt, a log or the window.**
+   `security/vault.ts` alone opens one. A saved model key goes only to the
+   provider and endpoint it was saved for (`Settings.keyFor`). Redaction runs on
+   a whole result before it is kept or cut.
+3. **Scope is authorization.** Every input member must be one the operation
+   models (`checkInput`); on a scoped account a call names an in-scope bucket,
+   is a bucket listing filtered to the scope, or reveals no bucket
+   (`checkScope`); changes obey the same scope. `@` focus is not authorization.
+4. **Data reaches the agent faithfully, as data.** Identifiers (account ids,
+   key ids, ARNs, names) arrive as the service returned them; nothing is
+   entity-escaped; each result is wrapped in an `<untrusted-data-<boundary>>`
+   block text inside cannot close (`wrapUntrusted`). Workspace skills, memory
+   notes and child answers are data too. Status comes from `details.status`.
+5. **Unattended work is bounded.** A scheduled run stops at its token budget
+   (default 100,000) unless the user opens it; it may notify once per run; it
+   may propose a change but nothing runs until a person approves.
+6. **The user's data survives upgrades.** The host schema migrates forward
+   (`MIGRATIONS` in `db.ts`); a database from a newer version is refused, not
+   cleared. The workspace is the user's: never cleared by the app.
+
+## How the agent is built
+
+7. **Parity.** What the user can do in the window, the agent can do with a tool
+   or propose for approval (rename/pin its task, ask for scope or change
+   permission, schedule, notify, pin a view, export a file).
+8. **Primitives, not features.** Tools (`tools/registry.ts`): `call`, `query`,
+   `probe`, `more`, `workspace`, `self`, `schedule`, `notify`, `change`,
+   `delegate`, `ask`. Each tool's description is its contract; the prompt does
+   not list tools or prescribe a workflow. A new capability is a primitive the
+   agent composes, not a feature for one request. A new storage tool must say
+   why `call` or `query` cannot do the job; a new service is a new SDK client in
+   `s3/api.ts`.
+9. **Expertise is data.** Bundled skills (`main/skills/*.md`) are listed by name
+   and description and read with `more` (`skill:<name>`); skills in the
+   workspace are listed as untrusted data and never replace a bundled one.
+   Domain know-how goes into a skill, never into the prompt or a tool.
+10. **The harness does not override the agent** when someone is watching: no
+    round ceiling, no working budget, no fixed timeout. Defaults protect the
+    machine and the agent can change them (`memory_mb`, `max_bytes`). The
+    model's window decides compaction and result pieces (`compactionFor`,
+    `pieceFor`); a window under 16,384 tokens is refused with how to fix it.
+11. **The conversation shows what happened**, in order: messages, the agent's
+    text and reasoning, every call with exactly what the agent received, a
+    child's calls inside its `delegate` step, proposals with their decision.
+    The app never writes into, rewrites or summarises the agent's answer.
+12. **The app does not speak for the user.** Home has no canned prompts;
+    Continue sends `Continue.`; an approval is reported to the agent as the
+    user's own message.
 
 ## Architecture
 
-One engine, one log, one projection (`docs/architecture.md`).
+One engine, one log, one projection (`docs/architecture.md`). pi-durable owns
+the durable loop, timers and tasks: no event store, no second queue, no SSE,
+no HTTP server.
 
-- **Engine** (`runtime/engine.ts`): every turn is pi's durable loop. `submit`,
-  `steer`, `stop`, `retry` (the last user message again), `continueTask`
-  (`sa.resume`); each turn settles in one place (`settle`): failure notice,
-  search index, digest. A run learns its model's output limit first
-  (`learnOutputLimit`).
-- **Session** (`runtime/session.ts`): opens pi once with the one extension and
-  the tool registry; durable reads; the per-task model; digest.
-- **Tasks** (`runtime/tasks.ts`): task list, the one watched task, task graph,
-  search index, `@` references, memory and methods.
-- **Agent** (`runtime/agent.ts`): prompt sections, memory digest. No hook:
-  nothing blocks a call.
-- **Calls** (`s3/api.ts`): one read-only operation of any bundled service,
-  checked by name, scoped, `<account>` filled in, the response scrubbed.
-  `providers.clientFor` builds the client. Nothing there decides anything.
-- **Memory** (`memory.ts`): a separate `memory.sqlite` with JSON documents,
-  task or user scope, read-only SQL. Host tables are not reachable from it.
-- **Methods** (`tools/tool.ts`, `agent_tools`): agent-authored JSON Schema +
-  QuickJS body, task or user scope, purged with the task.
-- **Conversation** (`shared/conversation.ts`): the one projection the window,
-  search and export use: an ordered thread of messages, text, thoughts, calls,
-  questions and notices, plus the live slot.
-- **Views** (`shared/view.ts`, `renderer/Blocks.tsx`): a declarative view
-  document, validated and rendered as data.
-- **Models** (`runtime/model.ts`): one pi-ai provider per model configuration;
-  a task's own model never replaces another task's.
-
-pi-durable owns the durable loop. Do not reimplement it: no event store, no
-second queue, no SSE, no HTTP server. `viewState()`/`watch()` are the stream.
-
-## Agent
-
-One extension, eleven tools (`tools/registry.ts` lists their names; each tool's
-own description, sent with its schema, says what it does): `call` (any
-read-only operation), `skill` (read and write skills), `query` (a read-only
-script over many calls, datasets, memory and views), `probe` (one unsigned
-request to any public host or the account's endpoint),
-`more` (the rest of a long result or an object body), `discover` (services,
-operations and tools), `render` (a view document), `memory` (durable JSON),
-`tool` (an agent-authored method), `delegate` (a child agent) and `ask`. The
-agent's text is the answer; there is no answer tool, no report protocol, no
-plan tool, no rule engine and no change-plan generator — the agent says its
-plan and writes any change in its own words. A new storage tool must say why
-`call` or `query` cannot do the job; a new service is a new SDK client in
-`s3/api.ts`, not a new tool.
-
-Prompt sections: identity, time, policy (the hard rules), work (how an
-expert works: settle the question, read skills, errors are information,
-compare identifiers literally — principles, not a workflow), compose, skills
-(one line per skill), memory digest, language. The tools describe themselves; `discover` lists them from
-the registry. The digest names the accounts (their ids are
-tool arguments) and how many memory documents exist; it does not inject their
-content. A memory document records the task that wrote it, and reaches the
-model with it, inside an `<untrusted-data-…>` block. A user message names its attached
-files as `attachment:<name>`; `more` reads them (an image is shown to a model
-that takes images) and `dataset()` imports them. A delegated child works in
-its task: the same folder, attachments, results, datasets and task memory; a
-question it would ask comes back to the parent as its result. The model may link a call as `[1](#ev-<id>)`; a link opens that call
-in place. Provider reasoning is shown in full, as returned. Delegation is a
-foreground child conversation with the same tools and scope; it is not a
-second queue.
+- **Engine** (`runtime/engine.ts`): every turn is pi's durable loop; `submit`,
+  `steer`, `stop`, `retry`, `continueTask`, `runScheduled`; each turn settles
+  in `settle`. The task's model is resolved with its own key and window
+  (`resolveTaskModel`).
+- **Session** (`runtime/session.ts`): opens pi once with the one extension, its
+  tools and the `sa.schedule` task.
+- **Tasks** (`runtime/tasks.ts`): task list, the watched task, usage (children
+  included), search, workspace and board for the window.
+- **Scheduler** (`runtime/scheduler.ts`, `schedules.ts`): schedules, each a
+  task plus a background pi task that sleeps until due.
+- **Approvals** (`runtime/approvals.ts`, `changes.ts`): proposals, decisions,
+  rollbacks.
+- **Workspace** (`workspace.ts`): the agent's folder and `db.sqlite`; paths
+  never leave it.
+- **Calls** (`s3/api.ts`): one read of any bundled service, checked, scoped,
+  shaped. `providers.ts` builds clients; `writeConfig` for approved changes.
+- **MCP** (`mcp.ts`): `storage-agent --mcp` serves the read tools over stdio.
+- **Window**: `Sidebar · conversation · Composer`, Home (`AgentSurface`: inbox,
+  board, schedules) and Settings (Model, Storage accounts, Workspace,
+  Appearance; close X top-left). Design tokens in `src/renderer/styles.css`;
+  never a raw colour in a component. English by default; Chinese copy is
+  written, not translated word by word.
 
 ## Data
 
-Host tables in `storage-agent.db`: `providers`, `audit`, `task_meta`,
-`datasets`, `agent_tools`, `search_docs` (+ FTS5 trigram). pi's tables are
-prefixed `pi_`. `db.ts` holds one schema at `user_version` **22**. A database
-at any other version is cleared and created again, pi's tables, `tasks/` and
-`datasets/` with it: the app carries no task from an earlier layout, keeps no
-backup, and no code reads one. A dataset is task-scoped by default
-(`tasks/<conversation>/datasets/`); `scope: 'user'` keeps it under
-`datasets/`, listed in Settings and found from another task, until it is
-forgotten or the host schema resets. The agent's memory is `memory.sqlite` (`docs` table, its
-own `user_version` **1**): it outlives tasks and app versions; task-scoped
-documents are purged with their task, and all of them when tasks are reset.
-
-Entry kinds and payloads are in `docs/data-model.md` (`sa.run`, `sa.steer`,
-`sa.resume`, `sa.notice`). Deleting a task purges its pi rows, host task rows,
-datasets, audit rows, task memory documents, task methods, search rows and
-`tasks/<conversation>/` (with results and object bodies kept for `more`).
-
-## Window
-
-`Sidebar · conversation · Composer`, plus a full-screen Settings sheet. The
-conversation (messages, inline steps, what each call returned, clarify,
-notices, Stop/Continue/Retry) and the keyboard map are specified in
-`docs/design.md`. A `call` or `probe` step opens as the response's JSON; a
-`render` step draws its view; a `delegate` step shows the child's request,
-steps and text, live while it works. A view's link shows its host, and its URL
-on hover. Settings' Memory pane shows which task wrote each document.
-Settings has six panes: Model, Storage accounts, Skills, Memory, Methods and
-Appearance; its close control is an X at the top-left. Design tokens live in
-`src/renderer/styles.css`; never use a raw colour in a component.
-`npm run contrast` guards secondary text. English by default; Chinese copy is
-written, not translated word by word.
+Host tables in `storage-agent.db` (`db.ts`, baseline schema 22, current
+**23**): `providers` (with `allow_changes`, `write_profile`), `audit`,
+`task_meta`, `datasets`, `agent_tools` (legacy, emptied on import),
+`search_docs` (+ FTS5), `schedules`, `changes`, `inbox`. pi's tables are
+prefixed `pi_`. The workspace is `<data>/workspace/`; 42's `memory.sqlite`,
+methods and user skills are imported once (`legacy.ts`). Deleting a task
+purges its pi rows, host rows, datasets, audit rows and `tasks/<id>/`; the
+workspace and schedules are not the task's.
 
 ## Commands
 
 `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run build`
 · `npm run budget` · `npm run contrast` · `npm run audit` · `npm run sbom` ·
 `npm run dist:dir` · `xvfb-run -a node scripts/e2e.mjs` ·
-`xvfb-run -a node scripts/e2e-audit.mjs` ·
+`xvfb-run -a node scripts/e2e-audit.mjs` · `xvfb-run -a node scripts/mcp-smoke.mjs` ·
 `xvfb-run -a node scripts/eval.mjs --smoke` (or with `EVAL_*`) ·
 `xvfb-run -a node scripts/bench.mjs --smoke` (or with `EVAL_*` and `--runs 3`:
-the real-model gate) · `xvfb-run -a node scripts/shots.mjs && node scripts/visual.mjs`
-· `STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 npx vitest run src/main/compat.test.ts`
+the real-model gate, including the acceptance scenarios) ·
+`xvfb-run -a node scripts/shots.mjs && node scripts/visual.mjs` ·
+`STORAGE_AGENT_AWS_ENDPOINT=http://127.0.0.1:5055 npx vitest run src/main/compat.test.ts`
 (with `moto_server -p 5055` running)
 
 Never claim a check you did not run.

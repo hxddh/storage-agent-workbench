@@ -1,4 +1,4 @@
-import { defineTool } from '@earendil-works/pi-durable'
+import { configure, defineTool } from '@earendil-works/pi-durable'
 import { obj, opt, str } from '@earendil-works/pi-schema'
 import type { ToolDetails, ToolView } from '@shared/contract'
 import { describeError } from '../s3/api'
@@ -12,11 +12,14 @@ import type { ToolDeps } from './policy'
  * the delegate step while it works, and its answer — or the question it would
  * ask the user — comes back as the step's result.
  */
+/** What a child agent does not get: acting for the user stays with the parent. */
+export const CHILD_DENIED = new Set(['change', 'schedule', 'notify', 'self', 'delegate'])
+
 export function delegateTool(deps: ToolDeps) {
   return defineTool({
     name: 'delegate',
     description:
-      "Give a self-contained investigation to a child agent and get its answer back. The child has the same read-only tools, account scope, memory and this task's attachments, results and datasets; it cannot write. Several delegate calls in one turn run at the same time. If the child needs something only the user can say, its question comes back to you to ask or to answer from what you know.",
+      "Give a self-contained investigation to a child agent and get its answer back. The child reads with the same tools and account scope, and shares this task's attachments, results, datasets and your workspace; it cannot propose changes, schedule, notify or act on the task — that stays with you. Several delegate calls in one turn run at the same time. If the child needs something only the user can say, its question comes back to you to ask or to answer from what you know.",
     parameters: obj({
       task: str({ description: 'A complete, self-contained request for the child.' }),
       title: opt(str({ description: 'A short label for the step.' })),
@@ -40,6 +43,9 @@ export function delegateTool(deps: ToolDeps) {
           const created = await tx.createConversation({
             ownership: { kind: 'task', taskId: api.taskId },
           } as never)
+          // A child investigates and answers; acting for the user stays with the parent.
+          const denied = (deps.registered ?? []).filter((tool) => CHILD_DENIED.has(tool.name))
+          if (denied.length) configure(tx, created.id, { tools: { remove: denied } } as never)
           return created.id
         }, context)
         const view = (

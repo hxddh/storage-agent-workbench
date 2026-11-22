@@ -1,21 +1,25 @@
 # Product
 
-Storage Agent is a local, read-only agent for object storage and the cloud
-around it. You talk with it; it reads the account with read-only tools and
-answers in its own words. Each task is one conversation. The agent reads,
-judges and says what it found; the app gives it tools that return what the
-services return, enforces the safety boundaries and shows each call where it
-happened. The app decides nothing about the storage: no rules, no findings, no
-verdict, no report and no next-step prompt.
+Storage Agent is an agent that looks after object storage and the cloud
+around it, on the user's own machine. You talk with it; it reads the account
+with read-only tools and answers in its own words. It keeps what it learns in
+a workspace of its own, works on a schedule when asked to watch something,
+and proposes changes that run only when you approve them. Each task is one
+conversation. The app gives the agent a few general capabilities and the
+boundaries around them, and shows each call where it happened. It decides
+nothing about the storage: no rules, no findings, no verdict, no report and no
+next-step prompt.
 
 ## Surfaces
 
 1. **Task list**: new task, search, pinned / today / earlier groups, task
    state and relative time, rename, pin, delete, and Settings. The task open at
    quit opens at launch.
-2. **Task**: one conversation, in order. The composer stays at the foot.
-3. **Settings**: a full-screen sheet, closed with the **X** at its top left,
-   for the model, storage accounts, skills, memory, methods and appearance.
+2. **Home**: the accounts, and what the agent keeps in front of the user —
+   its inbox, its board and its schedules.
+3. **Task**: one conversation, in order. The composer stays at the foot.
+4. **Settings**: a full-screen sheet, closed with the **X** at its top left,
+   for the model, storage accounts, the workspace and appearance.
 
 The composer sits at the foot of Home and of a task. It sends a message, a
 steer while the agent works, or a follow-up in the same task. An unsent draft
@@ -34,9 +38,19 @@ is kept locally per task. Without a model the composer is disabled and says
   account but no model, the hint `Set up a model to ask a question.`
 - Before a model exists, models running in Ollama or LM Studio, each a
   one-click `Use <model>`.
+- **From your agent**: the inbox of what the agent told the user with
+  `notify`, the latest eight, newest first. Clicking an entry marks it read and opens its task;
+  **Mark all read** clears the unread marks.
+- **Board**: every view the agent pinned as a `board/*.view.json` file in its
+  workspace, newest first, drawn like a view in the conversation. The agent
+  refreshes a view by writing the file again.
+- **Scheduled**: each schedule, with its cadence, its next run and its token
+  budget per run. Clicking one opens its task; **Cancel** (a second click
+  confirms) removes it.
 - In a narrow window, where the task list is an overlay, up to five recent
   tasks.
 
+Each of the inbox, board and schedules appears only when it holds something.
 Home has no canned prompt and starts nothing. To learn what an account holds,
 ask.
 
@@ -59,17 +73,26 @@ ask.
   task` divider.
 - A turn that fails or ends without an answer becomes one notice with
   **Retry**, which sends the last user message again with its files and focus.
-  A reply cut at the model's output limit says so where it stops. The agent
+  A reply cut at the model's output limit says so where it stops. A scheduled
+  run that reaches its token budget says `This scheduled run stopped at its
+  token budget. What was read is kept.` with **Continue**. Otherwise the agent
   works until it answers or the user stops it.
+- A change or a settings proposal is a card in the conversation with
+  **Approve** and **Reject**; an applied change has **Roll back**. A file the
+  agent writes under `exports/` is a **Save <name>…** link that opens the
+  system save dialog.
 - A turn that finishes while the window is in the background sends one system
-  notification, unless Settings turns it off. The dock badge or taskbar
-  progress shows work in flight.
+  notification, unless Settings turns it off. A scheduled task's runs do not;
+  they reach the user only through the agent's `notify`. The dock badge or
+  taskbar progress shows work in flight.
 - A turn uses the task's model when one is chosen in the conversation's
   **Model** select, otherwise the default model in Settings. The select offers
   every model saved in Settings — each keeps its own key and context window —
   and the models running on this machine, which need no key and run with the
   window their server reports (4,096 tokens unless the model is loaded with
-  more). A model with a small window gets smaller result pieces.
+  more). A model whose window is under 16,384 tokens is refused with how to
+  load it with more. A model with a small window gets smaller result pieces
+  and earlier compaction.
 - The conversation's header shows the tokens the task has spent, its child
   agents included; hovering shows input, output and cache reads.
 - A task with more than 200 entries opens at the latest and offers **Load
@@ -78,7 +101,8 @@ ask.
 ## What the agent can do
 
 The agent decides which tools to use; the prompt does not list them or
-prescribe a workflow, and each tool describes itself. The full contracts are in [tools.md](tools.md).
+prescribe a workflow, and each tool describes itself. The full contracts are
+in [tools.md](tools.md).
 
 - **`call`**: one read-only operation of a bundled AWS SDK client, with its
   input as the SDK names it. The result is the response as JSON, or the error
@@ -86,70 +110,96 @@ prescribe a workflow, and each tool describes itself. The full contracts are in 
   answer. A streamed `GetObject` body is written to the task folder with a
   64 KiB preview and a `ref`, up to `max_bytes` (default 1 MiB, the agent's
   to raise).
-- **`query`**: a read-only JavaScript script for questions that span more than
-  one call: every object in a bucket, every bucket, an inventory, an attached
-  log, every log under a prefix. Its primitives include `call()` (bodies
-  whole), `read()`, `dataset()` and `inventory()` (every column of the
-  source; `dataset({scope: 'user'})` keeps one across tasks), `sql()`,
-  `datasets()`, `history()` (earlier tasks), `discover()`,
-  `memory()` and `render()`. It returns rows, a view or any JSON. It has no
-  network, filesystem, process, timer or model access.
+- **`query`**: a JavaScript script for questions that span more than one call:
+  every object in a bucket, every bucket, an inventory, an attached log, every
+  log under a prefix. Its primitives include `call()` (bodies whole),
+  `read()`, `dataset()` and `inventory()` (every column of the source;
+  `dataset({scope: 'user'})` keeps one across tasks), `sql()`, `datasets()`,
+  `history()` (earlier tasks), `discover()`, `workspace()`, `run()` (a
+  workspace script) and `render()` (a view). It returns rows, a view or any
+  JSON. It has no network, filesystem, process, timer or model access.
 - **`probe`**: one unsigned HEAD, GET or OPTIONS, with any headers but
-  credentials, to the account's endpoint or a host under it: addresses,
+  credentials, to the account's endpoint or any public host: addresses,
   status, headers, TLS certificate and timing. A CORS preflight is one probe.
 - **`more`**: every result is kept; `more` reads any stretch of one again, of
-  an object body or of an attached file. An attached image is shown to a
-  model that takes images.
-- **`discover`**: the services and read operations available, the tools, and
-  their contracts.
-- **`render`**: a declarative view document (Markdown, table, chart, tree,
-  timeline, diff, callout, key-value, code). The app renders it; the document
-  is never HTML or code.
-- **`memory`**: arbitrary JSON documents with keys, tags, task or user scope,
-  put/get/list/search/query/delete, each with the task that wrote it. It
-  outlives tasks and app versions. The agent decides when to recall; content
-  is not injected into the prompt.
-- **`tool`**: save, list, run and delete a reusable method: a JSON Schema and a
-  read-only JavaScript body. A method can be task- or user-scoped.
+  an object body, an attached file, a workspace file or a bundled skill. An
+  image is shown to a model that takes images.
+- **`workspace`**: the agent's own folder across tasks — notes, skills,
+  datasets, scripts, the board, exports — and its own `db.sqlite`.
+- **`self`**: what model it runs on, what this task spent, the accounts and
+  their settings, its schedules, the app version and the date. It can rename
+  or pin its task, and propose an account's scope or allowing changes.
+- **`schedule`**: a prompt that runs on its own, once or on a cadence, in its
+  own task, within a token budget.
+- **`notify`**: a system notification and an inbox entry, once per run.
+- **`change`**: propose one reversible bucket-configuration write for the user
+  to approve.
 - **`delegate`**: give a self-contained investigation to a child agent with the
-  same read-only tools, scope, memory and task files. Its steps show live
-  inside the delegate step; several run at once; stopping the task stops
-  them; a question it would ask comes back to the parent.
-- **`ask`**: a question with up to six options. The turn ends until the user
-  answers.
+  same tools, scope and task files. Its steps show live inside the delegate
+  step; several run at once; stopping the task stops them; a question it would
+  ask comes back to the parent.
+- **`ask`**: a question with optional answer buttons. The turn ends until the
+  user answers.
 
 Who can reach a bucket, whether it is public, what changed and who changed it
 are the agent's to work out from these reads. Every identifier reaches it as
 the service returned it, so it can compare an account id in a policy with its
 own (`sts GetCallerIdentity`).
 
-- **`skill`**: read, write or delete a skill — a Markdown note on how to work
-  a kind of question (public access, cross-account access, encryption,
-  identities and keys, change history, cost, data at scale, S3-compatible
-  endpoints, writing changes). The prompt lists every skill by name and
-  description; the agent reads one when it decides to. Settings → **Skills**
-  lists them and opens the folder where the user's own live.
+The agent knows its trade from **skills**: Markdown notes on public access,
+cross-account access, encryption, identities and keys, change history, cost
+and lifecycle, data at scale, S3-compatible endpoints and proposing changes.
+The prompt lists every skill by name and description; the agent reads one
+when it decides to. It can write its own in the workspace's `skills/`; those
+are listed as untrusted data and never replace a bundled skill.
+
+## The workspace
+
+The workspace is a folder, `<data>/workspace/`, that the agent owns across
+every task and the user can open. By convention it holds `notes/` (what the
+agent learned about the accounts and the user's decisions), `skills/`,
+`data/` (kept datasets), `scripts/` (checks a `query` can run again),
+`board/` (views pinned on Home), `exports/` (files for the user) and
+`db.sqlite` (the agent's SQL database). The agent organises it as it sees
+fit. Secrets are redacted before anything is written. The prompt says which
+folders hold files, not what they say; the agent reads what it needs. The app
+never clears the workspace.
+
+## Schedules
+
+Asked to watch something, the agent creates a schedule: a name, the prompt
+each run starts with, and when — once at a time, every few minutes or hours,
+daily or weekly, in local time. Each run is a turn in the schedule's own task,
+`Scheduled: <name>`, which the user can open, steer or stop. Nobody watches a
+run, so it stops at its token budget (100,000 unless the schedule names
+another) while its task is not open; opening it lifts the budget. A run missed
+while the app was closed runs once when it opens.
+
+With work scheduled, closing the last window on Windows and Linux leaves the
+app running in the background so runs happen. Settings → Appearance can open
+the app at login in the background, with no window; launching it again, or
+clicking a notification, opens the window.
 
 ## Changes
 
-Asked for a fix, the agent writes the change (an AWS CLI command, a policy, a
-lifecycle document) in its own Markdown, for the user to apply. The app never
-runs it and has no Apply button. The prompt tells the agent never to claim a
-change was made; only a later read shows it.
+Asked for a fix, the agent can do one of two things:
 
-## Memory and methods
+- **On an account that allows changes**, propose it with `change`. Only
+  reversible bucket configuration can be changed: public access blocks, bucket
+  policy, ownership controls, encryption, versioning, lifecycle, CORS,
+  logging, tags and the bucket ACL, and the account-wide public access block.
+  Before the card is shown the app reads what the change would replace. The
+  card shows the exact call, the state now and after, and the agent's reason.
+  **Approve** (confirmed with a second click) runs exactly that call;
+  **Reject** does not. Either way the agent gets the outcome as the user's next
+  message and reads again to verify. **Roll back** puts back what was there,
+  at once, after a second click.
+- **Otherwise**, write the change (an AWS CLI command, a policy, a lifecycle
+  document) in its own Markdown for the user to apply.
 
-The agent's memory is its own `memory.sqlite`: JSON documents it chooses to
-write, with a key, optional text and tags, and task or user scope. It can read,
-list, search, query with one read-only SELECT, and forget. Each document
-records the task that wrote it. Settings lists every document with its key,
-scope and that task, and can forget any of them. Memory outlives app versions. Memory is not
-injected into the prompt; the digest says how many documents exist.
-
-A method is a tool the agent wrote for itself: a JSON Schema and a read-only
-JavaScript body. It runs in the same QuickJS sandbox as `query`, with the same
-scope and no network, filesystem, process, timers or modules. Settings lists
-methods and their code, and can delete one.
+A scheduled run can propose a change; nothing runs until a person approves
+it. The prompt tells the agent never to claim a change was made unless the
+user approved it and a later read shows it.
 
 ## Saving a task
 
@@ -171,10 +221,11 @@ including CJK substrings, use `LIKE`.
 
 Settings fetches the provider's model list. The context window is what the
 list states for the model, else the catalog's figure for its id (unknown
-models get 128k), and reasoning is on at medium for
-known reasoning models and off otherwise. The output budget is the model's
-own maximum, learned from its provider on the first run. Every model gets the same
-tools and prompt.
+models get 128k), and reasoning is on at medium for known reasoning models and
+off otherwise. The output budget is the model's own maximum, learned from its
+provider on the first run, and at most a quarter of the window. Compaction is
+sized to the window. Every model gets the same tools and prompt. A saved key
+is sent only to the provider and base URL it was saved for.
 
 ## Settings
 
@@ -182,16 +233,26 @@ tools and prompt.
   and API key. Pasting a key fetches the provider's models. Save stores the
   model; Test checks the values in the form, saved or not.
 - **Storage accounts**: name, endpoint, region, path-style addressing, access
-  keys (with an optional session token) or an AWS profile, and an optional
-  bucket scope. Each account shows its endpoint or `AWS`, its region and its
-  masked key id or profile, with Test, Edit and Remove.
-- **Memory**: every document, its key and scope, with **Forget**.
-- **Methods**: every agent-authored method, its scope, description and code,
-  with Delete.
-- **Appearance**: English or Chinese, system / light / dark theme, and the
-  background-notification switch.
+  keys (with an optional session token) or an AWS profile, an optional bucket
+  scope, and **Allow changes I approve** (off by default) with an optional AWS
+  profile used for changes only. Each account shows its endpoint or `AWS`, its
+  region, its masked key id or profile and whether changes are allowed, with
+  Test, Edit and Remove.
+- **Workspace**: **Open workspace folder**; every file and folder with its size
+  and date, each with Open and Delete; kept datasets with **Forget**; and the
+  skills, bundled or the user's.
+- **Appearance**: English or Chinese, system / light / dark theme, the
+  background-notification switch, and opening at login in the background.
 - The installed version and update state sit at the foot of the rail; a
   missing update feed says so.
+
+## Other agents
+
+`storage-agent --mcp` runs the app headless as an MCP server over stdio.
+Another agent (an editor, Claude Code, a CI job) can use `call`, `query`,
+`probe`, `more` and the workspace's read actions, with the same accounts,
+scope, redaction and envelope. Changes, schedules and notifications stay in
+the window.
 
 ## Known limits
 
@@ -203,5 +264,9 @@ tools and prompt.
 - Paged APIs return one page per call; the agent decides whether to read
   further pages, or pages through in `query`.
 - Delegation is foreground: the parent waits for the child's answer.
+- Changes cover reversible bucket configuration only; anything else is text
+  for the user to apply.
+- On macOS the app keeps running after its last window closes, as macOS apps
+  do; elsewhere it stays only when work is scheduled or it opens at login.
 - Attachments: at most ten files at a time, 4 GiB each.
 - The sidebar shows the 500 most recently updated tasks.

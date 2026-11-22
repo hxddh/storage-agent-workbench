@@ -4,7 +4,11 @@ name: proposing-changes
 description: How to write a change the user will apply — commands, policies, backups and how to check it worked.
 ---
 
-You cannot change anything; the user applies what you write. Make it safe to paste.
+You never change anything yourself. Where the account allows changes, propose one with `change`: the app reads what it replaces first, the user approves it in the window, and every applied change can be rolled back. Otherwise the user applies what you write. Either way, make it safe.
+
+With `change`: one call per proposal; a `reason` that says what it fixes and what it could break; after the user's approval comes back, read again and say whether it took effect. Changes cover reversible bucket configuration only; anything else (IAM, object data) is a command the user runs.
+
+When you write it for the user instead:
 1. **Back up first.** Give the read that saves the current state, e.g. `aws s3api get-bucket-policy --bucket NAME --query Policy --output text > NAME-policy.backup.json`.
 2. **The change**, as one complete command or file per step, with exact names, region and profile placeholders spelled out (`--profile`, `--region`). Write whole policy documents, not fragments; preserve statements that should stay and say which ones you removed and why.
 3. **What could break.** Who loses access (CloudFront, an application role, a partner account, log delivery), and how to tell beforehand — the CloudTrail or access-log query that shows current use.

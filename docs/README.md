@@ -1,20 +1,21 @@
 # Documentation
 
-These pages describe the **42.0.0** tree. They are not a roadmap and not a
+These pages describe the **43.0.0** tree. They are not a roadmap and not a
 substitute for the code.
 
 | File | What it is |
 |---|---|
-| [product.md](product.md) | Tasks as conversations, Home, reads, memory, methods, views and Settings |
-| [architecture.md](architecture.md) | Processes, runtime flow, modules and storage layout |
-| [data-model.md](data-model.md) | Host tables, pi entries, datasets and retention |
-| [tools.md](tools.md) | The ten tools, results, citations, memory and code mode |
-| [security.md](security.md) | Secrets, scope as authorization, redaction, identifiers and the trust boundary |
-| [iam.md](iam.md) | Read-only IAM permissions and where each read goes |
+| [product.md](product.md) | Tasks as conversations, Home, the workspace, schedules, changes and Settings |
+| [architecture.md](architecture.md) | Processes, runtime flow, schedules, approvals, MCP, modules and storage layout |
+| [data-model.md](data-model.md) | Host tables and migrations, the workspace, pi entries, datasets and retention |
+| [tools.md](tools.md) | The eleven tools, results, citations, skills and code mode |
+| [security.md](security.md) | Secrets, approved changes, scope as authorization, redaction, identifiers and the trust boundary |
+| [iam.md](iam.md) | IAM permissions for reads and for approved changes, and where each call goes |
 | [capabilities.md](capabilities.md) | How S3-compatible endpoints are handled |
-| [design.md](design.md) | Tokens, type, layout, the conversation, motion and accessibility |
+| [design.md](design.md) | Tokens, type, layout, Home, the conversation, motion and accessibility |
 | [development.md](development.md) | Commands, tests, evaluation and packaging |
 | [release.md](release.md) | CI and release jobs, signing, evaluation gates and updates |
+| [v43.md](v43.md) | The 43 design as it was planned; history, not documentation |
 
 ## Precedence
 
@@ -22,7 +23,8 @@ substitute for the code.
 2. These pages describe current behaviour and known limits.
 3. Where a page disagrees with the code or its tests, the code and tests win;
    fix the page in the same change.
-4. `CHANGELOG.md` and published release notes are history, not documentation.
+4. `CHANGELOG.md`, published release notes and `v43.md` are history, not
+   documentation.
 
 ## Vocabulary
 
@@ -39,13 +41,21 @@ substitute for the code.
 - **Read**: one `call`: the service's response as JSON, or its error code,
   HTTP status and message. A 404 such as `NoSuchBucketPolicy` is an answer like
   any other.
-- **Memory document**: arbitrary JSON the agent chose to remember, with a key,
-  optional text and tags, and a task or user scope.
-- **Method**: a reusable tool the agent wrote for itself: a JSON Schema and a
-  read-only JavaScript body.
-- **View**: a declarative document the agent composed with `render`. The app
-  renders the blocks; the document is never HTML or code.
-- **Child agent**: a `delegate` run with the same read-only tools, scope and
-  memory. Its answer returns as the parent step's result.
-- **Change**: text the agent writes (a CLI command, a policy) for the user to
-  apply. The app never runs it.
+- **Workspace**: the agent's own folder, kept across tasks — notes, skills,
+  datasets, scripts, the board, exports — and its `db.sqlite`. The user can
+  open it.
+- **Skill**: a Markdown note on how to work a kind of question. Bundled skills
+  ship with the app; the agent may write its own in the workspace.
+- **View**: a declarative document a script returns or a board file holds.
+  The app renders the blocks; the document is never HTML or code.
+- **Board**: the views pinned on Home, one per `board/*.view.json` file.
+- **Schedule**: a prompt the agent set to run on its own, once or on a
+  cadence; each run is a turn in the schedule's own task, within a token
+  budget.
+- **Inbox**: what the agent told the user with `notify`, on Home.
+- **Child agent**: a `delegate` run with the same tools and scope. Its answer
+  returns as the parent step's result.
+- **Change**: a write the agent proposed with `change`. It runs only when the
+  user approves it in the window, on an account that allows changes, and can
+  be rolled back. A change the app cannot make is text the agent writes for
+  the user to apply.

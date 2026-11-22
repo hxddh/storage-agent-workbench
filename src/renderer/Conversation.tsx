@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Blocks } from './Blocks'
+import { ChangeCard } from './ChangeCard'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
 import Markdown from './Markdown'
@@ -76,7 +77,7 @@ function ToolStep({
   // a storage read's input; for a method, view or child agent it is noise.
   const showArgs =
     item.args &&
-    !['render', 'delegate', 'memory', 'tool', 'discover', 'ask', 'skill'].includes(item.name)
+    !['delegate', 'workspace', 'ask', 'self', 'schedule', 'notify', 'change'].includes(item.name)
   const elapsed =
     item.ms !== null
       ? duration(item.ms)
@@ -108,6 +109,25 @@ function ToolStep({
         {elapsed && <span className="step-time">{elapsed}</span>}
         <ChevronRight size={13} className={`chev ${open ? 'open' : ''}`} />
       </button>
+      {item.view?.kind === 'change' && (
+        <ChangeCard
+          id={item.view.changeId}
+          title={item.view.title}
+          reason={item.view.reason}
+          before={item.view.before}
+          after={item.view.after}
+          t={t}
+        />
+      )}
+      {item.view?.kind === 'export' && (
+        <button
+          className="export-link"
+          type="button"
+          onClick={() => void window.agent.saveExport((item.view as { path: string }).path)}
+        >
+          {fill(t.saveExport, { name: item.view.path.replace(/^exports\//, '') })}
+        </button>
+      )}
       {open && (
         <div className="step-detail">
           {showArgs && <p className="step-args mono">{item.args}</p>}
@@ -805,6 +825,7 @@ export function Conversation({
                     modelId: choice.modelId,
                     baseUrl: choice.baseUrl,
                     thinking: choice.thinking,
+                    ...(choice.contextWindow ? { contextWindow: choice.contextWindow } : {}),
                   })
               }}
             >
@@ -831,6 +852,7 @@ interface ModelChoice {
   modelId: string
   baseUrl: string | null
   thinking: TaskModel['thinking']
+  contextWindow?: number
 }
 
 /** Saved models first, then models running on this machine that are not saved. */
@@ -849,6 +871,7 @@ function modelChoices(saved: SavedModel[], local: LocalModel[]): ModelChoice[] {
       modelId: item.modelId,
       baseUrl: item.baseUrl,
       thinking: 'off',
+      contextWindow: item.contextWindow,
     }
     if (!out.some((known) => sameChoice(known, choice))) out.push(choice)
   }

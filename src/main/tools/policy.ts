@@ -6,12 +6,65 @@ import { defineTool, type ToolRegistration } from '@earendil-works/pi-durable'
 import { opt, type Schema, type Static, str } from '@earendil-works/pi-schema'
 import type { ToolDetails, ToolName, ToolView, UiEntry } from '@shared/contract'
 import type { AppDb } from '../db'
-import type { MemoryStore } from '../memory'
 import type { ProviderConfig, Providers } from '../providers'
 import { describeError } from '../s3/api'
 import { bound, redact, redactView, wrapUntrusted } from '../security/redact'
 import { assertInScope, ScopeError } from '../security/scope'
-import type { Skills } from '../skills'
+import type { Workspace } from '../workspace'
+
+/** A proposal as the conversation shows it. */
+export interface ProposedChange {
+  changeId: string
+  account: string
+  title: string
+  reason: string
+  before: unknown
+  after: unknown
+}
+
+/** What the app itself does for a tool: wired once the engine and window exist. */
+export interface AgentHost {
+  /** What the agent is and may do: model, spend, accounts, schedules, version. */
+  self(conversationId: string): Promise<Record<string, unknown>>
+  rename(taskId: string, title: string): Promise<void>
+  pin(taskId: string, pinned: boolean): Promise<void>
+  schedules: {
+    list(): Promise<unknown[]>
+    create(input: {
+      name: string
+      prompt: string
+      cadence: string
+      budgetTokens?: number | null
+      createdBy: string | null
+    }): Promise<unknown>
+    cancel(name: string): Promise<unknown>
+  }
+  changes: {
+    /** Check, snapshot and store a proposal; the window asks the user. */
+    propose(input: {
+      conversationId: string
+      providerId?: string
+      service: string
+      operation: string
+      input: Record<string, unknown>
+      reason: string
+    }): Promise<ProposedChange>
+    /** A setting of an account, proposed for the user to approve. */
+    proposeSetting(input: {
+      conversationId: string
+      providerId?: string
+      allowChanges?: boolean
+      scope?: string[]
+      reason: string
+    }): Promise<ProposedChange>
+  }
+  /** Tell the user now. Refused, with the reason, when Settings or the run's limit says no. */
+  notify(
+    conversationId: string,
+    title: string,
+    body: string,
+  ): Promise<{ shown: boolean; stored?: boolean; reason?: string }>
+}
 
 export interface ToolDeps {
   db: AppDb
@@ -22,13 +75,18 @@ export interface ToolDeps {
   /** Where a dataset the agent keeps across tasks lives. */
   userDatasetsDir: string
   uploadsDir: (conversationId: string) => string
-  memory?: MemoryStore
-  /** Markdown advice the agent reads when a question needs it. */
-  skills?: Skills
+  /** The agent's own folder across tasks: notes, skills, data, scripts, board, exports. */
+  workspace?: Workspace
+  /** The app's own capabilities; absent in tests and headless mode. */
+  host?: AgentHost
+  /** Where the bundled skills are written out, for `more` (evidence "skill:<name>"). */
+  bundledSkillsDir?: string
   /** How many characters of one result the model gets at once, for this task's model. */
   piece?: (conversationId: string) => number
   /** The projected entries of a conversation, for a delegate's child answer. */
   entries?: (conversationId: string) => Promise<UiEntry[]>
+  /** The registered tools themselves, so a child agent can be given fewer. */
+  registered?: ToolRegistration[]
   /** The registered tools, as each describes itself; `discover` lists them. */
   catalog?: { name: string; description: string }[]
   lang: () => string
@@ -113,6 +171,8 @@ export interface ToolDefinition<T extends Schema> {
     target?: string
     /** Images the model sees with the text, when its provider takes them. */
     images?: { data: string; mimeType: string }[]
+    /** End the turn after this call: the user decides next (a question, a proposed change). */
+    terminate?: boolean
   }>
 }
 
@@ -199,9 +259,12 @@ export function agentTool<T extends Schema>(
           target: result.view.kind === 'note' ? null : target,
           outcome: 'ok',
         })
-        const sent = await fitPiece(deps, conversationId, evidenceId, result.model)
+        // Redacted whole, before it is kept or cut: a secret never straddles two pieces,
+        // and the kept result holds no secret either.
+        const whole = redact(result.model)
+        const sent = await fitPiece(deps, conversationId, evidenceId, whole)
         // When the result was cut for the model, the step says so: the rest waits for `more`.
-        const cut = sent !== result.model ? 'the agent got the first part; the rest is kept' : null
+        const cut = sent !== whole ? 'the agent got the first part; the rest is kept' : null
         const note = [result.note ? redact(result.note) : null, cut].filter(Boolean).join(' · ')
         const details: ToolDetails = {
           target: redact(result.target ?? target),
@@ -221,6 +284,7 @@ export function agentTool<T extends Schema>(
             ...(result.images ?? []).map((image) => ({ type: 'image' as const, ...image })),
           ],
           details: details as never,
+          ...(result.terminate ? { control: { terminate: true } } : {}),
         }
       } catch (error) {
         // A provider's error can name the account; it never reaches the model or the window.

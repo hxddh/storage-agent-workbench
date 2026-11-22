@@ -5,7 +5,7 @@
  * watched task, the search index and the user's own acts on memory. Runs
  * belong to the engine.
  */
-import { mkdir, rm } from 'node:fs/promises'
+import { rm } from 'node:fs/promises'
 import type { ConversationView, TaskGraph, WatchHandle } from '@earendil-works/pi-durable'
 import type {
   ContextRef,
@@ -124,15 +124,6 @@ export class Tasks {
     return searchTasks(this.deps.db, query)
   }
 
-  async memoryRows() {
-    const tasks = await this.deps.db.listTaskMeta()
-    return this.deps.memory.rows(new Map(tasks.map((task) => [task.conversation_id, task.title])))
-  }
-
-  async deleteMemory(id: string): Promise<void> {
-    this.deps.memory.delete(id)
-    await this.runtime.refreshDigest()
-  }
   async datasetRows() {
     return (await this.deps.db.listUserDatasets()).map((row) => ({
       id: row.id,
@@ -151,38 +142,30 @@ export class Tasks {
     await rm(row.path, { force: true }).catch(() => undefined)
   }
 
-  async agentTools() {
-    const rows = await this.deps.db.listAgentTools()
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      schema: JSON.parse(row.schema_json) as unknown,
-      code: row.code,
-      scope: row.scope,
-      conversationId: row.conversation_id,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }))
+  /** What the workspace holds, for the window. */
+  workspaceEntries() {
+    return this.runtime.tools.workspace?.list('', 8) ?? []
   }
 
+  async deleteWorkspacePath(path: string): Promise<void> {
+    this.runtime.tools.workspace?.delete(path)
+    await this.runtime.refreshDigest()
+  }
+
+  /** The workspace folder, so the window can open it. */
+  workspaceFolder(): string {
+    return this.runtime.deps.dirs.workspace
+  }
+
+  /** Bundled skills and the workspace's own, each with where it came from. */
   skills() {
-    return this.runtime.tools.skills?.list() ?? []
+    const skills = this.runtime.tools.workspace?.skills
+    return [...(skills?.bundled() ?? []), ...(skills?.user() ?? [])]
   }
 
-  deleteSkill(name: string): void {
-    this.runtime.tools.skills?.delete(name)
-  }
-
-  /** The folder of the user's own skills, created so it can be opened. */
-  async skillsFolder(): Promise<string> {
-    const dir = this.runtime.deps.dirs.skills
-    await mkdir(dir, { recursive: true })
-    return dir
-  }
-
-  async deleteAgentTool(id: string): Promise<void> {
-    await this.deps.db.deleteAgentTool(id)
+  /** The views pinned to the board. */
+  board() {
+    return this.runtime.tools.workspace?.board() ?? []
   }
 
   async pin(taskId: string, pinned: boolean): Promise<void> {
@@ -222,10 +205,12 @@ export class Tasks {
     if (conversation) await conversation.abort(CONTEXT).catch(() => undefined)
     this.runtime.failed.delete(taskId)
     await this.deps.db.deleteTaskMeta(taskId)
+    // A schedule's runs live in its task; deleting the task ends the schedule.
+    for (const row of await this.deps.db.listSchedules())
+      if (row.conversation_id === taskId) await this.deps.db.deleteSchedule(row.id)
     await this.deps.db.deleteSearchDocs(taskId)
     const purged = await this.deps.db.purgeTask(taskId)
     for (const id of purged) {
-      this.deps.memory.deleteTask(id)
       await rm(this.deps.dirs.task(id), { recursive: true, force: true }).catch(() => undefined)
     }
     if (this.deps.settings.get().lastTaskId === taskId) this.deps.settings.setLastTask(null)
@@ -335,6 +320,17 @@ export class Tasks {
       }
     }
     return total
+  }
+
+  /** Whether the user has this task open in the window: a run there is attended. */
+  isWatched(taskId: string): boolean {
+    return this.active?.id === taskId
+  }
+
+  /** Input and output tokens a task's own model calls have used so far. */
+  async spentTokens(taskId: string): Promise<number> {
+    const usage = await this.conversationUsage(taskId)
+    return usage ? usage.input + usage.output : 0
   }
 
   private async conversationUsage(id: string): Promise<Usage | null> {

@@ -51,14 +51,14 @@ export function formatSkill(skill: Pick<Skill, 'name' | 'description' | 'body'>)
 export class Skills {
   constructor(readonly dir: string) {}
 
-  private bundled(): Skill[] {
+  bundled(): Skill[] {
     return Object.entries(BUNDLED).map(([path, text]) => ({
       ...parseSkill(text, path.replace(/^.*\//, '').replace(/\.md$/, '')),
       source: 'bundled' as const,
     }))
   }
 
-  private user(): Skill[] {
+  user(): Skill[] {
     let files: string[] = []
     try {
       files = readdirSync(this.dir).filter((file) => file.endsWith('.md'))

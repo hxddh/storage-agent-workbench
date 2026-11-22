@@ -142,6 +142,7 @@ try {
   await page.locator('#accKey').fill('logs-key')
   await page.locator('#accSecret').fill('logs-secret')
   await page.getByLabel('Path-style addressing').check()
+  await page.getByLabel('Allow changes I approve').check()
   await page.locator('.account').last().getByRole('button', { name: 'Save', exact: true }).click()
   await page.waitForTimeout(1000)
   if ((await page.locator('.account-name').count()) < 1) await fail('account was not saved')
@@ -179,6 +180,8 @@ try {
   await spend.waitFor({ timeout: 10_000 })
   if (!/tokens/.test(await spend.innerText())) await fail('the conversation does not show its spend')
   console.log('SPEND OK:', await spend.innerText())
+
+
   await checkA11y('conversation')
   await page.screenshot({ path: join(root, '.amp/in/artifacts/e2e-answer.png') })
 
@@ -187,6 +190,26 @@ try {
   if ((await page.locator('.msg.user').count()) !== 2) await fail('the follow-up is not in the same thread')
   if (!(await lastText()).includes('anonymous read')) await fail('the follow-up answer is missing')
   console.log('FOLLOW-UP OK')
+
+  // A change: the agent proposes, the user approves in the window, the agent verifies, the user rolls back.
+  await page.getByRole('button', { name: 'New task' }).click()
+  // The turn ends on the proposal, like a question: wait for the card, not an answer.
+  await page.locator('.composer textarea').fill('Block public access on web-assets')
+  await page.keyboard.press('Enter')
+  const card = page.locator('.change-card').last()
+  await card.waitFor({ timeout: 15_000 })
+  if (!(await card.innerText()).includes('PutPublicAccessBlock on web-assets'))
+    await fail('the change card does not name the call')
+  await card.getByRole('button', { name: 'Approve' }).click()
+  await card.getByRole('button', { name: 'Run this change?' }).click()
+  await card.locator('.change-status:has-text("Applied")').waitFor({ timeout: 15_000 })
+  await page.locator('.msg.agent.text', { hasText: 'now blocks public access' }).last().waitFor({ timeout: 30_000 })
+  console.log('CHANGE APPROVED AND VERIFIED')
+  await card.getByRole('button', { name: 'Roll back' }).click()
+  await card.getByRole('button', { name: 'Put the old state back?' }).click()
+  await card.locator('.change-status:has-text("Rolled back")').waitFor({ timeout: 15_000 })
+  await page.locator('.msg.agent.text', { hasText: 'no public access block again' }).last().waitFor({ timeout: 30_000 })
+  console.log('CHANGE ROLLED BACK')
 
   // @ points at a bucket the account lists, without typing its name.
   await page.locator('.composer textarea').fill('@web')
@@ -274,13 +297,15 @@ try {
   const kept = await openTool('Ran a read-only query')
   await kept.locator('.table-block table, .view-code, pre.code').first().waitFor({ timeout: 5_000 })
   await page.getByRole('button', { name: 'Settings' }).click()
-  // The agent's know-how, as data the user can read and replace.
-  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  // The agent's workspace: what it keeps across tasks, and its know-how as data.
+  await page.getByRole('button', { name: 'Workspace', exact: true }).click()
   await page.locator('.method-row:has-text("public-access")').waitFor({ timeout: 5_000 })
   if ((await page.locator('section:not([hidden]) .method-row').count()) < 9)
     await fail('Settings does not list the bundled skills')
   console.log('SKILLS OK')
-  await page.getByRole('button', { name: 'Memory', exact: true }).click()
+  if (!(await page.locator('section:not([hidden]) .workspace-row').count()))
+    await fail('the workspace pane lists nothing after a survey')
+  console.log('WORKSPACE OK')
   await page.locator('.dataset-row').first().waitFor({ timeout: 5_000 })
   if (!(await page.locator('.dataset-row').first().innerText()).includes('bucket_counts'))
     await fail('kept dataset missing from Settings')
@@ -299,7 +324,7 @@ try {
   // A view the agent composed, not app-generated report scaffolding.
   await page.getByRole('button', { name: 'New task' }).click()
   await say('Show the buckets as a view')
-  const rendered = await openTool('Composed a view')
+  const rendered = await openTool('Ran a read-only query')
   await rendered.locator('.view-doc table').waitFor({ timeout: 5_000 })
   if (!(await rendered.locator('.view-doc').innerText()).includes('web-assets'))
     await fail('render view missing web-assets')
@@ -307,12 +332,25 @@ try {
 
   // A method the agent writes, saves and runs.
   await page.getByRole('button', { name: 'New task' }).click()
-  await say('Write a method for bucket names and run it')
-  const method = await openTool('Used an agent method')
+  await say('Write a script for bucket names and run it')
+  await openTool('Used its workspace')
+  const method = await openTool('Ran a read-only query')
   await method.locator('.table-block table').waitFor({ timeout: 5_000 })
   if (!(await method.locator('.table-block').innerText()).includes('web-assets'))
-    await fail('agent method did not return buckets')
-  console.log('AGENT TOOL OK')
+    await fail('workspace script did not return buckets')
+  console.log('WORKSPACE SCRIPT OK')
+
+  // Work for later: the agent schedules a run; the run reads and notifies the user.
+  await page.getByRole('button', { name: 'New task' }).click()
+  await say('Schedule a public check soon and notify me')
+  await openTool('Scheduled work')
+  await page.getByRole('button', { name: 'New task' }).click()
+  await page.locator('.schedule-row:has-text("Public check")').waitFor({ timeout: 10_000 })
+  console.log('SCHEDULE OK')
+  await page.locator('.inbox-row').first().waitFor({ timeout: 60_000 })
+  if (!/public/i.test(await page.locator('.inbox-row').first().innerText()))
+    await fail('the scheduled run did not report what it read')
+  console.log('NOTIFY OK:', (await page.locator('.inbox-row').first().innerText()).replace(/\s+/g, ' '))
 
   // A child agent for an independent investigation.
   await page.getByRole('button', { name: 'New task' }).click()

@@ -1,32 +1,33 @@
 import type { ToolRegistration } from '@earendil-works/pi-durable'
 import { callTool } from './call'
+import { changeTool } from './change'
 import { askTool } from './control'
 import { delegateTool } from './delegate'
-import { discoverTool } from './discover'
-import { memoryTool } from './memory'
 import { moreTool } from './more'
+import { notifyTool } from './notify'
 import type { ToolDeps } from './policy'
 import { probeTool } from './probe'
 import { queryTool } from './query'
-import { renderTool } from './render'
-import { skillTool } from './skill'
-import { toolTool } from './tool'
+import { scheduleTool } from './schedule'
+import { selfTool } from './self'
+import { workspaceTool } from './workspace'
 
 export function createTools(deps: ToolDeps): ToolRegistration[] {
   const tools = [
     callTool(deps),
-    skillTool(deps),
     queryTool(deps),
     probeTool(deps),
     moreTool(deps),
-    discoverTool(deps),
-    renderTool(deps),
-    memoryTool(deps),
-    toolTool(deps),
+    workspaceTool(deps),
+    selfTool(deps),
+    scheduleTool(deps),
+    notifyTool(deps),
+    changeTool(deps),
     delegateTool(deps),
     // Asking the user is the one tool that does not read storage.
     askTool(),
   ] as ToolRegistration[]
   deps.catalog = tools.map((tool) => ({ name: tool.name, description: tool.description }))
+  deps.registered = tools
   return tools
 }

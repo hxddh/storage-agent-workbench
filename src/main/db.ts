@@ -1,10 +1,65 @@
 import { randomUUID } from 'node:crypto'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 /**
- * The one schema this version writes. A database at any other version is
- * cleared and created again, pi's tables and `tasks/` with it.
+ * The schema moves forward, never back and never cleared: a database at the
+ * baseline (42.0.0's layout) or later is migrated step by step to the current
+ * version. Only a layout older than the baseline, from before migrations
+ * existed, is cleared. A database from a newer version is refused, so an
+ * older build never destroys it.
  */
-export const HOST_SCHEMA_VERSION = 22
+export const BASELINE_SCHEMA_VERSION = 22
+export const HOST_SCHEMA_VERSION = 23
+
+/** `MIGRATIONS[n]` takes a database from version n - 1 to n. */
+const MIGRATIONS: Record<number, string> = {
+  23: `
+ALTER TABLE providers ADD COLUMN allow_changes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE providers ADD COLUMN write_profile TEXT;
+
+CREATE TABLE IF NOT EXISTS schedules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  prompt TEXT NOT NULL,
+  cadence TEXT NOT NULL,
+  budget_tokens INTEGER,
+  conversation_id TEXT,
+  task_id TEXT,
+  created_by TEXT,
+  next_at TEXT,
+  last_at TEXT,
+  last_outcome TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS changes (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'change',
+  service TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  input_json TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  snapshot_json TEXT,
+  status TEXT NOT NULL,
+  result_json TEXT,
+  rollback_of TEXT,
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS changes_conversation ON changes(conversation_id);
+
+CREATE TABLE IF NOT EXISTS inbox (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  read_at TEXT
+);
+`,
+}
 
 export interface ProviderRow {
   id: string
@@ -19,6 +74,10 @@ export interface ProviderRow {
   created_at: string
   auth: 'keys' | 'profile'
   profile: string | null
+  /** 1 when the user allows approved changes on this account. */
+  allow_changes?: number
+  /** An AWS profile for changes; null uses the account's own credentials. */
+  write_profile?: string | null
 }
 
 export interface DatasetRecord {
@@ -38,6 +97,51 @@ export interface DatasetRecord {
   created_at: string
 }
 
+export interface ScheduleRecord {
+  id: string
+  name: string
+  prompt: string
+  /** `at <ISO>`, `every <n>m|<n>h`, `daily HH:MM` or `weekly <day> HH:MM`, local time. */
+  cadence: string
+  budget_tokens: number | null
+  conversation_id: string | null
+  task_id: string | null
+  created_by: string | null
+  next_at: string | null
+  last_at: string | null
+  last_outcome: string | null
+  enabled: number
+  created_at: string
+}
+
+export interface ChangeRecord {
+  id: string
+  conversation_id: string
+  provider_id: string
+  /** `change` (a storage write) or `settings` (an account setting the agent proposed). */
+  kind: 'change' | 'settings' | 'rollback'
+  service: string
+  operation: string
+  input_json: string
+  reason: string
+  /** What the change replaces; `null` text means nothing was set. */
+  snapshot_json: string | null
+  status: 'proposed' | 'applied' | 'failed' | 'rejected' | 'rolled_back'
+  result_json: string | null
+  rollback_of: string | null
+  created_at: string
+  decided_at: string | null
+}
+
+export interface InboxRecord {
+  id: string
+  conversation_id: string | null
+  title: string
+  body: string
+  created_at: string
+  read_at: string | null
+}
+
 export interface AgentToolRecord {
   id: string
   scope: 'task' | 'user'
@@ -50,7 +154,8 @@ export interface AgentToolRecord {
   updated_at: string
 }
 
-const SCHEMA = `
+/** The baseline layout (42.0.0); every later version is a migration on top. */
+export const BASELINE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS providers (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -147,8 +252,12 @@ export class AppDb {
     const tables = await raw.all<{ name: string; type: string }>(
       "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
     )
-    const version = row?.user_version ?? 0
-    const reset = tables.length > 0 && version !== HOST_SCHEMA_VERSION
+    let version = tables.length ? (row?.user_version ?? 0) : 0
+    if (version > HOST_SCHEMA_VERSION)
+      throw new Error(
+        `This data was written by a newer Storage Agent (schema ${version}); this build reads up to ${HOST_SCHEMA_VERSION}. Install the newer version; nothing was changed.`,
+      )
+    const reset = tables.length > 0 && version < BASELINE_SCHEMA_VERSION
     if (reset) {
       await raw.exec('PRAGMA foreign_keys = OFF')
       // Shadow tables of an FTS table go with it; drop the virtual tables first.
@@ -161,8 +270,25 @@ export class AppDb {
         await raw.exec(`DROP ${item.type.toUpperCase()} IF EXISTS "${item.name}"`)
     }
     await raw.exec('PRAGMA foreign_keys = ON')
-    await raw.exec(SCHEMA)
-    await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
+    if (reset || version === 0) {
+      // A new database starts at the baseline and takes every migration after it.
+      await raw.exec(BASELINE_SCHEMA)
+      version = BASELINE_SCHEMA_VERSION
+      await raw.exec(`PRAGMA user_version = ${version}`)
+    }
+    for (let next = version + 1; next <= HOST_SCHEMA_VERSION; next++) {
+      const step = MIGRATIONS[next]
+      if (!step) throw new Error(`No migration to schema ${next}.`)
+      await raw.exec('BEGIN')
+      try {
+        await raw.exec(step)
+        await raw.exec(`PRAGMA user_version = ${next}`)
+        await raw.exec('COMMIT')
+      } catch (error) {
+        await raw.exec('ROLLBACK')
+        throw error
+      }
+    }
     const db = new AppDb(raw)
     db.resetTasks = reset
     return db
@@ -181,13 +307,14 @@ export class AppDb {
   async upsertProvider(row: ProviderRow): Promise<void> {
     await this.raw.run(
       `INSERT INTO providers (id, name, endpoint, region, force_path_style, access_key_id,
-         secret_ref, session_ref, scope_json, created_at, auth, profile)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         secret_ref, session_ref, scope_json, created_at, auth, profile, allow_changes, write_profile)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name, endpoint = excluded.endpoint, region = excluded.region,
          force_path_style = excluded.force_path_style, access_key_id = excluded.access_key_id,
          secret_ref = excluded.secret_ref, session_ref = excluded.session_ref,
-         scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile`,
+         scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile,
+         allow_changes = excluded.allow_changes, write_profile = excluded.write_profile`,
       row.id,
       row.name,
       row.endpoint,
@@ -200,6 +327,8 @@ export class AppDb {
       row.created_at,
       row.auth,
       row.profile,
+      row.allow_changes ?? 0,
+      row.write_profile ?? null,
     )
   }
 
@@ -226,6 +355,148 @@ export class AppDb {
       name,
       conversationId ?? '',
     )
+  }
+
+  // -- schedules ---------------------------------------------------------------
+
+  async insertSchedule(row: ScheduleRecord): Promise<void> {
+    await this.raw.run(
+      `INSERT INTO schedules (id, name, prompt, cadence, budget_tokens, conversation_id, task_id, created_by, next_at, last_at, last_outcome, enabled, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      row.id,
+      row.name,
+      row.prompt,
+      row.cadence,
+      row.budget_tokens,
+      row.conversation_id,
+      row.task_id,
+      row.created_by,
+      row.next_at,
+      row.last_at,
+      row.last_outcome,
+      row.enabled,
+      row.created_at,
+    )
+  }
+
+  async updateSchedule(id: string, patch: Partial<ScheduleRecord>): Promise<void> {
+    const columns = new Set([
+      'name',
+      'prompt',
+      'cadence',
+      'budget_tokens',
+      'conversation_id',
+      'task_id',
+      'next_at',
+      'last_at',
+      'last_outcome',
+      'enabled',
+    ])
+    const keys = Object.keys(patch).filter((key) => columns.has(key))
+    if (!keys.length) return
+    await this.raw.run(
+      `UPDATE schedules SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE id = ?`,
+      ...keys.map((key) => (patch as Record<string, unknown>)[key] as never),
+      id,
+    )
+  }
+
+  async getSchedule(id: string): Promise<ScheduleRecord | undefined> {
+    return this.raw.get<ScheduleRecord>('SELECT * FROM schedules WHERE id = ?', id)
+  }
+
+  async scheduleByName(name: string): Promise<ScheduleRecord | undefined> {
+    return this.raw.get<ScheduleRecord>('SELECT * FROM schedules WHERE name = ?', name)
+  }
+
+  async listSchedules(): Promise<ScheduleRecord[]> {
+    return this.raw.all<ScheduleRecord>('SELECT * FROM schedules ORDER BY created_at')
+  }
+
+  async deleteSchedule(id: string): Promise<void> {
+    await this.raw.run('DELETE FROM schedules WHERE id = ?', id)
+  }
+
+  // -- changes -----------------------------------------------------------------
+
+  async insertChange(row: ChangeRecord): Promise<void> {
+    await this.raw.run(
+      `INSERT INTO changes (id, conversation_id, provider_id, kind, service, operation, input_json, reason, snapshot_json, status, result_json, rollback_of, created_at, decided_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      row.id,
+      row.conversation_id,
+      row.provider_id,
+      row.kind,
+      row.service,
+      row.operation,
+      row.input_json,
+      row.reason,
+      row.snapshot_json,
+      row.status,
+      row.result_json,
+      row.rollback_of,
+      row.created_at,
+      row.decided_at,
+    )
+  }
+
+  async getChange(id: string): Promise<ChangeRecord | undefined> {
+    return this.raw.get<ChangeRecord>('SELECT * FROM changes WHERE id = ?', id)
+  }
+
+  async decideChange(id: string, status: ChangeRecord['status'], result: unknown): Promise<void> {
+    await this.raw.run(
+      'UPDATE changes SET status = ?, result_json = ?, decided_at = ? WHERE id = ?',
+      status,
+      JSON.stringify(result ?? null),
+      new Date().toISOString(),
+      id,
+    )
+  }
+
+  async listChanges(conversationId: string): Promise<ChangeRecord[]> {
+    return this.raw.all<ChangeRecord>(
+      'SELECT * FROM changes WHERE conversation_id = ? ORDER BY created_at',
+      conversationId,
+    )
+  }
+
+  // -- inbox -------------------------------------------------------------------
+
+  async addInbox(row: {
+    conversationId: string | null
+    title: string
+    body: string
+  }): Promise<InboxRecord> {
+    const record: InboxRecord = {
+      id: randomUUID(),
+      conversation_id: row.conversationId,
+      title: row.title,
+      body: row.body,
+      created_at: new Date().toISOString(),
+      read_at: null,
+    }
+    await this.raw.run(
+      'INSERT INTO inbox (id, conversation_id, title, body, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?)',
+      record.id,
+      record.conversation_id,
+      record.title,
+      record.body,
+      record.created_at,
+      null,
+    )
+    return record
+  }
+
+  async listInbox(limit = 100): Promise<InboxRecord[]> {
+    return this.raw.all<InboxRecord>('SELECT * FROM inbox ORDER BY created_at DESC LIMIT ?', limit)
+  }
+
+  async markInboxRead(id?: string): Promise<void> {
+    const at = new Date().toISOString()
+    if (id)
+      await this.raw.run('UPDATE inbox SET read_at = ? WHERE id = ? AND read_at IS NULL', at, id)
+    else await this.raw.run('UPDATE inbox SET read_at = ? WHERE read_at IS NULL', at)
   }
 
   async upsertAgentTool(row: {

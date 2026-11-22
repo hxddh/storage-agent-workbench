@@ -1,7 +1,8 @@
 # S3-compatible endpoints
 
 An account is a name, an endpoint, a region, path-style addressing, keys or an
-AWS profile, and an optional bucket scope. An empty endpoint means AWS. The app
+AWS profile, an optional bucket scope, and whether approved changes are
+allowed (with an optional AWS profile for them). An empty endpoint means AWS. The app
 does not classify accounts by provider and keeps no list of what a provider
 supports.
 
@@ -9,7 +10,8 @@ supports.
 
 - **Custom endpoint.** Every call of the account goes to its endpoint, for
   every bundled service: S3, S3 Control, STS, IAM, Organizations, KMS, Access
-  Analyzer, CloudWatch and CloudTrail. The credentials are never sent to AWS.
+  Analyzer, CloudWatch, CloudTrail and the rest. An approved change goes there
+  too. The credentials are never sent to AWS.
   S3 Control uses the endpoint as given, not an account-prefixed host name.
   Turn on path-style addressing for an endpoint that does not answer
   virtual-hosted bucket names.
@@ -31,7 +33,13 @@ storage-only endpoint answers them with errors. Without CloudWatch, `query`
 can measure listed objects instead, and the agent should say it measured a
 listing.
 
+An approved change is sent the same way. An endpoint that does not implement
+the write, or the read the app takes as its snapshot, answers with its own
+error: a snapshot that cannot be read means the change is not proposed, and a
+write that fails is reported to the agent with the endpoint's error.
+
 `probe` shows how the endpoint itself answers: addresses, status, headers and
 TLS certificate.
 
-See [iam.md](iam.md) for AWS permissions and [tools.md](tools.md) for `call` and `discover`.
+See [iam.md](iam.md) for AWS permissions and [tools.md](tools.md) for `call`,
+`change` and `query`'s `discover()`.

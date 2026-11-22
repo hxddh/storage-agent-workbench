@@ -11,15 +11,15 @@ import type { ToolDetails } from '@shared/contract'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { type FakeBucket, startFakeS3 } from '../../scripts/fake-s3.mjs'
 import { AppDb } from './db'
-import { MemoryStore } from './memory'
+import { mcpTools } from './mcp'
 import { Providers } from './providers'
 import { checkCall, operationsOf, shape } from './s3/api'
 import type { Vault } from './security/vault'
 import { callTool } from './tools/call'
-import { memoryTool } from './tools/memory'
 import { moreTool } from './tools/more'
 import { PIECE, type ToolDeps } from './tools/policy'
 import { isPublicAddress, probeTool } from './tools/probe'
+import { Workspace } from './workspace'
 
 const BUCKETS: Record<string, FakeBucket> = {
   'aws-public': { public: true },
@@ -90,7 +90,7 @@ beforeAll(async () => {
   deps = {
     db,
     providers,
-    memory: MemoryStore.open(join(taskDir, 'memory.sqlite')),
+    workspace: new Workspace(join(taskDir, 'workspace')),
     taskDir: () => taskDir,
     datasetsDir: () => tmpdir(),
     userDatasetsDir: join(taskDir, 'user-datasets'),
@@ -111,6 +111,16 @@ const sent = (text: string) =>
   /<untrusted-data[^>]*>\n?([\s\S]*?)\n?<\/untrusted-data[^>]*>/.exec(text)?.[1] ?? ''
 
 describe('what the task holds', () => {
+  it('ends a text piece on a line, so a secret is never redacted in halves', async () => {
+    writeFileSync(
+      join(uploads, 'creds.ini'),
+      '[default]\naws_secret_access_key = wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY\nregion = eu-west-1\n',
+    )
+    const part = await run(moreTool(deps), { evidence: 'attachment:creds.ini', length: 30 })
+    expect(sent(part.text)).toContain('aws_secret_access_key = [redacted]')
+    expect(sent(part.text)).not.toMatch(/wJalr|EXAMPLEKEY/)
+  })
+
   it('reads an attachment at any offset and length, and shows an image', async () => {
     writeFileSync(join(uploads, 'policy.json'), '{"Version":"2012-10-17","Statement":[]}')
     const part = await run(moreTool(deps), {
@@ -141,6 +151,33 @@ describe('what the task holds', () => {
     const listed = await call({ service: 's3', operation: 'ListBuckets' })
     const again = await run(moreTool(deps), { evidence: listed.details.evidenceId! })
     expect(sent(again.text)).toContain('Buckets')
+  })
+})
+
+describe('MCP', () => {
+  it('serves the read tools with the same envelope and refuses workspace writes', async () => {
+    const tools = mcpTools(deps)
+    expect(
+      tools
+        .list()
+        .map((tool) => tool.name)
+        .sort(),
+    ).toEqual(['call', 'more', 'probe', 'query', 'workspace'])
+    expect(tools.list().find((tool) => tool.name === 'call')?.inputSchema).toMatchObject({
+      type: 'object',
+    })
+    const listed = await tools.call('call', { service: 's3', operation: 'ListBuckets' })
+    expect(listed.isError).toBe(false)
+    expect(listed.content[0]).toMatchObject({ type: 'text' })
+    expect(JSON.stringify(listed.content)).toMatch(/untrusted-data-[0-9a-f]{12}/)
+    expect(JSON.stringify(listed.content)).toContain('cors-open')
+    const write = await tools.call('workspace', {
+      action: 'write',
+      path: 'notes/x.md',
+      content: 'x',
+    })
+    expect(write.isError).toBe(true)
+    expect((await tools.call('change', {})).isError).toBe(true)
   })
 })
 
@@ -332,6 +369,31 @@ describe('one read-only call', () => {
       ['s3control', 'ListAccessPoints', { Bucket: 'logs' }],
     ] as const)
       expect(() => checkCall(scoped, { service, operation, input })).not.toThrow()
+    // A member the operation does not model is refused: the SDK would drop it, so a
+    // scope check on it would pass while the request reached every bucket.
+    for (const operation of ['ListJobs', 'ListStorageLensConfigurations', 'GetAccessPointPolicy'])
+      expect(() =>
+        checkCall(scoped, {
+          service: 's3control',
+          operation,
+          input: { Bucket: 'logs', Name: 'x' },
+        }),
+      ).toThrow(/has no input member/)
+    expect(() =>
+      checkCall(config, {
+        service: 's3',
+        operation: 'ListObjectsV2',
+        input: { Bucket: 'b', Prefx: 'a' },
+      }),
+    ).toThrow(/no input member Prefx\. Its members: .*Prefix/)
+    expect(() =>
+      checkCall(config, { service: 'iam', operation: 'GetAccountSummary', input: { Bucket: 'b' } }),
+    ).toThrow(/Its members: \(none\)/)
+    // Reads that hand out credentials do not run.
+    expect(() => checkCall(config, { service: 's3control', operation: 'GetDataAccess' })).toThrow(
+      /not a read this app runs/,
+    )
+    expect(operationsOf('s3control')).not.toContain('GetDataAccess')
     expect(operationsOf('s3')).toContain('GetBucketLifecycleConfiguration')
     expect(operationsOf('s3').every((name) => /^(Get|List|Head|Select)/.test(name))).toBe(true)
   })
@@ -419,25 +481,5 @@ describe('a result longer than one piece', () => {
     const next = await run(moreTool(deps), { evidence, offset })
     expect(next.details.status).toBe('done')
     expect(sent(next.text).length).toBeGreaterThan(0)
-  })
-})
-
-describe('memory', () => {
-  it('remembers JSON without its secrets, lists it, and forgets it', async () => {
-    const { details } = await run(memoryTool(deps), {
-      action: 'put',
-      key: 'logs',
-      value: { bucket: 'cors-open', secret: 'aws_secret_access_key = wJalrXUtnFEMI' },
-      text: 'Logs land in cors-open. aws_secret_access_key = wJalrXUtnFEMI',
-    })
-    expect(details.status).toBe('done')
-    const mine = deps.memory?.get('logs')
-    expect(mine?.value).toMatchObject({ bucket: 'cors-open' })
-    expect(JSON.stringify(mine?.value)).not.toContain('wJalrXUtnFEMI')
-    const list = await run(memoryTool(deps), { action: 'list' })
-    expect(list.details.status).toBe('done')
-    const forgot = await run(memoryTool(deps), { action: 'delete', key: 'logs' })
-    expect(forgot.details.status).toBe('done')
-    expect(deps.memory?.get('logs')).toBeNull()
   })
 })

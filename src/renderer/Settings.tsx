@@ -1,39 +1,25 @@
 import type {
   Account,
   AccountInput,
-  AgentToolRow,
   Bootstrap,
   CatalogModel,
   KeptDatasetRow,
   Lang,
   LocalModel,
-  MemoryRow,
   ModelProvider,
   SkillRow,
   Theme,
   ThinkingLevel,
+  WorkspaceEntry,
 } from '@shared/contract'
-import {
-  BookOpen,
-  Brain,
-  Cloud,
-  Copy,
-  Cpu,
-  Eye,
-  EyeOff,
-  Palette,
-  Plus,
-  Wrench,
-  X,
-} from 'lucide-react'
+import { Cloud, Cpu, Eye, EyeOff, FolderOpen, Palette, Plus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { type Dict, dict, fill } from './i18n'
-import { copyText } from './lib/export'
 import { useFocusTrap } from './lib/focus'
 import { humanBytes } from './Views'
 
 type Provider = ModelProvider
-export type SettingsPane = 'model' | 'accounts' | 'skills' | 'memory' | 'methods' | 'appearance'
+export type SettingsPane = 'model' | 'accounts' | 'workspace' | 'appearance'
 
 /** A loopback endpoint: the provider needs a key value, but the user does not. */
 function localEndpoint(baseUrl: string): boolean {
@@ -73,6 +59,8 @@ const EMPTY_ACCOUNT: AccountInput = {
   secretAccessKey: '',
   sessionToken: '',
   scope: { buckets: [] },
+  allowChanges: false,
+  writeProfile: '',
 }
 
 export function Settings({
@@ -93,9 +81,7 @@ export function Settings({
   const panes = [
     { id: 'model' as const, label: t.model, icon: Cpu },
     { id: 'accounts' as const, label: t.accounts, icon: Cloud },
-    { id: 'skills' as const, label: t.skills, icon: BookOpen },
-    { id: 'memory' as const, label: t.memory, icon: Brain },
-    { id: 'methods' as const, label: t.methods, icon: Wrench },
+    { id: 'workspace' as const, label: t.workspace, icon: FolderOpen },
     { id: 'appearance' as const, label: t.appearance, icon: Palette },
   ]
   const active = panes.find((item) => item.id === pane) ?? panes[0]!
@@ -131,17 +117,16 @@ export function Settings({
     detail: string
   } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
-  const [memory, setMemory] = useState<MemoryRow[]>([])
+  const [files, setFiles] = useState<WorkspaceEntry[]>([])
   const [confirming, setConfirming] = useState<string | null>(null)
   const [datasets, setDatasets] = useState<KeptDatasetRow[]>([])
-  const [methods, setMethods] = useState<AgentToolRow[]>([])
   const [skills, setSkills] = useState<SkillRow[]>([])
+  const [openAtLogin, setOpenAtLogin] = useState(boot.settings.openAtLogin)
   const trap = useFocusTrap<HTMLDivElement>(onClose, '[data-active-tab="true"]')
 
   useEffect(() => {
-    void window.agent.memory().then(setMemory)
+    void window.agent.workspace().then(setFiles)
     void window.agent.datasets().then(setDatasets)
-    void window.agent.agentTools().then(setMethods)
     void window.agent.skills().then(setSkills)
     void window.agent.awsProfiles().then(setProfiles)
     void window.agent.localModels().then(setLocalModels)
@@ -166,18 +151,9 @@ export function Settings({
     action()
   }
 
-  const forget = async (id: string) => {
-    await window.agent.deleteMemory(id)
-    setMemory(await window.agent.memory())
-  }
-
-  const forgetMethod = async (id: string) => {
-    await window.agent.deleteAgentTool(id)
-    setMethods(await window.agent.agentTools())
-  }
-
-  const forgetSkill = async (name: string) => {
-    await window.agent.deleteSkill(name)
+  const forgetPath = async (path: string) => {
+    await window.agent.deleteWorkspacePath(path)
+    setFiles(await window.agent.workspace())
     setSkills(await window.agent.skills())
   }
 
@@ -342,6 +318,8 @@ export function Settings({
       secretAccessKey: '',
       sessionToken: '',
       scope: { buckets: account.scope.buckets },
+      allowChanges: account.allowChanges,
+      writeProfile: account.writeProfile ?? '',
     })
     setShowForm(true)
     setAccountStatus(null)
@@ -668,6 +646,7 @@ export function Settings({
                       {account.scope.buckets.length
                         ? `${t.scope}: ${account.scope.buckets.join(', ')}`
                         : t.allBuckets}
+                      {account.allowChanges ? ` · ${t.changesAllowed}` : ''}
                     </div>
                     {accountTest?.id === account.id && (
                       <div className={accountTest.ok ? 'ok-text' : 'error-text'}>
@@ -825,6 +804,31 @@ export function Settings({
                       <span className="check-box" aria-hidden="true" />
                       <span>{t.pathStyle}</span>
                     </label>
+                    <label className="check-field">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.allowChanges)}
+                        onChange={(event) =>
+                          setForm({ ...form, allowChanges: event.target.checked })
+                        }
+                      />
+                      <span className="check-box" aria-hidden="true" />
+                      <span>{t.allowChanges}</span>
+                    </label>
+                    {form.allowChanges && (
+                      <div className="field">
+                        <label htmlFor="accWriteProfile">{t.writeProfile}</label>
+                        <input
+                          id="accWriteProfile"
+                          value={form.writeProfile ?? ''}
+                          placeholder={t.writeProfilePlaceholder}
+                          onChange={(event) =>
+                            setForm({ ...form, writeProfile: event.target.value })
+                          }
+                        />
+                        <span className="hint">{t.allowChangesHint}</span>
+                      </div>
+                    )}
                     <div className="account-actions">
                       <button
                         className="btn primary"
@@ -860,34 +864,50 @@ export function Settings({
                 )}
               </section>
 
-              <section className="section" hidden={pane !== 'memory'}>
-                <p className="settings-desc">{t.settingsMemoryDesc}</p>
-                {memory.length === 0 ? (
-                  <p className="hint">{t.noMemory}</p>
+              <section className="section" hidden={pane !== 'workspace'}>
+                <p className="settings-desc">{t.settingsWorkspaceDesc}</p>
+                <button
+                  className="text-action"
+                  type="button"
+                  onClick={() => void window.agent.openWorkspace()}
+                >
+                  {t.openWorkspace}
+                </button>
+                {files.length === 0 ? (
+                  <p className="hint">{t.workspaceEmpty}</p>
                 ) : (
                   <div className="memory-list">
-                    {memory.map((doc) => (
-                      <div className="memory-row memory-doc" key={doc.id}>
+                    {files.map((file) => (
+                      <div className="memory-row workspace-row" key={file.path}>
                         <div className="memory-head">
-                          <span className="method-name mono">{doc.key}</span>
-                          <span className="hint">{doc.scope}</span>
-                        </div>
-                        {doc.origin && (
-                          <span className="hint">
-                            {t.memoryFrom} {doc.originTitle ?? t.memoryGoneTask} ·{' '}
-                            {doc.updatedAt.slice(0, 10)}
+                          <span className="method-name mono">
+                            {file.path}
+                            {file.kind === 'dir' ? '/' : ''}
                           </span>
-                        )}
-                        <span className="memory-text">
-                          {doc.text.length > 1200 ? `${doc.text.slice(0, 1200)}…` : doc.text}
-                        </span>
-                        <button
-                          className="text-action"
-                          type="button"
-                          onClick={() => confirmAction(doc.id, () => void forget(doc.id))}
-                        >
-                          {confirming === doc.id ? `${t.forget}?` : t.forget}
-                        </button>
+                          {file.kind === 'file' && (
+                            <span className="hint">
+                              {humanBytes(file.bytes)} · {file.modifiedAt.slice(0, 10)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="memory-actions">
+                          <button
+                            className="text-action"
+                            type="button"
+                            onClick={() => void window.agent.openWorkspace(file.path)}
+                          >
+                            {t.open}
+                          </button>
+                          <button
+                            className="text-action"
+                            type="button"
+                            onClick={() =>
+                              confirmAction(`ws:${file.path}`, () => void forgetPath(file.path))
+                            }
+                          >
+                            {confirming === `ws:${file.path}` ? `${t.delete}?` : t.delete}
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -922,68 +942,12 @@ export function Settings({
                     ))}
                   </div>
                 )}
-              </section>
 
-              <section className="section" hidden={pane !== 'methods'}>
-                <p className="settings-desc">{t.settingsMethodsDesc}</p>
-                {methods.length === 0 ? (
-                  <p className="hint">{t.noMethods}</p>
-                ) : (
-                  <div className="memory-list">
-                    {methods.map((method) => (
-                      <div className="method-row" key={method.id}>
-                        <div className="method-head">
-                          <span className="method-name mono">{method.name}</span>
-                          <span className="hint">
-                            {t.methodScope}: {method.scope}
-                          </span>
-                        </div>
-                        {method.description && (
-                          <span className="memory-text">{method.description}</span>
-                        )}
-                        <details className="method-code">
-                          <summary>{t.raw}</summary>
-                          <pre className="mono">{method.code}</pre>
-                        </details>
-                        <button
-                          className="text-action"
-                          type="button"
-                          onClick={() => void copyText(method.code)}
-                        >
-                          <Copy size={12} aria-hidden="true" />
-                          {t.copy}
-                        </button>
-                        <button
-                          className="text-action"
-                          type="button"
-                          onClick={() =>
-                            confirmAction(method.id, () => void forgetMethod(method.id))
-                          }
-                        >
-                          {confirming === method.id ? `${t.delete}?` : t.delete}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-
-              <section className="section" hidden={pane !== 'skills'}>
-                <p className="settings-desc">{t.settingsSkillsDesc}</p>
-                <button
-                  className="text-action"
-                  type="button"
-                  onClick={() =>
-                    void window.agent.openSkillsFolder().then(async () => {
-                      setSkills(await window.agent.skills())
-                    })
-                  }
-                >
-                  {t.openSkillsFolder}
-                </button>
+                <h3 className="settings-subhead">{t.skills}</h3>
+                <p className="hint">{t.skillsHint}</p>
                 <div className="memory-list">
                   {skills.map((skill) => (
-                    <div className="method-row" key={skill.name}>
+                    <div className="method-row" key={`${skill.source}:${skill.name}`}>
                       <div className="method-head">
                         <span className="method-name mono">{skill.name}</span>
                         <span className="hint">
@@ -995,17 +959,6 @@ export function Settings({
                         <summary>{t.raw}</summary>
                         <pre className="mono">{skill.body}</pre>
                       </details>
-                      {skill.source === 'user' && (
-                        <button
-                          className="text-action"
-                          type="button"
-                          onClick={() =>
-                            confirmAction(`skill:${skill.name}`, () => void forgetSkill(skill.name))
-                          }
-                        >
-                          {confirming === `skill:${skill.name}` ? `${t.delete}?` : t.delete}
-                        </button>
-                      )}
                     </div>
                   ))}
                 </div>
@@ -1055,6 +1008,18 @@ export function Settings({
                   />
                   <span className="check-box" aria-hidden="true" />
                   <span>{t.notify}</span>
+                </label>
+                <label className="check-field">
+                  <input
+                    type="checkbox"
+                    checked={openAtLogin}
+                    onChange={(event) => {
+                      setOpenAtLogin(event.target.checked)
+                      void window.agent.saveSettings({ openAtLogin: event.target.checked })
+                    }}
+                  />
+                  <span className="check-box" aria-hidden="true" />
+                  <span>{t.openAtLogin}</span>
                 </label>
               </section>
             </div>

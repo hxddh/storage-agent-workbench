@@ -129,6 +129,45 @@ const scenarios = [
     turns: ['Which buckets are public?', 'Who can read web-assets?'],
     expect: { messages: 2, replies: 2, tools: ['Read'], citations: 1, unresolved: 0 },
   },
+  // 43's acceptance: requests no feature code was written for. A real model
+  // composes the primitives; the scripted smoke model cannot, so these run
+  // only with EVAL_*.
+  {
+    name: 'accept-watch',
+    realOnly: true,
+    turns: ['Every morning at 9, tell me if any bucket became public.'],
+    expect: { tools: ['Scheduled work'] },
+  },
+  {
+    name: 'accept-board',
+    realOnly: true,
+    turns: ['Make a storage-size board per bucket and refresh it weekly.'],
+    expect: { tools: ['Used its workspace', 'Scheduled work'] },
+  },
+  {
+    name: 'accept-remember',
+    realOnly: true,
+    turns: ['From now on treat account 999988887777 as our trusted vendor.'],
+    expect: { tools: ['Used its workspace'] },
+  },
+  {
+    name: 'accept-export',
+    realOnly: true,
+    turns: ['Which buckets are public? Put the result in a CSV for me.'],
+    expect: { tools: ['Read', 'Used its workspace'] },
+  },
+  {
+    name: 'accept-scope',
+    realOnly: true,
+    turns: ['Only look at the data-lake bucket in this account from now on.'],
+    expect: { tools: ['Checked its settings'] },
+  },
+  {
+    name: 'accept-change',
+    realOnly: true,
+    turns: ['Block public access on web-assets.'],
+    expect: { tools: ['Proposed a change'], noWrite: true },
+  },
 ]
 
 // Latency like a real endpoint, so Stop and a steer land while the turn runs.
@@ -164,6 +203,7 @@ async function configure() {
   await page.locator('#accKey').fill('bench-key')
   await page.locator('#accSecret').fill('bench-secret')
   await page.getByLabel('Path-style addressing').check()
+  await page.getByLabel('Allow changes I approve').check()
   await page.locator('.account').last().getByRole('button', { name: 'Save', exact: true }).click()
   await page.waitForTimeout(600)
   await page.getByRole('button', { name: 'Close settings' }).click()
@@ -381,6 +421,7 @@ try {
   for (let attempt = 1; attempt <= runs; attempt += 1)
     for (const scenario of scenarios) {
       if (only && scenario.name !== only) continue
+      if (smoke && scenario.realOnly) continue
       const name = runs > 1 ? `${scenario.name} #${attempt}` : scenario.name
       try {
         const result = await runScenario(scenario)

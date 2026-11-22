@@ -29,12 +29,12 @@ export type ToolName =
   | 'probe'
   | 'more'
   | 'ask'
-  | 'discover'
-  | 'render'
-  | 'memory'
-  | 'tool'
+  | 'workspace'
   | 'delegate'
-  | 'skill'
+  | 'self'
+  | 'schedule'
+  | 'notify'
+  | 'change'
 
 export type TaskState = 'ready' | 'working' | 'queued' | 'attention' | 'failed'
 
@@ -45,6 +45,56 @@ export interface Table {
 }
 
 /** A method the agent wrote for itself. */
+export interface WorkspaceEntry {
+  path: string
+  kind: 'file' | 'dir'
+  bytes: number
+  modifiedAt: string
+}
+
+export interface BoardItem {
+  path: string
+  title: string
+  doc: ViewDoc
+  modifiedAt: string
+}
+
+/** A proposed change as the window shows it, with its current status. */
+export interface ChangeItem {
+  id: string
+  kind: 'change' | 'settings' | 'rollback'
+  status: 'proposed' | 'applied' | 'failed' | 'rejected' | 'rolled_back'
+  account: string
+  service: string
+  operation: string
+  input: unknown
+  before: unknown
+  reason: string
+  result: unknown
+  decidedAt: string | null
+  rollbackOf: string | null
+}
+
+export interface InboxItem {
+  id: string
+  taskId: string | null
+  title: string
+  body: string
+  createdAt: string
+  read: boolean
+}
+
+export interface ScheduleItem {
+  name: string
+  prompt: string
+  cadence: string
+  budgetTokens: number
+  taskId: string | null
+  nextAt: string | null
+  lastAt: string | null
+  lastOutcome: string | null
+}
+
 export interface SkillRow {
   name: string
   description: string
@@ -127,6 +177,18 @@ export type ToolView =
     }
   /** Rows from agent memory. */
   | { kind: 'memory'; title: string; table: Table; text?: string }
+  /** A file the agent wrote to the workspace's exports/ for the user. */
+  | { kind: 'export'; path: string; bytes: number }
+  /** A write or a setting the agent proposed; the user approves or rejects it in the window. */
+  | {
+      kind: 'change'
+      changeId: string
+      account: string
+      title: string
+      reason: string
+      before: unknown
+      after: unknown
+    }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped'
 
@@ -148,7 +210,7 @@ export interface ToolDetails {
 }
 
 /** App notices are codes; the window words them in the user's language. */
-export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'cut'
+export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'cut' | 'budget'
 
 export interface LiveTool {
   callId: string
@@ -312,6 +374,10 @@ export interface Account {
   accessKeyMasked: string
   hasSessionToken: boolean
   scope: { buckets: string[] }
+  /** The user allows approved changes on this account. */
+  allowChanges: boolean
+  /** An AWS profile used only for approved changes; null uses the account's credentials. */
+  writeProfile: string | null
 }
 
 export interface AccountInput {
@@ -326,6 +392,8 @@ export interface AccountInput {
   secretAccessKey?: string
   sessionToken?: string
   scope: { buckets: string[] }
+  allowChanges?: boolean
+  writeProfile?: string | null
 }
 
 export interface ModelSettings {
@@ -343,6 +411,8 @@ export interface TaskModel {
   modelId: string
   baseUrl: string | null
   thinking: ThinkingLevel
+  /** For a model on this machine: the window its server reported. */
+  contextWindow?: number
 }
 
 export interface ModelInput {
@@ -370,7 +440,8 @@ export interface AppSettings {
   theme: Theme
   /** A system notification when a run finishes while the window is in the background. */
   notify: boolean
-  /** Notes older than this are hidden from Memory; 0 keeps every note. */
+  /** Start at login in the background, so schedules run without opening the window. */
+  openAtLogin: boolean
 }
 
 export type UpdateState =
@@ -405,6 +476,10 @@ export type AppEvent =
   /** The user clicked a notification for this task. */
   | { type: 'open'; taskId: string }
   | { type: 'bootstrap' }
+  /** The agent notified the user; the inbox changed. */
+  | { type: 'inbox' }
+  /** A change was decided, applied or rolled back. */
+  | { type: 'change'; id: string }
 
 export type AppCommand = 'settings' | 'new-task' | 'stop' | 'search'
 
@@ -452,15 +527,24 @@ export interface AgentApi {
   retryTask(taskId: string): Promise<void>
   continueTask(taskId: string): Promise<void>
   search(query: string): Promise<SearchHit[]>
-  memory(): Promise<MemoryRow[]>
-  deleteMemory(id: string): Promise<void>
   datasets(): Promise<KeptDatasetRow[]>
   deleteDataset(id: string): Promise<void>
-  agentTools(): Promise<AgentToolRow[]>
-  deleteAgentTool(id: string): Promise<void>
+  workspace(): Promise<WorkspaceEntry[]>
+  deleteWorkspacePath(path: string): Promise<void>
+  openWorkspace(path?: string): Promise<void>
+  saveExport(path: string): Promise<boolean>
   skills(): Promise<SkillRow[]>
-  deleteSkill(name: string): Promise<void>
-  openSkillsFolder(): Promise<void>
+  board(): Promise<BoardItem[]>
+  change(id: string): Promise<ChangeItem | null>
+  /** The user approves a proposed change; the app runs exactly it. */
+  approveChange(id: string): Promise<ChangeItem>
+  rejectChange(id: string): Promise<ChangeItem>
+  /** Undo an applied change from what it replaced. */
+  rollbackChange(id: string): Promise<ChangeItem>
+  inbox(): Promise<InboxItem[]>
+  markInboxRead(id?: string): Promise<void>
+  schedules(): Promise<ScheduleItem[]>
+  cancelSchedule(name: string): Promise<void>
   saveText(input: {
     name: string
     content: string

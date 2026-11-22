@@ -1,4 +1,4 @@
-import { stat, writeFile } from 'node:fs/promises'
+import { copyFile, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, sep } from 'node:path'
 import type {
   AccountInput,
@@ -170,14 +170,11 @@ export function registerIpc(app: App): void {
     if (!PROVIDERS.has(input.provider)) throw new Error('Unknown model provider.')
     const modelId = input.modelId?.trim()
     if (!modelId) throw new Error('A model id is required.')
-    const existing = app.settings.get().model
     const key = input.apiKey?.trim()
-    // A model saved before keeps its own key; another model of the default's provider uses the default's.
-    const known = app.settings.saved({ ...input, modelId, baseUrl: input.baseUrl?.trim() ?? '' })
-    const sameProvider = existing && existing.provider === input.provider ? existing : null
-    if (!key && !known && !sameProvider)
-      throw new Error('Enter an API key for this model provider.')
-    const keyRef = key ? app.vault.seal(key) : (known?.keyRef ?? sameProvider?.keyRef)
+    // Without a new key, only a key saved for this provider at this endpoint is reused.
+    const savedRef = app.settings.keyFor(input.provider, input.baseUrl)
+    if (!key && !savedRef) throw new Error('Enter an API key for this model provider and endpoint.')
+    const keyRef = key ? app.vault.seal(key) : savedRef
     if (!keyRef) throw new Error('An API key is required.')
     app.settings.setModel({
       provider: input.provider,
@@ -212,8 +209,9 @@ export function registerIpc(app: App): void {
       input: { provider: 'openai' | 'anthropic' | 'compatible'; baseUrl: string; apiKey?: string },
     ) => {
       if (!PROVIDERS.has(input?.provider)) throw new Error('Unknown model provider.')
-      const stored = app.settings.get().model
-      const key = input.apiKey?.trim() || (stored ? app.vault.open(stored.keyRef) : '')
+      // A saved key goes only to the provider and endpoint it was saved for.
+      const saved = app.settings.keyFor(input.provider, input.baseUrl)
+      const key = input.apiKey?.trim() || (saved ? app.vault.open(saved) : '')
       return listModels({
         provider: input.provider,
         baseUrl: String(input.baseUrl ?? ''),
@@ -225,26 +223,71 @@ export function registerIpc(app: App): void {
   ipcMain.handle('agent:saveSettings', async (_event, patch: Partial<AppSettings>) => {
     app.settings.patch(patch)
     if (patch.theme) nativeTheme.themeSource = patch.theme
+    // Started at login, the app opens no window: schedules run in the background.
+    if (typeof patch.openAtLogin === 'boolean')
+      electronApp.setLoginItemSettings({ openAtLogin: patch.openAtLogin, args: ['--background'] })
   })
-
-  ipcMain.handle('agent:memory', () => app.tasks.memoryRows())
 
   ipcMain.handle('agent:datasets', () => app.tasks.datasetRows())
 
   ipcMain.handle('agent:deleteDataset', (_event, id: string) => app.tasks.deleteDataset(id))
 
-  ipcMain.handle('agent:deleteMemory', (_event, id: string) => app.tasks.deleteMemory(id))
+  ipcMain.handle('agent:workspace', () => app.tasks.workspaceEntries())
 
-  ipcMain.handle('agent:agentTools', () => app.tasks.agentTools())
+  ipcMain.handle('agent:deleteWorkspacePath', (_event, path: string) =>
+    app.tasks.deleteWorkspacePath(String(path)),
+  )
 
-  ipcMain.handle('agent:deleteAgentTool', (_event, id: string) => app.tasks.deleteAgentTool(id))
+  ipcMain.handle('agent:openWorkspace', async (_event, path?: string) => {
+    const root = app.tasks.workspaceFolder()
+    // A path the window names is resolved inside the workspace, never outside it.
+    const target = path ? app.runtime.tools.workspace?.resolve(String(path)) : root
+    await shell.openPath(target ?? root)
+  })
+
+  ipcMain.handle('agent:saveExport', async (_event, path: string) => {
+    const source = app.runtime.tools.workspace?.resolve(String(path))
+    if (!source) return false
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: source.split(/[\\/]/).pop(),
+    })
+    if (canceled || !filePath) return false
+    await copyFile(source, filePath)
+    return true
+  })
 
   ipcMain.handle('agent:skills', () => app.tasks.skills())
 
-  ipcMain.handle('agent:deleteSkill', (_event, name: string) => app.tasks.deleteSkill(String(name)))
+  ipcMain.handle('agent:board', () => app.tasks.board())
 
-  ipcMain.handle('agent:openSkillsFolder', async () => {
-    await shell.openPath(await app.tasks.skillsFolder())
+  // A change runs only from here: the user's click in the window, never the conversation.
+  ipcMain.handle('agent:change', (_event, id: string) => app.approvals.get(String(id)))
+
+  ipcMain.handle('agent:approveChange', (_event, id: string) => app.approvals.approve(String(id)))
+
+  ipcMain.handle('agent:rejectChange', (_event, id: string) => app.approvals.reject(String(id)))
+
+  ipcMain.handle('agent:rollbackChange', (_event, id: string) => app.approvals.rollback(String(id)))
+
+  ipcMain.handle('agent:inbox', async () =>
+    (await app.db.listInbox()).map((row) => ({
+      id: row.id,
+      taskId: row.conversation_id,
+      title: row.title,
+      body: row.body,
+      createdAt: row.created_at,
+      read: Boolean(row.read_at),
+    })),
+  )
+
+  ipcMain.handle('agent:markInboxRead', (_event, id?: string) =>
+    app.db.markInboxRead(typeof id === 'string' ? id : undefined),
+  )
+
+  ipcMain.handle('agent:schedules', () => app.scheduler.list())
+
+  ipcMain.handle('agent:cancelSchedule', async (_event, name: string) => {
+    await app.scheduler.cancel(String(name))
   })
 
   ipcMain.handle('agent:openExternal', (_event, url: string) => {

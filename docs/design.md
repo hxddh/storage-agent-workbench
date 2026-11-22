@@ -64,7 +64,10 @@ Spacing follows a 4/8/12/16/24 base. Radii are 6–8px for controls and rows,
 popovers and the active sidebar row are the only elevated surfaces.
 
 The document is flat: hairline separators and space, no cards. Tables and code
-blocks are data surfaces, not cards. Settings uses a navigation rail and form
+blocks are data surfaces, not cards. The two exceptions are decisions and
+pinned views: a change card in the conversation and a view on Home's board sit
+on `--surface` with a hairline and a 10px radius, because each is one thing the
+user acts on or reads as a unit. Settings uses a navigation rail and form
 fields, not a sequence of panels.
 
 ## Layout
@@ -107,8 +110,23 @@ machine`, not a dashboard. On desktop the sidebar owns the task list, so Home
 does not repeat recent tasks; below 860px, where the sidebar is an overlay,
 Home shows at most five one-line recent tasks.
 
-No cards, charts, canned prompts, suggestion pills or large illustration.
-Nothing on Home sends a message. The composer is inert until a model exists.
+Below the accounts, Home shows what the agent keeps in front of the user
+(`AgentSurface`), each section only when it holds something:
+
+- **From your agent** — the inbox: the latest eight notifications, one hairline
+  row each, its title (bold while unread) over a one-line body, and its date. A
+  click marks it read and opens its task; while any is unread, **Mark all read**
+  is a quiet text action in the section head.
+- **Board** — the views the agent pinned (`board/*.view.json`), newest first,
+  in a grid of cards at least 280px wide: the view's title, when it was
+  written, and the view drawn with the same blocks as the conversation.
+- **Scheduled** — one row per schedule: its name, then `<cadence> · next <time>
+  · up to <budget> tokens a run`. A click opens its task; **Cancel** asks for a
+  second click within three seconds.
+
+Everything there is the agent's own output; the window only shows it. No
+canned prompts, suggestion pills or large illustration. Nothing on Home sends
+a message. The composer is inert until a model exists.
 
 ## The conversation
 
@@ -131,8 +149,8 @@ strips, no summary of the work.
   spinning loader while running, a `--ok` check when done, a small circle when
   stopped, a `--danger` triangle for failed or refused), the tool's label
   (`Read`, `Ran a read-only query`, `Probed endpoint`, `Read more of a result`,
-  `Discovered capabilities`, `Composed a view`, `Used memory`, `Used an agent
-  method`, `Delegated to a child agent`), the target in mono
+  `Used its workspace`, `Checked its settings`, `Scheduled work`, `Notified
+  you`, `Proposed a change`, `Delegated to a child agent`), the target in mono
   (`s3 GetBucketPolicy · logs`), the
   note, a status word when it did not finish (`Running`, `Failed`, `Stopped`,
   `Refused`), the duration
@@ -155,11 +173,24 @@ strips, no summary of the work.
 - **Clarifying question** — an `ask` call is an agent message, not a step: the
   question, its note, and while it waits one button per option. A click sends
   that option as the next message.
+- **Change card** — a `change` or `self propose` step carries a card under its
+  line, indented to the step list: the title (`s3 PutPublicAccessBlock on
+  web-assets`) and a status word (`Waiting for you`, `Applied`, `Failed`,
+  `Rejected`, `Rolled back`), the agent's reason, then `Now` and `After the
+  change` side by side as JSON. While it waits the border is `--accent` and it
+  offers **Approve** (primary) and **Reject**; Approve turns into `Run this
+  change?` and runs only on that second click. An applied storage change offers
+  **Roll back**, confirmed the same way (`Put the old state back?`). A failure
+  shows the service's error under the sides. The decision then appears as the
+  user's next message.
+- **Export link** — a file the agent wrote under `exports/` is a quiet
+  `Save <name>…` action under its step; it opens the system save dialog.
 - **Notices** — one line with a dot (`--danger` for an error): `Stopped. What
-  was read is kept.` with **Continue**; `The agent hit an error.` or `The agent
-  stopped without replying.` with **Retry**, followed by the provider's error
-  text when there is one; `The reply reached the model’s output limit and is
-  cut off here.`
+  was read is kept.` with **Continue**; `This scheduled run stopped at its
+  token budget. What was read is kept.` with **Continue**; `The agent hit an
+  error.` or `The agent stopped without replying.` with **Retry**, followed by
+  the provider's error text when there is one; `The reply reached the model’s
+  output limit and is cut off here.`
 - **Dividers** — `Continued this task` where a stopped turn was resumed, and
   `Earlier steps were compacted` where pi compacted the context; quiet centred
   lines.
@@ -176,9 +207,10 @@ what the endpoint answered. A failed call shows the service's error code, HTTP
 status and message as its note. Nothing is summarised, coloured as risky or
 marked clean.
 
-A change the agent writes is part of its text: a fenced code block in its
-Markdown, with no tabs, Apply button or applied state. The `Markdown` chunk is
-lazy; while it loads, link targets, bold marks and backticks are stripped
+A change the agent cannot propose (the account does not allow changes, or the
+write is not on the allowlist) is part of its text: a fenced code block in its
+Markdown, with no tabs, Apply button or applied state. Only a change card can
+run a write. The `Markdown` chunk is lazy; while it loads, link targets, bold marks and backticks are stripped
 rather than flashing raw syntax.
 
 A call to a tool name the registry does not hold shows under that name as a
@@ -196,20 +228,21 @@ value range, draws a data table under **Data (N rows)**, and distinguishes up
 to five series by colour, opacity or dash. A `diff` labels its two panes and
 tints changed lines, not whole files.
 
-A `render` result is a view document, not JSON: the app draws its Markdown,
-tables, charts, trees, timelines, diffs, callouts, key-value rows and code.
-Every block is data and follows the same typography and tokens as the rest of
-the page. A `render` link shows its host after its text, and its whole URL on
-hover. A `memory` result is a table of documents, each with the task that
-wrote it. A `delegate` result is the child's conversation in place: its
+A view a script returns is a view document, not JSON: the app draws its
+Markdown, tables, charts, trees, timelines, diffs, callouts, key-value rows
+and code. Every block is data and follows the same typography and tokens as
+the rest of the page. A view's link shows its host after its text, and its
+whole URL on hover. A `workspace` read or write opens the file: Markdown
+rendered, anything else as a code block with its language; a listing, search
+or SQL result opens as JSON. A `delegate` result is the child's conversation in place: its
 request, its steps (each opens like any other step) and its text. While the
 child works the step is open and its steps appear as they happen; past fifty,
 earlier steps open with **Load earlier**.
 
 The step's argument summary is shown for a storage read where its input helps
-(`call`, `query`, `probe`, `more`). For `render`, `memory`, `tool`, `delegate`,
-`discover` and `ask`, the step line and its typed view already say what
-happened; raw JSON arguments are not repeated.
+(`call`, `query`, `probe`, `more`). For `workspace`, `self`, `schedule`,
+`notify`, `change`, `delegate` and `ask`, the step line and its typed view
+already say what happened; raw JSON arguments are not repeated.
 
 Printing (Save PDF) opens every step and hides the sidebar, composer, overflow
 menu and copy buttons.
@@ -245,24 +278,28 @@ authorization.
 
 ## Settings
 
-Six panes: Model, Storage accounts, Skills, Memory, Methods and Appearance. The active
+Four panes: Model, Storage accounts, Workspace and Appearance. The active
 pane is the top-bar title and the selected rail row. Model configuration is one
 form: provider, model, base URL, key, Save and Test. The key can be revealed
 without leaving the field; **Advanced** holds an explicit context window and
 thinking level, each automatic until chosen. A loopback base URL says that no
 real key is needed and Save supplies a placeholder. Local models are one-click
-chips. Accounts list read-only credentials and open one inline form for add or
+chips. Accounts list their credentials and open one inline form for add or
 edit (name, endpoint, region, path-style, access keys or AWS profile, bucket
-scope); the key fields are never pre-filled, and editing says a blank key keeps
-the saved one.
+scope, and **Allow changes I approve**, which reveals an optional `AWS profile
+for changes` field and a hint on what changes can do); the key fields are never
+pre-filled, and editing says a blank key keeps the saved one. An account that
+allows changes says `changes allowed with approval` in its row.
 
-Memory lists every document the agent wrote, with its key, scope, text, the
-task that wrote it and when, and **Forget**. Kept datasets list their name,
-source, rows, size, and when they were kept, with **Forget**; they outlive the
-task that imported them. Every destructive row action asks for a second click
-within three seconds. Methods lists every agent-authored method, with its
-scope, description, code under **Raw** and **Copy**, and Delete. Appearance
-holds language, theme and the background-notification switch.
+Workspace says what the folder is for, offers **Open workspace folder**, and
+lists every file and folder with its size and date, each with **Open** (in the
+system's own app) and **Delete**. Kept datasets list their name, source, rows,
+size, and when they were kept, with **Forget**; they outlive the task that
+imported them. Skills list every skill, bundled or the user's, with a hint
+that the agent reads workspace skills as notes, not instructions. Every
+destructive row action asks for a second click within three seconds.
+Appearance holds language, theme, the background-notification switch and
+opening at login in the background.
 
 Inputs and selects are styled consistently with visible focus rings; selects use
 a drawn chevron. Checkboxes keep the native input for keyboard and screen
@@ -299,4 +336,5 @@ or critical violations. This is a floor, not a certification.
 English and Chinese are written separately, not translated word for word. The
 agent writes its own prose; the interface adds no heading, table or summary to
 it. The interface never says "Let me know if…", "Here is what I found:" or
-"Next steps". A change is the agent's text; there is no Apply button.
+"Next steps". A change runs only from its card's **Approve**; there is no
+Apply button and nothing on Home runs one.

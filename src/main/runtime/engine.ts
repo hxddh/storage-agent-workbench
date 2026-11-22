@@ -12,7 +12,7 @@ import { isLoopback, LOCAL_DEFAULT_CONTEXT } from '../local-models'
 import { contextFor } from '../model-catalog'
 import { wrapUntrusted } from '../security/redact'
 import type { StoredModel } from '../settings'
-import { installModel, learnOutputLimit } from './model'
+import { compactionFor, installModel, learnOutputLimit, outputCap, windowRefusal } from './model'
 import type { RunData } from './project'
 import { CONTEXT, type RunOutcome, type Runtime } from './session'
 import type { Tasks } from './tasks'
@@ -111,10 +111,39 @@ export class Engine {
     await this.run(conversation, 'Continue.', { kind: 'sa.resume' })
   }
 
+  /**
+   * One run of a schedule: the schedule's prompt as a turn in its own task.
+   * Nobody is watching, so the run stops at its token budget — unless the user
+   * opens the task while it works, which makes it attended.
+   */
+  async runScheduled(
+    schedule: {
+      id: string
+      name: string
+      prompt: string
+      conversationId: string
+      budgetTokens: number
+    },
+    dueAt: number,
+  ): Promise<void> {
+    const conversation = await this.runtime.require(schedule.conversationId)
+    await this.deps.db.touchTask(schedule.conversationId)
+    await this.run(
+      conversation,
+      `[Scheduled run of "${schedule.name}", due ${new Date(dueAt).toISOString()}. Nobody is watching: use notify to tell the user what they need to know.]\n\n${schedule.prompt}`,
+      {
+        kind: 'sa.run',
+        data: { text: schedule.prompt, attachments: [], scheduled: schedule.name },
+      },
+      { requestId: `schedule:${schedule.id}:${dueAt}`, budgetTokens: schedule.budgetTokens },
+    )
+  }
+
   private async run(
     conversation: Conversation,
     content: string,
     entry: { kind: string; data?: unknown },
+    options: { requestId?: string; budgetTokens?: number } = {},
   ): Promise<void> {
     const taskId = String(conversation.id)
     const stored = this.deps.settings.get().model
@@ -124,26 +153,58 @@ export class Engine {
     const { model: effective, directKey } = resolveTaskModel(stored, chosen, (ref) =>
       this.deps.settings.saved(ref),
     )
+    const tooSmall = windowRefusal(effective)
+    if (tooSmall) throw new Error(tooSmall)
     this.runtime.windows.set(taskId, effective.contextWindow)
     const vault = directKey === undefined ? this.deps.vault : null
-    const limit = await learnOutputLimit(this.deps.models, effective, vault, directKey)
+    const limit = outputCap(
+      effective.contextWindow,
+      await learnOutputLimit(this.deps.models, effective, vault, directKey),
+    )
     const model = installModel(this.deps.models, effective, vault, directKey, undefined, limit)
     await this.runtime.pi.commit(
       (tx) =>
         configure(tx, conversation.id, {
           model,
           thinkingLevel: chosen?.thinking ?? stored.thinking ?? 'off',
+          // Delegated children inherit it with the rest of the agent.
+          compaction: compactionFor(effective.contextWindow),
         }),
       CONTEXT,
     )
     this.runtime.failed.delete(taskId)
+    const before = options.budgetTokens ? await this.tasks.spentTokens(taskId) : 0
     const submission = await conversation.submit(
-      { type: 'input', content, entry: entry as never },
+      {
+        type: 'input',
+        content,
+        entry: entry as never,
+        ...(options.requestId ? { requestId: options.requestId } : {}),
+      },
       CONTEXT,
     )
+    // An unattended run stops at its budget; a run the user is watching has none.
+    let overBudget = false
+    const budget = options.budgetTokens
+    const monitor = budget
+      ? setInterval(() => {
+          if (this.tasks.isWatched(taskId)) return
+          void this.tasks.spentTokens(taskId).then((spent) => {
+            if (spent - before <= budget || overBudget) return
+            overBudget = true
+            void conversation.abort(CONTEXT).catch(() => undefined)
+          })
+        }, 3_000)
+      : null
     void this.settle(conversation, taskId, async () => {
-      const settled = await submission.wait(CONTEXT)
+      const settled = await submission.wait(CONTEXT).finally(() => {
+        if (monitor) clearInterval(monitor)
+      })
       if (settled.status !== 'unanswered') return 'answered'
+      if (settled.reason === 'aborted' && overBudget) {
+        await this.notice(conversation, 'budget', 'warn', 'continue')
+        return 'stopped'
+      }
       if (settled.reason === 'aborted') return 'stopped'
       await this.notice(conversation, 'no_answer', 'error', 'retry', reasonText(settled.reason))
       return 'failed'
@@ -220,7 +281,7 @@ export function resolveTaskModel(
   }
   if (isLoopback(chosen.baseUrl))
     return {
-      model: { ...base, contextWindow: LOCAL_DEFAULT_CONTEXT, keyRef: '' },
+      model: { ...base, contextWindow: chosen.contextWindow ?? LOCAL_DEFAULT_CONTEXT, keyRef: '' },
       directKey: 'local',
     }
   if (chosen.provider === stored.provider && (chosen.baseUrl ?? '') === (stored.baseUrl || ''))

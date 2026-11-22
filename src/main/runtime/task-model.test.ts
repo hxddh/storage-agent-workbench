@@ -6,6 +6,7 @@ import { detectLocalModels, isLoopback } from '../local-models'
 import { Settings, type StoredModel } from '../settings'
 import { PIECE, pieceFor } from '../tools/policy'
 import { resolveTaskModel } from './engine'
+import { compactionFor, outputCap, windowRefusal } from './model'
 
 const anthropic: StoredModel = {
   provider: 'anthropic',
@@ -65,6 +66,35 @@ describe('a task model', () => {
     )
     expect(directKey).toBe('local')
     expect(model.contextWindow).toBe(4096)
+    // The window its server reported travels with the task's choice.
+    const loaded = resolveTaskModel(
+      anthropic,
+      {
+        provider: 'compatible',
+        modelId: 'qwen3:8b',
+        baseUrl: 'http://127.0.0.1:11434/v1',
+        thinking: 'off',
+        contextWindow: 32768,
+      },
+      () => null,
+    )
+    expect(loaded.model.contextWindow).toBe(32768)
+  })
+
+  it('refuses a window the prompt cannot fit, and sizes compaction to the window', () => {
+    expect(windowRefusal({ modelId: 'qwen3:8b', contextWindow: 4096 })).toMatch(
+      /at least 16,384.*OLLAMA_CONTEXT_LENGTH/,
+    )
+    expect(windowRefusal({ modelId: 'x', contextWindow: 32768 })).toBeNull()
+    const small = compactionFor(16_384)
+    expect(small.reserveTokens + small.keepRecentTokens).toBeLessThan(16_384)
+    expect(compactionFor(200_000)).toEqual({
+      reserveTokens: 16_384,
+      keepRecentTokens: 20_000,
+      backgroundTokens: 20_000,
+    })
+    expect(outputCap(16_384, 128_000)).toBe(4_096)
+    expect(outputCap(200_000, 64_000)).toBe(50_000)
   })
 
   it('says what to do for a model of another provider that has no saved key', () => {
@@ -84,6 +114,17 @@ describe('a task model', () => {
       () => null,
     )
     expect(model).toMatchObject({ keyRef: 'aes:anthropic', modelId: 'claude-haiku-5-5' })
+  })
+})
+
+describe('a saved key', () => {
+  it('goes only to the provider and endpoint it was saved for', () => {
+    const settings = new Settings(mkdtempSync(join(tmpdir(), 'settings-')))
+    settings.setModel({ ...openai, baseUrl: 'https://gateway.example.com/v1/' })
+    expect(settings.keyFor('openai', 'https://gateway.example.com/v1')).toBe('aes:openai')
+    expect(settings.keyFor('openai', '')).toBeNull()
+    expect(settings.keyFor('openai', 'https://evil.example.net/v1')).toBeNull()
+    expect(settings.keyFor('compatible', 'https://gateway.example.com/v1')).toBeNull()
   })
 })
 

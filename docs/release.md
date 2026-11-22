@@ -11,7 +11,8 @@ dispatch with an existing tag.
 - **check**: typecheck, Biome lint, Vitest, build, bundle budget,
   secondary-text contrast, production dependency audit and SBOM;
 - **e2e**: the real-window E2E with fake S3 and a fake model, the no-model
-  first-run E2E, the eval smoke, the bench smoke, cold-start performance,
+  first-run E2E, the MCP smoke (`scripts/mcp-smoke.mjs`), the eval smoke,
+  the bench smoke, cold-start performance,
   screenshots and the visual comparison (captures are uploaded when it
   fails);
 - **bench-real**, on pushes to `main` only: `bench.mjs --runs 3` for a small
@@ -95,7 +96,7 @@ it check, download and restart; there is no automated upgrade test.
 
 ## Version
 
-The version is the `package.json` version, **42.0.0**, and the tag is
+The version is the `package.json` version, **43.0.0**, and the tag is
 `v<version>`. Published tags are immutable; a correction is a new patch
 release. Settings shows the installed version and the update state. Keep
 `README.md` and `docs/screenshot.png` in step with the surface when tagging.

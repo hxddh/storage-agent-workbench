@@ -98,6 +98,43 @@ export function installModel(
   return { provider: providerId, modelId: stored.modelId }
 }
 
+/**
+ * The smallest window the agent can work in: its prompt and tool schemas take
+ * about 4,000 tokens before the user says anything, and a turn needs room for
+ * results and a reply on top.
+ */
+export const MIN_CONTEXT = 16_384
+
+/** Why a model's window is too small, with what to do about it; null when it is large enough. */
+export function windowRefusal(stored: { modelId: string; contextWindow: number }): string | null {
+  if (stored.contextWindow >= MIN_CONTEXT) return null
+  return `${stored.modelId} runs with a ${stored.contextWindow.toLocaleString('en-US')}-token context window; Storage Agent needs at least ${MIN_CONTEXT.toLocaleString('en-US')} (its prompt and tools alone take about 4,000). Load the model with a larger context (Ollama: OLLAMA_CONTEXT_LENGTH or num_ctx; LM Studio: the context length when loading), or set the window in Settings → Model → Advanced if the server already uses more.`
+}
+
+/**
+ * Compaction sized to the window. pi's defaults (reserve 16,384, keep 20,000)
+ * suit a large window; on a small one they would compact before every
+ * request, with a summary request that itself does not fit.
+ */
+export function compactionFor(contextWindow: number): {
+  reserveTokens: number
+  keepRecentTokens: number
+  backgroundTokens: number
+} {
+  const share = (fraction: number, min: number, max: number) =>
+    Math.round(Math.min(max, Math.max(min, contextWindow * fraction)))
+  return {
+    reserveTokens: share(0.2, 2_048, 16_384),
+    keepRecentTokens: share(0.3, 2_048, 20_000),
+    backgroundTokens: share(0.1, 0, 32_768),
+  }
+}
+
+/** One reply may use at most a quarter of the window, so the context always has room. */
+export function outputCap(contextWindow: number, learnedLimit: number): number {
+  return Math.min(learnedLimit, Math.max(1_024, Math.floor(contextWindow / 4)))
+}
+
 /** pi's thinking level for a stored setting; `off` when the model does not reason. */
 const learned = new Map<string, number>()
 
@@ -233,15 +270,16 @@ export async function testModel(
 export async function testModelDraft(
   models: ReturnType<typeof createModels>,
   input: ModelInput,
-  stored: StoredModel | null,
+  /** The key saved for this provider at this endpoint, if any; no other key is tried. */
+  savedKeyRef: string | null,
   vault: Vault,
 ): Promise<{ ok: boolean; detail: string }> {
   const modelId = input.modelId?.trim()
   if (!modelId) return { ok: false, detail: 'A model id is required.' }
   let apiKey = input.apiKey?.trim() ?? ''
-  if (!apiKey && stored?.provider === input.provider) {
+  if (!apiKey && savedKeyRef) {
     try {
-      apiKey = vault.open(stored.keyRef)
+      apiKey = vault.open(savedKeyRef)
     } catch {
       apiKey = ''
     }
