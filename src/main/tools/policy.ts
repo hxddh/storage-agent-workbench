@@ -63,7 +63,7 @@ export interface AgentHost {
     conversationId: string,
     title: string,
     body: string,
-  ): Promise<{ shown: boolean; reason?: string }>
+  ): Promise<{ shown: boolean; stored?: boolean; reason?: string }>
 }
 
 export interface ToolDeps {
@@ -85,6 +85,8 @@ export interface ToolDeps {
   piece?: (conversationId: string) => number
   /** The projected entries of a conversation, for a delegate's child answer. */
   entries?: (conversationId: string) => Promise<UiEntry[]>
+  /** The registered tools themselves, so a child agent can be given fewer. */
+  registered?: ToolRegistration[]
   /** The registered tools, as each describes itself; `discover` lists them. */
   catalog?: { name: string; description: string }[]
   lang: () => string

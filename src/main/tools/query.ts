@@ -46,7 +46,7 @@ import { agentTool, providerParam, type ToolDeps } from './policy'
 export const SANDBOX = { memoryMb: 1024, viewRows: 10_000 }
 
 /** The primitives as the model sees them, in the tool description. */
-export const QUERY_API = `Primitives (all read-only, all async):
+export const QUERY_API = `Primitives (all async; storage is only read — workspace() writes only to your workspace):
   call({service, operation, input?, region?, maxBytes?}): the service's response   // any read the call tool makes, same rules; an object Body comes back whole up to maxBytes (default 1 MiB) as {text|base64, bytesRead, ref, more?}
   read({name, offset?, length?}): {text|base64, start, end, total}   // any stretch of what this task holds: a call's evidence id, an object ref (objects/…) or attachment:<file>
   dataset({rows? | file? | ref? | bucket+key? | bucket+prefix?, name?, scope?, format?, columns?, header?}): {name, scope, format, rows, columns, createdAt}   // import rows a script computed, an attachment, an object body, one object or every object under a prefix into a local SQLite table "rows" with every source column (format: ${FORMATS.join('|')}, detected when omitted; columns names a header-less CSV); scope "user" outlives the task; _source says where a row came from

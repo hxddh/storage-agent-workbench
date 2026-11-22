@@ -23,9 +23,10 @@ export function notifyTool(deps: ToolDeps) {
         args.title.slice(0, 120),
         args.body.slice(0, 600),
       )
-      if (!result.shown) throw new Error(result.reason ?? 'The notification was not shown.')
+      if (!result.shown && !result.stored)
+        throw new Error(result.reason ?? 'The notification was not shown.')
       return {
-        model: 'The user was notified.',
+        model: result.shown ? 'The user was notified.' : (result.reason ?? 'It is in the inbox.'),
         view: { kind: 'note' as const, text: `${args.title} — ${args.body}` },
       }
     },

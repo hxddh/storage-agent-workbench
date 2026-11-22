@@ -171,7 +171,8 @@ export class App {
         if (!this.settings.get().notify)
           return {
             shown: false,
-            reason: 'The user turned notifications off; it is in the inbox in the window.',
+            stored: true,
+            reason: 'The user turned notifications off; it is in the inbox on Home.',
           }
         this.hooks.notify?.(taskId, title, body)
         return { shown: true }

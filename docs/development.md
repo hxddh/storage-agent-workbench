@@ -25,6 +25,7 @@ npm run audit            # production dependency audit
 npm run sbom             # CycloneDX SBOM
 npm run dist:dir         # unpacked app in release/
 npm run dist             # installers for the current OS
+xvfb-run -a node scripts/mcp-smoke.mjs   # the MCP server, after a build
 ```
 
 Script aliases: `npm run e2e`, `npm run e2e:audit`, `npm run eval`,
@@ -36,24 +37,36 @@ Script aliases: `npm run e2e`, `npm run e2e:audit`, `npm run eval`,
 
 - `call` over a fake S3: any read runs and returns what the service answered,
   policy documents parsed, a failed call's error code and HTTP status, a body
-  read up to the bytes asked for, anything not a read and any bucket outside
-  scope refused before a request, identifiers kept and secrets redacted, a stopped call
-  reported as stopped;
-- a long result sent as its first piece and read on with `more`; every result
-  kept and read again; an attachment read at any offset and length; an
-  attached image returned as an image;
+  read up to the bytes asked for, anything not a read, an input member the
+  operation does not model and any bucket outside scope refused before a
+  request, identifiers kept and secrets redacted, a stopped call reported as
+  stopped;
+- a long result redacted whole, sent as its first piece and read on with
+  `more`, pieces ending on a line; every result kept and read again; an
+  attachment read at any offset and length; an attached image returned as an
+  image;
 - `probe`: a CORS preflight with the headers given, a credential header
-  refused;
-- memory documents written without secrets, task and user scope, read-only
-  SQL over the separate memory file, and forgetting one;
-- agent-authored methods: schema validation, sandbox limits, task and user
-  scope, a method returning rows or a view, and deletion;
-- `render` documents: valid blocks, nesting, limits and rejection of invalid
-  or oversized input;
-- `delegate`: a child gets the same scope and task, returns its answer or its
-  question, stops with the parent, and is purged with the task; the root task
-  of a child at any depth;
-- `discover`, `ask` with and without options;
+  refused, a body read stopped at 4 KiB;
+- the workspace: files kept across tasks, a path that climbs out or leaves
+  through a link refused, SQL kept to `db.sqlite`, a view pinned on the board
+  and an export linked, a workspace script run from a query, and the tool list
+  without the tools 43 removed;
+- skills: bundled skills with a name and description each, a bundled skill
+  read with `more`, workspace skills listed as untrusted data beside the
+  bundled ones;
+- 42.0.0's memory, methods and skills moved into the workspace once;
+- schedules: the cadences a person writes, the next run in local time, a
+  schedule without a prompt, with a past time or with a budget under 1,000
+  tokens refused;
+- approved changes: only the allowlist, input members and scope checked like a
+  read, the inverse that puts back what a change replaced, a policy given as an
+  object sent as JSON text;
+- view documents: valid blocks, nesting, limits and rejection of invalid or
+  oversized input;
+- `delegate`: a child's answer kept inside a block it cannot close, its
+  question returned to the parent, a stop that reaches the child, and the
+  child purged with the task; the root task of a child at any depth;
+- `ask` with and without options;
 - code mode: the sandbox has no network, filesystem or process, a script
   pages through every object, scope holds inside a script, a script runs until
   stopped, SQL over an attached log only reads, an object body read whole and
@@ -66,17 +79,21 @@ Script aliases: `npm run e2e`, `npm run e2e:audit`, `npm run eval`,
   S3 server access log, every JSON-lines key, plain lines;
 - the output limit learned from a refusal that names a number or halved until
   the provider accepts;
-- the schema: created on a new file, and started over from any other version
-  with pi tables, `tasks/` and kept datasets included; the memory file at its
-  own version, keeping every match in a list or search and recording the task
-  that wrote it;
+- the schema: created on a new file, 42.0.0's database migrated forward with
+  what it holds, a database from a newer version refused untouched, and a
+  layout older than the baseline started over; the legacy memory file read
+  for its import;
 - the search index (CJK substrings, FTS ranking, `%` and `_` as text);
 - the entry projection, the live projection and the conversation thread
   (order, steers, the live slot, citations, what each call returned, the
   Markdown transcript, a reply cut at the output limit);
-- the prompt (the hard rules, no hook that blocks a call, the accounts and the
-  memory count in the digest, no injected memory content), the output budget,
-  redaction, AWS profiles, the model catalog and the localized dictionaries.
+- the prompt (the hard rules, no hook that blocks a call, the accounts and
+  what the workspace holds by folder in the digest, no file content), the task
+  model (its own key and window, a key only for the endpoint it was saved for,
+  a window under 16,384 tokens refused, compaction and pieces sized to the
+  window), the output budget, redaction (including PEM keys, key pairs and
+  ini, YAML and env secrets), AWS profiles, the model catalog and the localized
+  dictionaries.
 
 `Conversation.test.tsx` and `Composer.test.tsx` run in jsdom; the rest run in
 Node.
@@ -90,8 +107,9 @@ Node.
 - `src/main/compat.test.ts` runs `call` against moto, an independent AWS
   emulator, as a custom-endpoint account: what AWS says about exposure, the
   account-wide public access block, account-level IAM, a KMS key policy and
-  CloudTrail events, with identifiers as the service returns them. It runs only with
-  `STORAGE_AGENT_AWS_ENDPOINT`:
+  CloudTrail events, with identifiers as the service returns them; and an
+  approved change snapshotted, applied and rolled back as S3 answers it. It
+  runs only with `STORAGE_AGENT_AWS_ENDPOINT`:
 
   ```bash
   pip install 'moto[server]==5.2.4'
@@ -109,11 +127,17 @@ Node.
   back. It covers model setup from the fetched list, adding an account, axe on
   Settings, Home and the conversation (serious or critical violations fail),
   Home offering nothing that starts a read, an answer built from `Read` steps,
-  a step showing the response and exactly what the agent received, a follow-up
-  in the same thread, `@` focus, a clarifying question answered by an option,
-  a fix applied outside the app and the agent's re-read, a change written as
-  the agent's text, Stop and Continue (the reply lands after the divider),
-  search opening an agent text, and code-mode rows and script.
+  a step showing the response and exactly what the agent received, the task's
+  spend, a follow-up in the same thread, a change proposed, approved with a
+  second click, verified by the agent, and rolled back, `@` focus, a
+  clarifying question answered by an option, a fix applied outside the app and
+  the agent's re-read, a change written as the agent's text, Stop and Continue
+  (the reply lands after the divider), search opening an agent text,
+  code-mode rows and script, a kept dataset in Settings → Workspace and
+  forgotten with a second click, the bundled skills and workspace files
+  listed, a view returned by a query, a workspace script written and run, a
+  schedule created and shown on Home whose run notifies the inbox, and a
+  delegated child's steps.
 - `scripts/e2e-audit.mjs` starts with no model and no account and checks that
   the composer is disabled, that **Set up a model** and **Add an account** are
   offered, that nothing offers to run a read, and that no account, task or
@@ -123,22 +147,27 @@ Node.
 - `scripts/visual.mjs` compares those captures to `visual/baseline`:
   `01-home-light`, `01b-home-configured-light`, `02-settings-light`,
   `02a-settings-model`, `02b-settings-appearance`, `02c-settings-dark`,
-  `02d-settings-account-form`, `03-task-light`, `04-follow-up-light`,
+  `02d-settings-account-form`, `02f-settings-workspace`, `03-task-light`,
+  `04-follow-up-light`,
   `06-task-dark`, `07-home-dark`, `08-live-light`, `09-task-compact`,
   `10-sidebar-compact`, `11-home-compact`, `12-settings-compact`,
   `13-memory-light`, `14-change-light`, `20-home-zh`, `21-settings-error-zh`,
   `23-tool-detail`, `24-citation-open`, `25-render-light`,
-  `26-agent-tool-light`, `27-delegate-light`, `28-chart-series-light`, `02e-settings-methods` and
-  `02f-settings-memory`. It
+  `26-agent-tool-light`, `27-delegate-light` and `28-chart-series-light`. It
   fails on a missing capture, a size change, a global pixel change above 5%,
   or any 64px tile that is mostly changed, so a missing control is not hidden
   by a large unchanged window. `--update` writes a new baseline for every
   capture.
 - `scripts/perf.mjs` launches three times and fails when the median time to a
   visible composer exceeds 1,000 ms.
-- `scripts/budget.mjs` leaves out the lazy `Settings`, `Conversation` and
-  `Markdown` chunks and fails when the remaining renderer JavaScript exceeds
-  500 KiB.
+- `scripts/budget.mjs` leaves out the lazy `Settings`, `Conversation`,
+  `Markdown` and `Blocks` chunks (`Blocks` draws board views on Home, loaded
+  lazily) and fails when the remaining renderer JavaScript exceeds 500 KiB.
+- `scripts/mcp-smoke.mjs` starts the built app headless with `--mcp`, connects
+  over stdio as another agent would, checks that exactly `call`, `more`,
+  `probe`, `query` and `workspace` are listed, and calls `workspace list`,
+  whose answer must carry the untrusted-data envelope. CI runs it after the
+  E2E.
 
 ### Evaluation
 
@@ -153,11 +182,17 @@ agent's. Scenarios include an S3-compatible store, a denied ACL, a
 condition-narrowed policy, a fix applied mid-task, memory in a new task, large
 and stale prefixes, and a prompt-injection-shaped object key.
 
-`scripts/bench.mjs` has 13 agent-behaviour scenarios scored on the
+`scripts/bench.mjs` has 19 agent-behaviour scenarios scored on the
 conversation: `public-account`, `blind-acl`, `memory`, `clarify`, `fix`,
 `query`, `unknown-bucket`, `citation-validity`, `stop-continue`, `steer`,
-`model-switch`, `retry-after-steer` and `follow-up`. Its gate: every must-pass
-check passes in every run, and at least 90% of soft checks pass.
+`model-switch`, `retry-after-steer` and `follow-up`, and six acceptance
+scenarios for requests no feature code was written for, which run only with a
+real model (`realOnly`): `accept-watch` (a daily public-access watch, scored
+on `Scheduled work`), `accept-board` (a size board refreshed weekly),
+`accept-remember` (a trusted vendor account kept in the workspace),
+`accept-export` (a CSV export), `accept-scope` (a scope proposal through
+`self`) and `accept-change` (a change proposal and no write). Its gate: every
+must-pass check passes in every run, and at least 90% of soft checks pass.
 
 ```bash
 xvfb-run -a node scripts/eval.mjs --smoke
@@ -169,8 +204,8 @@ EVAL_PROVIDER=anthropic EVAL_MODEL=... EVAL_API_KEY=... \
 `EVAL_BASE_URL` and `EVAL_THINKING` are optional. `eval.mjs --smoke` runs only
 `public-aws` with the fake model; it proves the harness and scoring run, is
 not a quality result and never fails the exit code. `bench.mjs --smoke` runs
-every scenario with the fake model under the same gate, so a failure is a
-plumbing regression. A real eval run exits non-zero when a must-pass check
+every scenario but the acceptance ones with the fake model under the same
+gate, so a failure is a plumbing regression. A real eval run exits non-zero when a must-pass check
 fails. Reports go to `.amp/in/artifacts/eval-report.{md,json}` and
 `bench-report.{md,json}`; they name the model and never include the key.
 
@@ -207,7 +242,9 @@ from the asar. The release workflow is described in [release.md](release.md).
   packaging, and must not present that as a quality or signing claim.
 - No automated test covers the native file picker or save dialog.
 - Search indexes titles, user messages and the agent's text, not tool
-  results, memory documents, method code, attachments or object names.
+  results, workspace files, attachments or object names.
+- No automated test covers a schedule firing across an app restart, the
+  open-at-login launch, or a system notification as the desktop shows it.
 - Delegation is foreground; there is no background child queue.
 - No test proves the agent's judgement. The eval scores answers against fake
   storage, not real accounts.

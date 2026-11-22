@@ -28,5 +28,6 @@ export function createTools(deps: ToolDeps): ToolRegistration[] {
     askTool(),
   ] as ToolRegistration[]
   deps.catalog = tools.map((tool) => ({ name: tool.name, description: tool.description }))
+  deps.registered = tools
   return tools
 }

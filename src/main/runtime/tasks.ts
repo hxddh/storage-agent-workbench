@@ -205,6 +205,9 @@ export class Tasks {
     if (conversation) await conversation.abort(CONTEXT).catch(() => undefined)
     this.runtime.failed.delete(taskId)
     await this.deps.db.deleteTaskMeta(taskId)
+    // A schedule's runs live in its task; deleting the task ends the schedule.
+    for (const row of await this.deps.db.listSchedules())
+      if (row.conversation_id === taskId) await this.deps.db.deleteSchedule(row.id)
     await this.deps.db.deleteSearchDocs(taskId)
     const purged = await this.deps.db.purgeTask(taskId)
     for (const id of purged) {

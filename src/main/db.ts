@@ -14,10 +14,7 @@ export const HOST_SCHEMA_VERSION = 23
 const MIGRATIONS: Record<number, string> = {
   23: `
 ALTER TABLE providers ADD COLUMN allow_changes INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE providers ADD COLUMN write_auth TEXT;
 ALTER TABLE providers ADD COLUMN write_profile TEXT;
-ALTER TABLE providers ADD COLUMN write_access_key_id TEXT;
-ALTER TABLE providers ADD COLUMN write_secret_ref TEXT;
 
 CREATE TABLE IF NOT EXISTS schedules (
   id TEXT PRIMARY KEY,
