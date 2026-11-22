@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   cadence TEXT NOT NULL,
   budget_tokens INTEGER,
   conversation_id TEXT,
+  task_id TEXT,
   created_by TEXT,
   next_at TEXT,
   last_at TEXT,
@@ -93,6 +94,32 @@ export interface DatasetRecord {
   rows: number
   bytes: number
   created_at: string
+}
+
+export interface ScheduleRecord {
+  id: string
+  name: string
+  prompt: string
+  /** `at <ISO>`, `every <n>m|<n>h`, `daily HH:MM` or `weekly <day> HH:MM`, local time. */
+  cadence: string
+  budget_tokens: number | null
+  conversation_id: string | null
+  task_id: string | null
+  created_by: string | null
+  next_at: string | null
+  last_at: string | null
+  last_outcome: string | null
+  enabled: number
+  created_at: string
+}
+
+export interface InboxRecord {
+  id: string
+  conversation_id: string | null
+  title: string
+  body: string
+  created_at: string
+  read_at: string | null
 }
 
 export interface AgentToolRecord {
@@ -305,6 +332,104 @@ export class AppDb {
       name,
       conversationId ?? '',
     )
+  }
+
+  // -- schedules ---------------------------------------------------------------
+
+  async insertSchedule(row: ScheduleRecord): Promise<void> {
+    await this.raw.run(
+      `INSERT INTO schedules (id, name, prompt, cadence, budget_tokens, conversation_id, task_id, created_by, next_at, last_at, last_outcome, enabled, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      row.id,
+      row.name,
+      row.prompt,
+      row.cadence,
+      row.budget_tokens,
+      row.conversation_id,
+      row.task_id,
+      row.created_by,
+      row.next_at,
+      row.last_at,
+      row.last_outcome,
+      row.enabled,
+      row.created_at,
+    )
+  }
+
+  async updateSchedule(id: string, patch: Partial<ScheduleRecord>): Promise<void> {
+    const columns = new Set([
+      'name',
+      'prompt',
+      'cadence',
+      'budget_tokens',
+      'conversation_id',
+      'task_id',
+      'next_at',
+      'last_at',
+      'last_outcome',
+      'enabled',
+    ])
+    const keys = Object.keys(patch).filter((key) => columns.has(key))
+    if (!keys.length) return
+    await this.raw.run(
+      `UPDATE schedules SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE id = ?`,
+      ...keys.map((key) => (patch as Record<string, unknown>)[key] as never),
+      id,
+    )
+  }
+
+  async getSchedule(id: string): Promise<ScheduleRecord | undefined> {
+    return this.raw.get<ScheduleRecord>('SELECT * FROM schedules WHERE id = ?', id)
+  }
+
+  async scheduleByName(name: string): Promise<ScheduleRecord | undefined> {
+    return this.raw.get<ScheduleRecord>('SELECT * FROM schedules WHERE name = ?', name)
+  }
+
+  async listSchedules(): Promise<ScheduleRecord[]> {
+    return this.raw.all<ScheduleRecord>('SELECT * FROM schedules ORDER BY created_at')
+  }
+
+  async deleteSchedule(id: string): Promise<void> {
+    await this.raw.run('DELETE FROM schedules WHERE id = ?', id)
+  }
+
+  // -- inbox -------------------------------------------------------------------
+
+  async addInbox(row: {
+    conversationId: string | null
+    title: string
+    body: string
+  }): Promise<InboxRecord> {
+    const record: InboxRecord = {
+      id: randomUUID(),
+      conversation_id: row.conversationId,
+      title: row.title,
+      body: row.body,
+      created_at: new Date().toISOString(),
+      read_at: null,
+    }
+    await this.raw.run(
+      'INSERT INTO inbox (id, conversation_id, title, body, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?)',
+      record.id,
+      record.conversation_id,
+      record.title,
+      record.body,
+      record.created_at,
+      null,
+    )
+    return record
+  }
+
+  async listInbox(limit = 100): Promise<InboxRecord[]> {
+    return this.raw.all<InboxRecord>('SELECT * FROM inbox ORDER BY created_at DESC LIMIT ?', limit)
+  }
+
+  async markInboxRead(id?: string): Promise<void> {
+    const at = new Date().toISOString()
+    if (id)
+      await this.raw.run('UPDATE inbox SET read_at = ? WHERE id = ? AND read_at IS NULL', at, id)
+    else await this.raw.run('UPDATE inbox SET read_at = ? WHERE read_at IS NULL', at)
   }
 
   async upsertAgentTool(row: {

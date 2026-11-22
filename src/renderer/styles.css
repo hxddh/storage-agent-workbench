@@ -3030,3 +3030,61 @@ sup.cite.missing {
   flex: 1;
   min-width: 0;
 }
+
+/* Home: what the agent keeps in front of the user between conversations. */
+.agent-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  margin-top: 32px;
+}
+.surface-section .home-recent-head h2 {
+  margin: 0;
+}
+.inbox-row {
+  justify-content: space-between;
+}
+.inbox-row.unread .home-recent-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+.inbox-text,
+.schedule-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+  color: inherit;
+}
+.inbox-body {
+  font-size: 12px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.schedule-row {
+  align-items: center;
+}
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+.board-card {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.board-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}

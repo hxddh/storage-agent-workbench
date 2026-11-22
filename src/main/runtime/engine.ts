@@ -111,10 +111,39 @@ export class Engine {
     await this.run(conversation, 'Continue.', { kind: 'sa.resume' })
   }
 
+  /**
+   * One run of a schedule: the schedule's prompt as a turn in its own task.
+   * Nobody is watching, so the run stops at its token budget — unless the user
+   * opens the task while it works, which makes it attended.
+   */
+  async runScheduled(
+    schedule: {
+      id: string
+      name: string
+      prompt: string
+      conversationId: string
+      budgetTokens: number
+    },
+    dueAt: number,
+  ): Promise<void> {
+    const conversation = await this.runtime.require(schedule.conversationId)
+    await this.deps.db.touchTask(schedule.conversationId)
+    await this.run(
+      conversation,
+      `[Scheduled run of "${schedule.name}", due ${new Date(dueAt).toISOString()}. Nobody is watching: use notify to tell the user what they need to know.]\n\n${schedule.prompt}`,
+      {
+        kind: 'sa.run',
+        data: { text: schedule.prompt, attachments: [], scheduled: schedule.name },
+      },
+      { requestId: `schedule:${schedule.id}:${dueAt}`, budgetTokens: schedule.budgetTokens },
+    )
+  }
+
   private async run(
     conversation: Conversation,
     content: string,
     entry: { kind: string; data?: unknown },
+    options: { requestId?: string; budgetTokens?: number } = {},
   ): Promise<void> {
     const taskId = String(conversation.id)
     const stored = this.deps.settings.get().model
@@ -144,13 +173,38 @@ export class Engine {
       CONTEXT,
     )
     this.runtime.failed.delete(taskId)
+    const before = options.budgetTokens ? await this.tasks.spentTokens(taskId) : 0
     const submission = await conversation.submit(
-      { type: 'input', content, entry: entry as never },
+      {
+        type: 'input',
+        content,
+        entry: entry as never,
+        ...(options.requestId ? { requestId: options.requestId } : {}),
+      },
       CONTEXT,
     )
+    // An unattended run stops at its budget; a run the user is watching has none.
+    let overBudget = false
+    const budget = options.budgetTokens
+    const monitor = budget
+      ? setInterval(() => {
+          if (this.tasks.isWatched(taskId)) return
+          void this.tasks.spentTokens(taskId).then((spent) => {
+            if (spent - before <= budget || overBudget) return
+            overBudget = true
+            void conversation.abort(CONTEXT).catch(() => undefined)
+          })
+        }, 3_000)
+      : null
     void this.settle(conversation, taskId, async () => {
-      const settled = await submission.wait(CONTEXT)
+      const settled = await submission.wait(CONTEXT).finally(() => {
+        if (monitor) clearInterval(monitor)
+      })
       if (settled.status !== 'unanswered') return 'answered'
+      if (settled.reason === 'aborted' && overBudget) {
+        await this.notice(conversation, 'budget', 'warn', 'continue')
+        return 'stopped'
+      }
       if (settled.reason === 'aborted') return 'stopped'
       await this.notice(conversation, 'no_answer', 'error', 'retry', reasonText(settled.reason))
       return 'failed'

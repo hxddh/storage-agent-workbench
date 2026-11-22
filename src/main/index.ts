@@ -61,9 +61,11 @@ const NOTICE = {
 }
 
 /** Tell the user a run finished, only when they are looking elsewhere. */
-function notifySettled(task: TaskSummary, outcome: RunOutcome): void {
+async function notifySettled(task: TaskSummary, outcome: RunOutcome): Promise<void> {
   if (outcome === 'stopped' || !service.settings.get().notify) return
   if (mainWindow?.isFocused() || !Notification.isSupported()) return
+  // A scheduled run tells the user only through the agent's own notify.
+  if (await service.isScheduled(task.id)) return
   const words = NOTICE[service.settings.get().language] ?? NOTICE.en
   const notification = new Notification({
     title: task.title,
@@ -80,6 +82,20 @@ function notifySettled(task: TaskSummary, outcome: RunOutcome): void {
   }
   notification.on('click', open)
   notification.on('action', open)
+  notification.show()
+}
+
+/** A notification the agent sent; it opens its task. */
+function notifyFromAgent(taskId: string, title: string, body: string): void {
+  if (!Notification.isSupported()) return
+  const notification = new Notification({ title, body, silent: false })
+  notification.on('click', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+    broadcast({ type: 'open', taskId })
+  })
   notification.show()
 }
 
@@ -261,7 +277,12 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     app.setName('Storage Agent')
     await service.init(app.getPath('userData'))
-    service.setHooks({ emit: broadcast, settled: notifySettled, working: showWorking })
+    service.setHooks({
+      emit: broadcast,
+      settled: (task, outcome) => void notifySettled(task, outcome),
+      working: showWorking,
+      notify: notifyFromAgent,
+    })
     nativeTheme.themeSource = service.settings.get().theme
     registerIpc(service)
     buildMenu()

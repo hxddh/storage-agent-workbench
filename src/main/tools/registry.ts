@@ -11,6 +11,9 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'probe',
   'more',
   'workspace',
+  'self',
+  'schedule',
+  'notify',
   'delegate',
   'ask',
 ]

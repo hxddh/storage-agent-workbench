@@ -12,6 +12,31 @@ import { bound, redact, redactView, wrapUntrusted } from '../security/redact'
 import { assertInScope, ScopeError } from '../security/scope'
 import type { Workspace } from '../workspace'
 
+/** What the app itself does for a tool: wired once the engine and window exist. */
+export interface AgentHost {
+  /** What the agent is and may do: model, spend, accounts, schedules, version. */
+  self(conversationId: string): Promise<Record<string, unknown>>
+  rename(taskId: string, title: string): Promise<void>
+  pin(taskId: string, pinned: boolean): Promise<void>
+  schedules: {
+    list(): Promise<unknown[]>
+    create(input: {
+      name: string
+      prompt: string
+      cadence: string
+      budgetTokens?: number | null
+      createdBy: string | null
+    }): Promise<unknown>
+    cancel(name: string): Promise<unknown>
+  }
+  /** Tell the user now. Refused, with the reason, when Settings or the run's limit says no. */
+  notify(
+    conversationId: string,
+    title: string,
+    body: string,
+  ): Promise<{ shown: boolean; reason?: string }>
+}
+
 export interface ToolDeps {
   db: AppDb
   providers: Providers
@@ -23,6 +48,8 @@ export interface ToolDeps {
   uploadsDir: (conversationId: string) => string
   /** The agent's own folder across tasks: notes, skills, data, scripts, board, exports. */
   workspace?: Workspace
+  /** The app's own capabilities; absent in tests and headless mode. */
+  host?: AgentHost
   /** Where the bundled skills are written out, for `more` (evidence "skill:<name>"). */
   bundledSkillsDir?: string
   /** How many characters of one result the model gets at once, for this task's model. */

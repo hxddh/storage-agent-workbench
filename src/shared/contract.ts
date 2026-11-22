@@ -59,6 +59,26 @@ export interface BoardItem {
   modifiedAt: string
 }
 
+export interface InboxItem {
+  id: string
+  taskId: string | null
+  title: string
+  body: string
+  createdAt: string
+  read: boolean
+}
+
+export interface ScheduleItem {
+  name: string
+  prompt: string
+  cadence: string
+  budgetTokens: number
+  taskId: string | null
+  nextAt: string | null
+  lastAt: string | null
+  lastOutcome: string | null
+}
+
 export interface SkillRow {
   name: string
   description: string
@@ -164,7 +184,7 @@ export interface ToolDetails {
 }
 
 /** App notices are codes; the window words them in the user's language. */
-export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'cut'
+export type NoticeCode = 'stopped' | 'no_answer' | 'failed' | 'cut' | 'budget'
 
 export interface LiveTool {
   callId: string
@@ -423,6 +443,8 @@ export type AppEvent =
   /** The user clicked a notification for this task. */
   | { type: 'open'; taskId: string }
   | { type: 'bootstrap' }
+  /** The agent notified the user; the inbox changed. */
+  | { type: 'inbox' }
 
 export type AppCommand = 'settings' | 'new-task' | 'stop' | 'search'
 
@@ -478,6 +500,10 @@ export interface AgentApi {
   saveExport(path: string): Promise<boolean>
   skills(): Promise<SkillRow[]>
   board(): Promise<BoardItem[]>
+  inbox(): Promise<InboxItem[]>
+  markInboxRead(id?: string): Promise<void>
+  schedules(): Promise<ScheduleItem[]>
+  cancelSchedule(name: string): Promise<void>
   saveText(input: {
     name: string
     content: string

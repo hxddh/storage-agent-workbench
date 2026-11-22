@@ -257,6 +257,27 @@ export function registerIpc(app: App): void {
 
   ipcMain.handle('agent:board', () => app.tasks.board())
 
+  ipcMain.handle('agent:inbox', async () =>
+    (await app.db.listInbox()).map((row) => ({
+      id: row.id,
+      taskId: row.conversation_id,
+      title: row.title,
+      body: row.body,
+      createdAt: row.created_at,
+      read: Boolean(row.read_at),
+    })),
+  )
+
+  ipcMain.handle('agent:markInboxRead', (_event, id?: string) =>
+    app.db.markInboxRead(typeof id === 'string' ? id : undefined),
+  )
+
+  ipcMain.handle('agent:schedules', () => app.scheduler.list())
+
+  ipcMain.handle('agent:cancelSchedule', async (_event, name: string) => {
+    await app.scheduler.cancel(String(name))
+  })
+
   ipcMain.handle('agent:openExternal', (_event, url: string) => {
     if (/^https?:\/\//i.test(url)) return shell.openExternal(url)
     return undefined

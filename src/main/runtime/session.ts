@@ -32,6 +32,7 @@ import { pieceFor, type ToolDeps } from '../tools/policy'
 import { Workspace } from '../workspace'
 import { buildDigest, createAgent } from './agent'
 import { mapEntries } from './project'
+import { type ScheduleHost, scheduleTask } from './schedules'
 
 export const CONTEXT = BACKGROUND_CONTEXT
 
@@ -103,6 +104,10 @@ export class Runtime {
   readonly failed = new Set<string>()
   /** The context window, in tokens, of the model each task last ran with. */
   readonly windows = new Map<string, number>()
+  /** What runs a schedule when pi says it is due; wired once the engine exists. */
+  scheduleHost: ScheduleHost | null = null
+  /** The one registered definition of a schedule's durable timer. */
+  scheduleTask!: ReturnType<typeof scheduleTask>
   private digest = ''
 
   private constructor(
@@ -133,6 +138,7 @@ export class Runtime {
       writeFileSync(join(deps.dirs.bundledSkills, `${skill.name}.md`), formatSkill(skill), 'utf8')
     const list = createTools(tools)
     let runtime: Runtime | null = null
+    const timer = scheduleTask(() => runtime?.scheduleHost ?? null)
     const registry = createRegistry()
     registry.install(
       createAgent(
@@ -142,6 +148,7 @@ export class Runtime {
           language: () => deps.settings.get().language,
         },
         list,
+        [timer],
       ),
     )
     const pi = await Harness.open(
@@ -155,6 +162,7 @@ export class Runtime {
       CONTEXT,
     )
     runtime = new Runtime(deps, pi, tools, list)
+    runtime.scheduleTask = timer
     tools.entries = (id) => runtime!.entries(id)
     // The vault stays closed at launch: on macOS it can prompt for Keychain
     // access, which belongs to the first model run. The digest is one query.

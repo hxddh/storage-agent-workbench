@@ -180,6 +180,19 @@ function plan(body) {
     return { text: `The script returned the buckets I read.${cite(run)}` }
   }
 
+  // Work for later: a schedule whose run reads and tells the user.
+  if (ask.includes('schedule a public check')) {
+    const created = made('schedule')[0]
+    if (!created)
+      return next('schedule', {
+        action: 'create',
+        name: 'Public check',
+        prompt: 'Scheduled public check: read the buckets and notify me which are public.',
+        when: `at ${new Date(Date.now() + 20_000).toISOString()}`,
+      })
+    return { text: `Scheduled; I will tell you what I find.${cite(created)}` }
+  }
+
   // A child agent for an independent investigation.
   if (ask.includes('delegate')) {
     const child = made('delegate')[0]
@@ -268,6 +281,14 @@ function plan(body) {
   const deniedText = denied.length
     ? ` I could not read every part of ${denied.map((name) => `\`${name}\``).join(', ')} (access denied), so that bucket is not fully checked.`
     : ''
+  const scheduledCheck = ask.includes('scheduled public check')
+  if (scheduledCheck && reads('GetBucketAcl').length && !made('notify').length)
+    return next('notify', {
+      title: open.length ? `${open[0]} is public` : 'No bucket is public',
+      body: open.length
+        ? `${open.join(', ')} can be read by anyone. Open the task to see the reads.`
+        : 'The scheduled check read every bucket; none is public.',
+    })
   if (open.length && !made('workspace').length && (ask.includes('survey') || ask.includes('check')))
     return next('workspace', {
       action: 'write',

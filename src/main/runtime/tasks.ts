@@ -319,6 +319,17 @@ export class Tasks {
     return total
   }
 
+  /** Whether the user has this task open in the window: a run there is attended. */
+  isWatched(taskId: string): boolean {
+    return this.active?.id === taskId
+  }
+
+  /** Input and output tokens a task's own model calls have used so far. */
+  async spentTokens(taskId: string): Promise<number> {
+    const usage = await this.conversationUsage(taskId)
+    return usage ? usage.input + usage.output : 0
+  }
+
   private async conversationUsage(id: string): Promise<Usage | null> {
     try {
       const conversation = await this.runtime.conversation(id)

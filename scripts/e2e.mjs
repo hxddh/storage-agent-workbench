@@ -317,6 +317,18 @@ try {
     await fail('workspace script did not return buckets')
   console.log('WORKSPACE SCRIPT OK')
 
+  // Work for later: the agent schedules a run; the run reads and notifies the user.
+  await page.getByRole('button', { name: 'New task' }).click()
+  await say('Schedule a public check soon and notify me')
+  await openTool('Scheduled work')
+  await page.getByRole('button', { name: 'New task' }).click()
+  await page.locator('.schedule-row:has-text("Public check")').waitFor({ timeout: 10_000 })
+  console.log('SCHEDULE OK')
+  await page.locator('.inbox-row').first().waitFor({ timeout: 60_000 })
+  if (!/public/i.test(await page.locator('.inbox-row').first().innerText()))
+    await fail('the scheduled run did not report what it read')
+  console.log('NOTIFY OK:', (await page.locator('.inbox-row').first().innerText()).replace(/\s+/g, ' '))
+
   // A child agent for an independent investigation.
   await page.getByRole('button', { name: 'New task' }).click()
   await say('Delegate a bucket survey')

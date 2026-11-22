@@ -1,4 +1,4 @@
-import type { ToolRegistration } from '@earendil-works/pi-durable'
+import type { AnyTask, ToolRegistration } from '@earendil-works/pi-durable'
 import { defineExtension, GenerationTask, hook, section } from '@earendil-works/pi-durable'
 import { searchRows } from '@shared/conversation'
 import { wrapUntrusted } from '../security/redact'
@@ -27,7 +27,12 @@ export interface AgentContext {
   language(): string
 }
 
-export function createAgent(deps: ToolDeps, context: AgentContext, tools?: ToolRegistration[]) {
+export function createAgent(
+  deps: ToolDeps,
+  context: AgentContext,
+  tools?: ToolRegistration[],
+  tasks: readonly AnyTask[] = [],
+) {
   const registry = tools ?? createTools(deps)
 
   return defineExtension({
@@ -47,6 +52,8 @@ export function createAgent(deps: ToolDeps, context: AgentContext, tools?: ToolR
       ),
     ],
     tools: registry,
+    // The app's own durable tasks, such as a schedule's timer.
+    tasks,
     hooks: [
       hook(GenerationTask, {
         // The run's own entries are indexed in the durable loop, so an answer

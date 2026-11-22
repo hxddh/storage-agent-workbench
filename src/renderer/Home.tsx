@@ -1,6 +1,7 @@
 import type { Bootstrap, LocalModel, TaskSummary } from '@shared/contract'
 import { Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { AgentSurface } from './AgentSurface'
 import { dict, fill } from './i18n'
 import { useNow } from './time'
 
@@ -133,6 +134,7 @@ export function Home({
         )}
         {!hasModel && hasAccount && <p className="hint home-hint">{t.emptyNoModel}</p>}
         {localError && <p className="brief-error">{localError}</p>}
+        {hasModel && <AgentSurface t={t} lang={lang} onOpenTask={onOpenTask} />}
         {tasks.length > 0 && (
           <section className="home-recent" aria-label={t.homeRecent}>
             <div className="home-recent-head">
