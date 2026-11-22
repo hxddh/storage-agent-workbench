@@ -1,10 +1,67 @@
 import { randomUUID } from 'node:crypto'
 import type { NodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 /**
- * The one schema this version writes. A database at any other version is
- * cleared and created again, pi's tables and `tasks/` with it.
+ * The schema moves forward, never back and never cleared: a database at the
+ * baseline (42.0.0's layout) or later is migrated step by step to the current
+ * version. Only a layout older than the baseline, from before migrations
+ * existed, is cleared. A database from a newer version is refused, so an
+ * older build never destroys it.
  */
-export const HOST_SCHEMA_VERSION = 22
+export const BASELINE_SCHEMA_VERSION = 22
+export const HOST_SCHEMA_VERSION = 23
+
+/** `MIGRATIONS[n]` takes a database from version n - 1 to n. */
+const MIGRATIONS: Record<number, string> = {
+  23: `
+ALTER TABLE providers ADD COLUMN allow_changes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE providers ADD COLUMN write_auth TEXT;
+ALTER TABLE providers ADD COLUMN write_profile TEXT;
+ALTER TABLE providers ADD COLUMN write_access_key_id TEXT;
+ALTER TABLE providers ADD COLUMN write_secret_ref TEXT;
+
+CREATE TABLE IF NOT EXISTS schedules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  prompt TEXT NOT NULL,
+  cadence TEXT NOT NULL,
+  budget_tokens INTEGER,
+  conversation_id TEXT,
+  created_by TEXT,
+  next_at TEXT,
+  last_at TEXT,
+  last_outcome TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS changes (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'change',
+  service TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  input_json TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  snapshot_json TEXT,
+  status TEXT NOT NULL,
+  result_json TEXT,
+  rollback_of TEXT,
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS changes_conversation ON changes(conversation_id);
+
+CREATE TABLE IF NOT EXISTS inbox (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  read_at TEXT
+);
+`,
+}
 
 export interface ProviderRow {
   id: string
@@ -50,7 +107,8 @@ export interface AgentToolRecord {
   updated_at: string
 }
 
-const SCHEMA = `
+/** The baseline layout (42.0.0); every later version is a migration on top. */
+export const BASELINE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS providers (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -147,8 +205,12 @@ export class AppDb {
     const tables = await raw.all<{ name: string; type: string }>(
       "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
     )
-    const version = row?.user_version ?? 0
-    const reset = tables.length > 0 && version !== HOST_SCHEMA_VERSION
+    let version = tables.length ? (row?.user_version ?? 0) : 0
+    if (version > HOST_SCHEMA_VERSION)
+      throw new Error(
+        `This data was written by a newer Storage Agent (schema ${version}); this build reads up to ${HOST_SCHEMA_VERSION}. Install the newer version; nothing was changed.`,
+      )
+    const reset = tables.length > 0 && version < BASELINE_SCHEMA_VERSION
     if (reset) {
       await raw.exec('PRAGMA foreign_keys = OFF')
       // Shadow tables of an FTS table go with it; drop the virtual tables first.
@@ -161,8 +223,25 @@ export class AppDb {
         await raw.exec(`DROP ${item.type.toUpperCase()} IF EXISTS "${item.name}"`)
     }
     await raw.exec('PRAGMA foreign_keys = ON')
-    await raw.exec(SCHEMA)
-    await raw.exec(`PRAGMA user_version = ${HOST_SCHEMA_VERSION}`)
+    if (reset || version === 0) {
+      // A new database starts at the baseline and takes every migration after it.
+      await raw.exec(BASELINE_SCHEMA)
+      version = BASELINE_SCHEMA_VERSION
+      await raw.exec(`PRAGMA user_version = ${version}`)
+    }
+    for (let next = version + 1; next <= HOST_SCHEMA_VERSION; next++) {
+      const step = MIGRATIONS[next]
+      if (!step) throw new Error(`No migration to schema ${next}.`)
+      await raw.exec('BEGIN')
+      try {
+        await raw.exec(step)
+        await raw.exec(`PRAGMA user_version = ${next}`)
+        await raw.exec('COMMIT')
+      } catch (error) {
+        await raw.exec('ROLLBACK')
+        throw error
+      }
+    }
     const db = new AppDb(raw)
     db.resetTasks = reset
     return db

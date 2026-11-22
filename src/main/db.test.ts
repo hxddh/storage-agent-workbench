@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import { describe, expect, it } from 'vitest'
-import { AppDb, HOST_SCHEMA_VERSION } from './db'
+import { AppDb, BASELINE_SCHEMA, BASELINE_SCHEMA_VERSION, HOST_SCHEMA_VERSION } from './db'
 
 async function open(): Promise<AppDb> {
   const dir = mkdtempSync(join(tmpdir(), 'sa-db-'))
@@ -71,14 +71,50 @@ describe('schema', () => {
     expect(tables.map((t) => t.name)).toEqual([
       'agent_tools',
       'audit',
+      'changes',
       'datasets',
+      'inbox',
       'providers',
+      'schedules',
       'search_docs',
       'search_docs_fts',
       'task_meta',
     ])
     // Opening it again changes nothing.
     expect((await AppDb.open(raw)).resetTasks).toBe(false)
+  })
+
+  it("migrates 42.0.0's database forward and keeps what it holds", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sa-42-'))
+    const raw = await openNodeSqliteDatabase(join(dir, 'db.sqlite'))
+    // A database as 42.0.0 left it: the baseline schema, with an account and a task.
+    await raw.exec(BASELINE_SCHEMA)
+    await raw.exec(`PRAGMA user_version = ${BASELINE_SCHEMA_VERSION}`)
+    await raw.exec(
+      "INSERT INTO providers (id, name, endpoint, region, secret_ref, created_at) VALUES ('p1', 'Prod', '', 'eu-west-1', 'aes:x', '2026-11-14')",
+    )
+    await raw.exec(
+      "INSERT INTO task_meta (conversation_id, title, created_at, updated_at) VALUES ('7', 'Is web-assets public?', '2026-11-14', '2026-11-14')",
+    )
+    const db = await AppDb.open(raw)
+    expect(db.resetTasks).toBe(false)
+    expect((await raw.get<{ user_version: number }>('PRAGMA user_version'))?.user_version).toBe(
+      HOST_SCHEMA_VERSION,
+    )
+    expect(await raw.get('SELECT name, allow_changes FROM providers')).toEqual({
+      name: 'Prod',
+      allow_changes: 0,
+    })
+    expect(await raw.get('SELECT title FROM task_meta')).toEqual({ title: 'Is web-assets public?' })
+  })
+
+  it('refuses a database from a newer version instead of clearing it', async () => {
+    const raw = await openNodeSqliteDatabase(
+      join(mkdtempSync(join(tmpdir(), 'sa-new-')), 'db.sqlite'),
+    )
+    await raw.exec(`CREATE TABLE keep (id TEXT); PRAGMA user_version = ${HOST_SCHEMA_VERSION + 1}`)
+    await expect(AppDb.open(raw)).rejects.toThrow(/newer Storage Agent/)
+    expect(await raw.all("SELECT name FROM sqlite_master WHERE name = 'keep'")).toHaveLength(1)
   })
 
   it('starts over from a database of any other layout, pi tables included', async () => {
