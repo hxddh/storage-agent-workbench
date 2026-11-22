@@ -12,7 +12,7 @@ import { isLoopback, LOCAL_DEFAULT_CONTEXT } from '../local-models'
 import { contextFor } from '../model-catalog'
 import { wrapUntrusted } from '../security/redact'
 import type { StoredModel } from '../settings'
-import { installModel, learnOutputLimit } from './model'
+import { compactionFor, installModel, learnOutputLimit, outputCap, windowRefusal } from './model'
 import type { RunData } from './project'
 import { CONTEXT, type RunOutcome, type Runtime } from './session'
 import type { Tasks } from './tasks'
@@ -124,15 +124,22 @@ export class Engine {
     const { model: effective, directKey } = resolveTaskModel(stored, chosen, (ref) =>
       this.deps.settings.saved(ref),
     )
+    const tooSmall = windowRefusal(effective)
+    if (tooSmall) throw new Error(tooSmall)
     this.runtime.windows.set(taskId, effective.contextWindow)
     const vault = directKey === undefined ? this.deps.vault : null
-    const limit = await learnOutputLimit(this.deps.models, effective, vault, directKey)
+    const limit = outputCap(
+      effective.contextWindow,
+      await learnOutputLimit(this.deps.models, effective, vault, directKey),
+    )
     const model = installModel(this.deps.models, effective, vault, directKey, undefined, limit)
     await this.runtime.pi.commit(
       (tx) =>
         configure(tx, conversation.id, {
           model,
           thinkingLevel: chosen?.thinking ?? stored.thinking ?? 'off',
+          // Delegated children inherit it with the rest of the agent.
+          compaction: compactionFor(effective.contextWindow),
         }),
       CONTEXT,
     )
@@ -220,7 +227,7 @@ export function resolveTaskModel(
   }
   if (isLoopback(chosen.baseUrl))
     return {
-      model: { ...base, contextWindow: LOCAL_DEFAULT_CONTEXT, keyRef: '' },
+      model: { ...base, contextWindow: chosen.contextWindow ?? LOCAL_DEFAULT_CONTEXT, keyRef: '' },
       directKey: 'local',
     }
   if (chosen.provider === stored.provider && (chosen.baseUrl ?? '') === (stored.baseUrl || ''))

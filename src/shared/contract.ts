@@ -343,6 +343,8 @@ export interface TaskModel {
   modelId: string
   baseUrl: string | null
   thinking: ThinkingLevel
+  /** For a model on this machine: the window its server reported. */
+  contextWindow?: number
 }
 
 export interface ModelInput {

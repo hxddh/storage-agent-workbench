@@ -85,6 +85,9 @@ export function parseTaskModel(raw: string | null | undefined): TaskModel | null
       modelId: value.modelId.slice(0, 160),
       baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl.slice(0, 300) : null,
       thinking: value.thinking as TaskModel['thinking'],
+      ...(typeof value.contextWindow === 'number' && value.contextWindow > 0
+        ? { contextWindow: Math.min(Math.round(value.contextWindow), 10_000_000) }
+        : {}),
     }
   } catch {
     return null

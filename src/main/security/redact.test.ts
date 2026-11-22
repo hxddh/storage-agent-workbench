@@ -37,6 +37,20 @@ describe('tool floor', () => {
     expect(envelope('x')).not.toBe(envelope('x'))
   })
 
+  it('removes secrets in the formats people store them', () => {
+    const csv =
+      'Access key ID,Secret access key\nAKIAABCDEFGHIJKLMNOP,wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n'
+    expect(redact(csv)).toContain('AKIAABCDEFGHIJKLMNOP,[redacted]')
+    expect(redact(csv)).not.toContain('wJalrXUtnFEMI')
+    expect(redact('secret_access_key: wJalrXUtnFEMI')).toBe('secret_access_key: [redacted]')
+    expect(redact('{"aws_secret_access_key": "wJalr"}')).toBe(
+      '{"aws_secret_access_key": "[redacted]"}',
+    )
+    expect(redact('password: hunter2')).toBe('password: [redacted]')
+    const pem = '-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----'
+    expect(redact(pem)).not.toContain('MIIEow')
+  })
+
   it('keeps identifiers', () => {
     expect(redact('AKIAABCDEFGHIJKLMNOP arn:aws:iam::123456789012:role/x')).toBe(
       'AKIAABCDEFGHIJKLMNOP arn:aws:iam::123456789012:role/x',

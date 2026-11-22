@@ -170,14 +170,11 @@ export function registerIpc(app: App): void {
     if (!PROVIDERS.has(input.provider)) throw new Error('Unknown model provider.')
     const modelId = input.modelId?.trim()
     if (!modelId) throw new Error('A model id is required.')
-    const existing = app.settings.get().model
     const key = input.apiKey?.trim()
-    // A model saved before keeps its own key; another model of the default's provider uses the default's.
-    const known = app.settings.saved({ ...input, modelId, baseUrl: input.baseUrl?.trim() ?? '' })
-    const sameProvider = existing && existing.provider === input.provider ? existing : null
-    if (!key && !known && !sameProvider)
-      throw new Error('Enter an API key for this model provider.')
-    const keyRef = key ? app.vault.seal(key) : (known?.keyRef ?? sameProvider?.keyRef)
+    // Without a new key, only a key saved for this provider at this endpoint is reused.
+    const savedRef = app.settings.keyFor(input.provider, input.baseUrl)
+    if (!key && !savedRef) throw new Error('Enter an API key for this model provider and endpoint.')
+    const keyRef = key ? app.vault.seal(key) : savedRef
     if (!keyRef) throw new Error('An API key is required.')
     app.settings.setModel({
       provider: input.provider,
@@ -212,8 +209,9 @@ export function registerIpc(app: App): void {
       input: { provider: 'openai' | 'anthropic' | 'compatible'; baseUrl: string; apiKey?: string },
     ) => {
       if (!PROVIDERS.has(input?.provider)) throw new Error('Unknown model provider.')
-      const stored = app.settings.get().model
-      const key = input.apiKey?.trim() || (stored ? app.vault.open(stored.keyRef) : '')
+      // A saved key goes only to the provider and endpoint it was saved for.
+      const saved = app.settings.keyFor(input.provider, input.baseUrl)
+      const key = input.apiKey?.trim() || (saved ? app.vault.open(saved) : '')
       return listModels({
         provider: input.provider,
         baseUrl: String(input.baseUrl ?? ''),

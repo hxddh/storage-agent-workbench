@@ -6,16 +6,30 @@ import { randomBytes } from 'node:crypto'
  * returned them.
  */
 const PATTERNS: [RegExp, string][] = [
+  // A PEM private key, whole.
+  [
+    /-----BEGIN ([A-Z ]*)PRIVATE KEY-----[\s\S]*?-----END \1PRIVATE KEY-----/g,
+    '-----BEGIN $1PRIVATE KEY-----[redacted]-----END $1PRIVATE KEY-----',
+  ],
+  // A secret key next to its access key id: the IAM console's CSV, a pasted pair.
+  [
+    /\b(A[KS]IA[0-9A-Z]{16})([\s,;:|"']{1,4})([A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])/g,
+    '$1$2[redacted]',
+  ],
   [/(X-Amz-(?:Credential|Signature|Security-Token|SignedHeaders))=[^&\s"']+/gi, '$1=[redacted]'],
   [/((?:Authorization|X-Api-Key|x-api-key)\s*[:=]\s*)[^\s"',]+/gi, '$1[redacted]'],
   [/\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/g, '$1 [redacted]'],
   [
-    /("(?:SecretAccessKey|SessionToken|secretAccessKey|sessionToken|api_key|apiKey|password|token)"\s*:\s*)"[^"]*"/g,
+    /("(?:SecretAccessKey|SessionToken|secretAccessKey|sessionToken|aws_secret_access_key|aws_session_token|secret_access_key|client_secret|private_key|api_key|apiKey|password|token)"\s*:\s*)"[^"]*"/g,
     '$1"[redacted]"',
   ],
   [/\b(sig|signature)=[A-Za-z0-9%+/=]{16,}/gi, '$1=[redacted]'],
   [/\b(sk-(?:ant-|proj-)?)[A-Za-z0-9_-]{16,}/g, '$1[redacted]'],
-  [/((?:aws_secret_access_key|aws_session_token)\s*=\s*)\S+/gi, '$1[redacted]'],
+  // ini, YAML and env lines.
+  [
+    /\b((?:aws_secret_access_key|aws_session_token|secret_access_key|client_secret|password|passwd)\s*[:=]\s*)(?!\[redacted\])[^\s"',]+/gi,
+    '$1[redacted]',
+  ],
 ]
 
 /** Remove credential-shaped text before it reaches a model, a log or the UI. */

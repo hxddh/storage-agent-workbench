@@ -11,6 +11,9 @@ const IMAGES: Record<string, string> = {
   '.webp': 'image/webp',
 }
 
+/** How far past a requested length a text piece reads to end on a line. */
+const LINE_SLACK = 16 * 1024
+
 /**
  * Where a name points in the task: a call's evidence id (its kept result), an
  * object body (`objects/<id>.bin`) or an attached file (`attachment:<name>`).
@@ -73,8 +76,16 @@ export async function readPart(
     }
     const size = (await handle.stat()).size
     const start = Math.min(offset, size)
-    const buffer = Buffer.alloc(Math.min(length, size - start))
+    let buffer = Buffer.alloc(Math.min(length, size - start))
     await handle.read(buffer, 0, buffer.length, start)
+    // A text piece ends at a line end, so a secret on one line is never cut in two
+    // and redacted as halves; the next piece starts on the following line.
+    if (start + buffer.length < size && buffer.at(-1) !== 0x0a && !buffer.includes(0)) {
+      const tail = Buffer.alloc(Math.min(LINE_SLACK, size - start - buffer.length))
+      await handle.read(tail, 0, tail.length, start + buffer.length)
+      const newline = tail.indexOf(0x0a)
+      if (newline >= 0) buffer = Buffer.concat([buffer, tail.subarray(0, newline + 1)])
+    }
     const text = buffer.toString('utf8')
     const binary =
       text.includes('\u0000') || (text.match(/�/g)?.length ?? 0) > Math.max(4, text.length / 50)

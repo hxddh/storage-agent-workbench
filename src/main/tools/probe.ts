@@ -95,12 +95,10 @@ async function probe(
         typeof socket.getPeerCertificate === 'function' ? socket.getPeerCertificate() : null
       const chunks: Buffer[] = []
       let size = 0
-      res.on('data', (chunk: Buffer) => {
-        if (method !== 'GET' || size >= BODY_BYTES) return
-        chunks.push(chunk.subarray(0, BODY_BYTES - size))
-        size += Math.min(chunk.length, BODY_BYTES - size)
-      })
-      res.on('end', () =>
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
         resolve({
           url: url.toString(),
           addresses,
@@ -121,8 +119,20 @@ async function probe(
               : null,
           ...(method === 'GET' ? { body: Buffer.concat(chunks).toString('utf8') } : {}),
           ms: { dns, total: Date.now() - started },
-        }),
-      )
+        })
+      }
+      res.on('data', (chunk: Buffer) => {
+        if (method !== 'GET') return
+        chunks.push(chunk.subarray(0, BODY_BYTES - size))
+        size += Math.min(chunk.length, BODY_BYTES - size)
+        // Enough to see a listing or an error document: stop reading a large object.
+        if (size >= BODY_BYTES) {
+          finish()
+          res.destroy()
+        }
+      })
+      res.on('end', finish)
+      res.on('close', finish)
     })
     req.on('error', reject)
     req.end()

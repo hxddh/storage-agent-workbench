@@ -23,6 +23,11 @@ export interface StoredSettings {
   lastTaskId: string | null
 }
 
+/** An endpoint as configured: the base URL without a trailing slash; empty means the provider's own. */
+export function endpointOf(baseUrl: string | null | undefined): string {
+  return (baseUrl ?? '').trim().replace(/\/+$/, '')
+}
+
 /** Two configurations name the same model when provider, endpoint and id match. */
 export function sameModel(
   a: Pick<StoredModel, 'provider' | 'modelId' | 'baseUrl'>,
@@ -89,6 +94,18 @@ export class Settings {
     }
     this.value.model = model
     this.save()
+  }
+
+  /**
+   * A saved key for this provider at this endpoint, and only there: a key is
+   * never sent to a base URL other than the one it was saved for.
+   */
+  keyFor(provider: string, baseUrl: string | null | undefined): string | null {
+    const endpoint = endpointOf(baseUrl)
+    const match = [this.value.model, ...this.value.models].find(
+      (item) => item && item.provider === provider && endpointOf(item.baseUrl) === endpoint,
+    )
+    return match?.keyRef ?? null
   }
 
   /** The saved configuration for a model, with its key reference. */

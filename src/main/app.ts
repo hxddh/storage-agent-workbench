@@ -126,7 +126,12 @@ export class App {
   async testModel(input?: ModelInput): Promise<{ ok: boolean; detail: string }> {
     const stored = this.settings.get().model
     const result = input
-      ? await testModelDraft(this.models, input, stored, this.vault)
+      ? await testModelDraft(
+          this.models,
+          input,
+          this.settings.keyFor(input.provider, input.baseUrl),
+          this.vault,
+        )
       : stored
         ? await testModel(this.models, stored, this.vault)
         : { ok: false, detail: 'No model is configured.' }

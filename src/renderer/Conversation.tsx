@@ -805,6 +805,7 @@ export function Conversation({
                     modelId: choice.modelId,
                     baseUrl: choice.baseUrl,
                     thinking: choice.thinking,
+                    ...(choice.contextWindow ? { contextWindow: choice.contextWindow } : {}),
                   })
               }}
             >
@@ -831,6 +832,7 @@ interface ModelChoice {
   modelId: string
   baseUrl: string | null
   thinking: TaskModel['thinking']
+  contextWindow?: number
 }
 
 /** Saved models first, then models running on this machine that are not saved. */
@@ -849,6 +851,7 @@ function modelChoices(saved: SavedModel[], local: LocalModel[]): ModelChoice[] {
       modelId: item.modelId,
       baseUrl: item.baseUrl,
       thinking: 'off',
+      contextWindow: item.contextWindow,
     }
     if (!out.some((known) => sameChoice(known, choice))) out.push(choice)
   }

@@ -199,9 +199,12 @@ export function agentTool<T extends Schema>(
           target: result.view.kind === 'note' ? null : target,
           outcome: 'ok',
         })
-        const sent = await fitPiece(deps, conversationId, evidenceId, result.model)
+        // Redacted whole, before it is kept or cut: a secret never straddles two pieces,
+        // and the kept result holds no secret either.
+        const whole = redact(result.model)
+        const sent = await fitPiece(deps, conversationId, evidenceId, whole)
         // When the result was cut for the model, the step says so: the rest waits for `more`.
-        const cut = sent !== result.model ? 'the agent got the first part; the rest is kept' : null
+        const cut = sent !== whole ? 'the agent got the first part; the rest is kept' : null
         const note = [result.note ? redact(result.note) : null, cut].filter(Boolean).join(' · ')
         const details: ToolDetails = {
           target: redact(result.target ?? target),

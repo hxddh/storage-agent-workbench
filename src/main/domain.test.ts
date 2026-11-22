@@ -111,6 +111,16 @@ const sent = (text: string) =>
   /<untrusted-data[^>]*>\n?([\s\S]*?)\n?<\/untrusted-data[^>]*>/.exec(text)?.[1] ?? ''
 
 describe('what the task holds', () => {
+  it('ends a text piece on a line, so a secret is never redacted in halves', async () => {
+    writeFileSync(
+      join(uploads, 'creds.ini'),
+      '[default]\naws_secret_access_key = wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY\nregion = eu-west-1\n',
+    )
+    const part = await run(moreTool(deps), { evidence: 'attachment:creds.ini', length: 30 })
+    expect(sent(part.text)).toContain('aws_secret_access_key = [redacted]')
+    expect(sent(part.text)).not.toMatch(/wJalr|EXAMPLEKEY/)
+  })
+
   it('reads an attachment at any offset and length, and shows an image', async () => {
     writeFileSync(join(uploads, 'policy.json'), '{"Version":"2012-10-17","Statement":[]}')
     const part = await run(moreTool(deps), {
@@ -332,6 +342,31 @@ describe('one read-only call', () => {
       ['s3control', 'ListAccessPoints', { Bucket: 'logs' }],
     ] as const)
       expect(() => checkCall(scoped, { service, operation, input })).not.toThrow()
+    // A member the operation does not model is refused: the SDK would drop it, so a
+    // scope check on it would pass while the request reached every bucket.
+    for (const operation of ['ListJobs', 'ListStorageLensConfigurations', 'GetAccessPointPolicy'])
+      expect(() =>
+        checkCall(scoped, {
+          service: 's3control',
+          operation,
+          input: { Bucket: 'logs', Name: 'x' },
+        }),
+      ).toThrow(/has no input member/)
+    expect(() =>
+      checkCall(config, {
+        service: 's3',
+        operation: 'ListObjectsV2',
+        input: { Bucket: 'b', Prefx: 'a' },
+      }),
+    ).toThrow(/no input member Prefx\. Its members: .*Prefix/)
+    expect(() =>
+      checkCall(config, { service: 'iam', operation: 'GetAccountSummary', input: { Bucket: 'b' } }),
+    ).toThrow(/Its members: \(none\)/)
+    // Reads that hand out credentials do not run.
+    expect(() => checkCall(config, { service: 's3control', operation: 'GetDataAccess' })).toThrow(
+      /not a read this app runs/,
+    )
+    expect(operationsOf('s3control')).not.toContain('GetDataAccess')
     expect(operationsOf('s3')).toContain('GetBucketLifecycleConfiguration')
     expect(operationsOf('s3').every((name) => /^(Get|List|Head|Select)/.test(name))).toBe(true)
   })
