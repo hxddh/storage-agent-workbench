@@ -180,6 +180,35 @@ function plan(body) {
     return { text: `The script returned the buckets I read.${cite(run)}` }
   }
 
+  // A change the agent proposes; the user's decision comes back as their next message.
+  if (ask.includes('block public access on')) {
+    const proposed = made('change')[0]
+    if (!proposed)
+      return next('change', {
+        service: 's3',
+        operation: 'PutPublicAccessBlock',
+        input: {
+          Bucket: 'web-assets',
+          PublicAccessBlockConfiguration: {
+            BlockPublicAcls: true,
+            IgnorePublicAcls: true,
+            BlockPublicPolicy: true,
+            RestrictPublicBuckets: true,
+          },
+        },
+        reason: 'web-assets is public through its policy; blocking public access closes it. Anything that reads it anonymously will stop working.',
+      })
+    return { text: 'I proposed the change; it runs only when you approve it.' }
+  }
+  if (ask.startsWith('approved:') || ask.startsWith('rolled back:')) {
+    const read = reads('GetPublicAccessBlock', 'web-assets')[0]
+    if (!read) return s3('GetPublicAccessBlock', { Bucket: 'web-assets' })
+    const blocked = !/NoSuchPublicAccessBlockConfiguration/.test(read.text)
+    return {
+      text: `${blocked ? 'Verified: web-assets now blocks public access' : 'Verified: web-assets has no public access block again'}.${cite(read)}`,
+    }
+  }
+
   // Work for later: a schedule whose run reads and tells the user.
   if (ask.includes('schedule a public check')) {
     const created = made('schedule')[0]

@@ -12,6 +12,16 @@ import { bound, redact, redactView, wrapUntrusted } from '../security/redact'
 import { assertInScope, ScopeError } from '../security/scope'
 import type { Workspace } from '../workspace'
 
+/** A proposal as the conversation shows it. */
+export interface ProposedChange {
+  changeId: string
+  account: string
+  title: string
+  reason: string
+  before: unknown
+  after: unknown
+}
+
 /** What the app itself does for a tool: wired once the engine and window exist. */
 export interface AgentHost {
   /** What the agent is and may do: model, spend, accounts, schedules, version. */
@@ -28,6 +38,25 @@ export interface AgentHost {
       createdBy: string | null
     }): Promise<unknown>
     cancel(name: string): Promise<unknown>
+  }
+  changes: {
+    /** Check, snapshot and store a proposal; the window asks the user. */
+    propose(input: {
+      conversationId: string
+      providerId?: string
+      service: string
+      operation: string
+      input: Record<string, unknown>
+      reason: string
+    }): Promise<ProposedChange>
+    /** A setting of an account, proposed for the user to approve. */
+    proposeSetting(input: {
+      conversationId: string
+      providerId?: string
+      allowChanges?: boolean
+      scope?: string[]
+      reason: string
+    }): Promise<ProposedChange>
   }
   /** Tell the user now. Refused, with the reason, when Settings or the run's limit says no. */
   notify(
@@ -140,6 +169,8 @@ export interface ToolDefinition<T extends Schema> {
     target?: string
     /** Images the model sees with the text, when its provider takes them. */
     images?: { data: string; mimeType: string }[]
+    /** End the turn after this call: the user decides next (a question, a proposed change). */
+    terminate?: boolean
   }>
 }
 
@@ -251,6 +282,7 @@ export function agentTool<T extends Schema>(
             ...(result.images ?? []).map((image) => ({ type: 'image' as const, ...image })),
           ],
           details: details as never,
+          ...(result.terminate ? { control: { terminate: true } } : {}),
         }
       } catch (error) {
         // A provider's error can name the account; it never reaches the model or the window.

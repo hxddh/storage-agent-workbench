@@ -32,7 +32,7 @@ import { redact } from '../security/redact'
 import { ScopeError } from '../security/scope'
 
 /** The service modules the app bundles; each exports `<Operation>Command` classes. */
-const MODULES: Record<string, Record<string, unknown>> = {
+export const MODULES: Record<string, Record<string, unknown>> = {
   s3,
   s3control,
   sts,

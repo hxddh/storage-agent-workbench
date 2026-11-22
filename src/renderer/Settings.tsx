@@ -59,6 +59,8 @@ const EMPTY_ACCOUNT: AccountInput = {
   secretAccessKey: '',
   sessionToken: '',
   scope: { buckets: [] },
+  allowChanges: false,
+  writeProfile: '',
 }
 
 export function Settings({
@@ -315,6 +317,8 @@ export function Settings({
       secretAccessKey: '',
       sessionToken: '',
       scope: { buckets: account.scope.buckets },
+      allowChanges: account.allowChanges,
+      writeProfile: account.writeProfile ?? '',
     })
     setShowForm(true)
     setAccountStatus(null)
@@ -641,6 +645,7 @@ export function Settings({
                       {account.scope.buckets.length
                         ? `${t.scope}: ${account.scope.buckets.join(', ')}`
                         : t.allBuckets}
+                      {account.allowChanges ? ` · ${t.changesAllowed}` : ''}
                     </div>
                     {accountTest?.id === account.id && (
                       <div className={accountTest.ok ? 'ok-text' : 'error-text'}>
@@ -798,6 +803,31 @@ export function Settings({
                       <span className="check-box" aria-hidden="true" />
                       <span>{t.pathStyle}</span>
                     </label>
+                    <label className="check-field">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.allowChanges)}
+                        onChange={(event) =>
+                          setForm({ ...form, allowChanges: event.target.checked })
+                        }
+                      />
+                      <span className="check-box" aria-hidden="true" />
+                      <span>{t.allowChanges}</span>
+                    </label>
+                    {form.allowChanges && (
+                      <div className="field">
+                        <label htmlFor="accWriteProfile">{t.writeProfile}</label>
+                        <input
+                          id="accWriteProfile"
+                          value={form.writeProfile ?? ''}
+                          placeholder={t.writeProfilePlaceholder}
+                          onChange={(event) =>
+                            setForm({ ...form, writeProfile: event.target.value })
+                          }
+                        />
+                        <span className="hint">{t.allowChangesHint}</span>
+                      </div>
+                    )}
                     <div className="account-actions">
                       <button
                         className="btn primary"

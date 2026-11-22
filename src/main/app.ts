@@ -6,6 +6,7 @@ import { app } from 'electron'
 import { AppDb } from './db'
 import { importLegacy } from './legacy'
 import { Providers } from './providers'
+import { Approvals } from './runtime/approvals'
 import { Engine } from './runtime/engine'
 import { createModelSet, testModel, testModelDraft } from './runtime/model'
 import { Scheduler } from './runtime/scheduler'
@@ -36,6 +37,7 @@ export class App {
   tasks!: Tasks
   engine!: Engine
   scheduler!: Scheduler
+  approvals!: Approvals
   staging!: Staging
   update: UpdateState = { state: 'idle' }
   /** Set by the shell once an update is downloaded. */
@@ -83,6 +85,8 @@ export class App {
     this.tasks = new Tasks(this.runtime)
     this.engine = new Engine(this.runtime, this.tasks)
     this.scheduler = new Scheduler(this.runtime, this.tasks, this.engine)
+    this.approvals = new Approvals(this.runtime)
+    this.approvals.bind(this.engine)
     this.runtime.scheduleHost = this.scheduler
     this.runtime.tools.host = this.agentHost()
     this.tasks.start()
@@ -135,6 +139,10 @@ export class App {
           today: new Date().toISOString().slice(0, 10),
           services: SERVICES,
         }
+      },
+      changes: {
+        propose: (input) => this.approvals.propose(input),
+        proposeSetting: (input) => this.approvals.proposeSetting(input),
       },
       rename: (taskId, title) => this.tasks.rename(taskId, title),
       pin: (taskId, pinned) => this.tasks.pin(taskId, pinned),

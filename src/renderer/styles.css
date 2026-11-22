@@ -3088,3 +3088,49 @@ sup.cite.missing {
   gap: 12px;
   margin-bottom: 8px;
 }
+
+/* A change the agent proposed: the user's decision, shown under its step. */
+.change-card {
+  margin: 4px 0 8px 22px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.change-card.proposed {
+  border-color: var(--accent);
+}
+.change-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.change-title {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 13px;
+}
+.change-status {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.change-reason {
+  margin: 6px 0 8px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.change-sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.change-sides pre {
+  max-height: 220px;
+  overflow: auto;
+}
+.change-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}

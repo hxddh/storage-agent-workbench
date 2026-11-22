@@ -128,7 +128,7 @@ export async function buildDigest(deps: ToolDeps): Promise<string> {
         parts.push(
           `${account.name} (id ${account.id}; ${account.endpoint ? `endpoint ${account.endpoint}` : 'AWS'}, region ${account.region}${
             account.scope.buckets.length ? `; scope: ${account.scope.buckets.join(', ')}` : ''
-          })`,
+          }${account.allowChanges ? '; changes allowed with approval' : ''})`,
         )
       lines.push(`Accounts: ${parts.join('; ')}.`)
     }

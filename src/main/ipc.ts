@@ -257,6 +257,15 @@ export function registerIpc(app: App): void {
 
   ipcMain.handle('agent:board', () => app.tasks.board())
 
+  // A change runs only from here: the user's click in the window, never the conversation.
+  ipcMain.handle('agent:change', (_event, id: string) => app.approvals.get(String(id)))
+
+  ipcMain.handle('agent:approveChange', (_event, id: string) => app.approvals.approve(String(id)))
+
+  ipcMain.handle('agent:rejectChange', (_event, id: string) => app.approvals.reject(String(id)))
+
+  ipcMain.handle('agent:rollbackChange', (_event, id: string) => app.approvals.rollback(String(id)))
+
   ipcMain.handle('agent:inbox', async () =>
     (await app.db.listInbox()).map((row) => ({
       id: row.id,

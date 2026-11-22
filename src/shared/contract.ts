@@ -59,6 +59,22 @@ export interface BoardItem {
   modifiedAt: string
 }
 
+/** A proposed change as the window shows it, with its current status. */
+export interface ChangeItem {
+  id: string
+  kind: 'change' | 'settings' | 'rollback'
+  status: 'proposed' | 'applied' | 'failed' | 'rejected' | 'rolled_back'
+  account: string
+  service: string
+  operation: string
+  input: unknown
+  before: unknown
+  reason: string
+  result: unknown
+  decidedAt: string | null
+  rollbackOf: string | null
+}
+
 export interface InboxItem {
   id: string
   taskId: string | null
@@ -163,6 +179,16 @@ export type ToolView =
   | { kind: 'memory'; title: string; table: Table; text?: string }
   /** A file the agent wrote to the workspace's exports/ for the user. */
   | { kind: 'export'; path: string; bytes: number }
+  /** A write or a setting the agent proposed; the user approves or rejects it in the window. */
+  | {
+      kind: 'change'
+      changeId: string
+      account: string
+      title: string
+      reason: string
+      before: unknown
+      after: unknown
+    }
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'refused' | 'stopped'
 
@@ -348,6 +374,10 @@ export interface Account {
   accessKeyMasked: string
   hasSessionToken: boolean
   scope: { buckets: string[] }
+  /** The user allows approved changes on this account. */
+  allowChanges: boolean
+  /** An AWS profile used only for approved changes; null uses the account's credentials. */
+  writeProfile: string | null
 }
 
 export interface AccountInput {
@@ -362,6 +392,8 @@ export interface AccountInput {
   secretAccessKey?: string
   sessionToken?: string
   scope: { buckets: string[] }
+  allowChanges?: boolean
+  writeProfile?: string | null
 }
 
 export interface ModelSettings {
@@ -445,6 +477,8 @@ export type AppEvent =
   | { type: 'bootstrap' }
   /** The agent notified the user; the inbox changed. */
   | { type: 'inbox' }
+  /** A change was decided, applied or rolled back. */
+  | { type: 'change'; id: string }
 
 export type AppCommand = 'settings' | 'new-task' | 'stop' | 'search'
 
@@ -500,6 +534,12 @@ export interface AgentApi {
   saveExport(path: string): Promise<boolean>
   skills(): Promise<SkillRow[]>
   board(): Promise<BoardItem[]>
+  change(id: string): Promise<ChangeItem | null>
+  /** The user approves a proposed change; the app runs exactly it. */
+  approveChange(id: string): Promise<ChangeItem>
+  rejectChange(id: string): Promise<ChangeItem>
+  /** Undo an applied change from what it replaced. */
+  rollbackChange(id: string): Promise<ChangeItem>
   inbox(): Promise<InboxItem[]>
   markInboxRead(id?: string): Promise<void>
   schedules(): Promise<ScheduleItem[]>

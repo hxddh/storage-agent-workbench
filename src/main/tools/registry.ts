@@ -14,6 +14,7 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'self',
   'schedule',
   'notify',
+  'change',
   'delegate',
   'ask',
 ]

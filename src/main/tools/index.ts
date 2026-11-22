@@ -1,5 +1,6 @@
 import type { ToolRegistration } from '@earendil-works/pi-durable'
 import { callTool } from './call'
+import { changeTool } from './change'
 import { askTool } from './control'
 import { delegateTool } from './delegate'
 import { moreTool } from './more'
@@ -21,6 +22,7 @@ export function createTools(deps: ToolDeps): ToolRegistration[] {
     selfTool(deps),
     scheduleTool(deps),
     notifyTool(deps),
+    changeTool(deps),
     delegateTool(deps),
     // Asking the user is the one tool that does not read storage.
     askTool(),

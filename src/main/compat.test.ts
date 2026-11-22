@@ -20,6 +20,7 @@ import { GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts'
 import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node'
 import type { ToolDetails } from '@shared/contract'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { applyChange, checkChange, inverseOf, snapshotOf } from './changes'
 import { AppDb } from './db'
 import { emulatorControl, Providers } from './providers'
 import type { Vault } from './security/vault'
@@ -203,5 +204,87 @@ describe.skipIf(!endpoint)('AWS compatibility (moto)', () => {
     expect(caller.value).toMatchObject({ Account: account })
     const iam = await call({ service: 'iam', operation: 'GetAccountAuthorizationDetails' })
     expect(iam.status).toBe('done')
+  })
+
+  it('snapshots, applies and rolls back an approved change as S3 answers it', async () => {
+    const providers = deps.providers as Providers
+    await providers.updateSettings(wholeId, { allowChanges: true })
+    const config = await providers.config(wholeId)
+    // Moto keeps state between runs: a bucket of its own each time.
+    const bucket = `c-change-${Date.now()}`
+    await s3.send(new CreateBucketCommand({ Bucket: bucket }))
+    const put = {
+      service: 's3',
+      operation: 'PutPublicAccessBlock',
+      input: {
+        Bucket: bucket,
+        PublicAccessBlockConfiguration: {
+          BlockPublicAcls: true,
+          IgnorePublicAcls: true,
+          BlockPublicPolicy: true,
+          RestrictPublicBuckets: true,
+        },
+      },
+    }
+    checkChange(config, put)
+    // Nothing was set: the rollback deletes what the change adds.
+    const before = await snapshotOf(providers, config, put)
+    expect(before).toBeNull()
+    await applyChange(providers, config, put)
+    expect(
+      (
+        await call({
+          service: 's3',
+          operation: 'GetPublicAccessBlock',
+          input: { Bucket: bucket },
+        })
+      ).value,
+    ).toMatchObject({
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true },
+    })
+    const undo = inverseOf(put, before)
+    expect(undo.operation).toBe('DeletePublicAccessBlock')
+    await applyChange(providers, config, undo)
+    expect(
+      (
+        await call({
+          service: 's3',
+          operation: 'GetPublicAccessBlock',
+          input: { Bucket: bucket },
+        })
+      ).status,
+    ).toBe('failed')
+    // A policy: what it replaced is put back as it was.
+    const old = JSON.stringify({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Deny',
+          Principal: '*',
+          Action: 's3:DeleteBucket',
+          Resource: `arn:aws:s3:::${bucket}`,
+        },
+      ],
+    })
+    await s3.send(new PutBucketPolicyCommand({ Bucket: bucket, Policy: old }))
+    const policy = {
+      service: 's3',
+      operation: 'PutBucketPolicy',
+      input: { Bucket: bucket, Policy: { Version: '2012-10-17', Statement: [] } },
+    }
+    const snapshot = await snapshotOf(providers, config, policy)
+    expect(JSON.parse(String(snapshot?.Policy))).toEqual(JSON.parse(old))
+    await applyChange(providers, config, inverseOf(policy, snapshot))
+    const restored = await call({
+      service: 's3',
+      operation: 'GetBucketPolicy',
+      input: { Bucket: bucket },
+    })
+    expect(JSON.stringify(restored.value)).toContain('s3:DeleteBucket')
+    // Without the user's permission nothing runs.
+    await providers.updateSettings(wholeId, { allowChanges: false })
+    await expect(applyChange(providers, await providers.config(wholeId), put)).rejects.toThrow(
+      /not allowed/,
+    )
   })
 })

@@ -37,6 +37,10 @@ export interface ProviderConfig {
   forcePathStyle: boolean
   credentials: Credentials
   scope: { buckets: string[] }
+  /** The user allows approved changes on this account. */
+  allowChanges?: boolean
+  /** An AWS profile used only for approved changes; absent uses `credentials`. */
+  writeProfile?: string | null
 }
 
 function parseScope(json: string): { buckets: string[] } {
@@ -143,7 +147,42 @@ export class Providers {
       accessKeyMasked: row.auth === 'profile' ? '' : maskKey(row.access_key_id),
       hasSessionToken: Boolean(row.session_ref),
       scope: parseScope(row.scope_json),
+      allowChanges: row.allow_changes === 1,
+      writeProfile: row.write_profile ?? null,
     }))
+  }
+
+  /**
+   * The configuration an approved change runs with: the account's write
+   * profile when it has one, else its own credentials. Its clients are cached
+   * apart from the read clients.
+   */
+  writeConfig(config: ProviderConfig): ProviderConfig {
+    if (!config.allowChanges) throw new Error(`Changes are not allowed on ${config.name}.`)
+    return config.writeProfile
+      ? {
+          ...config,
+          id: `${config.id}#write`,
+          credentials: { kind: 'profile', profile: config.writeProfile },
+        }
+      : { ...config, id: `${config.id}#write` }
+  }
+
+  /** Allow or stop approved changes, or set the account's scope: what a user approves from a proposal. */
+  async updateSettings(
+    id: string,
+    patch: { allowChanges?: boolean; scope?: string[] },
+  ): Promise<void> {
+    const row = await this.db.getProvider(id)
+    if (!row) throw new Error(`Unknown storage account: ${id}`)
+    await this.db.upsertProvider({
+      ...row,
+      ...(patch.allowChanges !== undefined ? { allow_changes: patch.allowChanges ? 1 : 0 } : {}),
+      ...(patch.scope
+        ? { scope_json: JSON.stringify({ buckets: patch.scope.filter(Boolean) }) }
+        : {}),
+    })
+    this.forget(id)
   }
 
   async config(id: string): Promise<ProviderConfig> {
@@ -205,6 +244,16 @@ export class Providers {
       created_at: existing?.created_at ?? new Date().toISOString(),
       auth,
       profile,
+      allow_changes:
+        input.allowChanges === undefined
+          ? (existing?.allow_changes ?? 0)
+          : input.allowChanges
+            ? 1
+            : 0,
+      write_profile:
+        input.writeProfile === undefined
+          ? (existing?.write_profile ?? null)
+          : input.writeProfile?.trim() || null,
     })
     this.forget(id)
     const account = (await this.list()).find((a) => a.id === id)
@@ -345,6 +394,8 @@ export class Providers {
               sessionToken: row.session_ref ? this.vault.open(row.session_ref) : null,
             },
       scope: parseScope(row.scope_json),
+      allowChanges: row.allow_changes === 1,
+      writeProfile: row.write_profile ?? null,
     }
   }
 }

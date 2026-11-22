@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Blocks } from './Blocks'
+import { ChangeCard } from './ChangeCard'
 import { type Dict, dict, fill, toolLabel } from './i18n'
 import { copyText, safeFileName } from './lib/export'
 import Markdown from './Markdown'
@@ -108,6 +109,16 @@ function ToolStep({
         {elapsed && <span className="step-time">{elapsed}</span>}
         <ChevronRight size={13} className={`chev ${open ? 'open' : ''}`} />
       </button>
+      {item.view?.kind === 'change' && (
+        <ChangeCard
+          id={item.view.changeId}
+          title={item.view.title}
+          reason={item.view.reason}
+          before={item.view.before}
+          after={item.view.after}
+          t={t}
+        />
+      )}
       {item.view?.kind === 'export' && (
         <button
           className="export-link"

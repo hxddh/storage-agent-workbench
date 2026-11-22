@@ -77,6 +77,10 @@ export interface ProviderRow {
   created_at: string
   auth: 'keys' | 'profile'
   profile: string | null
+  /** 1 when the user allows approved changes on this account. */
+  allow_changes?: number
+  /** An AWS profile for changes; null uses the account's own credentials. */
+  write_profile?: string | null
 }
 
 export interface DatasetRecord {
@@ -111,6 +115,25 @@ export interface ScheduleRecord {
   last_outcome: string | null
   enabled: number
   created_at: string
+}
+
+export interface ChangeRecord {
+  id: string
+  conversation_id: string
+  provider_id: string
+  /** `change` (a storage write) or `settings` (an account setting the agent proposed). */
+  kind: 'change' | 'settings' | 'rollback'
+  service: string
+  operation: string
+  input_json: string
+  reason: string
+  /** What the change replaces; `null` text means nothing was set. */
+  snapshot_json: string | null
+  status: 'proposed' | 'applied' | 'failed' | 'rejected' | 'rolled_back'
+  result_json: string | null
+  rollback_of: string | null
+  created_at: string
+  decided_at: string | null
 }
 
 export interface InboxRecord {
@@ -287,13 +310,14 @@ export class AppDb {
   async upsertProvider(row: ProviderRow): Promise<void> {
     await this.raw.run(
       `INSERT INTO providers (id, name, endpoint, region, force_path_style, access_key_id,
-         secret_ref, session_ref, scope_json, created_at, auth, profile)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         secret_ref, session_ref, scope_json, created_at, auth, profile, allow_changes, write_profile)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name, endpoint = excluded.endpoint, region = excluded.region,
          force_path_style = excluded.force_path_style, access_key_id = excluded.access_key_id,
          secret_ref = excluded.secret_ref, session_ref = excluded.session_ref,
-         scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile`,
+         scope_json = excluded.scope_json, auth = excluded.auth, profile = excluded.profile,
+         allow_changes = excluded.allow_changes, write_profile = excluded.write_profile`,
       row.id,
       row.name,
       row.endpoint,
@@ -306,6 +330,8 @@ export class AppDb {
       row.created_at,
       row.auth,
       row.profile,
+      row.allow_changes ?? 0,
+      row.write_profile ?? null,
     )
   }
 
@@ -392,6 +418,50 @@ export class AppDb {
 
   async deleteSchedule(id: string): Promise<void> {
     await this.raw.run('DELETE FROM schedules WHERE id = ?', id)
+  }
+
+  // -- changes -----------------------------------------------------------------
+
+  async insertChange(row: ChangeRecord): Promise<void> {
+    await this.raw.run(
+      `INSERT INTO changes (id, conversation_id, provider_id, kind, service, operation, input_json, reason, snapshot_json, status, result_json, rollback_of, created_at, decided_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      row.id,
+      row.conversation_id,
+      row.provider_id,
+      row.kind,
+      row.service,
+      row.operation,
+      row.input_json,
+      row.reason,
+      row.snapshot_json,
+      row.status,
+      row.result_json,
+      row.rollback_of,
+      row.created_at,
+      row.decided_at,
+    )
+  }
+
+  async getChange(id: string): Promise<ChangeRecord | undefined> {
+    return this.raw.get<ChangeRecord>('SELECT * FROM changes WHERE id = ?', id)
+  }
+
+  async decideChange(id: string, status: ChangeRecord['status'], result: unknown): Promise<void> {
+    await this.raw.run(
+      'UPDATE changes SET status = ?, result_json = ?, decided_at = ? WHERE id = ?',
+      status,
+      JSON.stringify(result ?? null),
+      new Date().toISOString(),
+      id,
+    )
+  }
+
+  async listChanges(conversationId: string): Promise<ChangeRecord[]> {
+    return this.raw.all<ChangeRecord>(
+      'SELECT * FROM changes WHERE conversation_id = ? ORDER BY created_at',
+      conversationId,
+    )
   }
 
   // -- inbox -------------------------------------------------------------------
